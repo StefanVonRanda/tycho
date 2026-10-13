@@ -4,22 +4,42 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Strings — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / reference/strings.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details open><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html" aria-current="page">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#len-indexing-and-slicing-are-all-bytes">len, indexing and slicing are all bytes</a>
+<a href="#the-trap-len-is-not-the-character-count">The trap: len is not the character count</a>
+<a href="#stepping-by-character">Stepping by character</a>
+<a href="#validating-before-you-trust">Validating before you trust</a>
+<a href="#building-strings">Building strings</a>
+<a href="#where-the-rest-lives">Where the rest lives</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / reference/strings.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="strings">Strings</h1>
 <blockquote>
-<p><strong>Memory:</strong> Strings are values: assigning or slicing a string copies its bytes,</p>
-<p>so two variables never share storage.</p>
+<p><strong>Memory:</strong> Strings are values: assigning or slicing a string copies its bytes, so two variables never share storage.</p>
 </blockquote>
-<p>A <code>string</code> is a <strong>byte</strong> string with a known length. It is not a sequence of</p>
-<p>characters, and every indexing operation on it is a byte operation. That is the</p>
-<p>one thing to know before writing anything that touches text you did not type</p>
-<p>yourself.</p>
+<p>A <code>string</code> is a <strong>byte</strong> string with a known length. It is not a sequence of characters, and every indexing operation on it is a byte operation. That is the one thing to know before writing anything that touches text you did not type yourself.</p>
 <h2 id="len-indexing-and-slicing-are-all-bytes"><code>len</code>, indexing and slicing are all bytes</h2>
 <pre><code class="language-tycho">fn main():
     s := "hello"
@@ -27,14 +47,10 @@
     println(str(s[0]))          # 104 -- a byte VALUE, an int, not a 1-char string
     println(s[1:3])             # el -- a slice IS a string
 </code></pre>
-<p><code>s[i]</code> is the byte at <code>i</code> as an <code>int</code>. <code>s[a:b]</code> is the half-open byte range as a</p>
-<p>new string. Both are O(1) and neither knows anything about characters.</p>
+<p><code>s[i]</code> is the byte at <code>i</code> as an <code>int</code>. <code>s[a:b]</code> is the half-open byte range as a new string. Both are O(1) and neither knows anything about characters.</p>
 <h2 id="the-trap-len-is-not-the-character-count">The trap: <code>len</code> is not the character count</h2>
-<p>Non-ASCII text has more bytes than characters, so the natural program is the</p>
-<p>wrong one — and it is wrong only on input the author often never tries.</p>
-<p>The examples below <code>import</code>, so they open with <code>package main</code> and belong in</p>
-<p>their own directory: a file with an <code>import</code> is a package. A single-file program</p>
-<p>with no imports needs neither.</p>
+<p>Non-ASCII text has more bytes than characters, so the natural program is the wrong one — and it is wrong only on input the author often never tries.</p>
+<p>The examples below <code>import</code>, so they open with <code>package main</code> and belong in their own directory: a file with an <code>import</code> is a package. A single-file program with no imports needs neither.</p>
 <pre><code class="language-tycho">package main
 import "core:utf8"
 
@@ -44,15 +60,10 @@ fn main():
     println(str(utf8.count(s)))     # 5 -- characters
     println(s[0:2])                 # h? -- a slice through the middle of `é`
 </code></pre>
-<p>The third line is the failure. <code>s[0:2]</code> cuts <code>é</code> in half and produces a string</p>
-<p>holding one stray continuation byte, which renders as plausible-looking mojibake</p>
-<p>rather than raising anything. Nothing in the language stops you: the slice is a</p>
-<p>valid byte range, and byte ranges are what the language promises.</p>
-<p><strong><code>utf8.count(s)</code> returns <code>-1</code> on invalid input</strong> rather than a count, so a</p>
-<p>negative answer is your signal that the bytes are not UTF-8 at all.</p>
+<p>The third line is the failure. <code>s[0:2]</code> cuts <code>é</code> in half and produces a string holding one stray continuation byte, which renders as plausible-looking mojibake rather than raising anything. Nothing in the language stops you: the slice is a valid byte range, and byte ranges are what the language promises.</p>
+<p><strong><code>utf8.count(s)</code> returns <code>-1</code> on invalid input</strong> rather than a count, so a negative answer is your signal that the bytes are not UTF-8 at all.</p>
 <h2 id="stepping-by-character">Stepping by character</h2>
-<p><code>utf8.decode(s, at)</code> returns the codepoint at a byte offset and how many bytes it</p>
-<p>occupied.</p>
+<p><code>utf8.decode(s, at)</code> returns the codepoint at a byte offset and how many bytes it occupied.</p>
 <pre><code class="language-tycho">package main
 import "core:utf8"
 
@@ -68,11 +79,7 @@ fn main():
         n = n + 1
     println(str(n))         # 5
 </code></pre>
-<p><strong>The <code>nb &lt;= 0</code> guard is not optional.</strong> On invalid input <code>decode</code> returns a</p>
-<p>non-positive width, and a loop that adds it never advances — so a caller who</p>
-<p>trusts the return spins forever on exactly the input an attacker controls.</p>
-<p><code>utf8.valid(s)</code> checks a whole string up front, but a streaming caller cannot</p>
-<p>afford the second pass, which is why the guard belongs in the loop.</p>
+<p><strong>The <code>nb &lt;= 0</code> guard is not optional.</strong> On invalid input <code>decode</code> returns a non-positive width, and a loop that adds it never advances — so a caller who trusts the return spins forever on exactly the input an attacker controls. <code>utf8.valid(s)</code> checks a whole string up front, but a streaming caller cannot afford the second pass, which is why the guard belongs in the loop.</p>
 <h2 id="validating-before-you-trust">Validating before you trust</h2>
 <pre><code class="language-tycho">package main
 import "core:utf8"
@@ -81,14 +88,9 @@ fn main():
     println(str(utf8.valid("héllo")))               # true
     println(str(utf8.valid("a" + chr(0xC0) + "b"))) # false -- 0xC0 starts nothing
 </code></pre>
-<p>Validate anything that arrives from a file, a socket or a user before you treat</p>
-<p>it as text. A validator that accepts an overlong encoding is a filter bypass: the</p>
-<p>same character arrives by a spelling the filter above it did not recognise, which</p>
-<p>is why <code>core:utf8</code> rejects overlongs, surrogates and anything above U+10FFFF</p>
-<p>rather than decoding them leniently.</p>
+<p>Validate anything that arrives from a file, a socket or a user before you treat it as text. A validator that accepts an overlong encoding is a filter bypass: the same character arrives by a spelling the filter above it did not recognise, which is why <code>core:utf8</code> rejects overlongs, surrogates and anything above U+10FFFF rather than decoding them leniently.</p>
 <h2 id="building-strings">Building strings</h2>
-<p><code>+</code> concatenates and produces a new string; there is no in-place append. Interpolation</p>
-<p>is <code>f"..."</code> with <code>{}</code> holes.</p>
+<p><code>+</code> concatenates and produces a new string; there is no in-place append. Interpolation is <code>f"..."</code> with <code>{}</code> holes.</p>
 <pre><code class="language-tycho">fn main():
     who := "world"
     n := 3
@@ -103,9 +105,21 @@ fn main():
 <tr><td>the byte-level type with no text semantics at all</td><td><a href="types.html"><code>bytes</code></a></td></tr>
 <tr><td><code>len</code>, <code>chr</code>, <code>char_at</code>, <code>find</code> and the other builtins</td><td><a href="builtins.html">Builtins</a></td></tr>
 </table>
-<p>The rule that ties them together: **the language gives you bytes, and <code>core:utf8</code></p>
-<p>gives you characters.** Use <code>core:utf8</code> for any text that arrives from outside your program.</p>
+<p>The rule that ties them together: <strong>the language gives you bytes, and <code>core:utf8</code> gives you characters.</strong> Use <code>core:utf8</code> for any text that arrives from outside your program.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

@@ -4,114 +4,85 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>5. Types — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/03-types.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html" aria-current="page">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#51-the-type-identity-model">5.1 The type-identity model</a>
+<a href="#52-scalar-types">5.2 Scalar types</a>
+<a class="sub" href="#521-int">5.2.1 int</a>
+<a class="sub" href="#522-float">5.2.2 float</a>
+<a class="sub" href="#523-bool">5.2.3 bool</a>
+<a class="sub" href="#524-char">5.2.4 char</a>
+<a class="sub" href="#525-string">5.2.5 string</a>
+<a class="sub" href="#526-bytes">5.2.6 bytes</a>
+<a class="sub" href="#527-fixed-width-integers-u8u16u32u64-i8i16i32i64">5.2.7 Fixed-width integers u8/u16/u32/u64, i8/i16/i32/i64</a>
+<a class="sub" href="#528-f32">5.2.8 f32</a>
+<a class="sub" href="#529-ptr">5.2.9 ptr</a>
+<a href="#53-composite-types">5.3 Composite types</a>
+<a class="sub" href="#531-arrays-t">5.3.1 Arrays [T]</a>
+<a class="sub" href="#532-fixed-size-arrays-nt">5.3.2 Fixed-size arrays [N]T</a>
+<a class="sub" href="#533-tuples">5.3.3 Tuples</a>
+<a class="sub" href="#534-structs">5.3.4 Structs</a>
+<a class="sub" href="#535-maps-k-v">5.3.5 Maps [K: V]</a>
+<a class="sub" href="#536-enums-option-result">5.3.6 Enums, Option, Result</a>
+<a class="sub" href="#537-soa">5.3.7 soa</a>
+<a class="sub" href="#538-function-types">5.3.8 Function types</a>
+<a class="sub" href="#539-typed-handles">5.3.9 Typed handles</a>
+<a class="sub" href="#5310-boundednt">5.3.10 bounded[N]T</a>
+<a class="sub" href="#5311-vectornt">5.3.11 vector[N]T</a>
+<a href="#54-newtypes">5.4 Newtypes</a>
+<a href="#55-equality-and-ordering">5.5 Equality and ordering</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/03-types.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="5-types">5. Types</h1>
-<p>Every Tycho expression has a <strong>type</strong>, determined at its own site by the</p>
-<p>inference rules of <a href="04-inference.html">§6</a>. Every value has <strong>value semantics</strong>:</p>
-<p>assignment, argument passing, and return copy the value deeply, so two variables</p>
-<p>never share storage (<a href="07-memory-model.html">§9</a>). This chapter</p>
-<p>defines the types themselves — their values, ranges, and identity — and defers</p>
-<p>their construction and operations to the chapters noted.</p>
-<p>Tycho is defined with <strong>exact scalar widths</strong> independent of any compilation</p>
-<p>target (<a href="00-conventions.html#11-scope">§1.1</a>). A conforming implementation MUST</p>
-<p>provide the widths and behavior stated here even where its backend's native</p>
-<p>types differ (for example, a C backend MUST realize <code>int</code> as a 64-bit type even</p>
-<p>on a target where C <code>long</code> is 32 bits).</p>
+<p>Every Tycho expression has a <strong>type</strong>, determined at its own site by the inference rules of <a href="04-inference.html">§6</a>. Every value has <strong>value semantics</strong>: assignment, argument passing, and return copy the value deeply, so two variables never share storage (<a href="07-memory-model.html">§9</a>). This chapter defines the types themselves — their values, ranges, and identity — and defers their construction and operations to the chapters noted.</p>
+<p>Tycho is defined with <strong>exact scalar widths</strong> independent of any compilation target (<a href="00-conventions.html#11-scope">§1.1</a>). A conforming implementation MUST provide the widths and behavior stated here even where its backend's native types differ (for example, a C backend MUST realize <code>int</code> as a 64-bit type even on a target where C <code>long</code> is 32 bits).</p>
 <h2 id="51-the-type-identity-model">5.1 The type-identity model</h2>
-<p>Two types are <strong>the same type</strong> iff they are identical (the reference</p>
-<p>implementation interns every type to a single integer id and compares by</p>
-<p>equality). Type constructors fall into two groups:</p>
+<p>Two types are <strong>the same type</strong> iff they are identical (the reference implementation interns every type to a single integer id and compares by equality). Type constructors fall into two groups:</p>
 <ul>
-<li><strong>Nominal</strong> — <code>struct</code>, <code>enum</code>, <code>newtype</code>, and <code>handle</code> types are identified</li>
+<li><strong>Nominal</strong> — <code>struct</code>, <code>enum</code>, <code>newtype</code>, and <code>handle</code> types are identified by their declaration. Two distinct declarations are distinct types even with identical structure; a newtype is distinct from its underlying type (§5.4).</li>
+<li><strong>Structural</strong> — arrays, fixed-size arrays, tuples, maps, <code>Option</code>, <code>Result</code>, <code>soa</code>, function types, and the channel/task handle types are identified by their structure. Two of them are the same type iff they are built from the same constructor applied to the same component types.</li>
 </ul>
-<p>by their declaration. Two distinct declarations are distinct types even with</p>
-<p>identical structure; a newtype is distinct from its underlying type (§5.4).</p>
-<ul>
-<li><strong>Structural</strong> — arrays, fixed-size arrays, tuples, maps, <code>Option</code>, <code>Result</code>,</li>
-</ul>
-<p><code>soa</code>, function types, and the channel/task handle types are identified by</p>
-<p>their structure. Two of them are the same type iff they are built from the</p>
-<p>same constructor applied to the same component types.</p>
-<p>This distinction is normative: it determines exactly when two values may be</p>
-<p>compared, assigned, or unified across <code>match</code>/<code>if</code> arms (§5.5, <a href="04-inference.html">§6</a>).</p>
+<p>This distinction is normative: it determines exactly when two values may be compared, assigned, or unified across <code>match</code>/<code>if</code> arms (§5.5, <a href="04-inference.html">§6</a>).</p>
 <h2 id="52-scalar-types">5.2 Scalar types</h2>
 <h3 id="521-int">5.2.1 <code>int</code></h3>
-<p><code>int</code> is a <strong>64-bit two's-complement signed integer</strong>, with values <code>−2^63</code></p>
-<p>through <code>2^63 − 1</code>. This width is <strong>required</strong>, not target-dependent: a</p>
-<p>conforming implementation MUST realize <code>int</code> at exactly 64 bits through a</p>
-<p><strong>fixed-width 64-bit lowering</strong> — a C backend MUST emit a fixed-width 64-bit type</p>
-<p>(<code>int64_t</code> / <code>long long</code>), never a type whose width varies by platform such as C</p>
-<p><code>long</code> (§F.3, <a href="appendix-f-impl-defined.html">Appendix F</a>). Arithmetic that overflows this range <strong>wraps</strong> with</p>
-<p>two's-complement semantics; overflow is fully defined and never traps</p>
-<p>(<a href="17-runtime.html">§30</a>). Division and modulo by zero abort;</p>
-<p><code>(−2^63) / −1</code> aborts (quotient overflow) while <code>(−2^63) % −1</code> is <code>0</code>. The</p>
-<p>only integer literal is decimal (<a href="01-lexical.html#391-integer-literals">§3.9.1</a>),</p>
-<p>denoting a non-negative value; <code>−2^63</code> is obtained only by computation.</p>
+<p><code>int</code> is a <strong>64-bit two's-complement signed integer</strong>, with values <code>−2^63</code> through <code>2^63 − 1</code>. This width is <strong>required</strong>, not target-dependent: a conforming implementation MUST realize <code>int</code> at exactly 64 bits through a <strong>fixed-width 64-bit lowering</strong> — a C backend MUST emit a fixed-width 64-bit type (<code>int64_t</code> / <code>long long</code>), never a type whose width varies by platform such as C <code>long</code> (§F.3, <a href="appendix-f-impl-defined.html">Appendix F</a>). Arithmetic that overflows this range <strong>wraps</strong> with two's-complement semantics; overflow is fully defined and never traps (<a href="17-runtime.html">§30</a>). Division and modulo by zero abort; <code>(−2^63) / −1</code> aborts (quotient overflow) while <code>(−2^63) % −1</code> is <code>0</code>. The only integer literal is decimal (<a href="01-lexical.html#391-integer-literals">§3.9.1</a>), denoting a non-negative value; <code>−2^63</code> is obtained only by computation.</p>
 <h3 id="522-float">5.2.2 <code>float</code></h3>
-<p><code>float</code> is an <strong>IEEE-754 binary64</strong> (double-precision) value. Its arithmetic,</p>
-<p>rounding, and special values (signed zero, infinities, NaN) follow IEEE-754.</p>
-<p><code>/</code> is true division and does not trap.</p>
-<p>Division never traps: <code>0.0/0.0</code> is <code>NaN</code>, <code>1.0/0.0</code> is <code>+inf</code>, and <code>-1.0/0.0</code> is</p>
-<p><code>-inf</code>. <code>NaN</code> is unordered — <code>NaN == NaN</code> is <code>false</code>,</p>
-<p>and every ordering comparison with a <code>NaN</code> operand is <code>false</code>. The float *values*</p>
-<p>are fully defined by IEEE-754; only the *textual* form <code>str</code> produces for</p>
-<p><code>NaN</code>/<code>inf</code> (e.g. <code>-nan</code>) derives from the C library and is implementation-defined</p>
-<p>(<a href="appendix-f-impl-defined.html">Appendix F</a>).</p>
+<p><code>float</code> is an <strong>IEEE-754 binary64</strong> (double-precision) value. Its arithmetic, rounding, and special values (signed zero, infinities, NaN) follow IEEE-754. <code>/</code> is true division and does not trap.</p>
+<p>Division never traps: <code>0.0/0.0</code> is <code>NaN</code>, <code>1.0/0.0</code> is <code>+inf</code>, and <code>-1.0/0.0</code> is <code>-inf</code>. <code>NaN</code> is unordered — <code>NaN == NaN</code> is <code>false</code>, and every ordering comparison with a <code>NaN</code> operand is <code>false</code>. The float *values* are fully defined by IEEE-754; only the *textual* form <code>str</code> produces for <code>NaN</code>/<code>inf</code> (e.g. <code>-nan</code>) derives from the C library and is implementation-defined (<a href="appendix-f-impl-defined.html">Appendix F</a>).</p>
 <h3 id="523-bool">5.2.3 <code>bool</code></h3>
-<p><code>bool</code> has the two values <code>true</code> and <code>false</code>. It is comparable with <code>==</code>/<code>!=</code></p>
-<p>and usable with <code>str</code> (via <code>has_str</code>), but is <strong>not ordered</strong> (§5.5).</p>
+<p><code>bool</code> has the two values <code>true</code> and <code>false</code>. It is comparable with <code>==</code>/<code>!=</code> and usable with <code>str</code> (via <code>has_str</code>), but is <strong>not ordered</strong> (§5.5).</p>
 <h3 id="524-char">5.2.4 <code>char</code></h3>
-<p><code>char</code> is a single <strong>byte</strong>, an integer value <code>0</code> through <code>255</code>. It is written</p>
-<p>as a character literal (<a href="01-lexical.html#393-character-literals">§3.9.3</a>) and</p>
-<p>arises by inference; there is no <code>char</code> type keyword. <code>char</code> interoperates</p>
-<p>narrowly with <code>int</code>: <code>char ± int</code> has type <code>char</code>, and the result **wraps to a</p>
-<p>byte** (<code>0..255</code>, like <code>u8</code>) so the value never escapes the type's range. <code>char</code></p>
-<p>is comparable and ordered (§5.5). <code>str(char)</code> yields the one-byte <strong>glyph</strong></p>
-<p>string (so a <code>char</code> interpolates in an f-string); <code>to_int(char)</code> / <code>to_u32(char)</code></p>
-<p>yield the byte <strong>value</strong>; <code>to_char(n)</code> converts the other way, aborting rather</p>
-<p>than wrapping for an <code>n</code> outside <code>0..255</code></p>
-<p>(<a href="16-builtins.html#294-conversions">§29.4</a>).</p>
-<p><strong>There is no <code>char</code> type keyword, and its absence is normative</strong> — it is</p>
-<p>restated at <a href="01-lexical.html#36-keywords">§3.6</a> and</p>
-<p><a href="02-grammar.html#42-types">§4.2</a>. Every <code>char</code>-valued expression therefore reaches</p>
-<p>its type by inference: a character literal, <code>char_at</code>, <code>to_char</code>, or arithmetic</p>
-<p>on those. <code>char</code>'s operator set is <strong>narrower than <code>int</code>'s</strong></p>
-<p>(<code>+</code> and <code>-</code> only, §13.2).</p>
-<p>Indexing a <code>string</code> does <strong>not</strong> produce a <code>char</code>: <code>s[i]</code> yields <code>int</code> (§5.2.5).</p>
-<p>The <code>char</code>-typed reader is the builtin <code>char_at(s, i)</code></p>
-<p>(<a href="16-builtins.html#295-strings">§29.5</a>), so <code>char_at(s, 1) == 'e'</code> is the way to</p>
-<p>compare a string's byte against a character literal — <code>s[1] == 'e'</code> is a type</p>
-<p>error, because <code>int</code> and <code>char</code> are distinct types and Tycho does not compare</p>
-<p>across types (§13.2).</p>
+<p><code>char</code> is a single <strong>byte</strong>, an integer value <code>0</code> through <code>255</code>. It is written as a character literal (<a href="01-lexical.html#393-character-literals">§3.9.3</a>) and arises by inference; there is no <code>char</code> type keyword. <code>char</code> interoperates narrowly with <code>int</code>: <code>char ± int</code> has type <code>char</code>, and the result <strong>wraps to a byte</strong> (<code>0..255</code>, like <code>u8</code>) so the value never escapes the type's range. <code>char</code> is comparable and ordered (§5.5). <code>str(char)</code> yields the one-byte <strong>glyph</strong> string (so a <code>char</code> interpolates in an f-string); <code>to_int(char)</code> / <code>to_u32(char)</code> yield the byte <strong>value</strong>; <code>to_char(n)</code> converts the other way, aborting rather than wrapping for an <code>n</code> outside <code>0..255</code> (<a href="16-builtins.html#294-conversions">§29.4</a>).</p>
+<p><strong>There is no <code>char</code> type keyword, and its absence is normative</strong> — it is restated at <a href="01-lexical.html#36-keywords">§3.6</a> and <a href="02-grammar.html#42-types">§4.2</a>. Every <code>char</code>-valued expression therefore reaches its type by inference: a character literal, <code>char_at</code>, <code>to_char</code>, or arithmetic on those. <code>char</code>'s operator set is <strong>narrower than <code>int</code>'s</strong> (<code>+</code> and <code>-</code> only, §13.2).</p>
+<p>Indexing a <code>string</code> does <strong>not</strong> produce a <code>char</code>: <code>s[i]</code> yields <code>int</code> (§5.2.5). The <code>char</code>-typed reader is the builtin <code>char_at(s, i)</code> (<a href="16-builtins.html#295-strings">§29.5</a>), so <code>char_at(s, 1) == 'e'</code> is the way to compare a string's byte against a character literal — <code>s[1] == 'e'</code> is a type error, because <code>int</code> and <code>char</code> are distinct types and Tycho does not compare across types (§13.2).</p>
 <h3 id="525-string">5.2.5 <code>string</code></h3>
-<p><code>string</code> is an <strong>immutable, length-counted, byte-safe</strong> sequence of bytes. Its</p>
-<p>length is stored explicitly, so interior <code>NUL</code> bytes are preserved and all</p>
-<p>length-sensitive operations (comparison, concatenation, search, indexing) use</p>
-<p>the stored length, not a <code>NUL</code> terminator. Indexing <code>s[i]</code> yields the <code>i</code>-th</p>
-<p>byte as an <code>int</code> in <code>0..255</code> and aborts if <code>i</code> is out of bounds; a <code>string</code> is</p>
-<p>not assignable through an index (<code>s[i] = v</code> is a compile error). Operations are</p>
-<p>detailed in §16.</p>
-<p><code>s[i]</code> yields <code>int</code>, not <code>char</code>. The builtin <code>char_at(s, i)</code> (<a href="16-builtins.html#295-strings">§29.5</a>)</p>
-<p>reads the same byte with the same out-of-bounds abort but with static type</p>
-<p><code>char</code>, so <code>char_at(s, i) == 'e'</code> is the supported spelling</p>
-<p>and <code>to_int(char_at(s, i)) == s[i]</code> holds for every in-range <code>i</code>.</p>
+<p><code>string</code> is an <strong>immutable, length-counted, byte-safe</strong> sequence of bytes. Its length is stored explicitly, so interior <code>NUL</code> bytes are preserved and all length-sensitive operations (comparison, concatenation, search, indexing) use the stored length, not a <code>NUL</code> terminator. Indexing <code>s[i]</code> yields the <code>i</code>-th byte as an <code>int</code> in <code>0..255</code> and aborts if <code>i</code> is out of bounds; a <code>string</code> is not assignable through an index (<code>s[i] = v</code> is a compile error). Operations are detailed in §16.</p>
+<p><code>s[i]</code> yields <code>int</code>, not <code>char</code>. The builtin <code>char_at(s, i)</code> (<a href="16-builtins.html#295-strings">§29.5</a>) reads the same byte with the same out-of-bounds abort but with static type <code>char</code>, so <code>char_at(s, i) == 'e'</code> is the supported spelling and <code>to_int(char_at(s, i)) == s[i]</code> holds for every in-range <code>i</code>.</p>
 <p>Rationale: an <code>int</code> result avoids silent wrapping in arithmetic and indexing.</p>
 <h3 id="526-bytes">5.2.6 <code>bytes</code></h3>
-<p><code>bytes</code> is an <strong>immutable binary buffer</strong> — the same length-counted, byte-safe</p>
-<p>representation as <code>string</code> but a <strong>distinct type</strong>. It is produced by</p>
-<p><code>to_bytes</code> from a <code>string</code> (a zero-cost reinterpret) or from an <code>[int]</code> of byte</p>
-<p>values (each truncated <code>&amp; 0xFF</code>; §8) — the latter being the only way to construct</p>
-<p>a binary <code>bytes</code> with interior <code>0x00</code> bytes. There is no <code>bytes</code> literal. <code>bytes</code> exists</p>
-<p>primarily to cross the FFI boundary as a <code>(pointer, length)</code> pair</p>
-<p>(<a href="14-ffi.html">§24</a>).</p>
-<p><strong>Operators.</strong> <code>bytes</code> supports exactly the operator set <code>string</code> does, and with</p>
-<p>the same meanings, because it is the same buffer:</p>
+<p><code>bytes</code> is an <strong>immutable binary buffer</strong> — the same length-counted, byte-safe representation as <code>string</code> but a <strong>distinct type</strong>. It is produced by <code>to_bytes</code> from a <code>string</code> (a zero-cost reinterpret) or from an <code>[int]</code> of byte values (each truncated <code>&amp; 0xFF</code>; §8) — the latter being the only way to construct a binary <code>bytes</code> with interior <code>0x00</code> bytes. There is no <code>bytes</code> literal. <code>bytes</code> exists primarily to cross the FFI boundary as a <code>(pointer, length)</code> pair (<a href="14-ffi.html">§24</a>).</p>
+<p><strong>Operators.</strong> <code>bytes</code> supports exactly the operator set <code>string</code> does, and with the same meanings, because it is the same buffer:</p>
 <table>
 <tr><th>Form</th><th>Result</th><th>Notes</th></tr>
 <tr><td><code>len(b)</code></td><td><code>int</code></td><td>byte count, from the length header (O(1))</td></tr>
@@ -121,29 +92,9 @@
 <tr><td><code>b + 'c'</code></td><td><code>bytes</code></td><td>appends the char's single byte; one-directional, like <code>string + char</code> (<a href="09-expressions.html#132-operators">§13.2</a>)</td></tr>
 <tr><td><code>a == b</code>, <code>a != b</code></td><td><code>bool</code></td><td>byte-wise, by the length headers</td></tr>
 </table>
-<p><strong>A <code>bytes</code> slice is not a bounds check.</strong> The clamp in the <code>b[i:j]</code> row is</p>
-<p>silent: on a 5-byte <code>bytes</code>, <code>b[2:10]</code> is three bytes and <code>b[7:9]</code> is zero, and</p>
-<p>neither form reports that the requested range did not exist. An <strong>array</strong> slice</p>
-<p>written the same way aborts instead — <code>[1,2,3,4,5][2:10]</code> dies</p>
-<p><code>tycho: slice [2:10] out of bounds (len 5)</code></p>
-<p>(<a href="12-aggregates.html#166-slices-xsab">§16.6</a>). The two MUST differ: a <code>bytes</code> or</p>
-<p><code>string</code> slice is exactly <code>substr</code> (§29), the function form, which clamps by</p>
-<p>definition, while an array slice has no such equivalent. A program therefore</p>
-<p>MUST NOT infer from a slice that returned normally that its bounds were in</p>
-<p>range. Where the range is itself the thing being verified — a parser reading a</p>
-<p>fixed-width field, say — <code>strings.slice_bytes(b, start, stop)</code> and</p>
-<p><code>strings.slice_str(s, start, stop)</code> (<a href="18-library.html#324-strings">§32.4</a>) take</p>
-<p>the same two bounds and return <code>Result(_, SliceErr)</code>, refusing what the clamp</p>
-<p>would have repaired.</p>
-<p>There is <strong>no implicit conversion between <code>string</code> and <code>bytes</code></strong> in either</p>
-<p>direction: <code>b + "s"</code> and <code>s + b</code> are type errors. The boundary is crossed only by</p>
-<p><code>to_bytes</code> / <code>to_str</code>, both zero-cost reinterprets (§8). Arithmetic other than</p>
-<p><code>+</code> is a type error naming this set. <code>bytes</code> has no other operators: iteration</p>
-<p>(<code>for x in b</code>) and <code>in</code> are not provided.</p>
-<p>Constructing a <code>bytes</code> from computed byte values — including an interior <code>0x00</code>,</p>
-<p>which a <code>string</code> cannot hold — reading bytes back out by index, taking a</p>
-<p>sub-buffer, and reinterpreting to <code>string</code> (the two share the length-counted</p>
-<p>buffer):</p>
+<p><strong>A <code>bytes</code> slice is not a bounds check.</strong> The clamp in the <code>b[i:j]</code> row is silent: on a 5-byte <code>bytes</code>, <code>b[2:10]</code> is three bytes and <code>b[7:9]</code> is zero, and neither form reports that the requested range did not exist. An <strong>array</strong> slice written the same way aborts instead — <code>[1,2,3,4,5][2:10]</code> dies <code>tycho: slice [2:10] out of bounds (len 5)</code> (<a href="12-aggregates.html#166-slices-xsab">§16.6</a>). The two MUST differ: a <code>bytes</code> or <code>string</code> slice is exactly <code>substr</code> (§29), the function form, which clamps by definition, while an array slice has no such equivalent. A program therefore MUST NOT infer from a slice that returned normally that its bounds were in range. Where the range is itself the thing being verified — a parser reading a fixed-width field, say — <code>strings.slice_bytes(b, start, stop)</code> and <code>strings.slice_str(s, start, stop)</code> (<a href="18-library.html#324-strings">§32.4</a>) take the same two bounds and return <code>Result(_, SliceErr)</code>, refusing what the clamp would have repaired.</p>
+<p>There is <strong>no implicit conversion between <code>string</code> and <code>bytes</code></strong> in either direction: <code>b + "s"</code> and <code>s + b</code> are type errors. The boundary is crossed only by <code>to_bytes</code> / <code>to_str</code>, both zero-cost reinterprets (§8). Arithmetic other than <code>+</code> is a type error naming this set. <code>bytes</code> has no other operators: iteration (<code>for x in b</code>) and <code>in</code> are not provided.</p>
+<p>Constructing a <code>bytes</code> from computed byte values — including an interior <code>0x00</code>, which a <code>string</code> cannot hold — reading bytes back out by index, taking a sub-buffer, and reinterpreting to <code>string</code> (the two share the length-counted buffer):</p>
 <pre><code class="language-tycho">fn main():
     b := to_bytes([72, 105, 0, 255])     # 'H' 'i' NUL 0xFF; each element &amp; 0xFF
     s := to_str(b)                        # reinterpret: same buffer, byte-safe
@@ -159,56 +110,20 @@
 6 33 63
 </code></pre>
 <h3 id="527-fixed-width-integers-u8u16u32u64-i8i16i32i64">5.2.7 Fixed-width integers <code>u8</code>/<code>u16</code>/<code>u32</code>/<code>u64</code>, <code>i8</code>/<code>i16</code>/<code>i32</code>/<code>i64</code></h3>
-<p>The fixed-width integer family gives <strong>unsigned</strong> (<code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>) and</p>
-<p><strong>signed</strong> (<code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>) integers of exactly 8, 16, 32, and 64 bits.</p>
-<p>Each is a distinct type from <code>int</code> and from every other; they do <strong>not</strong> mix</p>
-<p>implicitly with <code>int</code> or with each other. Arithmetic <strong>wraps at the type's width</strong></p>
-<p>(defined — modular for the unsigned types, two's-complement for the signed via</p>
-<p><code>-fwrapv</code>). The right shift <code>&gt;&gt;</code> is <strong>logical</strong> on the unsigned types and</p>
-<p><strong>arithmetic</strong> (sign-preserving) on the signed; a shift count <code>≥</code> the width yields</p>
-<p><code>0</code> and a negative count aborts (<a href="09-expressions.html#132-operators">§13.2</a>);</p>
-<p>division and modulo by zero abort. A value is produced by the matching <code>to_u8</code> …</p>
-<p><code>to_i64</code> conversion or by adapting an integer literal in that type's context (§8).</p>
-<p><code>int</code> (64-bit signed) remains the default for general arithmetic; the fixed-width</p>
-<p>types are for bit-level work, packing, and matching a C ABI. They cross the FFI</p>
-<p>boundary as their exact C width (<a href="14-ffi.html">§24</a>).</p>
+<p>The fixed-width integer family gives <strong>unsigned</strong> (<code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>) and <strong>signed</strong> (<code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>) integers of exactly 8, 16, 32, and 64 bits. Each is a distinct type from <code>int</code> and from every other; they do <strong>not</strong> mix implicitly with <code>int</code> or with each other. Arithmetic <strong>wraps at the type's width</strong> (defined — modular for the unsigned types, two's-complement for the signed via <code>-fwrapv</code>). The right shift <code>&gt;&gt;</code> is <strong>logical</strong> on the unsigned types and <strong>arithmetic</strong> (sign-preserving) on the signed; a shift count <code>≥</code> the width yields <code>0</code> and a negative count aborts (<a href="09-expressions.html#132-operators">§13.2</a>); division and modulo by zero abort. A value is produced by the matching <code>to_u8</code> … <code>to_i64</code> conversion or by adapting an integer literal in that type's context (§8). <code>int</code> (64-bit signed) remains the default for general arithmetic; the fixed-width types are for bit-level work, packing, and matching a C ABI. They cross the FFI boundary as their exact C width (<a href="14-ffi.html">§24</a>).</p>
 <h3 id="528-f32">5.2.8 <code>f32</code></h3>
-<p><code>f32</code> is an <strong>IEEE-754 binary32</strong> (single-precision) value, distinct from</p>
-<p><code>float</code>. It is produced by <code>to_f32</code> or by adapting an integer or float literal</p>
-<p>in an <code>f32</code> context (§8); it promotes to <code>float</code> (binary64) for <code>str</code>.</p>
+<p><code>f32</code> is an <strong>IEEE-754 binary32</strong> (single-precision) value, distinct from <code>float</code>. It is produced by <code>to_f32</code> or by adapting an integer or float literal in an <code>f32</code> context (§8); it promotes to <code>float</code> (binary64) for <code>str</code>.</p>
 <h3 id="529-ptr">5.2.9 <code>ptr</code></h3>
-<p><code>ptr</code> is an <strong>opaque FFI pointer</strong> (<code>void*</code>). Tycho never dereferences it; it</p>
-<p>supports only the <code>null</code> literal, being passed to and returned from <code>extern</code></p>
-<p>functions, <code>null</code>-comparison, and <code>is_null</code> (<a href="14-ffi.html">§24</a>).</p>
+<p><code>ptr</code> is an <strong>opaque FFI pointer</strong> (<code>void*</code>). Tycho never dereferences it; it supports only the <code>null</code> literal, being passed to and returned from <code>extern</code> functions, <code>null</code>-comparison, and <code>is_null</code> (<a href="14-ffi.html">§24</a>).</p>
 <h2 id="53-composite-types">5.3 Composite types</h2>
-<p>The type-level definition of each composite is given here; its construction,</p>
-<p>indexing, mutation, and place semantics are specified in Part VI (§16–§19) and its arena behavior in <a href="07-memory-model.html">§9–§11</a>.</p>
+<p>The type-level definition of each composite is given here; its construction, indexing, mutation, and place semantics are specified in Part VI (§16–§19) and its arena behavior in <a href="07-memory-model.html">§9–§11</a>.</p>
 <h3 id="531-arrays-t">5.3.1 Arrays <code>[T]</code></h3>
-<p><code>[T]</code> is a <strong>growable, value-semantic array</strong> of elements of type <code>T</code>; <code>T</code> may</p>
-<p>be any type. Two array types are the same iff their element types are the same.</p>
-<p>An empty array literal requires an element type (<code>[]int</code>). Indexing is</p>
-<p>bounds-checked (out-of-bounds aborts). <code>void</code> is <strong>not</strong> permitted as a</p>
-<p>bracket-array element type in a type position. <code>bool</code> <strong>is</strong> permitted as a</p>
-<p>dynamic element — <code>[bool]</code> is a supported array type — and is rejected only in</p>
-<p>the inline fixed-capacity forms <code>[N]T</code>, <code>[$N]T</code> and <code>bounded[N]T</code>, which have no</p>
-<p>bool codegen.</p>
+<p><code>[T]</code> is a <strong>growable, value-semantic array</strong> of elements of type <code>T</code>; <code>T</code> may be any type. Two array types are the same iff their element types are the same. An empty array literal requires an element type (<code>[]int</code>). Indexing is bounds-checked (out-of-bounds aborts). <code>void</code> is <strong>not</strong> permitted as a bracket-array element type in a type position. <code>bool</code> <strong>is</strong> permitted as a dynamic element — <code>[bool]</code> is a supported array type — and is rejected only in the inline fixed-capacity forms <code>[N]T</code>, <code>[$N]T</code> and <code>bounded[N]T</code>, which have no bool codegen.</p>
 <h3 id="532-fixed-size-arrays-nt">5.3.2 Fixed-size arrays <code>[N]T</code></h3>
-<p><code>[N]T</code> is a <strong>fixed-size array</strong> of exactly <code>N</code> elements, stored inline and</p>
-<p>copied by value. <code>N</code> is a positive integer literal or an <code>int</code> <code>const</code>; it is</p>
-<p>part of the type, so <code>[3]int</code> and <code>[4]int</code> are distinct types and <code>len</code> is the</p>
-<p>compile-time constant <code>N</code>. Indexing, index assignment, <code>==</code>, value copy, <code>str</code></p>
-<p>and <code>for … in</code> iteration are all supported. <code>push</code>, <code>pop</code> and slicing are not,</p>
-<p>and MUST be rejected at compile time — an inline array has no separate buffer to</p>
-<p>grow or to take a view of. The generic form <code>[$N]T</code> is a const generic (§7.4).</p>
+<p><code>[N]T</code> is a <strong>fixed-size array</strong> of exactly <code>N</code> elements, stored inline and copied by value. <code>N</code> is a positive integer literal or an <code>int</code> <code>const</code>; it is part of the type, so <code>[3]int</code> and <code>[4]int</code> are distinct types and <code>len</code> is the compile-time constant <code>N</code>. Indexing, index assignment, <code>==</code>, value copy, <code>str</code> and <code>for … in</code> iteration are all supported. <code>push</code>, <code>pop</code> and slicing are not, and MUST be rejected at compile time — an inline array has no separate buffer to grow or to take a view of. The generic form <code>[$N]T</code> is a const generic (§7.4).</p>
 <h3 id="533-tuples">5.3.3 Tuples</h3>
-<p>A tuple <code>(T1, …, Tn)</code> is an <strong>anonymous product</strong> of 2 to 8 elements, identified</p>
-<p>structurally. Its elements are accessed by position (<code>t.0</code>, <code>t.1</code>) and are</p>
-<p>assignable places. Multiple return values and destructuring use tuples</p>
-<p>(§17).</p>
-<p><strong>A tuple is the shape for "a value AND a classification."</strong> Since §6.2(7) a tuple</p>
-<p><strong>literal</strong>'s elements are checked against the declared element types, so a</p>
-<p><code>Result</code> element may be written inline (<code>return (Err(Timeout), buf)</code>) without a</p>
-<p>typed local.</p>
+<p>A tuple <code>(T1, …, Tn)</code> is an <strong>anonymous product</strong> of 2 to 8 elements, identified structurally. Its elements are accessed by position (<code>t.0</code>, <code>t.1</code>) and are assignable places. Multiple return values and destructuring use tuples (§17).</p>
+<p><strong>A tuple is the shape for "a value AND a classification."</strong> Since §6.2(7) a tuple <strong>literal</strong>'s elements are checked against the declared element types, so a <code>Result</code> element may be written inline (<code>return (Err(Timeout), buf)</code>) without a typed local.</p>
 <p>Rationale: a tuple needs neither a caller-declared out-parameter nor a nominal wrapper type per call site.</p>
 <pre><code class="language-tycho"># The value and the verdict leave together; nothing is a sentinel.
 fn parse_port(s: string) -&gt; (int, bool):
@@ -233,66 +148,31 @@ fn main():
 <pre><code class="language-output">8080 true
 0 false
 </code></pre>
-<p>Examples in the corelib use this shape: <code>strings.split_once</code>, <code>path.split_path</code>,</p>
-<p><code>datetime.parse_offset</code>, <code>bignum.divmod</code>, and <code>httpd.read_request_capped</code>.</p>
-<p>For a C function that must classify a payload the FFI has its own</p>
-<p>shape, since a tuple does not cross the boundary — see</p>
-<p><a href="14-ffi.html#2411-returning-a-payload-and-a-classification">§24.1.1</a>.</p>
+<p>Examples in the corelib use this shape: <code>strings.split_once</code>, <code>path.split_path</code>, <code>datetime.parse_offset</code>, <code>bignum.divmod</code>, and <code>httpd.read_request_capped</code>. For a C function that must classify a payload the FFI has its own shape, since a tuple does not cross the boundary — see <a href="14-ffi.html#2411-returning-a-payload-and-a-classification">§24.1.1</a>.</p>
 <h3 id="534-structs">5.3.4 Structs</h3>
-<p>A <code>struct</code> is a <strong>nominal product type</strong> with named fields, constructed</p>
-<p>positionally in field-declaration order. A field may be recursive **only</p>
-<p>through a container** (e.g. <code>children: [Node]</code>); a direct by-value self-field</p>
-<p>(<code>next: Node</code> or <code>next: Option(Node)</code> directly) is rejected, because an inline</p>
-<p>self-embedding would be infinitely sized (§17). The same rule applies to a</p>
-<p>*cycle* of by-value fields (<code>A</code> holding a <code>B</code> that holds an <code>A</code>), which is</p>
-<p>rejected with the same infinite-type diagnostic.</p>
-<p>Type declarations are <strong>order-independent within a file</strong>, as functions are: a</p>
-<p>field may name a <code>struct</code>, <code>enum</code>, <code>type</code> or <code>handle</code> declared further down.</p>
+<p>A <code>struct</code> is a <strong>nominal product type</strong> with named fields, constructed positionally in field-declaration order. A field may be recursive <strong>only through a container</strong> (e.g. <code>children: [Node]</code>); a direct by-value self-field (<code>next: Node</code> or <code>next: Option(Node)</code> directly) is rejected, because an inline self-embedding would be infinitely sized (§17). The same rule applies to a *cycle* of by-value fields (<code>A</code> holding a <code>B</code> that holds an <code>A</code>), which is rejected with the same infinite-type diagnostic.</p>
+<p>Type declarations are <strong>order-independent within a file</strong>, as functions are: a field may name a <code>struct</code>, <code>enum</code>, <code>type</code> or <code>handle</code> declared further down.</p>
 <h3 id="535-maps-k-v">5.3.5 Maps <code>[K: V]</code></h3>
-<p>A map <code>[K: V]</code> associates keys of type <code>K</code> with values of type <code>V</code>. The **value</p>
-<p>type <code>V</code> is unrestricted<strong> (any type). The </strong>legal key types** are exactly:</p>
+<p>A map <code>[K: V]</code> associates keys of type <code>K</code> with values of type <code>V</code>. The <strong>value type <code>V</code> is unrestricted</strong> (any type). The <strong>legal key types</strong> are exactly:</p>
 <ul>
 <li><code>string</code>;</li>
 <li><code>int</code>;</li>
 <li>a <strong>newtype</strong> whose underlying type is <code>int</code> or <code>string</code>;</li>
 <li>a <strong>fieldless enum</strong> (hashed by its variant tag); and</li>
-<li>a <strong>composite</strong> (<code>struct</code>, tuple, or array) all of whose leaf types are</li>
+<li>a <strong>composite</strong> (<code>struct</code>, tuple, or array) all of whose leaf types are hashable — where a hashable leaf is <code>int</code>, <code>float</code>, <code>bool</code>, <code>char</code>, <code>string</code>, <code>bytes</code>, or (recursively) a struct/tuple/array of hashable leaves.</li>
 </ul>
-<p>hashable — where a hashable leaf is <code>int</code>, <code>float</code>, <code>bool</code>, <code>char</code>, <code>string</code>,</p>
-<p><code>bytes</code>, or (recursively) a struct/tuple/array of hashable leaves.</p>
-<p>All other key types are rejected, including a bare <code>float</code>, <code>bool</code>, <code>char</code>, or</p>
-<p><code>bytes</code> key, an enum variant carrying a payload, and a map-typed key. Note that</p>
-<p><code>char</code> and <code>bytes</code> are hashable as composite *leaves* but are <strong>not</strong> permitted</p>
-<p>as a top-level key type.</p>
-<p>Map operations (<code>m[k]</code> as a place, absent-key read yielding the value's zero,</p>
-<p><code>k in m</code>, <code>delete m[k]</code>, <code>m.get</code>) are specified in §18.</p>
+<p>All other key types are rejected, including a bare <code>float</code>, <code>bool</code>, <code>char</code>, or <code>bytes</code> key, an enum variant carrying a payload, and a map-typed key. Note that <code>char</code> and <code>bytes</code> are hashable as composite *leaves* but are <strong>not</strong> permitted as a top-level key type.</p>
+<p>Map operations (<code>m[k]</code> as a place, absent-key read yielding the value's zero, <code>k in m</code>, <code>delete m[k]</code>, <code>m.get</code>) are specified in §18.</p>
 <h3 id="536-enums-option-result">5.3.6 Enums, <code>Option</code>, <code>Result</code></h3>
-<p>An <code>enum</code> is a <strong>nominal sum type</strong>; each variant is uniquely named **within its</p>
-<p>package** (<a href="12-aggregates.html#191-enum-declaration-and-variants">§19.1</a> is</p>
-<p>normative for the scoping rule) and may carry a payload of up to 8 types. <code>Option(T)</code> is the built-in enum with</p>
-<p>variants <code>Some(T)</code> and <code>None</code>; <code>Result(T, E)</code> is the built-in enum with variants</p>
-<p><code>Ok(T)</code> and <code>Err(E)</code>. Enums are consumed by exhaustive <code>match</code> and support</p>
-<p><code>or_return</code> for <code>Option</code>/<code>Result</code> (§19). Recursive payloads are</p>
-<p>permitted (they are arena-allocated, hence finite).</p>
-<p><strong><code>Result(void, E)</code>.</strong> A <code>Result</code>'s ok payload MAY be <code>void</code>, for an operation</p>
-<p>that either fails with a reason or succeeds with nothing to report. <code>void</code> is a</p>
-<p>type with <strong>no values</strong>, so:</p>
+<p>An <code>enum</code> is a <strong>nominal sum type</strong>; each variant is uniquely named <strong>within its package</strong> (<a href="12-aggregates.html#191-enum-declaration-and-variants">§19.1</a> is normative for the scoping rule) and may carry a payload of up to 8 types. <code>Option(T)</code> is the built-in enum with variants <code>Some(T)</code> and <code>None</code>; <code>Result(T, E)</code> is the built-in enum with variants <code>Ok(T)</code> and <code>Err(E)</code>. Enums are consumed by exhaustive <code>match</code> and support <code>or_return</code> for <code>Option</code>/<code>Result</code> (§19). Recursive payloads are permitted (they are arena-allocated, hence finite).</p>
+<p><strong><code>Result(void, E)</code>.</strong> A <code>Result</code>'s ok payload MAY be <code>void</code>, for an operation that either fails with a reason or succeeds with nothing to report. <code>void</code> is a type with <strong>no values</strong>, so:</p>
 <ul>
 <li>it is constructed by a zero-argument <code>Ok()</code>, and <code>Ok(x)</code> is an error;</li>
-<li>it is matched by a <strong>bare <code>Ok:</code> arm</strong>, the same shape a fieldless enum variant</li>
-</ul>
-<p>uses, and <code>Ok(x)</code> as an arm is an error;</p>
-<ul>
-<li>nothing can bind one: <code>x := f() or_return</code> on such a <code>Result</code> is rejected as</li>
-</ul>
-<p>binding a void value, and the statement form <code>f() or_return</code> is what replaces</p>
-<p>it (<a href="02-grammar.html#431-simple-statements">§4.3.1</a>);</p>
-<ul>
+<li>it is matched by a <strong>bare <code>Ok:</code> arm</strong>, the same shape a fieldless enum variant uses, and <code>Ok(x)</code> as an arm is an error;</li>
+<li>nothing can bind one: <code>x := f() or_return</code> on such a <code>Result</code> is rejected as binding a void value, and the statement form <code>f() or_return</code> is what replaces it (<a href="02-grammar.html#431-simple-statements">§4.3.1</a>);</li>
 <li>a <code>Result</code>'s ERROR type may NOT be <code>void</code> — <code>Err</code> always carries a value.</li>
 </ul>
-<p><code>void</code> is spellable in <strong>no other position</strong>, and the permission does not nest:</p>
-<p><code>Result(Option(void), E)</code>, <code>Result([void], E)</code> and <code>Result((void, int), E)</code> are</p>
-<p>all rejected, as is a <code>void</code> parameter, field, element or return annotation.</p>
+<p><code>void</code> is spellable in <strong>no other position</strong>, and the permission does not nest: <code>Result(Option(void), E)</code>, <code>Result([void], E)</code> and <code>Result((void, int), E)</code> are all rejected, as is a <code>void</code> parameter, field, element or return annotation.</p>
 <pre><code class="language-tycho">fn touch(x: int) -&gt; Result(void, string):
     if x &lt; 0:
         return Err("negative")
@@ -309,102 +189,29 @@ fn report(r: Result(void, string)) -&gt; string:
         Err(e):
             return e
 </code></pre>
-<p><code>Ok(1)</code> at that return type is rejected — `Result(void, string) carries no ok</p>
-<p>value -- write Ok(), not Ok(x)<code> — and so is an </code>Ok(v)` arm against it.</p>
+<p><code>Ok(1)</code> at that return type is rejected — <code>Result(void, string) carries no ok value -- write Ok(), not Ok(x)</code> — and so is an <code>Ok(v)</code> arm against it.</p>
 <h3 id="537-soa">5.3.7 <code>soa</code></h3>
-<p><code>soa [S]</code> is a <strong>struct-of-arrays</strong> collection whose element type <code>S</code> MUST be a</p>
-<p>struct; it presents the same value-semantic array interface while storing each</p>
-<p>field in its own backing array (§17).</p>
+<p><code>soa [S]</code> is a <strong>struct-of-arrays</strong> collection whose element type <code>S</code> MUST be a struct; it presents the same value-semantic array interface while storing each field in its own backing array (§17).</p>
 <h3 id="538-function-types">5.3.8 Function types</h3>
-<p><code>fn(P1, …, Pn) -&gt; R</code> is a <strong>first-class function type</strong> (up to 8 parameters),</p>
-<p>identified structurally. A parameter type may not be <code>void</code>. A function *value*</p>
-<p>is a closure over captured state (§15); function values are <strong>not comparable</strong></p>
-<p>(§5.5). A function that has an <code>inout</code> parameter</p>
-<p>cannot be used as a first-class value.</p>
+<p><code>fn(P1, …, Pn) -&gt; R</code> is a <strong>first-class function type</strong> (up to 8 parameters), identified structurally. A parameter type may not be <code>void</code>. A function *value* is a closure over captured state (§15); function values are <strong>not comparable</strong> (§5.5). A function that has an <code>inout</code> parameter cannot be used as a first-class value.</p>
 <h3 id="539-typed-handles">5.3.9 Typed handles</h3>
-<p>A <code>handle</code> type is a <strong>nominal, affine, opaque FFI resource</strong> — a <code>void*</code> with a</p>
-<p>declared C free function that runs at scope exit. A handle value cannot be</p>
-<p>copied, stored in any aggregate, captured by a closure or <code>parallel for</code>, or</p>
-<p>returned from a Tycho function (§25). The concurrency handle types</p>
-<p><code>Task(T)</code> and <code>Channel(T)</code> are similarly affine and non-storable</p>
-<p>(<a href="13-concurrency.html">§20</a>).</p>
+<p>A <code>handle</code> type is a <strong>nominal, affine, opaque FFI resource</strong> — a <code>void*</code> with a declared C free function that runs at scope exit. A handle value cannot be copied, stored in any aggregate, captured by a closure or <code>parallel for</code>, or returned from a Tycho function (§25). The concurrency handle types <code>Task(T)</code> and <code>Channel(T)</code> are similarly affine and non-storable (<a href="13-concurrency.html">§20</a>).</p>
 <h3 id="5310-boundednt">5.3.10 <code>bounded[N]T</code></h3>
-<p><code>bounded[N]T</code> is an <strong>inline, fixed-capacity, variable-count</strong> collection: it</p>
-<p>holds between 0 and <code>N</code> elements of type <code>T</code> stored *inside* its container —</p>
-<p>never in a separate arena buffer — and is copied by value. It differs from</p>
-<p>[<code>[N]T</code>](#532-fixed-size-arrays-nt) in carrying a runtime element count, and</p>
-<p>from [<code>[T]</code>](#531-arrays-t) in that the count MUST NOT exceed the compile-time</p>
-<p>capacity <code>N</code>. The capacity is part of the type: <code>bounded[4]int</code> and</p>
-<p><code>bounded[8]int</code> are distinct types, and both are distinct from <code>[4]int</code> and</p>
-<p>from <code>[int]</code>.</p>
-<p>The capacity MUST be written either as a positive integer <strong>literal</strong> or as the</p>
-<p>name of a positive <code>int</code> <code>const</code> — the same two spellings a fixed-size</p>
-<p>[<code>[C]T</code>](#532-fixed-size-arrays-nt) accepts (§5.3.2). A capacity of <code>0</code>, a</p>
-<p>non-integer literal, an absent capacity, a negated literal (<code>-1</code> is a unary</p>
-<p>minus applied to a literal, not a literal), a name that is not a <code>const</code>, and a</p>
-<p><code>const</code> whose value is not a positive integer MUST all be rejected.</p>
-<p>The element type <code>T</code> MUST NOT be <code>bool</code> or <code>void</code>, mirroring the bracket-array</p>
-<p>element-type restriction of §5.3.1. An affine handle type — including</p>
-<p><code>Task(T)</code> and <code>Channel(T)</code> — MUST NOT appear as a <code>bounded</code> element, because a</p>
-<p>handle cannot be stored in any aggregate (§5.3.9). **Every other type is a</p>
-<p>valid element**, including an aggregate one: a <code>struct</code>, a tuple, a map, a</p>
-<p><code>soa</code>, an <code>Option</code>, a <code>Result</code>, <code>bytes</code>, a fixed-size array <code>[N]E</code>, a dynamic</p>
-<p>array <code>[E]</code>, a function type, an enum, and a nested <code>bounded[M]E</code>. A <code>bounded</code></p>
-<p>holding an aggregate is valid in every stored position — a local, a parameter,</p>
-<p>a struct field and a return type.</p>
-<p>Because a <code>bounded[N]T</code> stores its elements <strong>inline</strong>, <code>T</code> MUST be a type of</p>
-<p>known size at that point: a type whose own definition reaches back to the</p>
-<p><code>bounded</code> that contains it (<code>struct Node: kids: [2]Node</code>) is an infinite type</p>
-<p>and MUST be rejected, exactly as a directly self-containing struct is (§5.3.2</p>
-<p>applies the same rule to <code>[N]T</code>). Use a dynamic array or an <code>Option</code> for the</p>
-<p>indirection.</p>
-<p><code>len</code> yields the <strong>runtime count</strong>, not <code>N</code>. <code>push</code> appends and, when the</p>
-<p>collection is already full, <strong>aborts</strong> the program rather than growing; that</p>
-<p>trap is the point of the type. An array literal longer than <code>N</code> is rejected at</p>
-<p>compile time. Indexing, index assignment, <code>==</code>, value copy, <code>str</code>, and <code>for … in</code></p>
-<p>iteration behave as they do for a fixed-size array. <code>pop</code>, slicing, and</p>
-<p><code>reserve</code> MUST be rejected on a <code>bounded</code> value.</p>
+<p><code>bounded[N]T</code> is an <strong>inline, fixed-capacity, variable-count</strong> collection: it holds between 0 and <code>N</code> elements of type <code>T</code> stored *inside* its container — never in a separate arena buffer — and is copied by value. It differs from [<code>[N]T</code>](#532-fixed-size-arrays-nt) in carrying a runtime element count, and from [<code>[T]</code>](#531-arrays-t) in that the count MUST NOT exceed the compile-time capacity <code>N</code>. The capacity is part of the type: <code>bounded[4]int</code> and <code>bounded[8]int</code> are distinct types, and both are distinct from <code>[4]int</code> and from <code>[int]</code>.</p>
+<p>The capacity MUST be written either as a positive integer <strong>literal</strong> or as the name of a positive <code>int</code> <code>const</code> — the same two spellings a fixed-size [<code>[C]T</code>](#532-fixed-size-arrays-nt) accepts (§5.3.2). A capacity of <code>0</code>, a non-integer literal, an absent capacity, a negated literal (<code>-1</code> is a unary minus applied to a literal, not a literal), a name that is not a <code>const</code>, and a <code>const</code> whose value is not a positive integer MUST all be rejected.</p>
+<p>The element type <code>T</code> MUST NOT be <code>bool</code> or <code>void</code>, mirroring the bracket-array element-type restriction of §5.3.1. An affine handle type — including <code>Task(T)</code> and <code>Channel(T)</code> — MUST NOT appear as a <code>bounded</code> element, because a handle cannot be stored in any aggregate (§5.3.9). <strong>Every other type is a valid element</strong>, including an aggregate one: a <code>struct</code>, a tuple, a map, a <code>soa</code>, an <code>Option</code>, a <code>Result</code>, <code>bytes</code>, a fixed-size array <code>[N]E</code>, a dynamic array <code>[E]</code>, a function type, an enum, and a nested <code>bounded[M]E</code>. A <code>bounded</code> holding an aggregate is valid in every stored position — a local, a parameter, a struct field and a return type.</p>
+<p>Because a <code>bounded[N]T</code> stores its elements <strong>inline</strong>, <code>T</code> MUST be a type of known size at that point: a type whose own definition reaches back to the <code>bounded</code> that contains it (<code>struct Node: kids: [2]Node</code>) is an infinite type and MUST be rejected, exactly as a directly self-containing struct is (§5.3.2 applies the same rule to <code>[N]T</code>). Use a dynamic array or an <code>Option</code> for the indirection.</p>
+<p><code>len</code> yields the <strong>runtime count</strong>, not <code>N</code>. <code>push</code> appends and, when the collection is already full, <strong>aborts</strong> the program rather than growing; that trap is the point of the type. An array literal longer than <code>N</code> is rejected at compile time. Indexing, index assignment, <code>==</code>, value copy, <code>str</code>, and <code>for … in</code> iteration behave as they do for a fixed-size array. <code>pop</code>, slicing, and <code>reserve</code> MUST be rejected on a <code>bounded</code> value.</p>
 <h3 id="5311-vectornt">5.3.11 <code>vector[N]T</code></h3>
-<p><code>vector[N]T</code> is a fixed-size array whose arithmetic is defined to lower to a</p>
-<p><strong>single machine vector operation</strong> rather than to a loop over its lanes. In</p>
-<p>every other respect it behaves as a [<code>[N]T</code>](#532-fixed-size-arrays-nt): it is</p>
-<p>an inline value of exactly <code>N</code> elements, copied by value, initialised from an</p>
-<p>array literal, indexed and index-assigned, compared with <code>==</code> lane by lane, and</p>
-<p><code>len</code> yields <code>N</code>.</p>
-<p>The count <code>N</code> MUST be written either as an integer <strong>literal</strong> or as the name of</p>
-<p>an <code>int</code> <code>const</code>, and its value MUST be a <strong>power of two between 2 and 64</strong>. A</p>
-<p>count of <code>1</code> is a power of two and is nevertheless rejected: a one-lane vector</p>
-<p>is a scalar under another spelling. The count is part of the type, so</p>
-<p><code>vector[4]float</code> and <code>vector[8]float</code> are distinct types, and both are distinct</p>
-<p>from <code>[4]float</code>.</p>
-<p>A width no target register holds is <strong>not</strong> an error: an implementation splits</p>
-<p>it across as many registers as the machine has. <code>vector[8]float</code> is legal on a</p>
-<p>machine with 128-bit registers.</p>
-<p>The element type <code>T</code> MUST be <code>int</code>, <code>float</code> or <code>f32</code>; a type parameter <code>$T</code> is not in it, so a</p>
-<p><code>vector</code> never appears in a generic template's own signature.</p>
+<p><code>vector[N]T</code> is a fixed-size array whose arithmetic is defined to lower to a <strong>single machine vector operation</strong> rather than to a loop over its lanes. In every other respect it behaves as a [<code>[N]T</code>](#532-fixed-size-arrays-nt): it is an inline value of exactly <code>N</code> elements, copied by value, initialised from an array literal, indexed and index-assigned, compared with <code>==</code> lane by lane, and <code>len</code> yields <code>N</code>.</p>
+<p>The count <code>N</code> MUST be written either as an integer <strong>literal</strong> or as the name of an <code>int</code> <code>const</code>, and its value MUST be a <strong>power of two between 2 and 64</strong>. A count of <code>1</code> is a power of two and is nevertheless rejected: a one-lane vector is a scalar under another spelling. The count is part of the type, so <code>vector[4]float</code> and <code>vector[8]float</code> are distinct types, and both are distinct from <code>[4]float</code>.</p>
+<p>A width no target register holds is <strong>not</strong> an error: an implementation splits it across as many registers as the machine has. <code>vector[8]float</code> is legal on a machine with 128-bit registers.</p>
+<p>The element type <code>T</code> MUST be <code>int</code>, <code>float</code> or <code>f32</code>; a type parameter <code>$T</code> is not in it, so a <code>vector</code> never appears in a generic template's own signature.</p>
 <p>Rationale: every admitted type must survive lane-wise application by one operator.</p>
-<p>Element-wise arithmetic (<a href="12-aggregates.html#168-element-wise-arithmetic">§16.8</a>) applies with the same operator set a <code>[N]T</code> has,</p>
-<p>including the scalar broadcast and its operand order. A <code>vector</code> and an array of</p>
-<p>the same element type and length are <strong>distinct</strong> and MUST NOT be mixed in one</p>
-<p>element-wise expression, even though they hold the same values.</p>
-<p>Integer <code>/</code> and <code>%</code> keep the runtime divide guard of §16.8 and are therefore</p>
-<p>evaluated lane by lane; every other admitted operator is a single vector</p>
-<p>operation.</p>
-<p><code>core:math</code>'s <code>min(a, b)</code>, <code>max(a, b)</code> and <code>clamp(x, lo, hi)</code> accept a vector</p>
-<p>in place of their scalar <code>$T</code>: every argument MUST be the same vector type, and</p>
-<p>the result is that type. They are <strong>lane-wise</strong>, and each lane is the value the</p>
-<p>scalar function gives for that lane: <code>min</code> is <code>a</code> where <code>a &lt; b</code> and <code>b</code></p>
-<p>otherwise, <code>max</code> is <code>a</code> where <code>a &gt; b</code> and <code>b</code> otherwise, and <code>clamp</code> is <code>lo</code></p>
-<p>where <code>x &lt; lo</code>, else <code>hi</code> where <code>x &gt; hi</code>, else <code>x</code> -- so with <code>lo &gt; hi</code> a lane</p>
-<p>below <code>lo</code> is <code>lo</code>, exactly as the scalar is. Each is a whole-vector compare</p>
-<p>and select, not a loop over the lanes. Their <code>where comparable(T)</code> names the</p>
-<p>scalar domain and is not applied at a vector: every admitted element type is</p>
-<p>ordered. A vector is otherwise not <code>comparable</code>, so no other <code>comparable(T)</code></p>
-<p>generic accepts one.</p>
-<p>Lanes MAY be swizzled: <code>v.(0, 1) = v.(1, 0)</code> names two of them at once and</p>
-<p>assigns simultaneously (<a href="12-aggregates.html#175-destructuring">§17.5</a>). A vector of</p>
-<p>four lanes or fewer also names them <code>.x.y.z.w</code>, or <code>.r.g.b.a</code> for the same</p>
-<p>four, wherever a field access is accepted.</p>
+<p>Element-wise arithmetic (<a href="12-aggregates.html#168-element-wise-arithmetic">§16.8</a>) applies with the same operator set a <code>[N]T</code> has, including the scalar broadcast and its operand order. A <code>vector</code> and an array of the same element type and length are <strong>distinct</strong> and MUST NOT be mixed in one element-wise expression, even though they hold the same values.</p>
+<p>Integer <code>/</code> and <code>%</code> keep the runtime divide guard of §16.8 and are therefore evaluated lane by lane; every other admitted operator is a single vector operation.</p>
+<p><code>core:math</code>'s <code>min(a, b)</code>, <code>max(a, b)</code> and <code>clamp(x, lo, hi)</code> accept a vector in place of their scalar <code>$T</code>: every argument MUST be the same vector type, and the result is that type. They are <strong>lane-wise</strong>, and each lane is the value the scalar function gives for that lane: <code>min</code> is <code>a</code> where <code>a &lt; b</code> and <code>b</code> otherwise, <code>max</code> is <code>a</code> where <code>a &gt; b</code> and <code>b</code> otherwise, and <code>clamp</code> is <code>lo</code> where <code>x &lt; lo</code>, else <code>hi</code> where <code>x &gt; hi</code>, else <code>x</code> -- so with <code>lo &gt; hi</code> a lane below <code>lo</code> is <code>lo</code>, exactly as the scalar is. Each is a whole-vector compare and select, not a loop over the lanes. Their <code>where comparable(T)</code> names the scalar domain and is not applied at a vector: every admitted element type is ordered. A vector is otherwise not <code>comparable</code>, so no other <code>comparable(T)</code> generic accepts one.</p>
+<p>Lanes MAY be swizzled: <code>v.(0, 1) = v.(1, 0)</code> names two of them at once and assigns simultaneously (<a href="12-aggregates.html#175-destructuring">§17.5</a>). A vector of four lanes or fewer also names them <code>.x.y.z.w</code>, or <code>.r.g.b.a</code> for the same four, wherever a field access is accepted.</p>
 <pre><code class="language-tycho">fn main():
     a: vector[4]float = [1.0, 2.0, 3.0, 4.0]
     b: vector[4]float = [10.0, 20.0, 30.0, 40.0]
@@ -416,44 +223,27 @@ fn report(r: Result(void, string)) -&gt; string:
 <h2 id="54-newtypes">5.4 Newtypes</h2>
 <pre><code class="language-ebnf">TypeDecl ::= "type" IDENT "=" Type NEWLINE
 </code></pre>
-<p>A newtype <code>type X = U</code> introduces a <strong>distinct</strong> type <code>X</code> over an underlying</p>
-<p>type <code>U</code>. <code>U</code> MUST be one of: <code>int</code>, <code>float</code>, <code>string</code>, <code>bool</code>, an array type, a</p>
-<p>map type, or a struct type. It MUST NOT be an enum, a tuple, a sized numeric</p>
-<p>(<code>u8</code>…<code>u64</code>/<code>i8</code>…<code>i64</code>/<code>f32</code>), <code>char</code>, <code>bytes</code>, <code>ptr</code>, an <code>Option</code>/<code>Result</code>, a</p>
-<p>function type, a <code>soa</code>, a channel, a task handle, a typed handle, or another</p>
-<p>newtype. The permitted list is closed, so a shape named in neither list — <code>soa</code></p>
-<p>was one — is refused by the same rule.</p>
-<p><code>X</code> is type-incompatible with <code>U</code> and with every other newtype: passing a <code>U</code></p>
-<p>where <code>X</code> is expected, or mixing <code>X</code> with <code>U</code> in arithmetic, is a compile error.</p>
-<p>The distinctness is enforced only in the type system; a newtype is **erased in</p>
-<p>lowering** (an <code>X</code> over <code>float</code> is represented exactly as a <code>float</code>, at zero</p>
-<p>cost). Arithmetic, ordering, <code>==</code>, and <code>str</code> on a newtype are permitted only</p>
-<p>between two values of the *same* newtype, and the result keeps the newtype.</p>
-<p>Unwrapping to the underlying value uses the base-specific <code>to_int</code>/<code>to_float</code>/</p>
-<p><code>to_str</code>/<code>to_bool</code> or the generic <code>to_under</code> (§8). A newtype over <code>int</code> or</p>
-<p><code>string</code> is a valid map key carrying its wrapped identity (§5.3.5).</p>
+<p>A newtype <code>type X = U</code> introduces a <strong>distinct</strong> type <code>X</code> over an underlying type <code>U</code>. <code>U</code> MUST be one of: <code>int</code>, <code>float</code>, <code>string</code>, <code>bool</code>, an array type, a map type, or a struct type. It MUST NOT be an enum, a tuple, a sized numeric (<code>u8</code>…<code>u64</code>/<code>i8</code>…<code>i64</code>/<code>f32</code>), <code>char</code>, <code>bytes</code>, <code>ptr</code>, an <code>Option</code>/<code>Result</code>, a function type, a <code>soa</code>, a channel, a task handle, a typed handle, or another newtype. The permitted list is closed, so a shape named in neither list — <code>soa</code> was one — is refused by the same rule.</p>
+<p><code>X</code> is type-incompatible with <code>U</code> and with every other newtype: passing a <code>U</code> where <code>X</code> is expected, or mixing <code>X</code> with <code>U</code> in arithmetic, is a compile error. The distinctness is enforced only in the type system; a newtype is <strong>erased in lowering</strong> (an <code>X</code> over <code>float</code> is represented exactly as a <code>float</code>, at zero cost). Arithmetic, ordering, <code>==</code>, and <code>str</code> on a newtype are permitted only between two values of the *same* newtype, and the result keeps the newtype. Unwrapping to the underlying value uses the base-specific <code>to_int</code>/<code>to_float</code>/ <code>to_str</code>/<code>to_bool</code> or the generic <code>to_under</code> (§8). A newtype over <code>int</code> or <code>string</code> is a valid map key carrying its wrapped identity (§5.3.5).</p>
 <h2 id="55-equality-and-ordering">5.5 Equality and ordering</h2>
-<p><strong>Equality (<code>==</code>, <code>!=</code>).</strong> Two values may be compared iff they have the **same</p>
-<p>type<strong> (§5.1); <code>void</code> values are not comparable. Equality is </strong>structural and</p>
-<p>deep**: scalars compare by value; <code>string</code>, <code>bytes</code>, arrays, structs, tuples,</p>
-<p>maps, enums, <code>Option</code>, and <code>Result</code> compare by content, recursing through nesting</p>
-<p>— so <code>a == b</code> holds exactly when <code>b</code> is an independent deep copy of <code>a</code>.</p>
-<p><strong>Function values are not comparable:</strong> applying <code>==</code>/<code>!=</code> directly to a function value is a <strong>compile error</strong>.</p>
-<p>Compare the values a function produces instead.</p>
-<p>Rationale: closures with different captured environments but identical behavior are indistinguishable. A function stored *inside* an aggregate does not block that aggregate's</p>
-<p>equality: the aggregate still compares structurally, and a function field within</p>
-<p>it compares by identity. Comparing values of two different types is a compile</p>
-<p>error.</p>
-<p><strong>Ordering (<code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>).</strong> Both operands MUST have the same type, and</p>
-<p>that type's underlying scalar MUST be <code>int</code>, <code>float</code>, <code>char</code>, <code>string</code>, or a</p>
-<p>sized numeric (<code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>, <code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>, <code>f32</code>) — or a</p>
-<p>newtype over one of these. Structs, tuples,</p>
-<p>arrays, maps, enums, and <code>bool</code> are <strong>not</strong> ordered. String ordering is</p>
-<p>byte-lexicographic.</p>
-<p>One asymmetry follows and is intentional: <code>bool</code> is comparable and <code>str</code>-able but</p>
-<p>is not ordered. (<code>char</code> is comparable, ordered, and <code>str</code>-able — its <code>str</code> is the</p>
-<p>one-byte glyph.)</p>
+<p><strong>Equality (<code>==</code>, <code>!=</code>).</strong> Two values may be compared iff they have the <strong>same type</strong> (§5.1); <code>void</code> values are not comparable. Equality is <strong>structural and deep</strong>: scalars compare by value; <code>string</code>, <code>bytes</code>, arrays, structs, tuples, maps, enums, <code>Option</code>, and <code>Result</code> compare by content, recursing through nesting — so <code>a == b</code> holds exactly when <code>b</code> is an independent deep copy of <code>a</code>. <strong>Function values are not comparable:</strong> applying <code>==</code>/<code>!=</code> directly to a function value is a <strong>compile error</strong>. Compare the values a function produces instead.</p>
+<p>Rationale: closures with different captured environments but identical behavior are indistinguishable. A function stored *inside* an aggregate does not block that aggregate's equality: the aggregate still compares structurally, and a function field within it compares by identity. Comparing values of two different types is a compile error.</p>
+<p><strong>Ordering (<code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>).</strong> Both operands MUST have the same type, and that type's underlying scalar MUST be <code>int</code>, <code>float</code>, <code>char</code>, <code>string</code>, or a sized numeric (<code>u8</code>, <code>u16</code>, <code>u32</code>, <code>u64</code>, <code>i8</code>, <code>i16</code>, <code>i32</code>, <code>i64</code>, <code>f32</code>) — or a newtype over one of these. Structs, tuples, arrays, maps, enums, and <code>bool</code> are <strong>not</strong> ordered. String ordering is byte-lexicographic.</p>
+<p>One asymmetry follows and is intentional: <code>bool</code> is comparable and <code>str</code>-able but is not ordered. (<code>char</code> is comparable, ordered, and <code>str</code>-able — its <code>str</code> is the one-byte glyph.)</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

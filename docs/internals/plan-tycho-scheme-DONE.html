@@ -4,178 +4,100 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>What the next program says the language needs — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/plan-tycho-scheme-DONE.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html" aria-current="page">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#the-program">The program</a>
+<a href="#findings-while-writing-it">Findings, while writing it</a>
+<a href="#phases">Phases</a>
+<a class="sub" href="#phase-1----generated-code-recursion-must-fail-closed--done-2026-08-03">Phase 1 -- generated-code recursion must fail closed  [DONE 2026-08-03]</a>
+<a class="sub" href="#phase-2----correct-the-two-stale-docs-proven-wrong-by-the-program--done-2026-08-03">Phase 2 -- correct the two stale docs proven wrong by the program  [DONE 2026-08-03]</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/plan-tycho-scheme-DONE.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="what-the-next-program-says-the-language-needs">What the next program says the language needs</h1>
 <p><strong>Status: DONE. Program: <code>tycho-scheme</code> — Scheme interpreter in <code>tools/tycho-scheme/</code>, first program to use upward closures and recursive value trees at scale. Outcome: 2 phases complete 2026-08-03 — runtime stack guard shipped, 2 stale docs corrected.</strong></p>
 <blockquote>
-<p>This plan is a fresh clone, 2026-08-03: the completed tycho-vm plan lives at</p>
-<p><code>docs/internals/plan-tycho-vm-DONE.md</code>. The rule from that plan holds here:</p>
-<p>*does anything that is not the program written to want it need this?* A</p>
-<p>finding becomes a phase only when a second, independent caller exists.</p>
+<p>This plan is a fresh clone, 2026-08-03: the completed tycho-vm plan lives at <code>docs/internals/plan-tycho-vm-DONE.md</code>. The rule from that plan holds here: *does anything that is not the program written to want it need this?* A finding becomes a phase only when a second, independent caller exists.</p>
 </blockquote>
 <h2 id="the-program">The program</h2>
-<p><strong>tycho-scheme</strong> -- a Scheme interpreter in <code>tools/tycho-scheme/</code>, the first</p>
-<p>program in the tree to use upward closures (returning a function that captures),</p>
-<p>recursive value trees at interpreter scale, and an environment pool (the</p>
-<p>flat-index idiom the thesis recommends). Reader, evaluator, printer, and a small standard library all in Tycho,</p>
-<p>gated the tycho-vm way (compile programs, lock goldens byte-identical).</p>
+<p><strong>tycho-scheme</strong> -- a Scheme interpreter in <code>tools/tycho-scheme/</code>, the first program in the tree to use upward closures (returning a function that captures), recursive value trees at interpreter scale, and an environment pool (the flat-index idiom the thesis recommends). Reader, evaluator, printer, and a small standard library all in Tycho, gated the tycho-vm way (compile programs, lock goldens byte-identical).</p>
 <p>Findings recorded while probing the design, before a line of the interpreter:</p>
 <ul>
-<li><strong>Upward closures work</strong> (probed: <code>make_adder</code> returns a closure, composes,</li>
+<li><strong>Upward closures work</strong> (probed: <code>make_adder</code> returns a closure, composes, calls correctly -- the spec says capture by deep copy at creation, §09-expressions.md:188-191). The architecture doc's "closures (downward value-capture)" wording is STALE. This program is the first upward-closure customer.</li>
+<li><strong>A recursive enum can carry itself directly</strong> (<code>VPair(Val, Val)</code> compiles and runs), and a recursive enum is a legal map VALUE (<code>[]string: Val</code>). The json module's note that "maps don't take a recursive value type here" (corelib/json/json.ty) needs re-checking against that.</li>
 </ul>
-<p>calls correctly -- the spec says capture by deep copy at creation, §09-expressions.md:188-191). The architecture doc's "closures (downward value-capture)" wording is STALE. This program is the first upward-closure customer.</p>
-<ul>
-<li><strong>A recursive enum can carry itself directly</strong> (<code>VPair(Val, Val)</code> compiles and</li>
-</ul>
-<p>runs), and a recursive enum is a legal map VALUE (<code>[]string: Val</code>). The json</p>
-<p>module's note that "maps don't take a recursive value type here" (corelib/json/json.ty) needs re-checking against that.</p>
-<p>Phases below appear as the interpreter finds friction; a finding is a phase only</p>
-<p>when a second, independent caller needs it.</p>
+<p>Phases below appear as the interpreter finds friction; a finding is a phase only when a second, independent caller needs it.</p>
 <h2 id="findings-while-writing-it">Findings, while writing it</h2>
 <ul>
-<li><strong>Upward closures work</strong> (probed before a line of the interpreter; also proven</li>
+<li><strong>Upward closures work</strong> (probed before a line of the interpreter; also proven at run time by <code>progs/closures.scm</code> -- <code>make-adder</code> returns a closure, and two counters from one factory stay independent). The architecture doc's "closures (downward value-capture)" wording is STALE; the spec's capture-by-deep-copy (§09-expressions.md) is the truth. Recorded, not a phase -- the wording fix is a one-line docs correction.</li>
+<li><strong>No mutable module-level state.</strong> A top-level <code>g_envs: [Env] = []</code> is rejected ("expected 'fn'"); Tycho's mutable state lives in scopes. The interpreter's environment pool is therefore owned by <code>main</code> and threaded through every evaluator call as <code>inout [Env]</code> -- the explicit-state idiom at interpreter scale (every eval/apply/lookup carries it). Works, and it is the demand answer for "should Tycho grow mutable globals?": one customer, and threading is fine. Recorded, not a phase.</li>
+<li><strong>A captured binding cannot be mutated by <code>define</code>.</strong> <code>define</code> writes the CURRENT frame, so a closure that closes over a counter would reset it per call. The fix is <code>set!</code>: walk the environment chain and mutate the frame that DEFINES the name -- the explicit mutation Scheme requires anyway.</li>
+<li><strong>Deep generated-code recursion SEGFAULTS.</strong> <code>(sum (range 0 5000))</code> crashes with SIGSEGV instead of failing closed: the compiler's recursion gate guards the compiler's own parse depth, not the C stack of generated code, and the emitted frames for eval-apply-eval blow ~8 MB at ~5k Scheme levels. The interpreter's programs stay shallow; the gate records why. <strong>FIXED as phase 1 below</strong> -- a runtime stack guard turns stack exhaustion into a clean fail-closed exit for every generated program, including spawned tasks; the second caller was the json walker (<code>corelib/json/json.ty@parse_value</code> recurses per nesting level), which segfaulted at ~100k-deep documents (measured: 10,000 nests fine, 100,000 SIGSEGV).</li>
+<li><strong>Maps are legal struct fields; the type is <code>[K: V]</code></strong> (colon, spaces) -- the literal is <code>[]K: V</code>. A syntax gotcha that cost three probes, not a gap.</li>
 </ul>
-<p>at run time by <code>progs/closures.scm</code> -- <code>make-adder</code> returns a closure, and two</p>
-<p>counters from one factory stay independent). The architecture doc's "closures</p>
-<p>(downward value-capture)" wording is STALE; the spec's capture-by-deep-copy</p>
-<p>(§09-expressions.md) is the truth. Recorded, not a phase -- the wording fix is</p>
-<p>a one-line docs correction.</p>
-<ul>
-<li><strong>No mutable module-level state.</strong> A top-level <code>g_envs: [Env] = []</code> is</li>
-</ul>
-<p>rejected ("expected 'fn'"); Tycho's mutable state lives in scopes. The</p>
-<p>interpreter's environment pool is therefore owned by <code>main</code> and threaded</p>
-<p>through every evaluator call as <code>inout [Env]</code> -- the explicit-state idiom at</p>
-<p>interpreter scale (every eval/apply/lookup carries it). Works, and it is the</p>
-<p>demand answer for "should Tycho grow mutable globals?": one customer, and</p>
-<p>threading is fine. Recorded, not a phase.</p>
-<ul>
-<li><strong>A captured binding cannot be mutated by <code>define</code>.</strong> <code>define</code> writes the</li>
-</ul>
-<p>CURRENT frame, so a closure that closes over a counter would reset it per</p>
-<p>call. The fix is <code>set!</code>: walk the environment chain and mutate the frame that</p>
-<p>DEFINES the name -- the explicit mutation Scheme requires anyway.</p>
-<ul>
-<li><strong>Deep generated-code recursion SEGFAULTS.</strong> <code>(sum (range 0 5000))</code> crashes</li>
-</ul>
-<p>with SIGSEGV instead of failing closed: the compiler's recursion gate guards</p>
-<p>the compiler's own parse depth, not the C stack of generated code, and the</p>
-<p>emitted frames for eval-apply-eval blow ~8 MB at ~5k Scheme levels. The</p>
-<p>interpreter's programs stay shallow; the gate records why. **FIXED as phase 1</p>
-<p>below** -- a runtime stack guard turns stack exhaustion</p>
-<p>into a clean fail-closed exit for every generated program, including spawned</p>
-<p>tasks; the second caller was the json walker</p>
-<p>(<code>corelib/json/json.ty@parse_value</code> recurses per nesting level), which</p>
-<p>segfaulted at ~100k-deep documents (measured: 10,000 nests fine, 100,000</p>
-<p>SIGSEGV).</p>
-<ul>
-<li><strong>Maps are legal struct fields; the type is <code>[K: V]</code></strong> (colon, spaces) -- the</li>
-</ul>
-<p>literal is <code>[]K: V</code>. A syntax gotcha that cost three probes, not a gap.</p>
 <h2 id="phases">Phases</h2>
 <h3 id="phase-1----generated-code-recursion-must-fail-closed--done-2026-08-03">Phase 1 -- generated-code recursion must fail closed  [DONE 2026-08-03]</h3>
-<p><strong>Why then:</strong> the recursion finding gained its second caller. The compiler fails</p>
-<p>closed on pathological input (<code>tests/recursion/run.sh</code>); generated code had</p>
-<p>nothing -- deep recursion in emitted C overflows the C stack and dies with</p>
-<p>SIGSEGV (exit 139), no diagnostic, no cleanup. Two measured callers: the</p>
-<p>interpreter at ~5k Scheme levels (<code>(sum (range 0 5000))</code>), and the json walker</p>
-<p>at ~100k nests (10,000 ok / 100,000 SIGSEGV, verified 2026-08-03).</p>
-<p><strong>Mechanism -- chosen by measurement.</strong> The runtime stack guard</p>
-<p>(option 1) won:</p>
+<p><strong>Why then:</strong> the recursion finding gained its second caller. The compiler fails closed on pathological input (<code>tests/recursion/run.sh</code>); generated code had nothing -- deep recursion in emitted C overflows the C stack and dies with SIGSEGV (exit 139), no diagnostic, no cleanup. Two measured callers: the interpreter at ~5k Scheme levels (<code>(sum (range 0 5000))</code>), and the json walker at ~100k nests (10,000 ok / 100,000 SIGSEGV, verified 2026-08-03).</p>
+<p><strong>Mechanism -- chosen by measurement.</strong> The runtime stack guard (option 1) won:</p>
 <ul>
-<li><strong>Shipped, option 1</strong>: a SIGSEGV handler on an alternate stack,</li>
+<li><strong>Shipped, option 1</strong>: a SIGSEGV handler on an alternate stack, installed once by a runtime constructor; on a fault it compares the faulting SP (from the ucontext) against the thread's recorded stack region and, past the bottom, prints <code>tycho: stack overflow -- recursion too deep</code> and exits 1; anything else re-raises with the default disposition, so a null deref still crashes as a real crash (exit 139, debugger-visible). Zero steady-state cost: nothing runs between the constructor and an overflow. Measured fib(30)x300 before/after: 2.2568/2.2658/2.2539 s vs 2.2653/2.2545/2.2550 s -- identical within noise.</li>
+<li><strong>Option 2 (emitted per-call depth counter): rejected</strong> -- every call pays an increment+decrement for a strictly weaker guarantee: it counts function ENTRIES, so a single deep expression <code>f(f(f(...)))</code> still blows the stack unguarded. Option 1 catches that shape.</li>
+<li><strong>Option 3 (SCC-only accounting): rejected</strong> -- same entry-counting weakness, plus a call-graph pass the compiler does not have, for the only benefit of sparing non-recursive programs a cost option 1 does not charge.</li>
 </ul>
-<p>installed once by a runtime constructor; on a fault it compares the faulting</p>
-<p>SP (from the ucontext) against the thread's recorded stack region and, past</p>
-<p>the bottom, prints <code>tycho: stack overflow -- recursion too deep</code> and exits 1;</p>
-<p>anything else re-raises with the default disposition, so a null deref still</p>
-<p>crashes as a real crash (exit 139, debugger-visible). Zero steady-state cost:</p>
-<p>nothing runs between the constructor and an overflow. Measured fib(30)x300</p>
-<p>before/after: 2.2568/2.2658/2.2539 s vs 2.2653/2.2545/2.2550 s -- identical</p>
-<p>within noise.</p>
-<ul>
-<li><strong>Option 2 (emitted per-call depth counter): rejected</strong> -- every call pays</li>
-</ul>
-<p>an increment+decrement for a strictly weaker guarantee: it counts</p>
-<p>function ENTRIES, so a single deep expression <code>f(f(f(...)))</code> still blows the stack</p>
-<p>unguarded. Option 1 catches that shape.</p>
-<ul>
-<li><strong>Option 3 (SCC-only accounting): rejected</strong> -- same entry-counting</li>
-</ul>
-<p>weakness, plus a call-graph pass the compiler does not have, for the only</p>
-<p>benefit of sparing non-recursive programs a cost option 1 does not charge.</p>
-<p><strong>Cost of covering spawned tasks: +7% on spawn-bound workloads.</strong> A</p>
-<p>spawned task runs on its own thread with its own stack, so the trampoline</p>
-<p>(tycho_task_start) installs per-thread bounds AND an alternate stack before the</p>
-<p>task's code runs. Measured 2000 spawn+wait of a trivial fn: 38.7/40.2/40.8 ms</p>
-<p>before vs 42.2/42.6/43.2 ms after (~1.4 us/spawn: pthread_getattr_np + one</p>
-<p>sigaltstack syscall). Everything else (fib, sort, non-spawning programs) shows</p>
-<p>no movement. The trampoline's start struct is bump-allocated in the task's own</p>
-<p>root arena, not malloc'd.</p>
+<p><strong>Cost of covering spawned tasks: +7% on spawn-bound workloads.</strong> A spawned task runs on its own thread with its own stack, so the trampoline (tycho_task_start) installs per-thread bounds AND an alternate stack before the task's code runs. Measured 2000 spawn+wait of a trivial fn: 38.7/40.2/40.8 ms before vs 42.2/42.6/43.2 ms after (~1.4 us/spawn: pthread_getattr_np + one sigaltstack syscall). Everything else (fib, sort, non-spawning programs) shows no movement. The trampoline's start struct is bump-allocated in the task's own root arena, not malloc'd.</p>
 <p><strong>Two finds during implementation, both fixed:</strong></p>
 <ul>
-<li><strong>sigaltstack is PER-THREAD.</strong> The constructor installs the alternate stack</li>
+<li><strong>sigaltstack is PER-THREAD.</strong> The constructor installs the alternate stack on the main thread only; a spawned task's overflow then runs the handler on the exhausted stack and dies a SECOND time (SIGSEGV on SIGSEGV, exit 139). The trampoline installs bounds AND altstack on the new thread.</li>
+<li><strong>ASan munmaps whatever altstack is current at thread destroy</strong> -- assuming it is ASan's own. With the static buffer in place, every spawned task under -fsanitize=address reported <code>failed to deallocate 0x8000 bytes ... Failed to munmap</code> (EINVAL on a non-mmap'd region) and <code>make conc</code> failed 13 ASan variants. Fix: clear the altstack (SS_DISABLE) after the task's fn returns, ASan builds only. (ASan's own stack-overflow detection does NOT fire first for plain deep recursion -- this handler does, so the altstack stays under ASan too.)</li>
 </ul>
-<p>on the main thread only; a spawned task's overflow then runs the handler on</p>
-<p>the exhausted stack and dies a SECOND time (SIGSEGV on SIGSEGV, exit 139).</p>
-<p>The trampoline installs bounds AND altstack on the new thread.</p>
-<ul>
-<li><strong>ASan munmaps whatever altstack is current at thread destroy</strong> -- assuming</li>
-</ul>
-<p>it is ASan's own. With the static buffer in place, every spawned task under</p>
-<p>-fsanitize=address reported `failed to deallocate 0x8000 bytes ... Failed to</p>
-<p>munmap<code> (EINVAL on a non-mmap'd region) and </code>make conc` failed 13 ASan</p>
-<p>variants. Fix: clear the altstack (SS_DISABLE) after the task's fn returns,</p>
-<p>ASan builds only. (ASan's own stack-overflow detection does NOT fire first for plain</p>
-<p>deep recursion -- this handler does, so the altstack stays under ASan too.)</p>
-<p><strong>Where it lives:</strong> <code>runtime/tycho_rt.c</code> -- the constructor, the handler, and</p>
-<p><code>tycho_task_trampoline</code>. The runtime is embedded verbatim into every generated</p>
-<p>C file, so no compiler change was needed; <code>_GNU_SOURCE</code> was added to the</p>
-<p>runtime's feature-macro block (pthread_getattr_np and the REG_* ucontext</p>
-<p>indices are <code>__USE_GNU</code>-gated; the 13 corelib shims define no GNU-conflicting</p>
-<p>names, checked before widening).</p>
-<p><strong>Tests:</strong> <code>tests/recursion/run.sh</code> grew a generated-code side: three deep</p>
-<p>programs (big-frame <code>n + f(n-1)</code>, small-frame tail <code>f(n-1)</code>, and a SPAWNED</p>
-<p>task's own stack) must compile, then die cleanly -- exit 1-127, empty stdout,</p>
-<p><code>stack overflow</code> on stderr -- plus the modestly-nested counterparts that must</p>
-<p>run and print the right answer. Inputs are generated in the runner, so no</p>
-<p>goldens moved.</p>
-<p><strong>Gates, all green:</strong> <code>make test</code> 582/0, `make</p>
-<p>ilp32<code> 582/0, </code>make conc<code> 38/0, asan-self 599/0, </code>make corelib` green and shim-check 12/0, the four tool lanes</p>
-<p>(vm/ar/q/scheme) green, and the extended recursion runner green.</p>
+<p><strong>Where it lives:</strong> <code>runtime/tycho_rt.c</code> -- the constructor, the handler, and <code>tycho_task_trampoline</code>. The runtime is embedded verbatim into every generated C file, so no compiler change was needed; <code>_GNU_SOURCE</code> was added to the runtime's feature-macro block (pthread_getattr_np and the REG_* ucontext indices are <code>__USE_GNU</code>-gated; the 13 corelib shims define no GNU-conflicting names, checked before widening).</p>
+<p><strong>Tests:</strong> <code>tests/recursion/run.sh</code> grew a generated-code side: three deep programs (big-frame <code>n + f(n-1)</code>, small-frame tail <code>f(n-1)</code>, and a SPAWNED task's own stack) must compile, then die cleanly -- exit 1-127, empty stdout, <code>stack overflow</code> on stderr -- plus the modestly-nested counterparts that must run and print the right answer. Inputs are generated in the runner, so no goldens moved.</p>
+<p><strong>Gates, all green:</strong> <code>make test</code> 582/0, <code>make ilp32</code> 582/0, <code>make conc</code> 38/0, asan-self 599/0, <code>make corelib</code> green and shim-check 12/0, the four tool lanes (vm/ar/q/scheme) green, and the extended recursion runner green.</p>
 <p><strong>What the ci sweep caught (both real, both fixed):</strong></p>
 <ul>
-<li><strong>rtparity</strong> — the new <code>tycho: stack overflow -- recursion too deep</code></li>
+<li><strong>rtparity</strong> — the new <code>tycho: stack overflow -- recursion too deep</code> diagnostic is new user-visible runtime surface: added to the oracle (<code>tests/rtparity/run.py</code>) with its reason.</li>
+<li><strong>spec-check was RED AT HEAD</strong> — the scalar-match plan (commit 1a2041f) added ScalarPattern/ScalarElem to Appendix A by hand without teaching §4 (<code>docs/spec/02-grammar.md</code>), so the generator could never reproduce the committed appendix. §4 is the single source of truth; the productions now live there and the appendix matches again.</li>
 </ul>
-<p>diagnostic is new user-visible runtime surface: added to the oracle (<code>tests/rtparity/run.py</code>) with its reason.</p>
-<ul>
-<li><strong>spec-check was RED AT HEAD</strong> — the scalar-match plan (commit 1a2041f)</li>
-</ul>
-<p>added ScalarPattern/ScalarElem to Appendix A by hand without teaching §4</p>
-<p>(<code>docs/spec/02-grammar.md</code>), so the generator could never reproduce the</p>
-<p>committed appendix. §4 is</p>
-<p>the single source of truth; the productions now live there and the appendix</p>
-<p>matches again.</p>
 <h3 id="phase-2----correct-the-two-stale-docs-proven-wrong-by-the-program--done-2026-08-03">Phase 2 -- correct the two stale docs proven wrong by the program  [DONE 2026-08-03]</h3>
 <p>Both were recorded as findings while writing the interpreter; both proven false on this tree, each a one-line correction:</p>
-<p>1. <code>docs/architecture.md:52</code> -- "closures (downward value-capture)" is wrong:</p>
-<p><code>tools/tycho-scheme/progs/closures.scm</code> returns closures that capture and</p>
-<p>two counters from one factory stay independent (<code>1 2 1</code>). The spec's</p>
-<p>capture-by-deep-copy (§09-expressions.md) is the truth. **Gate: the two doc</p>
-<p>gates only** (<code>check_citations.py</code>, <code>check_links.sh</code>).</p>
-<p>2. <code>corelib/json/json.ty:15-17</code> -- "Objects are parallel key/value arrays</p>
-<p>because tycho's maps don't take a recursive value type here" is wrong: a</p>
-<p>recursive enum as a map value compiles and runs (<code>[]string: Tree</code> with</p>
-<p><code>TNode(Tree, Tree)</code>, probed 2026-08-03). The parallel-array</p>
-<p>design itself stays. **Gate: <code>make corelib</code></p>
-<p>plus the two doc gates.**</p>
+<ol>
+<li><code>docs/architecture.md:52</code> -- "closures (downward value-capture)" is wrong: <code>tools/tycho-scheme/progs/closures.scm</code> returns closures that capture and two counters from one factory stay independent (<code>1 2 1</code>). The spec's capture-by-deep-copy (§09-expressions.md) is the truth. <strong>Gate: the two doc gates only</strong> (<code>check_citations.py</code>, <code>check_links.sh</code>).</li>
+<li><code>corelib/json/json.ty:15-17</code> -- "Objects are parallel key/value arrays because tycho's maps don't take a recursive value type here" is wrong: a recursive enum as a map value compiles and runs (<code>[]string: Tree</code> with <code>TNode(Tree, Tree)</code>, probed 2026-08-03). The parallel-array design itself stays. <strong>Gate: <code>make corelib</code> plus the two doc gates.</strong></li>
+</ol>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

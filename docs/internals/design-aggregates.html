@@ -4,36 +4,45 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Aggregates design note — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/design-aggregates.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html" aria-current="page">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a class="sub" href="#1-the-model-in-one-paragraph">1. The model in one paragraph</a>
+<a class="sub" href="#2-types--syntax">2. Types &amp; syntax</a>
+<a class="sub" href="#3-the-five-invariants-that-keep-it-sound">3. The five invariants that keep it sound</a>
+<a class="sub" href="#4-arena-mechanics-worked">4. Arena mechanics, worked</a>
+<a class="sub" href="#5-the-three-costs">5. The three costs</a>
+<a class="sub" href="#6-aliasing-and-lifetime-hazards-by-scenario">6. Aliasing and lifetime hazards, by scenario</a>
+<a class="sub" href="#7-generics--monomorphized-over-the-built-in-container-machinery">7. Generics — monomorphized over the built-in container machinery</a>
+<a class="sub" href="#8-allocation-strategy-signature-directed-escape">8. Allocation strategy: signature-directed escape</a>
+<a class="sub" href="#9-why-generics-dont-weaken-the-model">9. Why generics don't weaken the model</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/design-aggregates.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="aggregates-design-note">Aggregates design note</h1>
-<p>Maintainer background for <a href="../reference/arrays-slices.html">Arrays and slices</a> and</p>
-<p><a href="../reference/structs-tuples.html">Structs and tuples</a>: how aggregates — arrays and</p>
-<p>structs, including heap-bearing and nested fields — behave under value semantics</p>
-<p>with implicit hierarchical arenas and <strong>no pointer or reference type</strong>, and why the</p>
-<p>memory model stays sound without a borrow checker or whole-program alias analysis.</p>
-<p>The question: *do implicit arenas still hold once the</p>
-<p>language has arrays and structs, given strict value semantics and no pointer</p>
-<p>type?* The answer is <strong>yes</strong>, subject to five invariants and three</p>
-<p>costs, both listed below. Two transpiler optimizations (return-slot move,</p>
-<p>in-place append) keep the costs from biting in practice; see</p>
-<p><a href="../thesis.html">thesis.md</a> §4. Arrays, structs, nested struct fields, structural</p>
-<p>equality, and <code>inout</code> all ship as described.</p>
+<p>Maintainer background for <a href="../reference/arrays-slices.html">Arrays and slices</a> and <a href="../reference/structs-tuples.html">Structs and tuples</a>: how aggregates — arrays and structs, including heap-bearing and nested fields — behave under value semantics with implicit hierarchical arenas and <strong>no pointer or reference type</strong>, and why the memory model stays sound without a borrow checker or whole-program alias analysis.</p>
+<p>The question: *do implicit arenas still hold once the language has arrays and structs, given strict value semantics and no pointer type?* The answer is <strong>yes</strong>, subject to five invariants and three costs, both listed below. Two transpiler optimizations (return-slot move, in-place append) keep the costs from biting in practice; see <a href="../thesis.html">thesis.md</a> §4. Arrays, structs, nested struct fields, structural equality, and <code>inout</code> all ship as described.</p>
 <h3 id="1-the-model-in-one-paragraph">1. The model in one paragraph</h3>
-<p>Every value is a <strong>wholly-owned tree</strong>: a struct owns its fields, an array</p>
-<p>owns its elements, recursively down to leaves (<code>int</code>, <code>bool</code>, <code>string</code></p>
-<p>bytes). A value and *all* its interior storage live in exactly **one</p>
-<p>arena** — the arena of the variable (slot) that owns the root. There is</p>
-<p><strong>no pointer/reference type</strong>: you cannot name, store, or return a</p>
-<p>reference to a value's interior. Every operation that would create a</p>
-<p>second name for the same storage instead <strong>copies</strong> (deep, by default).</p>
-<p>Mutation happens in place through <code>inout</code> parameters, which are an</p>
-<p>exclusive borrow for the duration of a call and cannot be stored.</p>
+<p>Every value is a <strong>wholly-owned tree</strong>: a struct owns its fields, an array owns its elements, recursively down to leaves (<code>int</code>, <code>bool</code>, <code>string</code> bytes). A value and *all* its interior storage live in exactly <strong>one arena</strong> — the arena of the variable (slot) that owns the root. There is <strong>no pointer/reference type</strong>: you cannot name, store, or return a reference to a value's interior. Every operation that would create a second name for the same storage instead <strong>copies</strong> (deep, by default). Mutation happens in place through <code>inout</code> parameters, which are an exclusive borrow for the duration of a call and cannot be stored.</p>
 <h3 id="2-types--syntax">2. Types &amp; syntax</h3>
 <pre><code class="language-tycho"># arrays — homogeneous, growable
 xs := [1, 2, 3]          # [int] inferred
@@ -61,26 +70,15 @@ struct Line:
     b: Point
     labels: [string]       # a field that is an array, etc.
 </code></pre>
-<p>No <code>null</code>. "Maybe a value" needs an optional/sum type (see §7); that is a</p>
-<p>companion feature, not part of this spec, but the model assumes it exists.</p>
+<p>No <code>null</code>. "Maybe a value" needs an optional/sum type (see §7); that is a companion feature, not part of this spec, but the model assumes it exists.</p>
 <h3 id="3-the-five-invariants-that-keep-it-sound">3. The five invariants that keep it sound</h3>
-<p>1. <strong>Single-arena ownership.</strong> A value's root and every byte it</p>
-<p>transitively owns are allocated in one arena — the owner slot's arena.</p>
-<p><code>acc.items</code>'s backing buffer lives wherever <code>acc</code> lives.</p>
-<p>2. <strong>No aliasing.</strong> <code>b := a</code>, passing by value, and <code>field = v</code> all</p>
-<p>*copy*. After <code>b := a</code>, <code>a</code> and <code>b</code> share nothing.</p>
-<p>3. <strong>Mutation via <code>inout</code> only.</strong> <code>fn f(inout xs: [int])</code> borrows the</p>
-<p>caller's value exclusively for the call and writes through it. The</p>
-<p>value never changes arena. The borrow is *not a value* — it can't be</p>
-<p>assigned, stored in a field, or returned.</p>
-<p>4. <strong>No reference type.</strong> There is nothing whose value is "the address of</p>
-<p>another value." This is the keystone: it is *why* invariant 3's borrow</p>
-<p>can't escape, and why no operation can manufacture a lasting second</p>
-<p>reference.</p>
-<p>5. <strong>Cross-arena moves are deep copies.</strong> Returning a value, or assigning</p>
-<p>to a variable in an outer scope, copies the whole tree into the</p>
-<p>destination arena. Correctness never depends on analysis — only speed</p>
-<p>does (see §5).</p>
+<ol>
+<li><strong>Single-arena ownership.</strong> A value's root and every byte it transitively owns are allocated in one arena — the owner slot's arena. <code>acc.items</code>'s backing buffer lives wherever <code>acc</code> lives.</li>
+<li><strong>No aliasing.</strong> <code>b := a</code>, passing by value, and <code>field = v</code> all *copy*. After <code>b := a</code>, <code>a</code> and <code>b</code> share nothing.</li>
+<li><strong>Mutation via <code>inout</code> only.</strong> <code>fn f(inout xs: [int])</code> borrows the caller's value exclusively for the call and writes through it. The value never changes arena. The borrow is *not a value* — it can't be assigned, stored in a field, or returned.</li>
+<li><strong>No reference type.</strong> There is nothing whose value is "the address of another value." This is the keystone: it is *why* invariant 3's borrow can't escape, and why no operation can manufacture a lasting second reference.</li>
+<li><strong>Cross-arena moves are deep copies.</strong> Returning a value, or assigning to a variable in an outer scope, copies the whole tree into the destination arena. Correctness never depends on analysis — only speed does (see §5).</li>
+</ol>
 <h3 id="4-arena-mechanics-worked">4. Arena mechanics, worked</h3>
 <pre><code class="language-tycho">fn read_lines() -&gt; [string]:
     lines := []string
@@ -95,18 +93,10 @@ fn main():
     println(str(len(ls)))
 </code></pre>
 <ul>
-<li><code>push</code> grows <code>lines</code>' backing buffer <strong>in <code>lines</code>' arena</strong> (geometric</li>
+<li><code>push</code> grows <code>lines</code>' backing buffer <strong>in <code>lines</code>' arena</strong> (geometric growth; old buffers are wasted within the arena — bounded, reclaimed when the arena ends).</li>
+<li><code>line</code> lives in the loop's scratch arena, reset each iteration. <code>push</code> copies its bytes into <code>lines</code>' buffer, so resetting scratch is safe.</li>
+<li><code>return lines</code> deep-copies the array into the caller's arena, then <code>read_lines</code>' arena is freed. The returned value is fully independent.</li>
 </ul>
-<p>growth; old buffers are wasted within the arena — bounded, reclaimed</p>
-<p>when the arena ends).</p>
-<ul>
-<li><code>line</code> lives in the loop's scratch arena, reset each iteration. <code>push</code></li>
-</ul>
-<p>copies its bytes into <code>lines</code>' buffer, so resetting scratch is safe.</p>
-<ul>
-<li><code>return lines</code> deep-copies the array into the caller's arena, then</li>
-</ul>
-<p><code>read_lines</code>' arena is freed. The returned value is fully independent.</p>
 <pre><code class="language-tycho">fn main():
     acc := []string                 # in main's arena
     for i := 0; i &lt; 1000000; i += 1:   # no digit separators: `1_000_000` does not lex
@@ -114,49 +104,20 @@ fn main():
     # scratch stays bounded; acc grows O(n) — intended, not a leak
 </code></pre>
 <h3 id="5-the-three-costs">5. The three costs</h3>
-<p>1. <strong>Deep copy on cross-arena move.</strong> Returning or out-assigning a big</p>
-<p>value is O(size). Mitigated, never for correctness, by:</p>
+<ol>
+<li><strong>Deep copy on cross-arena move.</strong> Returning or out-assigning a big value is O(size). Mitigated, never for correctness, by:</li>
+</ol>
 <ul>
-<li>*Build-in-destination*: if a local is returned, the compiler</li>
+<li>*Build-in-destination*: if a local is returned, the compiler allocates it in the parent arena from the start → the return needs no copy. (The leaf version applies today: a return expression targets the parent arena.) It stays conservative when a value *may* be returned on some path; still sound, still local.</li>
+<li>*Move on last use*: <code>b := a</code> / <code>b = a</code> where <code>a</code> is a uniquely-owned local read exactly once (so this is its last use on every path), not inside a loop, and in the same arena as the destination, hands off <code>a</code>'s buffer instead of deep-copying it. Conservative and static; a parameter (which borrows the caller's buffer) is never moved.</li>
+<li>*Borrow on read*: a by-value parameter the callee only reads is passed as a transient borrow (zero copy) — safe because the borrow can't be stored (invariant 4) and the caller is suspended. The important part: in this model escape analysis is just an <strong>optimization</strong>. In a pointer-having language the same analysis is a <strong>soundness requirement</strong>. That's why value semantics is viable here.</li>
 </ul>
-<p>allocates it in the parent arena from the start → the return needs no copy.</p>
-<p>(The leaf version applies today: a return expression targets the</p>
-<p>parent arena.) It stays conservative when a value *may* be returned on some</p>
-<p>path; still sound, still local.</p>
-<ul>
-<li>*Move on last use*: <code>b := a</code> / <code>b = a</code> where <code>a</code> is a</li>
-</ul>
-<p>uniquely-owned local read exactly once (so this is its last use on every</p>
-<p>path), not inside a loop, and in the same arena as the destination, hands</p>
-<p>off <code>a</code>'s buffer instead of deep-copying it. Conservative and static; a</p>
-<p>parameter (which borrows the caller's buffer) is never moved.</p>
-<ul>
-<li>*Borrow on read*: a by-value parameter the callee only reads is</li>
-</ul>
-<p>passed as a transient borrow (zero copy) — safe because the borrow</p>
-<p>can't be stored (invariant 4) and the caller is suspended.</p>
-<p>The important part: in this model escape analysis is just an <strong>optimization</strong>.</p>
-<p>In a pointer-having language the same analysis is a **soundness</p>
-<p>requirement**. That's why value semantics is viable here.</p>
-<p>2. <strong>No recursive types.</strong> <code>struct Node: next: Node</code> is infinite-size and</p>
-<p>illegal — there is no pointer to break the cycle. Trees, lists, and</p>
-<p>graphs are expressed as <strong>arrays + integer indices</strong> (a node holds an</p>
-<p><code>int</code> index into a <code>[Node]</code>, not a reference). The entire graph is then</p>
-<p>*one value* (the array) with *one* lifetime — which is an excellent fit</p>
-<p>for arenas, and a well-trodden data-oriented pattern. The cost is</p>
-<p>ergonomic: you write <code>nodes[i].next_idx</code> instead of <code>node.next</code>, and</p>
-<p>you need a sentinel or optional for "no node." A generational-handle</p>
-<p>scheme (a pattern you build, not a language built-in) keeps it safe:</p>
-<p>make handles <strong>generational</strong> (index + a generation</p>
-<p>counter; a stale handle fails its generation check instead of silently</p>
-<p>reading a recycled slot). One extra word per handle buys use-after-free</p>
-<p>*detection* for the index-as-pointer pattern, with no pointer type.</p>
-<p>3. <strong>Idiomatic building has to be in place.</strong> The immutable form</p>
-<p><code>total = total + str(i)</code> in a loop leaves dead intermediate buffers in</p>
-<p>the arena (bounded by scope, but wasteful). The form to reach for is</p>
-<p>in-place growth — <code>push(builder, str(i))</code> / <code>inout</code> — which is</p>
-<p>geometric and tight. "One right way" should make in-place building the</p>
-<p>one way; immutable rebuild stays *correct* but is the slow path.</p>
+<ol start="2">
+<li><strong>No recursive types.</strong> <code>struct Node: next: Node</code> is infinite-size and illegal — there is no pointer to break the cycle. Trees, lists, and graphs are expressed as <strong>arrays + integer indices</strong> (a node holds an <code>int</code> index into a <code>[Node]</code>, not a reference). The entire graph is then *one value* (the array) with *one* lifetime — which is an excellent fit for arenas, and a well-trodden data-oriented pattern. The cost is ergonomic: you write <code>nodes[i].next_idx</code> instead of <code>node.next</code>, and you need a sentinel or optional for "no node." A generational-handle scheme (a pattern you build, not a language built-in) keeps it safe: make handles <strong>generational</strong> (index + a generation counter; a stale handle fails its generation check instead of silently reading a recycled slot). One extra word per handle buys use-after-free *detection* for the index-as-pointer pattern, with no pointer type.</li>
+</ol>
+<ol start="3">
+<li><strong>Idiomatic building has to be in place.</strong> The immutable form <code>total = total + str(i)</code> in a loop leaves dead intermediate buffers in the arena (bounded by scope, but wasteful). The form to reach for is in-place growth — <code>push(builder, str(i))</code> / <code>inout</code> — which is geometric and tight. "One right way" should make in-place building the one way; immutable rebuild stays *correct* but is the slow path.</li>
+</ol>
 <h3 id="6-aliasing-and-lifetime-hazards-by-scenario">6. Aliasing and lifetime hazards, by scenario</h3>
 <table>
 <tr><th>Scenario</th><th>Aliasing/lifetime hazard?</th><th>Resolution</th></tr>
@@ -171,20 +132,12 @@ fn main():
 <tr><td>recursive/graph types</td><td>would need pointers</td><td>not allowed; use array + indices</td></tr>
 <tr><td>return a reference to a local</td><td>classic dangling</td><td><strong>inexpressible</strong> — no reference type exists</td></tr>
 </table>
-<p>The last row is the key point: the dangling-pointer bug that forces every other</p>
-<p>region system to ship escape analysis *for correctness* isn't expressible in</p>
-<p>Tycho, so it cannot occur.</p>
+<p>The last row is the key point: the dangling-pointer bug that forces every other region system to ship escape analysis *for correctness* isn't expressible in Tycho, so it cannot occur.</p>
 <h3 id="7-generics--monomorphized-over-the-built-in-container-machinery">7. Generics — monomorphized over the built-in container machinery</h3>
-<p>Tycho has <strong>monomorphized generics</strong>: a <code>$T</code> type parameter on a</p>
-<p>function or struct, inferred at the use site and stamped out to concrete code at</p>
-<p>compile time. They reuse the *same* per-concrete-type interning + emission the</p>
-<p>transpiler already runs for its built-in parametric types:</p>
+<p>Tycho has <strong>monomorphized generics</strong>: a <code>$T</code> type parameter on a function or struct, inferred at the use site and stamped out to concrete code at compile time. They reuse the *same* per-concrete-type interning + emission the transpiler already runs for its built-in parametric types:</p>
 <ul>
 <li><code>[T]</code> — growable array, any element type T (incl. structs, strings).</li>
-<li><code>Option(T)</code> / <code>Result(T, E)</code> — optional / fallible, since there is no <code>null</code></li>
-</ul>
-<p>and no exceptions.</p>
-<ul>
+<li><code>Option(T)</code> / <code>Result(T, E)</code> — optional / fallible, since there is no <code>null</code> and no exceptions.</li>
 <li><code>[K: V]</code> — hash map; keys are <code>string</code>, <code>int</code>, a newtype over either, a fieldless enum, or any hashable composite (struct/tuple/array).</li>
 </ul>
 <pre><code class="language-tycho">fn first(xs: [$T]) -&gt; Option(T):        # generic function
@@ -195,82 +148,41 @@ fn main():
 struct Box($T):                          # generic struct
     v: T
 </code></pre>
-<p>You can write <code>struct Box($T)</code> and <code>fn id(x: $T) -&gt; T</code>. The monomorphization</p>
-<p>engine such generics need is the same one that stamps out <code>Option(int)</code> versus</p>
-<p><code>Option(string)</code>. User <code>$T</code> definitions reuse it directly rather than adding a</p>
-<p>new subsystem, and stay memory-model-neutral (§9).</p>
-<p>The full design is in <a href="../reference/generics.html">generics</a>.</p>
-<p>The full set is available: generic functions, generic structs</p>
-<p>(construction + <code>Box(int)</code> type-position annotations), structured patterns</p>
-<p>(<code>[$T]</code> → <code>Option(T)</code>), <code>[$K: $V]</code> map patterns, <code>where</code> constraints</p>
-<p>(<code>numeric</code> / <code>comparable</code> / <code>has_str</code>), and explicit call-site type args</p>
-<p>(<code>empty$(int)</code> for the non-inferable case).</p>
+<p>You can write <code>struct Box($T)</code> and <code>fn id(x: $T) -&gt; T</code>. The monomorphization engine such generics need is the same one that stamps out <code>Option(int)</code> versus <code>Option(string)</code>. User <code>$T</code> definitions reuse it directly rather than adding a new subsystem, and stay memory-model-neutral (§9). The full design is in <a href="../reference/generics.html">generics</a>.</p>
+<p>The full set is available: generic functions, generic structs (construction + <code>Box(int)</code> type-position annotations), structured patterns (<code>[$T]</code> → <code>Option(T)</code>), <code>[$K: $V]</code> map patterns, <code>where</code> constraints (<code>numeric</code> / <code>comparable</code> / <code>has_str</code>), and explicit call-site type args (<code>empty$(int)</code> for the non-inferable case).</p>
 <p>Companion features that work alongside generics (none of these is generics):</p>
 <ul>
-<li><strong><code>inout</code> parameters</strong> (exclusive mutable borrow) — efficient mutation</li>
-</ul>
-<p>without copies or aliasing.</p>
-<ul>
+<li><strong><code>inout</code> parameters</strong> (exclusive mutable borrow) — efficient mutation without copies or aliasing.</li>
 <li><strong><code>Option(T)</code> + exhaustive <code>match</code></strong> — no <code>null</code>.</li>
-<li><strong>Slices</strong> (<code>xs[a:b]</code>) — a non-storable view (zero-copy when passed</li>
+<li><strong>Slices</strong> (<code>xs[a:b]</code>) — a non-storable view (zero-copy when passed to a read-only param, deep-copied when stored), no borrow checker needed.</li>
+<li><strong><code>distinct</code> newtypes</strong> (<code>type Meters = float</code>) — a distinct, zero-cost type over <code>int</code>/<code>float</code> (same C rep, type-incompatible with the base and other newtypes); arithmetic/ordering/<code>str</code> only between the same newtype.</li>
 </ul>
-<p>to a read-only param, deep-copied when stored), no borrow checker needed.</p>
-<ul>
-<li><strong><code>distinct</code> newtypes</strong> (<code>type Meters = float</code>) — a distinct,</li>
-</ul>
-<p>zero-cost type over <code>int</code>/<code>float</code> (same C rep, type-incompatible with the base</p>
-<p>and other newtypes); arithmetic/ordering/<code>str</code> only between the same newtype.</p>
 <h3 id="8-allocation-strategy-signature-directed-escape">8. Allocation strategy: signature-directed escape</h3>
-<p>One established way to run arenas is to pass each function an implicit arena</p>
-<p>parameter and have the callee allocate into the *caller's* arena, so a</p>
-<p>returned value is already in the right place — <strong>zero-copy returns</strong>. The</p>
-<p>price: a function's throwaway temporaries also live in the caller's arena</p>
-<p>until the caller returns, so you have to claw reclamation back with *visible*</p>
-<p>tools — named sub-arena blocks and pools. That works, but it puts memory</p>
-<p>back in the programmer's face.</p>
-<p>Tycho can do better <strong>because it has no pointers</strong>. With value semantics and</p>
-<p>no reference type, a value escapes a function only by being <strong>returned</strong> or</p>
-<p>written through an <strong><code>inout</code></strong> parameter — both visible in the signature. A</p>
-<p>callee cannot stash an argument anywhere that outlives the call (there is</p>
-<p>nothing to stash it in). Therefore **escape is decided locally, from</p>
-<p>signatures — no whole-program may-alias analysis**. Concretely:</p>
+<p>One established way to run arenas is to pass each function an implicit arena parameter and have the callee allocate into the *caller's* arena, so a returned value is already in the right place — <strong>zero-copy returns</strong>. The price: a function's throwaway temporaries also live in the caller's arena until the caller returns, so you have to claw reclamation back with *visible* tools — named sub-arena blocks and pools. That works, but it puts memory back in the programmer's face.</p>
+<p>Tycho can do better <strong>because it has no pointers</strong>. With value semantics and no reference type, a value escapes a function only by being <strong>returned</strong> or written through an <strong><code>inout</code></strong> parameter — both visible in the signature. A callee cannot stash an argument anywhere that outlives the call (there is nothing to stash it in). Therefore <strong>escape is decided locally, from signatures — no whole-program may-alias analysis</strong>. Concretely:</p>
 <ul>
-<li>allocations that flow into the return value → emit in the caller's arena:</li>
+<li>allocations that flow into the return value → emit in the caller's arena: zero-copy return;</li>
+<li>every other allocation in the call → emit in an auto-created sub-arena freed at scope exit: tight reclamation, invisibly;</li>
+<li>loop bodies → non-escaping allocations go in the per-iteration scratch (reset each iteration); an escaping <code>push</code> targets the destination's arena.</li>
 </ul>
-<p>zero-copy return;</p>
-<ul>
-<li>every other allocation in the call → emit in an auto-created sub-arena</li>
-</ul>
-<p>freed at scope exit: tight reclamation, invisibly;</p>
-<ul>
-<li>loop bodies → non-escaping allocations go in the per-iteration scratch</li>
-</ul>
-<p>(reset each iteration); an escaping <code>push</code> targets the destination's arena.</p>
-<p>This is the synthesis: zero-copy returns *and* per-scope reclamation, with</p>
-<p><strong>no visible memory constructs at all</strong>. It is sound by construction</p>
-<p>because, under value semantics, a wrong escape decision can only change</p>
-<p>*when* memory is freed, never *whether* a pointer dangles. In a</p>
-<p>pointer-having language the same analysis is a correctness obligation with</p>
-<p>alias tracking — which is exactly why such languages reach for explicit</p>
-<p>tools instead. The no-pointer rule turns that hardest problem into a local</p>
-<p>optimization.</p>
+<p>This is the synthesis: zero-copy returns *and* per-scope reclamation, with <strong>no visible memory constructs at all</strong>. It is sound by construction because, under value semantics, a wrong escape decision can only change *when* memory is freed, never *whether* a pointer dangles. In a pointer-having language the same analysis is a correctness obligation with alias tracking — which is exactly why such languages reach for explicit tools instead. The no-pointer rule turns that hardest problem into a local optimization.</p>
 <h3 id="9-why-generics-dont-weaken-the-model">9. Why generics don't weaken the model</h3>
-<p>The arena model holds, and <strong>adding generics does not change that</strong>: each <code>$T</code></p>
-<p>instantiation is monomorphized to concrete, value-semantic code *before* the</p>
-<p>signature-directed escape analysis (§8) runs, so it is ordinary concrete code</p>
-<p>with the same locally-decidable lifetimes — nothing generic survives to analyze.</p>
-<p>Correctness still rests entirely on **"no reference type + copy on cross-arena</p>
-<p>move."** What grows is a substitution pass feeding the *same* per-type</p>
-<p>emission the built-in containers already use — not a new generics engine, and</p>
-<p>not the memory model.</p>
-<p>That keeps every lifetime question locally decidable from signatures, which</p>
-<p>is exactly what lets the arenas stay invisible *and* lets the</p>
-<p>signature-directed escape strategy (§8) reclaim memory without copies. Arena</p>
-<p>allocation itself is well-proven; what Tycho is testing is whether removing pointers</p>
-<p>turns the visible memory tools and whole-program analyses such systems usually</p>
-<p>need into invisible, local ones — and generics, being monomorphized to concrete</p>
-<p>code first, ride along without re-introducing either.</p>
+<p>The arena model holds, and <strong>adding generics does not change that</strong>: each <code>$T</code> instantiation is monomorphized to concrete, value-semantic code *before* the signature-directed escape analysis (§8) runs, so it is ordinary concrete code with the same locally-decidable lifetimes — nothing generic survives to analyze. Correctness still rests entirely on <strong>"no reference type + copy on cross-arena move."</strong> What grows is a substitution pass feeding the *same* per-type emission the built-in containers already use — not a new generics engine, and not the memory model.</p>
+<p>That keeps every lifetime question locally decidable from signatures, which is exactly what lets the arenas stay invisible *and* lets the signature-directed escape strategy (§8) reclaim memory without copies. Arena allocation itself is well-proven; what Tycho is testing is whether removing pointers turns the visible memory tools and whole-program analyses such systems usually need into invisible, local ones — and generics, being monomorphized to concrete code first, ride along without re-introducing either.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

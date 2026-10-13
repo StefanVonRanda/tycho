@@ -4,165 +4,99 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Design: a cheap reference to an aggregate — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/design-aggregate-ref.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html" aria-current="page">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#the-premise-and-the-measured-correction">The premise, and the measured correction</a>
+<a href="#what-the-construct-would-be--and-that-it-already-ships-twice">What the construct would be — and that it already ships, twice</a>
+<a href="#the-six-questions">The six questions</a>
+<a href="#the-recommendation">The recommendation</a>
+<a href="#verification">Verification</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/design-aggregate-ref.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="design-a-cheap-reference-to-an-aggregate">Design: a cheap reference to an aggregate</h1>
 <blockquote>
 <p>Status: decided 2026-08-03 — do not build a new reference construct. The compatible cases already ship (<code>inout</code> codegen, yielding subscripts); checked against emitted C. Validated 2026-08-03 via the tycho-vm refactor.</p>
 </blockquote>
 <h2 id="the-premise-and-the-measured-correction">The premise, and the measured correction</h2>
-<p>The plan's brief names three programs, three symptoms, one cause: *"a</p>
-<p>parameter is borrowed read-only, <code>y := a</code> copies, and <code>inout</code> is</p>
-<p>copy-in/copy-out, so nothing can touch part of a large value without copying</p>
-<p>it."* The three symptoms:</p>
-<p>1. <code>tools/tycho-vm/main.ty</code> — <code>vpush(&amp;st, &amp;sp, v)</code> "would copy the entire</p>
-<p>1024-slot stack twice per instruction", so push/pop were inlined</p>
-<p>(<code>tools/tycho-vm/main.ty:475-478</code>).</p>
-<p>2. <code>tools/tycho-ar/main.ty</code> — a streaming digest cannot thread state through</p>
-<p>calls, so <code>core:sha256</code> was one-shot and the archiver wrote its own.</p>
-<p><strong>Closed since this was written:</strong> the trio exists and tycho-ar calls it</p>
-<p>(<code>tools/tycho-ar/main.ty@final_hex</code>).</p>
-<p>3. <code>corelib/decimal/decimal.ty</code> and the corelib generally — return-new</p>
-<p>signature shapes.</p>
-<p>**The premise is wrong about the codegen, and the measurement is the emitted</p>
-<p>C.<strong> <code>inout</code> on a heap value already passes a </strong>pointer plus the value's owning</p>
-<p>arena** as a hidden <code>_ina_</code> parameter (<code>src/tychoc.c:10365-10373</code>), and every</p>
-<p>allocating mutation of the parameter allocates into that arena — the caller's,</p>
-<p>where the value lives — not the callee's scope (<code>src/tychoc.c@owner_arena_of</code>).</p>
-<p>The codegen was already in place at the Hier→Tycho rename; nothing in the</p>
-<p>current tree copies an <code>inout</code> aggregate.</p>
-<p>Verified by emitting C for the exact VM shape — <code>bounded[1024]V</code> where <code>V</code> is</p>
-<p>a struct with a <code>string</code> field, plus an <code>inout int</code> counter, in a <code>vpush</code></p>
-<p>helper called in a loop:</p>
+<p>The plan's brief names three programs, three symptoms, one cause: *"a parameter is borrowed read-only, <code>y := a</code> copies, and <code>inout</code> is copy-in/copy-out, so nothing can touch part of a large value without copying it."* The three symptoms:</p>
+<ol>
+<li><code>tools/tycho-vm/main.ty</code> — <code>vpush(&amp;st, &amp;sp, v)</code> "would copy the entire 1024-slot stack twice per instruction", so push/pop were inlined (<code>tools/tycho-vm/main.ty:475-478</code>).</li>
+<li><code>tools/tycho-ar/main.ty</code> — a streaming digest cannot thread state through calls, so <code>core:sha256</code> was one-shot and the archiver wrote its own. <strong>Closed since this was written:</strong> the trio exists and tycho-ar calls it (<code>tools/tycho-ar/main.ty@final_hex</code>).</li>
+<li><code>corelib/decimal/decimal.ty</code> and the corelib generally — return-new signature shapes.</li>
+</ol>
+<p><strong>The premise is wrong about the codegen, and the measurement is the emitted C.</strong> <code>inout</code> on a heap value already passes a <strong>pointer plus the value's owning arena</strong> as a hidden <code>_ina_</code> parameter (<code>src/tychoc.c:10365-10373</code>), and every allocating mutation of the parameter allocates into that arena — the caller's, where the value lives — not the callee's scope (<code>src/tychoc.c@owner_arena_of</code>). The codegen was already in place at the Hier→Tycho rename; nothing in the current tree copies an <code>inout</code> aggregate.</p>
+<p>Verified by emitting C for the exact VM shape — <code>bounded[1024]V</code> where <code>V</code> is a struct with a <code>string</code> field, plus an <code>inout int</code> counter, in a <code>vpush</code> helper called in a loop:</p>
 <pre><code class="language-c">h_vm(&amp;_scr2, &amp;_scope, &amp;(h_st), &amp;(h_sp), ((S_V){ 0, h_i, "v" }));
 </code></pre>
-<p>The stack and the counter arrive <strong>by address</strong>; the callee mutates the</p>
-<p>caller's storage in place, and the helper runs (50 pushes, correct result).</p>
-<p>There is no 1024-slot copy in or out. The plan's <code>vpush</code> hypothetical was</p>
-<p>never tested against the codegen; the spec's "copy-in/copy-out" is the</p>
-<p><strong>semantic contract</strong> (<code>docs/spec/07-memory-model.md:23-26</code> — "provably</p>
-<p>equivalent to <code>x = f(x)</code>"), not the implementation, and the</p>
-<p><code>tools/tycho-vm/main.ty:475</code> comment read the contract as the implementation.</p>
+<p>The stack and the counter arrive <strong>by address</strong>; the callee mutates the caller's storage in place, and the helper runs (50 pushes, correct result). There is no 1024-slot copy in or out. The plan's <code>vpush</code> hypothetical was never tested against the codegen; the spec's "copy-in/copy-out" is the <strong>semantic contract</strong> (<code>docs/spec/07-memory-model.md:23-26</code> — "provably equivalent to <code>x = f(x)</code>"), not the implementation, and the <code>tools/tycho-vm/main.ty:475</code> comment read the contract as the implementation.</p>
 <p>Re-examining the three symptoms against the codegen:</p>
 <ul>
-<li><strong>tycho-vm</strong>: the helper is free today; the machine does not have to live in</li>
+<li><strong>tycho-vm</strong>: the helper is free today; the machine does not have to live in one function. The cost the comment fears was already gone when the comment was written. <strong>Validated 2026-08-03:</strong> the dispatch was refactored — vpush/vpop/arith are now helpers called from every arm, the gate's golden is byte-identical, and the emitted C shows the pointer passes (<code>&amp;(h_st), &amp;(h_sp)</code>) with no copy. The one boundary the extraction hit was cc inlining, not copies: extracting CALL/RET regressed the call-heavy fib program ~4.5% in two sessions, so they stay inline. The stale premise was wrong in mechanism but the one-function shape had a real reason after all.</li>
+<li><strong>tycho-ar</strong>: <code>inout</code> was the answer — it works on <code>[u32]</code> and on <code>bytes</code>, and it forwards. Streaming state threading was never the gap; what was missing was <code>core:sha256</code>'s <strong>API</strong>, which was library work rather than language work. <strong>Resolved since this was written:</strong> the <code>init</code>/<code>update</code>/<code>final_hex</code> trio exists and tycho-ar calls it (<code>tools/tycho-ar/main.ty@final_hex</code>).</li>
+<li><strong>decimal</strong>: the operations pass operands by value (a borrow — no copy), and the fresh results are allocated in the caller's arena (a move, not a copy) with move-on-last-use eliding assignment copies. The signatures are shaped by taste, not by a missing reference.</li>
 </ul>
-<p>one function. The cost the comment fears was already gone when the comment</p>
-<p>was written. <strong>Validated 2026-08-03:</strong> the dispatch was refactored —</p>
-<p>vpush/vpop/arith are now helpers called from every arm, the gate's golden is</p>
-<p>byte-identical, and the emitted C shows the pointer passes (`&amp;(h_st),</p>
-<p>&amp;(h_sp)`) with no copy. The one boundary the extraction hit was cc inlining,</p>
-<p>not copies: extracting CALL/RET regressed the call-heavy fib program ~4.5%</p>
-<p>in two sessions, so they stay inline. The stale premise was wrong in</p>
-<p>mechanism but the one-function shape had a real reason after all.</p>
-<ul>
-<li><strong>tycho-ar</strong>: <code>inout</code> was the answer — it works on <code>[u32]</code> and on <code>bytes</code>,</li>
-</ul>
-<p>and it forwards. Streaming state threading was never the gap; what was</p>
-<p>missing was <code>core:sha256</code>'s <strong>API</strong>, which was library work rather than</p>
-<p>language work. <strong>Resolved since this was written:</strong> the</p>
-<p><code>init</code>/<code>update</code>/<code>final_hex</code> trio exists and tycho-ar calls it</p>
-<p>(<code>tools/tycho-ar/main.ty@final_hex</code>).</p>
-<ul>
-<li><strong>decimal</strong>: the operations pass operands by value (a borrow — no copy), and</li>
-</ul>
-<p>the fresh results are allocated in the caller's arena (a move, not a copy)</p>
-<p>with move-on-last-use eliding assignment copies. The signatures are shaped</p>
-<p>by taste, not by a missing reference.</p>
 <h2 id="what-the-construct-would-be--and-that-it-already-ships-twice">What the construct would be — and that it already ships, twice</h2>
-<p>The brief asks what the construct is: a borrow, a view, a <code>ref</code> binding, or</p>
-<p>something else. The tree already contains the two compatible answers, both</p>
-<p>measured above:</p>
-<p>1. <strong>In-place <code>inout</code></strong> — an exclusive, call-scoped, non-escaping mutable</p>
-<p>alias. It is not a stored reference; it cannot outlive the call by</p>
-<p>construction (the parameter dies at return); its exclusivity is the</p>
-<p>existing inout rule. Its codegen is the pointer + <code>_ina_</code> arena pass.</p>
-<p>2. <strong>Yielding subscripts</strong> — a scoped, zero-copy place projection into one of</p>
-<p>the receiver's parts (<code>docs/reference/subscripts.md:1-8</code>). Verified: a</p>
-<p>subscript result is usable as an <code>inout</code> argument and mutates the original</p>
-<p>(<code>bump(&amp;g.node(1))</code> — the array element changed in place). Subscripts are</p>
-<p>compile-time place macros with no runtime object, so they carry none of the</p>
-<p>lifetime machinery a stored reference would.</p>
-<p>Both were independently concluded to be "the one compatible increment" by the</p>
-<p>reference spike (<code>docs/rfc/limited-references-spike.md:104-131</code>), and the</p>
-<p>latter half has since shipped. A <code>ref</code> <strong>binding</strong> (<code>r := &amp;a</code>) is the only</p>
-<p>piece of the space that does not exist — and it must not be added (below).</p>
+<p>The brief asks what the construct is: a borrow, a view, a <code>ref</code> binding, or something else. The tree already contains the two compatible answers, both measured above:</p>
+<ol>
+<li><strong>In-place <code>inout</code></strong> — an exclusive, call-scoped, non-escaping mutable alias. It is not a stored reference; it cannot outlive the call by construction (the parameter dies at return); its exclusivity is the existing inout rule. Its codegen is the pointer + <code>_ina_</code> arena pass.</li>
+<li><strong>Yielding subscripts</strong> — a scoped, zero-copy place projection into one of the receiver's parts (<code>docs/reference/subscripts.md:1-8</code>). Verified: a subscript result is usable as an <code>inout</code> argument and mutates the original (<code>bump(&amp;g.node(1))</code> — the array element changed in place). Subscripts are compile-time place macros with no runtime object, so they carry none of the lifetime machinery a stored reference would.</li>
+</ol>
+<p>Both were independently concluded to be "the one compatible increment" by the reference spike (<code>docs/rfc/limited-references-spike.md:104-131</code>), and the latter half has since shipped. A <code>ref</code> <strong>binding</strong> (<code>r := &amp;a</code>) is the only piece of the space that does not exist — and it must not be added (below).</p>
 <h2 id="the-six-questions">The six questions</h2>
-<p>1. <strong>What the construct is.</strong> The compatible forms are a parameter annotation</p>
-<p>(<code>inout</code>, in-place in codegen) and a declaration form (subscripts). A</p>
-<p>general borrow/view/<code>ref</code> binding is the design that should not be built</p>
-<p>(the counter-argument).</p>
-<p>2. <strong>Arena interaction.</strong> In-place <code>inout</code> is sound because the callee's</p>
-<p>allocating mutations route to the caller's arena via <code>_ina_</code></p>
-<p>(<code>src/tychoc.c:10365-10373</code>); the callee's own arena holds only its</p>
-<p>transients and is freed at return. A <code>ref</code> binding would need the same</p>
-<p>owning-arena routing at every use site — the bookkeeping that grows into</p>
-<p>alias analysis the moment the binding can be passed on.</p>
-<p>3. <strong>What stops it outliving its target.</strong> <code>inout</code> is call-scoped by</p>
-<p>construction; subscripts are compile-time. A stored reference fails the</p>
-<p>thread boundary: it has no sound deep-copy, so it breaks the invariant that</p>
-<p>makes tasks race-free — the reference spike's recorded decision</p>
-<p>(<code>docs/rfc/limited-references-spike.md:90-102</code>).</p>
-<p>4. <strong>Type or binding.</strong> Both compatible forms live at the binding/declaration</p>
-<p>level; neither introduces a reference <strong>type</strong>. A reference type would let</p>
-<p>references be stored, composed, and passed on — the escape question the</p>
-<p>thesis exists to make unaskable.</p>
-<p>5. <strong>Corelib signatures.</strong> The one-shot shapes are not copy-taxed; they are</p>
-<p>conventions. The streaming digest the plan wanted (<code>core:sha256</code></p>
-<p>init/update/final) is writable today with in-place <code>inout</code> state, exactly</p>
-<p>as <code>tools/tycho-ar</code> already does it inline. That is a library phase, not a</p>
-<p>language feature.</p>
-<p>6. <strong>The counter-argument.</strong> Value semantics with no references is the</p>
-<p>project's central position, not an oversight (<code>docs/thesis.md</code>). A general</p>
-<p>borrow is Design A of the regions study — "a borrow checker with a</p>
-<p>different keyword" that "contradicts the thesis at the joint"</p>
-<p>(<code>docs/rfc/value-lifetime-regions.md:405-406</code>). The regions study's</p>
-<p>recommendation applies here unchanged: the one genuinely sound increment in</p>
-<p>the space (Design B, value-owned arenas) has no paying customer in the tree,</p>
-<p>and the one compatible ergonomic increment (projections) has shipped. What</p>
-<p>is lost by adding a reference: the compiler must track who may hold a</p>
-<p>pointer and prove it dies first — the whole-program alias reasoning the</p>
-<p>model exists to avoid — and every exception becomes a soundness debt that</p>
-<p>only grows.</p>
+<ol>
+<li><strong>What the construct is.</strong> The compatible forms are a parameter annotation (<code>inout</code>, in-place in codegen) and a declaration form (subscripts). A general borrow/view/<code>ref</code> binding is the design that should not be built (the counter-argument).</li>
+<li><strong>Arena interaction.</strong> In-place <code>inout</code> is sound because the callee's allocating mutations route to the caller's arena via <code>_ina_</code> (<code>src/tychoc.c:10365-10373</code>); the callee's own arena holds only its transients and is freed at return. A <code>ref</code> binding would need the same owning-arena routing at every use site — the bookkeeping that grows into alias analysis the moment the binding can be passed on.</li>
+<li><strong>What stops it outliving its target.</strong> <code>inout</code> is call-scoped by construction; subscripts are compile-time. A stored reference fails the thread boundary: it has no sound deep-copy, so it breaks the invariant that makes tasks race-free — the reference spike's recorded decision (<code>docs/rfc/limited-references-spike.md:90-102</code>).</li>
+<li><strong>Type or binding.</strong> Both compatible forms live at the binding/declaration level; neither introduces a reference <strong>type</strong>. A reference type would let references be stored, composed, and passed on — the escape question the thesis exists to make unaskable.</li>
+<li><strong>Corelib signatures.</strong> The one-shot shapes are not copy-taxed; they are conventions. The streaming digest the plan wanted (<code>core:sha256</code> init/update/final) is writable today with in-place <code>inout</code> state, exactly as <code>tools/tycho-ar</code> already does it inline. That is a library phase, not a language feature.</li>
+<li><strong>The counter-argument.</strong> Value semantics with no references is the project's central position, not an oversight (<code>docs/thesis.md</code>). A general borrow is Design A of the regions study — "a borrow checker with a different keyword" that "contradicts the thesis at the joint" (<code>docs/rfc/value-lifetime-regions.md:405-406</code>). The regions study's recommendation applies here unchanged: the one genuinely sound increment in the space (Design B, value-owned arenas) has no paying customer in the tree, and the one compatible ergonomic increment (projections) has shipped. What is lost by adding a reference: the compiler must track who may hold a pointer and prove it dies first — the whole-program alias reasoning the model exists to avoid — and every exception becomes a soundness debt that only grows.</li>
+</ol>
 <h2 id="the-recommendation">The recommendation</h2>
-<p><strong>Do not build a new reference construct.</strong> The measured benefit is zero —</p>
-<p>the copy costs the plan premises do not exist in the codegen — and the cost is</p>
-<p>the borrow checker. Three things ARE worth doing, in order:</p>
-<p>1. <strong>Fix the stale documentation.</strong> <code>docs/spec/07-memory-model.md:23-26</code> and</p>
-<p><code>docs/reference/basics.md</code> say <code>inout</code> is copy-in/copy-out; the spec is the</p>
-<p>semantic contract (fine), but it has been read as the implementation, which</p>
-<p>is how the plan's copy-tax premise entered. One sentence per site: the</p>
-<p>contract is <code>x = f(x)</code>; the codegen is an in-place pointer pass with the</p>
-<p>owner arena carried, so no aggregate is copied. Correct</p>
-<p><code>tools/tycho-vm/main.ty:475-478</code> — the helper is free, so the "one big</p>
-<p>function" comment is misleading; the machine could be factored if anyone</p>
-<p>wants to.</p>
-<p>2. <strong>Reject <code>&amp;</code> outside argument position.</strong> <code>&amp;</code> parses as a unary <code>E_ADDR</code></p>
-<p>everywhere (<code>src/tychoc.c:3454-3457</code>) and resolves to the place's type</p>
-<p>without position validation (<code>src/tychoc.c:6872-6874</code> — "only valid as an</p>
-<p>inout argument", enforced only at call sites). <code>r := &amp;a</code> therefore compiles</p>
-<p>to invalid C (<code>TychoArrInt h_r = &amp;(h_a);</code> — cc: "invalid initializer"),</p>
-<p>and <code>&amp;a + 1</code> emits garbage. The fix is one check: <code>E_ADDR</code> is legal only as</p>
-<p>the direct argument of an inout parameter, so <code>resolve_expr</code>'s <code>E_ADDR</code></p>
-<p>case must die unless a "resolving a call argument" flag is set. This is the</p>
-<p>only code change this design requests.</p>
-<p>3. <strong>If the demand appears, the streaming API is a library phase.</strong> A</p>
-<p><code>core:sha256</code> init/update/final trio over in-place <code>inout</code> state would close</p>
-<p>the tycho-ar symptom properly and has a real customer (the archiver wrote</p>
-<p>its own). That is <code>corelib</code> work under the demand-gated rule, not language</p>
-<p>work, and it needs no new construct.</p>
+<p><strong>Do not build a new reference construct.</strong> The measured benefit is zero — the copy costs the plan premises do not exist in the codegen — and the cost is the borrow checker. Three things ARE worth doing, in order:</p>
+<ol>
+<li><strong>Fix the stale documentation.</strong> <code>docs/spec/07-memory-model.md:23-26</code> and <code>docs/reference/basics.md</code> say <code>inout</code> is copy-in/copy-out; the spec is the semantic contract (fine), but it has been read as the implementation, which is how the plan's copy-tax premise entered. One sentence per site: the contract is <code>x = f(x)</code>; the codegen is an in-place pointer pass with the owner arena carried, so no aggregate is copied. Correct <code>tools/tycho-vm/main.ty:475-478</code> — the helper is free, so the "one big function" comment is misleading; the machine could be factored if anyone wants to.</li>
+<li><strong>Reject <code>&amp;</code> outside argument position.</strong> <code>&amp;</code> parses as a unary <code>E_ADDR</code> everywhere (<code>src/tychoc.c:3454-3457</code>) and resolves to the place's type without position validation (<code>src/tychoc.c:6872-6874</code> — "only valid as an inout argument", enforced only at call sites). <code>r := &amp;a</code> therefore compiles to invalid C (<code>TychoArrInt h_r = &amp;(h_a);</code> — cc: "invalid initializer"), and <code>&amp;a + 1</code> emits garbage. The fix is one check: <code>E_ADDR</code> is legal only as the direct argument of an inout parameter, so <code>resolve_expr</code>'s <code>E_ADDR</code> case must die unless a "resolving a call argument" flag is set. This is the only code change this design requests.</li>
+<li><strong>If the demand appears, the streaming API is a library phase.</strong> A <code>core:sha256</code> init/update/final trio over in-place <code>inout</code> state would close the tycho-ar symptom properly and has a real customer (the archiver wrote its own). That is <code>corelib</code> work under the demand-gated rule, not language work, and it needs no new construct.</li>
+</ol>
 <h2 id="verification">Verification</h2>
 <ul>
-<li>Checked against emitted C: the VM-shaped <code>bounded</code> stack and the subscript-as-<code>inout</code>-argument</li>
+<li>Checked against emitted C: the VM-shaped <code>bounded</code> stack and the subscript-as-<code>inout</code>-argument programs were inspected, and both ran correctly. The <code>&amp;</code>-hole was reproduced (<code>r := &amp;a</code> → invalid C from cc) before being written down.</li>
 </ul>
-<p>programs were inspected, and both ran correctly. The <code>&amp;</code>-hole was reproduced</p>
-<p>(<code>r := &amp;a</code> → invalid C from cc) before being written down.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

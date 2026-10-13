@@ -2,61 +2,52 @@
 <html lang="en">
 <head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Release notes — Tycho docs</title>
+<title> — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="index.html">docs</a> / RELEASE_NOTES.md</nav>
-<p>Draft release notes. Edit this before publishing, then:</p>
-<p>make ci</p>
-<p>make release-check                    # builds twice; smoke-tests and compares the native tarballs</p>
-<p>scripts/release.sh &lt;version&gt; --mingw  # builds and smoke-tests the Windows tarball</p>
-<p>gh release create &lt;version&gt; dist/tycho-&lt;version&gt;-*.tar.gz dist/tycho-&lt;version&gt;-*.sha256 --notes-file RELEASE_NOTES.md</p>
-<p>gh release edit &lt;version&gt; --prerelease</p>
-<p>Build one tarball per platform (there is no hosted CI); attach them all to the release.</p>
-<p>Name the version in the globs: dist/ still holds the previous release's tarballs.</p>
-<p>--&gt;</p>
-<p>Tycho 0.8.6 — pre-1.0, no stability guarantees (see the <a href="README.html">README</a> for</p>
-<p>what that means in practice). Prebuilt binaries are attached, so you can try the</p>
-<p>language without building from source.</p>
-<p>**This release refuses programs 0.8.5 accepted, and removes 136 functions from</p>
-<p>the public corelib surface.** The list is below under *Programs now refused*.</p>
-<p>Every refusal names the rule it enforces. Most of them are programs that were</p>
-<p>already wrong: they failed later inside <code>cc</code>, leaked or double-freed a resource,</p>
-<p>or read freed memory. Three are plain API changes: <code>or_else</code> is now a keyword,</p>
-<p>the corelib helpers are private, and <code>io.open_lines</code> returns a <code>Result</code>.</p>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../#idea">Overview</a>
+    <a href="../#costs">Tradeoffs</a>
+    <a href="../#try">Install</a>
+    <a href="index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="index.html">Documentation home</a><details><summary>Guide</summary><a href="tutorial.html">Tutorial</a><a href="README.html">Tycho documentation</a><a href="from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="idioms.html">Thinking in Tycho</a><a href="memory-model.html">The memory model</a><a href="quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="performance.html">Performance and memory</a><a href="platforms.html">Platforms and toolchains, in detail</a><a href="debugging.html">Debugging generated C</a><a href="architecture.html">Architecture &amp; project status</a><a href="thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="perf.html">Performance: the compiler and the C it emits</a><a href="controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="reference/arrays-slices.html">Arrays and slices</a><a href="reference/basics.html">Basics</a><a href="reference/builtins.html">Builtins</a><a href="reference/concurrency.html">Concurrency</a><a href="reference/corelib.html">corelib — Tycho's core library</a><a href="reference/enums-options.html">Enums, options, and `match`</a><a href="reference/ffi.html">FFI (calling C)</a><a href="reference/functions.html">Functions and closures</a><a href="reference/generics.html">Generics</a><a href="reference/index.html">Tycho language reference</a><a href="reference/maps.html">Maps</a><a href="reference/packages.html">Packages</a><a href="reference/strings.html">Strings</a><a href="reference/structs-tuples.html">Structs and tuples</a><a href="reference/subscripts.html">Subscripts (user-defined projections)</a><a href="reference/types.html">Types</a></details><details><summary>Specification</summary><a href="spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="spec/01-lexical.html">3. Lexical structure</a><a href="spec/02-grammar.html">4. Grammar</a><a href="spec/03-types.html">5. Types</a><a href="spec/04-inference.html">6. Type inference</a><a href="spec/05-generics.html">7. Generics</a><a href="spec/06-conversions.html">8. Conversions and casts</a><a href="spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="spec/09-expressions.html">13. Expressions</a><a href="spec/10-statements.html">14. Statements and control flow</a><a href="spec/11-functions.html">15. Functions</a><a href="spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="spec/16-builtins.html">29. Builtins</a><a href="spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="spec/README.html">The Tycho language specification</a><a href="spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="internals/FRICTION.html">FRICTION</a><a href="internals/README.html">Internals</a><a href="internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="internals/audit-brief.html">Brief for an external security review</a><a href="internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="internals/design-aggregates.html">Aggregates design note</a><a href="internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="internals/design-corelib.html">corelib design notes (maintainers)</a><a href="internals/design-enums.html">Enum design notes (maintainers)</a><a href="internals/design-ffi.html">FFI design notes (maintainers)</a><a href="internals/design-functions.html">Function design notes (maintainers)</a><a href="internals/design-generics.html">Generics design notes (maintainers)</a><a href="internals/design-maps.html">Map design notes (maintainers)</a><a href="internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="internals/probe-procedure.html">Running an agent probe</a><a href="internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="rfc/README.html">RFCs</a><a href="rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details open><summary>Project</summary><a href="changelog.html">Changelog</a><a href="release-notes.html" aria-current="page"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#macos-on-apple-silicon">macOS on Apple silicon</a>
+<a href="#new-in-the-language">New in the language</a>
+<a href="#programs-now-refused">Programs now refused</a>
+<a href="#fixed">Fixed</a>
+<a href="#install">Install</a>
+<a href="#what-this-release-does-not-have">What this release does not have</a>
+<a href="#status">Status</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="index.html">Docs</a> / RELEASE_NOTES.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
+<p>Draft release notes. Edit this before publishing, then: make ci make release-check                    # builds twice; smoke-tests and compares the native tarballs scripts/release.sh &lt;version&gt; --mingw  # builds and smoke-tests the Windows tarball gh release create &lt;version&gt; dist/tycho-&lt;version&gt;-*.tar.gz dist/tycho-&lt;version&gt;-*.sha256 --notes-file RELEASE_NOTES.md gh release edit &lt;version&gt; --prerelease Build one tarball per platform (there is no hosted CI); attach them all to the release. Name the version in the globs: dist/ still holds the previous release's tarballs. --&gt;</p>
+<p>Tycho 0.8.6 — pre-1.0, no stability guarantees (see the <a href="https://github.com/StefanVonRanda/tycho/blob/main/README.md">README</a> for what that means in practice). Prebuilt binaries are attached, so you can try the language without building from source.</p>
+<p><strong>This release refuses programs 0.8.5 accepted, and removes 136 functions from the public corelib surface.</strong> The list is below under *Programs now refused*. Every refusal names the rule it enforces. Most of them are programs that were already wrong: they failed later inside <code>cc</code>, leaked or double-freed a resource, or read freed memory. Three are plain API changes: <code>or_else</code> is now a keyword, the corelib helpers are private, and <code>io.open_lines</code> returns a <code>Result</code>.</p>
 <h2 id="macos-on-apple-silicon">macOS on Apple silicon</h2>
-<p><strong>A <code>darwin-arm64</code> archive is attached for the first time.</strong> Both compilers</p>
-<p>build native Mach-O arm64 with no source change. The full <code>make ci</code> gate has</p>
-<p>been green on macOS arm64 since 2026-09-19, and this archive is built twice and</p>
-<p>compared byte for byte (<code>make release-check</code>), then extracted and checked</p>
-<p>(<code>make release-content</code>).</p>
-<p>Running the gate on macOS for the first time found defects that were not</p>
-<p>macOS-specific. It was the first platform to show them:</p>
+<p><strong>A <code>darwin-arm64</code> archive is attached for the first time.</strong> Both compilers build native Mach-O arm64 with no source change. The full <code>make ci</code> gate has been green on macOS arm64 since 2026-09-19, and this archive is built twice and compared byte for byte (<code>make release-check</code>), then extracted and checked (<code>make release-content</code>).</p>
+<p>Running the gate on macOS for the first time found defects that were not macOS-specific. It was the first platform to show them:</p>
 <ul>
-<li><strong>Every Tycho server refused connections under a burst on macOS.</strong></li>
+<li><strong>Every Tycho server refused connections under a burst on macOS.</strong> <code>net.listen</code> asked for a backlog of 16. When the accept queue is full, Linux drops the SYN and the client retries, while macOS and the BSDs reset the connection. The backlog is <code>SOMAXCONN</code> now.</li>
+<li><strong>A server could hang on shutdown</strong>, about one run in eight, because a worker blocked in <code>accept()</code> never saw SIGTERM.</li>
+<li><strong>Floating point could round differently on ARM.</strong> The emitted C left fused multiply-add (FMA) contraction to the C compiler. It fuses <code>a*b + c</code> on aarch64 and cannot on baseline x86-64, so the same program printed <code>0.30000000000000006</code> on one and <code>...004</code> on the other. Contraction is off now, so a program rounds as its source says on every host.</li>
 </ul>
-<p><code>net.listen</code> asked for a backlog of 16. When the accept queue is full, Linux</p>
-<p>drops the SYN and the client retries, while macOS and the BSDs reset the</p>
-<p>connection. The backlog is <code>SOMAXCONN</code> now.</p>
-<ul>
-<li><strong>A server could hang on shutdown</strong>, about one run in eight, because a worker</li>
-</ul>
-<p>blocked in <code>accept()</code> never saw SIGTERM.</p>
-<ul>
-<li><strong>Floating point could round differently on ARM.</strong> The emitted C left fused</li>
-</ul>
-<p>multiply-add (FMA) contraction to the C compiler. It fuses <code>a*b + c</code> on aarch64 and cannot on</p>
-<p>baseline x86-64, so the same program printed <code>0.30000000000000006</code> on one and</p>
-<p><code>...004</code> on the other. Contraction is off now, so a program rounds as its</p>
-<p>source says on every host.</p>
-<p>The binaries are <strong>not notarized</strong> by Apple. If macOS refuses to start them</p>
-<p>after a browser download, clear the quarantine flag on the unpacked directory</p>
-<p>with <code>xattr -dr com.apple.quarantine tycho-v0.8.6-darwin-arm64</code>.</p>
+<p>The binaries are <strong>not notarized</strong> by Apple. If macOS refuses to start them after a browser download, clear the quarantine flag on the unpacked directory with <code>xattr -dr com.apple.quarantine tycho-v0.8.6-darwin-arm64</code>.</p>
 <h2 id="new-in-the-language">New in the language</h2>
 <ul>
 <li><strong><code>or_else</code>: an early return that maps the error.</strong></li>
@@ -64,145 +55,69 @@
 <pre><code class="language-text">  cfg := load(path) or_else e: Err(ConfigErr(e))
   ok := parse(s) or_else _: false
 </code></pre>
-<p>On <code>Ok</code>/<code>Some</code> the expression is the payload, as with <code>or_return</code>. On <code>Err(e)</code></p>
-<p>the function <strong>returns</strong> the handler. The handler has the enclosing</p>
-<p>function's return type, which need not be a <code>Result</code>. It replaces the</p>
-<p>four-line <code>match</code> that unwraps a value or returns a wrapped error. It is</p>
-<p>refused in a function that returns nothing, because there is no value to</p>
-<p>return; use <code>or_return</code> or a <code>match</code> there. Spec §14.6.1. The tree's own code</p>
-<p>moved to it at 79 call sites.</p>
+<p>On <code>Ok</code>/<code>Some</code> the expression is the payload, as with <code>or_return</code>. On <code>Err(e)</code> the function <strong>returns</strong> the handler. The handler has the enclosing function's return type, which need not be a <code>Result</code>. It replaces the four-line <code>match</code> that unwraps a value or returns a wrapped error. It is refused in a function that returns nothing, because there is no value to return; use <code>or_return</code> or a <code>match</code> there. Spec §14.6.1. The tree's own code moved to it at 79 call sites.</p>
 <ul>
-<li><strong><code>size_of$(T)</code> accepts an <code>align(N)</code> struct</strong>, so <code>align</code> can be observed</li>
+<li><strong><code>size_of$(T)</code> accepts an <code>align(N)</code> struct</strong>, so <code>align</code> can be observed from inside the language. The size is implementation-defined and is guaranteed to be a multiple of <code>N</code>.</li>
+<li><strong><code>math.min</code>, <code>math.max</code> and <code>math.clamp</code> work lane by lane on a <code>vector[N]T</code></strong>, as one compare and blend.</li>
 </ul>
-<p>from inside the language. The size is implementation-defined and is</p>
-<p>guaranteed to be a multiple of <code>N</code>.</p>
-<ul>
-<li>**<code>math.min</code>, <code>math.max</code> and <code>math.clamp</code> work lane by lane on a</li>
-</ul>
-<p><code>vector[N]T</code>**, as one compare and blend.</p>
-<p>The layout and SIMD surface itself (<code>vector[N]T</code>, <code>align(N)</code>, <code>packed</code>,</p>
-<p>swizzling) shipped in 0.8.5. This release adds its first in-tree user,</p>
-<p><code>tools/tycho-grade</code>.</p>
+<p>The layout and SIMD surface itself (<code>vector[N]T</code>, <code>align(N)</code>, <code>packed</code>, swizzling) shipped in 0.8.5. This release adds its first in-tree user, <code>tools/tycho-grade</code>.</p>
 <h2 id="programs-now-refused">Programs now refused</h2>
 <ul>
 <li><strong><code>or_else</code> as an identifier.</strong> It is a keyword.</li>
-<li><strong>A call to a corelib internal helper.</strong> 136 functions such as</li>
-</ul>
-<p><code>json.parse_value</code> and <code>bignum.mag_cmp</code> were public only because their names</p>
-<p>lacked a leading underscore. They are package-private now, and the error</p>
-<p>names the private spelling. Every function found being called from outside its</p>
-<p>package stayed public. The corelib surface is 423 functions, down from 559.</p>
-<ul>
-<li><strong><code>io.open_lines</code> returning a nullable <code>ptr</code>.</strong> It returns</li>
-</ul>
-<p><code>Result(LineReader, IoErr)</code>. The null check becomes the <code>Err</code> arm.</p>
-<p><code>CHANGELOG.md</code> shows the migration.</p>
-<ul>
-<li><strong><code>reserve</code> or <code>pop</code> on a fixed-size <code>[N]T</code> or <code>vector[N]T</code>.</strong> The reference</li>
-</ul>
-<p>compiler emitted C that did not build. The shipped compiler accepted <code>pop</code> on</p>
-<p>a <code>[4]int</code> and silently shortened it.</p>
-<ul>
+<li><strong>A call to a corelib internal helper.</strong> 136 functions such as <code>json.parse_value</code> and <code>bignum.mag_cmp</code> were public only because their names lacked a leading underscore. They are package-private now, and the error names the private spelling. Every function found being called from outside its package stayed public. The corelib surface is 423 functions, down from 559.</li>
+<li><strong><code>io.open_lines</code> returning a nullable <code>ptr</code>.</strong> It returns <code>Result(LineReader, IoErr)</code>. The null check becomes the <code>Err</code> arm. <code>CHANGELOG.md</code> shows the migration.</li>
+<li><strong><code>reserve</code> or <code>pop</code> on a fixed-size <code>[N]T</code> or <code>vector[N]T</code>.</strong> The reference compiler emitted C that did not build. The shipped compiler accepted <code>pop</code> on a <code>[4]int</code> and silently shortened it.</li>
 <li><strong>Four misuses of a <code>handle</code>:</strong></li>
 <li>a use after a <code>close(h)</code> that closes it on every path;</li>
 <li><code>close(h)</code> on a handle parameter, which freed the resource twice;</li>
-<li>an opener whose result is not bound directly to a variable, which leaked it</li>
-</ul>
-<p>for the life of the process;</p>
-<ul>
+<li>an opener whose result is not bound directly to a variable, which leaked it for the life of the process;</li>
 <li>a <code>free:</code> that does not name an <code>extern fn</code> taking that handle type.</li>
-<li><strong>An import one file declares and only a sibling file uses.</strong> It is reported</li>
+<li><strong>An import one file declares and only a sibling file uses.</strong> It is reported as unused in the file that declares it.</li>
 </ul>
-<p>as unused in the file that declares it.</p>
 <h2 id="fixed">Fixed</h2>
 <ul>
-<li><strong>The shipped compiler returned freed memory</strong> in two shapes. An</li>
+<li><strong>The shipped compiler returned freed memory</strong> in two shapes. An <code>or_return</code>/<code>or_else</code> payload returned straight to the caller was built in an arena the return had just freed. <code>to_bytes(local)</code> kept inside a returned value pointed into the freed scope; in <code>core:httpd</code> this corrupted a request body.</li>
+<li><strong>The shipped compiler crashed on <code>x[a:b]</code> over a struct or enum</strong>, with an internal message and no line. It is a type error now.</li>
+<li><strong>A local <code>bounded[N]T</code> grew past its capacity.</strong> It now traps on the push that overflows it.</li>
+<li><strong><code>core:tls</code> did not guard an interior NUL in the host name.</strong> A string like <code>"good.example.com\0anything"</code> connected to, announced and verified <code>good.example.com</code>, while the caller's own checks saw the whole string. It fails closed now.</li>
+<li><strong><code>core:os</code> refuses to spawn a <code>.bat</code> or <code>.cmd</code> on Windows.</strong> <code>cmd.exe</code> re-parses the command line and defeats the argument quoting. A PATH-resolved name with no extension is not caught.</li>
+<li><strong>Subnormal float literals became <code>0.0</code> on aarch64 Windows</strong>, through mingw's <code>printf</code>.</li>
+<li><strong>The vector-width lint gave x86-64 advice on ARM</strong>, a flag <code>cc</code> then refused. It now suggests a narrower vector first.</li>
+<li><strong>A generic instantiation error names the whole chain of calls</strong>, starting from the outermost one, which is the line you own.</li>
+<li>Every build importing <code>core:strings</code> drew two <code>-Wunused-value</code> warnings from the reference compiler.</li>
+<li>The build failed to link on Fedora with gcc 16: <code>-static-pie</code> needs <code>-fPIE</code> beside it.</li>
 </ul>
-<p><code>or_return</code>/<code>or_else</code> payload returned straight to the caller was built in an</p>
-<p>arena the return had just freed. <code>to_bytes(local)</code> kept inside a returned</p>
-<p>value pointed into the freed scope; in <code>core:httpd</code> this corrupted a request</p>
-<p>body.</p>
-<ul>
-<li><strong>The shipped compiler crashed on <code>x[a:b]</code> over a struct or enum</strong>, with an</li>
-</ul>
-<p>internal message and no line. It is a type error now.</p>
-<ul>
-<li><strong>A local <code>bounded[N]T</code> grew past its capacity.</strong> It now traps on the push</li>
-</ul>
-<p>that overflows it.</p>
-<ul>
-<li><strong><code>core:tls</code> did not guard an interior NUL in the host name.</strong> A string like</li>
-</ul>
-<p><code>"good.example.com\0anything"</code> connected to, announced and verified</p>
-<p><code>good.example.com</code>, while the caller's own checks saw the whole string. It</p>
-<p>fails closed now.</p>
-<ul>
-<li><strong><code>core:os</code> refuses to spawn a <code>.bat</code> or <code>.cmd</code> on Windows.</strong> <code>cmd.exe</code></li>
-</ul>
-<p>re-parses the command line and defeats the argument quoting. A PATH-resolved</p>
-<p>name with no extension is not caught.</p>
-<ul>
-<li><strong>Subnormal float literals became <code>0.0</code> on aarch64 Windows</strong>, through mingw's</li>
-</ul>
-<p><code>printf</code>.</p>
-<ul>
-<li><strong>The vector-width lint gave x86-64 advice on ARM</strong>, a flag <code>cc</code> then refused.</li>
-</ul>
-<p>It now suggests a narrower vector first.</p>
-<ul>
-<li><strong>A generic instantiation error names the whole chain of calls</strong>, starting</li>
-</ul>
-<p>from the outermost one, which is the line you own.</p>
-<ul>
-<li>Every build importing <code>core:strings</code> drew two <code>-Wunused-value</code> warnings from</li>
-</ul>
-<p>the reference compiler.</p>
-<ul>
-<li>The build failed to link on Fedora with gcc 16: <code>-static-pie</code> needs <code>-fPIE</code></li>
-</ul>
-<p>beside it.</p>
 <h2 id="install">Install</h2>
 <p>Download the tarball for your platform below, verify it, and unpack it:</p>
 <pre><code>tar xzf tycho-&lt;version&gt;-&lt;os&gt;-&lt;arch&gt;.tar.gz
 cd tycho-&lt;version&gt;-&lt;os&gt;-&lt;arch&gt;
 ./tychoc examples/hello.ty &amp;&amp; ./examples/hello
 </code></pre>
-<p><code>tychoc</code> writes the binary beside its source unless you pass <code>-o</code>, so the</p>
-<p>program built from <code>examples/hello.ty</code> is <code>examples/hello</code>.</p>
-<p>The core library ships inside the tarball, beside the compiler, so there is</p>
-<p>nothing to configure. You still need a C compiler (<code>cc</code>) on your <code>PATH</code>, because</p>
-<p>Tycho transpiles to C: gcc, or clang 15 or newer. On macOS that is the Xcode</p>
-<p>command line tools. Each tarball's SHA-256 is published alongside it.</p>
+<p><code>tychoc</code> writes the binary beside its source unless you pass <code>-o</code>, so the program built from <code>examples/hello.ty</code> is <code>examples/hello</code>.</p>
+<p>The core library ships inside the tarball, beside the compiler, so there is nothing to configure. You still need a C compiler (<code>cc</code>) on your <code>PATH</code>, because Tycho transpiles to C: gcc, or clang 15 or newer. On macOS that is the Xcode command line tools. Each tarball's SHA-256 is published alongside it.</p>
 <h2 id="what-this-release-does-not-have">What this release does not have</h2>
-<p>There has been <strong>no third-party security review</strong>, and the FFI</p>
-<p>(foreign-function interface, <code>extern fn</code>) boundary is</p>
-<p>unsafe by design. See <a href="SECURITY.html">SECURITY.md</a>, and</p>
-<p><a href="docs/internals/audit-brief.html">docs/internals/audit-brief.md</a> if you are</p>
-<p>willing to be one.</p>
+<p>There has been <strong>no third-party security review</strong>, and the FFI (foreign-function interface, <code>extern fn</code>) boundary is unsafe by design. See <a href="https://github.com/StefanVonRanda/tycho/blob/main/SECURITY.md">SECURITY.md</a>, and <a href="internals/audit-brief.html">docs/internals/audit-brief.md</a> if you are willing to be one.</p>
 <p>Two things are unverified, and you may hit them:</p>
 <ul>
-<li><strong>This Windows archive has been run under Wine, not on Windows.</strong> Its</li>
+<li><strong>This Windows archive has been run under Wine, not on Windows.</strong> Its content gate passed under Wine 10 on x86-64 Linux: every <code>.exe</code> starts, and a real program is emitted, linked and run from a foreign directory. The toolchain itself has passed its suite on real Windows guests, 289/289 on both windows-x86_64 and windows-arm64 (<code>make platform-check</code>), but that was an earlier build, not this tarball.</li>
+<li><strong>Server shutdown on Windows has never been observed on Windows.</strong> The code reads sound: a worker re-reads the shutdown flag at least ten times a second, and the console handler shuts down the listener and every registered connection. What is untested is whether <code>WSAPoll</code> returns early on a socket that has been shut down, and whether a blocked <code>accept</code> is released. Expect wind-down within the 100 ms poll tick. Treat anything faster as unproven.</li>
 </ul>
-<p>content gate passed under Wine 10 on x86-64 Linux: every <code>.exe</code> starts, and a</p>
-<p>real program is emitted, linked and run from a foreign directory. The</p>
-<p>toolchain itself has passed its suite on real Windows guests, 289/289 on both</p>
-<p>windows-x86_64 and windows-arm64 (<code>make platform-check</code>), but that was an</p>
-<p>earlier build, not this tarball.</p>
-<ul>
-<li><strong>Server shutdown on Windows has never been observed on Windows.</strong> The code</li>
-</ul>
-<p>reads sound: a worker re-reads the shutdown flag at least ten times a second,</p>
-<p>and the console handler shuts down the listener and every registered</p>
-<p>connection. What is untested is whether <code>WSAPoll</code> returns early on a socket</p>
-<p>that has been shut down, and whether a blocked <code>accept</code> is released. Expect</p>
-<p>wind-down within the 100 ms poll tick. Treat anything faster as unproven.</p>
 <h2 id="status">Status</h2>
-<p>0.8.6 is pre-1.0 and there are <strong>no stability guarantees</strong>: anything here may</p>
-<p>change. <a href="ROADMAP.html#what-10-requires">ROADMAP.md</a> lists what 1.0 requires, and</p>
-<p>the blocking item is not engineering. Nobody outside this repo has written a</p>
-<p>real program in Tycho yet. If you write one, the friction you hit is the most</p>
-<p>useful thing you can send back.</p>
+<p>0.8.6 is pre-1.0 and there are <strong>no stability guarantees</strong>: anything here may change. <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#what-10-requires">ROADMAP.md</a> lists what 1.0 requires, and the blocking item is not engineering. Nobody outside this repo has written a real program in Tycho yet. If you write one, the friction you hit is the most useful thing you can send back.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="tutorial.html">Tutorial</a>
+    <a href="reference/index.html">Reference</a>
+    <a href="thesis.html">The thesis</a>
+    <a href="idioms.html">Thinking in Tycho</a>
+    <a href="changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

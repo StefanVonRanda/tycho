@@ -4,132 +4,95 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>30. Defined runtime behavior and failure — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/17-runtime.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html" aria-current="page">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#301-defined-wraparound">30.1 Defined wraparound</a>
+<a href="#302-conditions-that-abort">30.2 Conditions that abort</a>
+<a href="#303-conditions-that-clamp">30.3 Conditions that clamp</a>
+<a href="#304-defined-string-and-map-behavior">30.4 Defined string and map behavior</a>
+<a href="#305-unspecified-behavior">30.5 Unspecified behavior</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/17-runtime.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="30-defined-runtime-behavior-and-failure">30. Defined runtime behavior and failure</h1>
-<p>This chapter defines what happens at run time for the conditions a program can</p>
-<p>reach: which <strong>wrap</strong> (defined), which <strong>abort</strong> cleanly, which <strong>clamp</strong>, and</p>
-<p>the small register of conditions left <strong>unspecified</strong>. Tycho's guiding principle</p>
-<p>is to <strong>fail closed</strong> — a doubtful operation aborts cleanly rather than</p>
-<p>proceeding into undefined behavior — and the unspecified register is kept</p>
-<p>minimal, consistent with the abstract-exact policy (<a href="00-conventions.html">§1.1</a>).</p>
-<p>An <strong>abort</strong> terminates the program with a non-zero exit status after writing a</p>
-<p>diagnostic to standard error. The *presence* of the abort is normative; the</p>
-<p>diagnostic text is not (<a href="00-conventions.html">§1.1</a>).</p>
+<p>This chapter defines what happens at run time for the conditions a program can reach: which <strong>wrap</strong> (defined), which <strong>abort</strong> cleanly, which <strong>clamp</strong>, and the small register of conditions left <strong>unspecified</strong>. Tycho's guiding principle is to <strong>fail closed</strong> — a doubtful operation aborts cleanly rather than proceeding into undefined behavior — and the unspecified register is kept minimal, consistent with the abstract-exact policy (<a href="00-conventions.html">§1.1</a>).</p>
+<p>An <strong>abort</strong> terminates the program with a non-zero exit status after writing a diagnostic to standard error. The *presence* of the abort is normative; the diagnostic text is not (<a href="00-conventions.html">§1.1</a>).</p>
 <h2 id="301-defined-wraparound">30.1 Defined wraparound</h2>
 <ul>
-<li><strong>Signed integer overflow</strong> (<code>int</code>) is <strong>defined</strong> two's-complement wraparound.</li>
+<li><strong>Signed integer overflow</strong> (<code>int</code>) is <strong>defined</strong> two's-complement wraparound. It never traps. (The reference realizes this by compiling with <code>-fwrapv</code>.)</li>
+<li><strong>Unsigned overflow</strong> (<code>u32</code>, <code>u64</code>) wraps modulo <code>2^32</code> / <code>2^64</code>, by definition.</li>
 </ul>
-<p>It never traps. (The reference realizes this by compiling with <code>-fwrapv</code>.)</p>
-<ul>
-<li><strong>Unsigned overflow</strong> (<code>u32</code>, <code>u64</code>) wraps modulo <code>2^32</code> / <code>2^64</code>, by</li>
-</ul>
-<p>definition.</p>
-<p>Integer overflow and an over-wide shift count (<code>≥</code> the operand's bit width,</p>
-<p>defined as <code>0</code>) are the arithmetic conditions that are fully defined rather than</p>
-<p>aborting; every other numeric edge either aborts (§30.2 — including a negative</p>
-<p>shift count, an out-of-range <code>chr</code>, and an out-of-range <code>to_int(float)</code>) or is</p>
-<p>unspecified (§30.5).</p>
+<p>Integer overflow and an over-wide shift count (<code>≥</code> the operand's bit width, defined as <code>0</code>) are the arithmetic conditions that are fully defined rather than aborting; every other numeric edge either aborts (§30.2 — including a negative shift count, an out-of-range <code>chr</code>, and an out-of-range <code>to_int(float)</code>) or is unspecified (§30.5).</p>
 <h2 id="302-conditions-that-abort">30.2 Conditions that abort</h2>
 <p>A conforming implementation MUST abort on each of the following:</p>
 <ul>
-<li><strong>Integer division or modulo by zero</strong> (<code>int</code>, <code>u32</code>, <code>u64</code>). Additionally</li>
-</ul>
-<p><code>(−2^63) / −1</code> aborts (quotient overflow); <code>(−2^63) % −1</code> yields <code>0</code> and does</p>
-<p>not abort.</p>
-<ul>
-<li><strong>A negative shift count</strong> (<code>&lt;&lt;</code>, <code>&gt;&gt;</code>). A count <code>≥</code> the operand's bit width</li>
-</ul>
-<p>does *not* abort — it is defined as <code>0</code> (§30.1, §13.2).</p>
-<ul>
+<li><strong>Integer division or modulo by zero</strong> (<code>int</code>, <code>u32</code>, <code>u64</code>). Additionally <code>(−2^63) / −1</code> aborts (quotient overflow); <code>(−2^63) % −1</code> yields <code>0</code> and does not abort.</li>
+<li><strong>A negative shift count</strong> (<code>&lt;&lt;</code>, <code>&gt;&gt;</code>). A count <code>≥</code> the operand's bit width does *not* abort — it is defined as <code>0</code> (§30.1, §13.2).</li>
 <li><strong><code>chr(n)</code> with <code>n</code> outside <code>0..255</code></strong> — the byte value is out of range (§16).</li>
-<li><strong><code>to_int(f)</code> of a <code>NaN</code> or out-of-range <code>float</code>/<code>f32</code></strong> (§8.5). The sized</li>
-</ul>
-<p>integer conversions are total (no abort).</p>
-<ul>
+<li><strong><code>to_int(f)</code> of a <code>NaN</code> or out-of-range <code>float</code>/<code>f32</code></strong> (§8.5). The sized integer conversions are total (no abort).</li>
 <li><strong>Array index out of bounds</strong>, on both read (<code>a[i]</code>) and write (<code>a[i] = v</code>).</li>
-<li><strong>String index out of bounds</strong> (<code>s[i]</code>, and <code>char_at(s, i)</code> — the same read</li>
-</ul>
-<p>with the same abort, §29.5). (<code>s[i] = v</code> is a *compile* error — strings are</p>
-<p>immutable.) A <code>bytes</code> index <code>b[i]</code> is the same read with the same abort, and</p>
-<p><code>b[i] = v</code> is the same compile error.</p>
-<ul>
+<li><strong>String index out of bounds</strong> (<code>s[i]</code>, and <code>char_at(s, i)</code> — the same read with the same abort, §29.5). (<code>s[i] = v</code> is a *compile* error — strings are immutable.) A <code>bytes</code> index <code>b[i]</code> is the same read with the same abort, and <code>b[i] = v</code> is the same compile error.</li>
 <li><strong><code>pop</code> from an empty array.</strong></li>
 <li><strong><code>reserve</code> with a negative or excessive capacity.</strong></li>
 <li><strong><code>split</code> with an empty separator.</strong></li>
-<li><strong>Channel misuse:</strong> <code>send</code> on a closed channel; a second <code>close</code>; a channel</li>
-</ul>
-<p>capacity below 1.</p>
-<ul>
-<li><strong>Task misuse:</strong> a second <code>wait</code> on a task; exceeding the concurrent-task</li>
-</ul>
-<p>ceiling; a thread-creation failure.</p>
-<ul>
+<li><strong>Channel misuse:</strong> <code>send</code> on a closed channel; a second <code>close</code>; a channel capacity below 1.</li>
+<li><strong>Task misuse:</strong> a second <code>wait</code> on a task; exceeding the concurrent-task ceiling; a thread-creation failure.</li>
 <li><strong>Out of memory.</strong></li>
 <li><strong><code>die(msg)</code></strong> — the explicit user abort (<a href="10-statements.html#148-die-exit-and-termination">§14.8</a>).</li>
 </ul>
 <h2 id="303-conditions-that-clamp">30.3 Conditions that clamp</h2>
 <ul>
-<li><strong><code>substr(s, start, end)</code></strong>, and the slice forms <code>s[a:b]</code> / <code>b[a:b]</code> it</li>
+<li><strong><code>substr(s, start, end)</code></strong>, and the slice forms <code>s[a:b]</code> / <code>b[a:b]</code> it implements, clamp out-of-range bounds rather than aborting: <code>start &lt; 0</code> becomes <code>0</code>, <code>end &gt; len</code> becomes <code>len</code>, and <code>end &lt; start</code> yields an empty result. This is the one bounds situation that does not abort.</li>
 </ul>
-<p>implements, clamp out-of-range bounds rather than aborting: <code>start &lt; 0</code> becomes</p>
-<p><code>0</code>, <code>end &gt; len</code> becomes <code>len</code>, and <code>end &lt; start</code> yields an empty result. This</p>
-<p>is the one bounds situation that does not abort.</p>
 <h2 id="304-defined-string-and-map-behavior">30.4 Defined string and map behavior</h2>
 <ul>
-<li><strong>Byte-safe strings.</strong> <code>string</code> and <code>bytes</code> carry an explicit length; every</li>
+<li><strong>Byte-safe strings.</strong> <code>string</code> and <code>bytes</code> carry an explicit length; every length-sensitive operation uses that length, not a <code>NUL</code> terminator, so interior <code>NUL</code> bytes are preserved and compared. <code>len</code> is a constant-time header read. <code>s[i]</code> and <code>b[i]</code> yield the byte as an <code>int</code> in <code>0..255</code>, never negative; <code>+</code> and <code>[a:b]</code> on either are byte-safe for the same reason.</li>
+<li><strong>Hash-flooding resistance.</strong> Maps use a keyed hash (SipHash in the reference) seeded from a per-process random key, so an adversary cannot craft key collisions without the key. This is a defined security property of maps, not an implementation detail a program may defeat. <code>keys(m)</code> returns keys in insertion order.</li>
 </ul>
-<p>length-sensitive operation uses that length, not a <code>NUL</code> terminator, so</p>
-<p>interior <code>NUL</code> bytes are preserved and compared. <code>len</code> is a constant-time</p>
-<p>header read. <code>s[i]</code> and <code>b[i]</code> yield the byte as an <code>int</code> in <code>0..255</code>, never</p>
-<p>negative; <code>+</code> and <code>[a:b]</code> on either are byte-safe for the same reason.</p>
-<ul>
-<li><strong>Hash-flooding resistance.</strong> Maps use a keyed hash (SipHash in the reference)</li>
-</ul>
-<p>seeded from a per-process random key, so an adversary cannot craft key</p>
-<p>collisions without the key. This is a defined security property of maps, not</p>
-<p>an implementation detail a program may defeat. <code>keys(m)</code> returns keys in</p>
-<p>insertion order.</p>
 <h2 id="305-unspecified-behavior">30.5 Unspecified behavior</h2>
-<p>The following are <strong>unspecified</strong>: this specification imposes no requirement, and</p>
-<p>a conforming program MUST NOT depend on them. They are collected in</p>
-<p><a href="appendix-f-impl-defined.html">Appendix F</a>.</p>
+<p>The following are <strong>unspecified</strong>: this specification imposes no requirement, and a conforming program MUST NOT depend on them. They are collected in <a href="appendix-f-impl-defined.html">Appendix F</a>.</p>
 <ul>
-<li><strong>Argument and operand evaluation order</strong> within one expression (§13.4;</li>
+<li><strong>Argument and operand evaluation order</strong> within one expression (§13.4; *probed* — inherited from the target, not sequenced by Tycho). <strong>Exception:</strong> a side-effecting <strong>index in an assignment place</strong> (<code>a[f()] = g()</code>) IS sequenced <strong>left-to-right</strong> — the index runs before the RHS, identically in both compilers — so that one case is specified, not target-inherited, and a program MAY depend on it.</li>
+<li><strong>Floating-point reduction reassociation</strong> in <code>parallel for</code> (§22): a floating-point reduction result MAY differ across thread counts. (An integer reduction is deterministic and is *not* unspecified.)</li>
+<li><strong>The textual rendering of <code>NaN</code>/<code>inf</code> by <code>str</code></strong> (e.g. <code>-nan</code> vs <code>nan</code>) is <strong>implementation-defined</strong> (derived from the C library). The float *values* themselves are IEEE-754 and fully defined (§5.2.2).</li>
+<li><strong>Using a typed handle after <code>close(h)</code></strong> — passes null to C; a logic bug, not memory corruption, and not compile-rejected (§25).</li>
+<li><strong>Any behavior on the far side of the FFI boundary</strong> — C-side global/<code>static</code> races and misuse are outside every Tycho guarantee (§26).</li>
 </ul>
-<p>*probed* — inherited from the target, not sequenced by Tycho). <strong>Exception:</strong> a</p>
-<p>side-effecting <strong>index in an assignment place</strong> (<code>a[f()] = g()</code>) IS sequenced</p>
-<p><strong>left-to-right</strong> — the index runs before the RHS, identically in both</p>
-<p>compilers — so that one case is specified, not target-inherited, and a program</p>
-<p>MAY depend on it.</p>
-<ul>
-<li><strong>Floating-point reduction reassociation</strong> in <code>parallel for</code> (§22): a</li>
-</ul>
-<p>floating-point reduction result MAY differ across thread counts. (An integer</p>
-<p>reduction is deterministic and is *not* unspecified.)</p>
-<ul>
-<li><strong>The textual rendering of <code>NaN</code>/<code>inf</code> by <code>str</code></strong> (e.g. <code>-nan</code> vs <code>nan</code>) is</li>
-</ul>
-<p><strong>implementation-defined</strong> (derived from the C library). The float *values*</p>
-<p>themselves are IEEE-754 and fully defined (§5.2.2).</p>
-<ul>
-<li><strong>Using a typed handle after <code>close(h)</code></strong> — passes null to C; a logic bug, not</li>
-</ul>
-<p>memory corruption, and not compile-rejected (§25).</p>
-<ul>
-<li><strong>Any behavior on the far side of the FFI boundary</strong> — C-side global/<code>static</code></li>
-</ul>
-<p>races and misuse are outside every Tycho guarantee (§26).</p>
-<p>Aside from this register, Tycho has essentially no implementation-defined or</p>
-<p>undefined behavior: value semantics removes the aliasing UB of pointer languages,</p>
-<p>defined integer wrap removes overflow UB, and the fail-closed aborts of §30.2</p>
-<p>convert the remaining partial operations into clean termination.</p>
+<p>Aside from this register, Tycho has essentially no implementation-defined or undefined behavior: value semantics removes the aliasing UB of pointer languages, defined integer wrap removes overflow UB, and the fail-closed aborts of §30.2 convert the remaining partial operations into clean termination.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

@@ -4,26 +4,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quiet results — where Tycho answers instead of refusing — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="index.html">docs</a> / quiet-results.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../#idea">Overview</a>
+    <a href="../#costs">Tradeoffs</a>
+    <a href="../#try">Install</a>
+    <a href="index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="index.html">Documentation home</a><details open><summary>Guide</summary><a href="tutorial.html">Tutorial</a><a href="README.html">Tycho documentation</a><a href="from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="idioms.html">Thinking in Tycho</a><a href="memory-model.html">The memory model</a><a href="quiet-results.html" aria-current="page">Quiet results — where Tycho answers instead of refusing</a><a href="performance.html">Performance and memory</a><a href="platforms.html">Platforms and toolchains, in detail</a><a href="debugging.html">Debugging generated C</a><a href="architecture.html">Architecture &amp; project status</a><a href="thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="perf.html">Performance: the compiler and the C it emits</a><a href="controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="reference/arrays-slices.html">Arrays and slices</a><a href="reference/basics.html">Basics</a><a href="reference/builtins.html">Builtins</a><a href="reference/concurrency.html">Concurrency</a><a href="reference/corelib.html">corelib — Tycho's core library</a><a href="reference/enums-options.html">Enums, options, and `match`</a><a href="reference/ffi.html">FFI (calling C)</a><a href="reference/functions.html">Functions and closures</a><a href="reference/generics.html">Generics</a><a href="reference/index.html">Tycho language reference</a><a href="reference/maps.html">Maps</a><a href="reference/packages.html">Packages</a><a href="reference/strings.html">Strings</a><a href="reference/structs-tuples.html">Structs and tuples</a><a href="reference/subscripts.html">Subscripts (user-defined projections)</a><a href="reference/types.html">Types</a></details><details><summary>Specification</summary><a href="spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="spec/01-lexical.html">3. Lexical structure</a><a href="spec/02-grammar.html">4. Grammar</a><a href="spec/03-types.html">5. Types</a><a href="spec/04-inference.html">6. Type inference</a><a href="spec/05-generics.html">7. Generics</a><a href="spec/06-conversions.html">8. Conversions and casts</a><a href="spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="spec/09-expressions.html">13. Expressions</a><a href="spec/10-statements.html">14. Statements and control flow</a><a href="spec/11-functions.html">15. Functions</a><a href="spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="spec/16-builtins.html">29. Builtins</a><a href="spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="spec/README.html">The Tycho language specification</a><a href="spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="internals/FRICTION.html">FRICTION</a><a href="internals/README.html">Internals</a><a href="internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="internals/audit-brief.html">Brief for an external security review</a><a href="internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="internals/design-aggregates.html">Aggregates design note</a><a href="internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="internals/design-corelib.html">corelib design notes (maintainers)</a><a href="internals/design-enums.html">Enum design notes (maintainers)</a><a href="internals/design-ffi.html">FFI design notes (maintainers)</a><a href="internals/design-functions.html">Function design notes (maintainers)</a><a href="internals/design-generics.html">Generics design notes (maintainers)</a><a href="internals/design-maps.html">Map design notes (maintainers)</a><a href="internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="internals/probe-procedure.html">Running an agent probe</a><a href="internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="rfc/README.html">RFCs</a><a href="rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="changelog.html">Changelog</a><a href="release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#1-len-indexing-and-slicing-are-byte-operations">1. len, indexing and slicing are byte operations</a>
+<a href="#2-utf8decode-reports-invalid-input-with-a-zero-width">2. utf8.decode reports invalid input with a zero width</a>
+<a href="#3-a-slice-clamps--it-is-not-a-bounds-check">3. A slice clamps — it is not a bounds check</a>
+<a href="#4-integer-overflow-wraps-and-an-over-wide-shift-is-zero">4. Integer overflow wraps, and an over-wide shift is zero</a>
+<a href="#5-char-arithmetic-wraps-to-a-byte">5. char arithmetic wraps to a byte</a>
+<a href="#6-the-bare-corelib-parsers-fail-open">6. The bare corelib parsers fail open</a>
+<a href="#7---is-an-ordinary-variable-not-a-discard">7. _ is an ordinary variable, not a discard</a>
+<a href="#related">Related</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="index.html">Docs</a> / quiet-results.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="quiet-results--where-tycho-answers-instead-of-refusing">Quiet results — where Tycho answers instead of refusing</h1>
-<p>Tycho's stated principle is to <strong>fail closed</strong>: a doubtful operation aborts</p>
-<p>cleanly rather than proceeding into undefined behavior</p>
-<p>(<a href="spec/17-runtime.html">spec §30</a>). Indexing is bounds-checked, <code>Option</code> removes</p>
-<p>null, <code>Result</code> removes exceptions, and an integer divided by zero stops the</p>
-<p>program rather than inventing an answer.</p>
-<p>This page lists those exceptions — the few operations that return a value</p>
-<p>instead of stopping. Each one is intentional, and each has a stricter</p>
-<p>alternative listed beside it.</p>
-<p>They matter because they fail quietly: the program keeps running with an</p>
-<p>answer you did not mean. No compiler error, no crash, no failing test.</p>
-<p>Read it once before your first real program. Every output below is printed by</p>
-<p>the code beside it.</p>
+<p>Tycho's stated principle is to <strong>fail closed</strong>: a doubtful operation aborts cleanly rather than proceeding into undefined behavior (<a href="spec/17-runtime.html">spec §30</a>). Indexing is bounds-checked, <code>Option</code> removes null, <code>Result</code> removes exceptions, and an integer divided by zero stops the program rather than inventing an answer.</p>
+<p>This page lists those exceptions — the few operations that return a value instead of stopping. Each one is intentional, and each has a stricter alternative listed beside it.</p>
+<p>They matter because they fail quietly: the program keeps running with an answer you did not mean. No compiler error, no crash, no failing test.</p>
+<p>Read it once before your first real program. Every output below is printed by the code beside it.</p>
 <table>
 <tr><th>What you write</th><th>What you get</th><th>The fail-closed form</th></tr>
 <tr><td>§1 <code>len(s)</code>, <code>s[i]</code>, <code>s[a:b]</code></td><td><strong>bytes</strong>, not characters</td><td><code>core:utf8</code> (<code>utf8.count</code>)</td></tr>
@@ -34,19 +52,10 @@
 <tr><td>§6 <code>strings.parse_int("3x")</code></td><td><code>3</code> — stops at the garbage</td><td><code>strings.parse_int_checked</code> → <code>Result</code></td></tr>
 <tr><td>§7 <code>_</code></td><td>an <strong>ordinary variable</strong>, not a discard</td><td>call the function as a statement</td></tr>
 </table>
-<p>Everything else in the language that can go wrong <strong>aborts</strong> — a real bounds</p>
-<p>violation, division by zero, an out-of-range <code>chr</code>, a second <code>wait</code> on a task, a</p>
-<p>stale <code>core:pool</code> handle. Those you will find out about immediately, which is</p>
-<p>why they are not on this page. The register of what aborts is</p>
-<p><a href="spec/17-runtime.html">spec §30.2</a>; what wraps is §30.1 and what clamps is §30.3.</p>
-<p>The corelib entries (§2, §6) are library behavior rather than language rules, so</p>
-<p>they are not in the spec's register; they are here because the failure they</p>
-<p>produce is the same one.</p>
+<p>Everything else in the language that can go wrong <strong>aborts</strong> — a real bounds violation, division by zero, an out-of-range <code>chr</code>, a second <code>wait</code> on a task, a stale <code>core:pool</code> handle. Those you will find out about immediately, which is why they are not on this page. The register of what aborts is <a href="spec/17-runtime.html">spec §30.2</a>; what wraps is §30.1 and what clamps is §30.3.</p>
+<p>The corelib entries (§2, §6) are library behavior rather than language rules, so they are not in the spec's register; they are here because the failure they produce is the same one.</p>
 <h2 id="1-len-indexing-and-slicing-are-byte-operations">1. <code>len</code>, indexing and slicing are byte operations</h2>
-<p>A <code>string</code> is a length-prefixed byte buffer, and every length-sensitive</p>
-<p>operation uses that length (<a href="spec/17-runtime.html">spec §30.4</a>). On ASCII the</p>
-<p>distinction never shows. On anything else, the natural program is the wrong one</p>
-<p>and it is wrong silently.</p>
+<p>A <code>string</code> is a length-prefixed byte buffer, and every length-sensitive operation uses that length (<a href="spec/17-runtime.html">spec §30.4</a>). On ASCII the distinction never shows. On anything else, the natural program is the wrong one and it is wrong silently.</p>
 <pre><code class="language-tycho">package main
 import "core:utf8"
 
@@ -58,14 +67,9 @@ fn main():
 <pre><code class="language-output">len       = 6
 utf8.count= 5
 </code></pre>
-<p><code>s[i]</code> yields one byte as an <code>int</code> in <code>0..255</code>, so indexing into multi-byte text</p>
-<p>gives you half a character. Reach for <a href="reference/strings.html"><code>core:utf8</code></a> the</p>
-<p>moment the input is not known to be ASCII.</p>
+<p><code>s[i]</code> yields one byte as an <code>int</code> in <code>0..255</code>, so indexing into multi-byte text gives you half a character. Reach for <a href="reference/strings.html"><code>core:utf8</code></a> the moment the input is not known to be ASCII.</p>
 <h2 id="2-utf8decode-reports-invalid-input-with-a-zero-width">2. <code>utf8.decode</code> reports invalid input with a zero width</h2>
-<p>The companion to §1, and the only entry on this page whose failure is a <strong>hang</strong></p>
-<p>rather than a wrong value. <code>utf8.decode(s, at)</code> returns <code>(codepoint, width)</code>, and</p>
-<p>on anything it cannot decode it returns <code>(-1, 0)</code>. A caller who advances with</p>
-<p><code>at = at + width</code> — the obvious loop — never advances at all.</p>
+<p>The companion to §1, and the only entry on this page whose failure is a <strong>hang</strong> rather than a wrong value. <code>utf8.decode(s, at)</code> returns <code>(codepoint, width)</code>, and on anything it cannot decode it returns <code>(-1, 0)</code>. A caller who advances with <code>at = at + width</code> — the obvious loop — never advances at all.</p>
 <pre><code class="language-tycho">package main
 import "core:utf8"
 
@@ -87,15 +91,9 @@ fn main():
 half   'é'[1:2] -&gt; cp=-1 width=0
 3 iterations later, at=0 len=1
 </code></pre>
-<p>Note where the bad input came from: slicing a string at a byte offset that falls</p>
-<p>inside a character — §1 and this entry are the same mistake, one step apart.</p>
-<p><strong>Always test the width before advancing</strong>, and treat <code>width == 0</code> as "this input</p>
-<p>is not UTF-8" rather than as a character to skip. A <code>-1</code> codepoint is easy to</p>
-<p>notice; a <code>0</code> width is not, because nothing about the loop looks wrong.</p>
+<p>Note where the bad input came from: slicing a string at a byte offset that falls inside a character — §1 and this entry are the same mistake, one step apart. <strong>Always test the width before advancing</strong>, and treat <code>width == 0</code> as "this input is not UTF-8" rather than as a character to skip. A <code>-1</code> codepoint is easy to notice; a <code>0</code> width is not, because nothing about the loop looks wrong.</p>
 <h2 id="3-a-slice-clamps--it-is-not-a-bounds-check">3. A slice clamps — it is not a bounds check</h2>
-<p>This is the one bounds situation in the language that does not abort</p>
-<p>(<a href="spec/17-runtime.html">spec §30.3</a>). <code>start &lt; 0</code> becomes <code>0</code>, <code>end &gt; len</code> becomes</p>
-<p><code>len</code>, and an inverted range yields empty.</p>
+<p>This is the one bounds situation in the language that does not abort (<a href="spec/17-runtime.html">spec §30.3</a>). <code>start &lt; 0</code> becomes <code>0</code>, <code>end &gt; len</code> becomes <code>len</code>, and an inverted range yields empty.</p>
 <pre><code class="language-tycho">package main
 
 fn at(n: int) -&gt; int:
@@ -111,23 +109,13 @@ fn main():
 b[-3:2] len = 2
 b[3:1]  len = 0
 </code></pre>
-<p><strong>Why clamping?</strong> In Tycho <code>s[a:b]</code> is the <code>substr</code> operation in operator</p>
-<p>form, and <code>substr</code> clamps — that is the useful behavior for text</p>
-<p>processing. The operator matches it so the two never disagree.</p>
-<p><strong>When the bounds are data</strong> — a length field, an offset from a file or a</p>
-<p>socket — clamping turns a corrupt input into a plausible short read. Use</p>
-<p><code>strings.slice_str</code> or <code>strings.slice_bytes</code>, which take the same `(start,</p>
-<p>stop)<code> and return </code>Result(_, SliceErr)<code> distinguishing </code>OutOfBounds` from</p>
-<p><code>Inverted</code>.</p>
+<p><strong>Why clamping?</strong> In Tycho <code>s[a:b]</code> is the <code>substr</code> operation in operator form, and <code>substr</code> clamps — that is the useful behavior for text processing. The operator matches it so the two never disagree.</p>
+<p><strong>When the bounds are data</strong> — a length field, an offset from a file or a socket — clamping turns a corrupt input into a plausible short read. Use <code>strings.slice_str</code> or <code>strings.slice_bytes</code>, which take the same <code>(start, stop)</code> and return <code>Result(_, SliceErr)</code> distinguishing <code>OutOfBounds</code> from <code>Inverted</code>.</p>
 <blockquote>
-<p>An <strong>array</strong> slice is different: <code>a[2:10]</code> on a 5-element array aborts. The</p>
-<p>clamp is a string and <code>bytes</code> behavior, not a general one.</p>
+<p>An <strong>array</strong> slice is different: <code>a[2:10]</code> on a 5-element array aborts. The clamp is a string and <code>bytes</code> behavior, not a general one.</p>
 </blockquote>
 <h2 id="4-integer-overflow-wraps-and-an-over-wide-shift-is-zero">4. Integer overflow wraps, and an over-wide shift is zero</h2>
-<p>Signed overflow is <strong>defined</strong> two's-complement wraparound and never traps</p>
-<p>(<a href="spec/17-runtime.html">spec §30.1</a>) — the reference compiles with <code>-fwrapv</code>, so</p>
-<p>this is a guarantee rather than the C accident it looks like. A shift count at</p>
-<p>or past the operand's width is defined as <code>0</code>.</p>
+<p>Signed overflow is <strong>defined</strong> two's-complement wraparound and never traps (<a href="spec/17-runtime.html">spec §30.1</a>) — the reference compiles with <code>-fwrapv</code>, so this is a guarantee rather than the C accident it looks like. A shift count at or past the operand's width is defined as <code>0</code>.</p>
 <pre><code class="language-tycho">package main
 
 fn at(n: int) -&gt; int:
@@ -141,12 +129,9 @@ fn main():
 <pre><code class="language-output">intmax + 1 = -9223372036854775808
 1 &lt;&lt; 64    = 0
 </code></pre>
-<p>Defined is not the same as intended. There is no checked-arithmetic form in the</p>
-<p>language, so a sum that could exceed the range is a thing to test for before you</p>
-<p>compute it, not after.</p>
+<p>Defined is not the same as intended. There is no checked-arithmetic form in the language, so a sum that could exceed the range is a thing to test for before you compute it, not after.</p>
 <h2 id="5-char-arithmetic-wraps-to-a-byte">5. <code>char</code> arithmetic wraps to a byte</h2>
-<p>A <code>char</code> is a byte, and arithmetic on one stays in <code>0..255</code> — it does not widen</p>
-<p>to an <code>int</code> and it does not abort on the way past the end.</p>
+<p>A <code>char</code> is a byte, and arithmetic on one stays in <code>0..255</code> — it does not widen to an <code>int</code> and it does not abort on the way past the end.</p>
 <pre><code class="language-tycho">package main
 
 fn at(n: int) -&gt; int:
@@ -160,11 +145,9 @@ fn main():
 <pre><code class="language-output">'A' + 1   = B
 'A' + 255 = @
 </code></pre>
-<p><code>65 + 255</code> is <code>320</code>, which wraps to <code>64</code> — <code>@</code>. For anything that is arithmetic</p>
-<p>rather than character stepping, convert to <code>int</code> first.</p>
+<p><code>65 + 255</code> is <code>320</code>, which wraps to <code>64</code> — <code>@</code>. For anything that is arithmetic rather than character stepping, convert to <code>int</code> first.</p>
 <h2 id="6-the-bare-corelib-parsers-fail-open">6. The bare corelib parsers fail open</h2>
-<p><code>strings.parse_int</code> stops at the first character it cannot use and returns what</p>
-<p>it had, with no way to tell that from a clean parse.</p>
+<p><code>strings.parse_int</code> stops at the first character it cannot use and returns what it had, with no way to tell that from a clean parse.</p>
 <pre><code class="language-tycho">package main
 import "core:strings"
 
@@ -190,15 +173,9 @@ fn main():
 [ 7]  lax -&gt; 0
   checked -&gt; Garbage
 </code></pre>
-<p>Note the third row: a leading space is not tolerated either, so <code>parse_int</code> on</p>
-<p><code>" 7"</code> is <code>0</code> — indistinguishable from the <code>0</code> you get for an absent option.</p>
-<p>The lax form exists for one case: a missing option, where <code>0</code> is a</p>
-<p>sensible default and a <code>Result</code> would be noise. For anything else —</p>
-<p>especially data from a file, a socket, or a user — a partial parse</p>
-<p>like <code>"1x4"</code> becoming <code>1</code> silently gives you the wrong value.</p>
-<p>**The rule: anything that came from a file, a socket, or a user gets the</p>
-<p><code>_checked</code> sibling.** They exist across the corelib and return a <code>Result</code> with a</p>
-<p>named error:</p>
+<p>Note the third row: a leading space is not tolerated either, so <code>parse_int</code> on <code>" 7"</code> is <code>0</code> — indistinguishable from the <code>0</code> you get for an absent option.</p>
+<p>The lax form exists for one case: a missing option, where <code>0</code> is a sensible default and a <code>Result</code> would be noise. For anything else — especially data from a file, a socket, or a user — a partial parse like <code>"1x4"</code> becoming <code>1</code> silently gives you the wrong value.</p>
+<p><strong>The rule: anything that came from a file, a socket, or a user gets the <code>_checked</code> sibling.</strong> They exist across the corelib and return a <code>Result</code> with a named error:</p>
 <table>
 <tr><th>Lax</th><th>Fail-closed</th></tr>
 <tr><td><code>strings.parse_int</code></td><td><code>strings.parse_int_checked</code></td></tr>
@@ -207,15 +184,10 @@ fn main():
 <tr><td><code>cli.parse</code></td><td><code>cli.parse_checked</code></td></tr>
 <tr><td><code>io.list</code></td><td><code>io.list_checked</code></td></tr>
 </table>
-<p>Most are drop-in; <code>cli.parse_checked</code> is not — it additionally takes the valued</p>
-<p>and boolean option names, because validating a command line requires knowing</p>
-<p>which flags expect a value.</p>
-<p><code>decimal.from_str</code> is further along than the others: it is <strong>deprecated</strong>, the</p>
-<p>compiler warns on every call naming the exact failure (<code>"12.5x"</code> returns <code>1.25</code>),</p>
-<p>and it is removed in 1.0.</p>
+<p>Most are drop-in; <code>cli.parse_checked</code> is not — it additionally takes the valued and boolean option names, because validating a command line requires knowing which flags expect a value.</p>
+<p><code>decimal.from_str</code> is further along than the others: it is <strong>deprecated</strong>, the compiler warns on every call naming the exact failure (<code>"12.5x"</code> returns <code>1.25</code>), and it is removed in 1.0.</p>
 <h2 id="7---is-an-ordinary-variable-not-a-discard">7. <code>_</code> is an ordinary variable, not a discard</h2>
-<p>Tycho has no discard pattern. <code>_</code> is a name like any other, which means it</p>
-<p>declares, it holds a value, and it can only be declared once per scope.</p>
+<p>Tycho has no discard pattern. <code>_</code> is a name like any other, which means it declares, it holds a value, and it can only be declared once per scope.</p>
 <pre><code class="language-tycho">package main
 
 fn main():
@@ -224,24 +196,27 @@ fn main():
 </code></pre>
 <pre><code class="language-output">_ holds 42
 </code></pre>
-<p>In a destructuring bind <code>_, b := f()</code> it reads like a discard and behaves like</p>
-<p>one, because the value genuinely goes nowhere afterward — that spelling is fine</p>
-<p>and is the idiom. What does not work is treating it as a keyword: a second <code>_</code></p>
-<p>in one list, or <code>_ = f()</code> as a way to drop a return value. The compiler refuses</p>
-<p>both and says why. To drop a function's result, call it as a statement.</p>
+<p>In a destructuring bind <code>_, b := f()</code> it reads like a discard and behaves like one, because the value genuinely goes nowhere afterward — that spelling is fine and is the idiom. What does not work is treating it as a keyword: a second <code>_</code> in one list, or <code>_ = f()</code> as a way to drop a return value. The compiler refuses both and says why. To drop a function's result, call it as a statement.</p>
 <h2 id="related">Related</h2>
 <ul>
-<li><a href="spec/17-runtime.html">spec §30</a> — the normative register: what wraps, what</li>
-</ul>
-<p>aborts, what clamps, what is unspecified.</p>
-<ul>
-<li><a href="reference/strings.html"><code>reference/strings.md</code></a> — bytes, <code>substr</code>, and the</li>
-</ul>
-<p>checked slice functions.</p>
-<ul>
+<li><a href="spec/17-runtime.html">spec §30</a> — the normative register: what wraps, what aborts, what clamps, what is unspecified.</li>
+<li><a href="reference/strings.html"><code>reference/strings.md</code></a> — bytes, <code>substr</code>, and the checked slice functions.</li>
 <li><a href="debugging.html"><code>debugging.md</code></a> — when a program is already misbehaving.</li>
 </ul>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="tutorial.html">Tutorial</a>
+    <a href="reference/index.html">Reference</a>
+    <a href="thesis.html">The thesis</a>
+    <a href="idioms.html">Thinking in Tycho</a>
+    <a href="changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

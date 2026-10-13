@@ -4,204 +4,117 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>What `tycho-vm` said the language needs — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/plan-tycho-vm-DONE.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html" aria-current="page">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#phases">Phases</a>
+<a href="#all-phases-complete">All phases complete</a>
+<a href="#not-in-this-plan">Not in this plan</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/plan-tycho-vm-DONE.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="what-tycho-vm-said-the-language-needs">What <code>tycho-vm</code> said the language needs</h1>
 <p><strong>Status: DONE. All 5 phases complete 2026-08-03. Program: bytecode VM (<code>tools/tycho-vm/</code>, commits 1bb0668, 89909d2, 4782ff8) — the first program here to need a hot dispatch loop and fixed-capacity memory. Outcome: scalar <code>match</code> shipped, <code>&amp;</code> restricted to <code>inout</code> arguments, <code>inout</code> docs corrected.</strong></p>
 <p>Previous plan: the four-of-seven plan (archived, then pruned 2026-08-03).</p>
 <p><strong>Five findings came out of it; two became phases.</strong> Rule: *does anything that is not <code>tycho-vm</code> need this?* A finding becomes a phase only with a second caller.</p>
 <p>Recorded, not phases:</p>
 <ul>
-<li><strong><code>bounded[N]T</code> has no <code>push</code>/<code>pop</code>/<code>len</code></strong>, so it cannot model a stack.</li>
+<li><strong><code>bounded[N]T</code> has no <code>push</code>/<code>pop</code>/<code>len</code></strong>, so it cannot model a stack. <code>grep -rl 'bounded\[' --include='*.ty' corelib/ examples/ tools/ server/</code> returns <strong>one file, <code>tools/tycho-vm/main.ty</code></strong> — the other 51 hits are all under <code>tests/</code>. One customer. Returns if a second caller appears.</li>
+<li><strong>A <code>[N]T</code> table cannot be a top-level <code>const</code></strong> (<code>expected '=' after the constant name</code>; §12.2 wants the RHS to fold to one literal). The only fixed-array table returned by a function in the tree is <code>tools/tycho-vm/main.ty@optable</code>. Same reasoning.</li>
+<li><strong><code>defer</code> does not exist</strong> (absent from <code>docs/spec/appendix-b-keywords.md</code>; <code>defer f()</code> is rejected as a bare expression statement). Memory is arena-freed at scope exit, <code>core:io</code> is path-based with no handles, and the only manual cleanup in the tree is 15 <code>close</code> calls in <code>server/main.ty</code> plus a handful in <code>examples/</code>. Nothing needs it.</li>
 </ul>
-<p><code>grep -rl 'bounded\[' --include='*.ty' corelib/ examples/ tools/ server/</code></p>
-<p>returns <strong>one file, <code>tools/tycho-vm/main.ty</code></strong> — the other 51 hits are all</p>
-<p>under <code>tests/</code>. One customer. Returns if a second caller appears.</p>
-<ul>
-<li><strong>A <code>[N]T</code> table cannot be a top-level <code>const</code></strong> (`expected '=' after the</li>
-</ul>
-<p>constant name`; §12.2 wants the RHS to fold to one literal). The only</p>
-<p>fixed-array table returned by a function in the tree is</p>
-<p><code>tools/tycho-vm/main.ty@optable</code>. Same reasoning.</p>
-<ul>
-<li><strong><code>defer</code> does not exist</strong> (absent from <code>docs/spec/appendix-b-keywords.md</code>;</li>
-</ul>
-<p><code>defer f()</code> is rejected as a bare expression statement). Memory is arena-freed</p>
-<p>at scope exit, <code>core:io</code> is path-based with no handles, and the only manual</p>
-<p>cleanup in the tree is 15 <code>close</code> calls in <code>server/main.ty</code> plus a handful in</p>
-<p><code>examples/</code>. Nothing needs it.</p>
 <p>Measured, on this tree:</p>
 <ul>
-<li>A struct-with-a-string copy costs <strong>815 ns</strong> against <strong>110 ns</strong> for a bare</li>
+<li>A struct-with-a-string copy costs <strong>815 ns</strong> against <strong>110 ns</strong> for a bare <code>JMP</code> — 7x — isolated by adding 20 jumps per iteration and differencing. VM throughput 1.39 M instructions/sec.</li>
+<li><code>match</code> on an <code>int</code> or a <code>string</code> is a parse error: <code>expected a match arm \</code>Variant(bindings):\<code> or \</code>Variant:\<code></code>. Confirmed by probe, not inherited.</li>
+<li>Six files carry an <code>if</code>/<code>elif</code> ladder of 4+ arms over a scalar — <code>tools/lsp.ty</code> (54), <code>tools/tycho-vm/main.ty</code> (38), <code>tools/tychofmt.ty</code> (18), <code>corelib/json/json.ty</code> (18), <code>corelib/markdown/markdown.ty</code> (16), <code>tools/tycho-q/main.ty</code> (9). Five of the six predate <code>tycho-vm</code>, which is why scalar <code>match</code> is a phase and the two constructs above are not.</li>
 </ul>
-<p><code>JMP</code> — 7x — isolated by adding 20 jumps per iteration and differencing. VM</p>
-<p>throughput 1.39 M instructions/sec.</p>
-<ul>
-<li><code>match</code> on an <code>int</code> or a <code>string</code> is a parse error:</li>
-</ul>
-<p><code>expected a match arm \</code>Variant(bindings):\<code> or \</code>Variant:\<code></code>. Confirmed by</p>
-<p>probe, not inherited.</p>
-<ul>
-<li>Six files carry an <code>if</code>/<code>elif</code> ladder of 4+ arms over a scalar — <code>tools/lsp.ty</code></li>
-</ul>
-<p>(54), <code>tools/tycho-vm/main.ty</code> (38), <code>tools/tychofmt.ty</code> (18),</p>
-<p><code>corelib/json/json.ty</code> (18), <code>corelib/markdown/markdown.ty</code> (16),</p>
-<p><code>tools/tycho-q/main.ty</code> (9). Five of the six predate <code>tycho-vm</code>, which is why</p>
-<p>scalar <code>match</code> is a phase and the two constructs above are not.</p>
 <h2 id="phases">Phases</h2>
 <ul>
 <li>[x] <strong>Phase 1 — DESIGN: <code>match</code> on scalars</strong></li>
-<li>Deliverable was a written design at <code>docs/internals/design-scalar-match.md</code>,</li>
+<li>Deliverable was a written design at <code>docs/internals/design-scalar-match.md</code>, <strong>not code</strong>.</li>
+<li><code>match</code> was enums-only, so every dispatch table in the tree was an <code>if</code>/<code>elif</code> ladder: <code>tools/tycho-vm/main.ty</code> averages 12 comparisons per instruction over 24 opcodes, and <code>corelib/json/json.ty@parse_value</code> ladders on byte values. Lexers, protocol decoders and state machines all hit this.</li>
+<li>The design answers, each with a reason: which scalar types (<code>int</code>, <code>string</code>, <code>char</code>, <code>bytes</code>?); whether <code>_</code> is required; whether duplicate arms are an error; fall-through; ranges/sets (<code>1..9</code>, <code>1 | 3 | 5</code>); codegen shape (jump table, binary search, chain) with the deciding threshold.</li>
+<li>Verify: the document exists, <code>sh scripts/check_links.sh</code> and <code>python3 scripts/check_citations.py</code> green. No build gate.</li>
+<li><strong>DONE 2026-08-03.</strong> The design is <code>docs/internals/design-scalar-match.md</code>; both doc gates green.</li>
 </ul>
-<p><strong>not code</strong>.</p>
-<ul>
-<li><code>match</code> was enums-only, so every dispatch table in the tree was an <code>if</code>/<code>elif</code></li>
-</ul>
-<p>ladder: <code>tools/tycho-vm/main.ty</code> averages 12 comparisons per instruction</p>
-<p>over 24 opcodes, and <code>corelib/json/json.ty@parse_value</code> ladders on byte</p>
-<p>values. Lexers, protocol decoders and state machines all hit this.</p>
-<ul>
-<li>The design answers, each with a reason: which scalar types (<code>int</code>,</li>
-</ul>
-<p><code>string</code>, <code>char</code>, <code>bytes</code>?); whether <code>_</code> is required; whether duplicate arms are an error; fall-through; ranges/sets (<code>1..9</code>, <code>1 | 3 | 5</code>); codegen shape (jump table, binary search, chain) with the deciding threshold.</p>
-<ul>
-<li>Verify: the document exists, <code>sh scripts/check_links.sh</code> and</li>
-</ul>
-<p><code>python3 scripts/check_citations.py</code> green. No build gate.</p>
-<ul>
-<li><strong>DONE 2026-08-03.</strong> The design is</li>
-</ul>
-<p><code>docs/internals/design-scalar-match.md</code>; both doc gates green.</p>
 <ul>
 <li>[x] <strong>Phase 2 — IMPLEMENT scalar <code>match</code></strong></li>
-<li>Scope: <code>src/tychoc.c</code>, <code>docs/spec/</code> (§4.3.2 statements, §5.5 or wherever</li>
-</ul>
-<p><code>match</code> is specified, Appendix A grammar), and fixtures under <code>tests/</code>.</p>
-<ul>
-<li>Done when: the VM's dispatch and <code>corelib/json/json.ty@parse_value</code> are both</li>
-</ul>
-<p>written as a scalar <code>match</code>, and both still pass their gates.</p>
-<ul>
+<li>Scope: <code>src/tychoc.c</code>, <code>docs/spec/</code> (§4.3.2 statements, §5.5 or wherever <code>match</code> is specified, Appendix A grammar), and fixtures under <code>tests/</code>.</li>
+<li>Done when: the VM's dispatch and <code>corelib/json/json.ty@parse_value</code> are both written as a scalar <code>match</code>, and both still pass their gates.</li>
 <li>Verify: <code>make test</code>, <code>make corelib</code>, <code>make vm-check</code>. Measured instructions/sec before and after.</li>
 <li><strong>DONE 2026-08-03.</strong> Both rewrites landed and pass: the VM dispatch is a scalar <code>match</code> (<code>OP_ADD..OP_GE</code> grouped arithmetic arm, <code>OP_JZ | OP_JNZ</code> branch pair) and <code>corelib/json/json.ty@parse_value</code>'s byte dispatch is <code>45 | 48..57</code>. Codegen emits a C <code>switch</code>-of-gotos for 4+ arms (the goto keeps a user <code>break</code> targeting the loop, not the switch; verified by <code>tests/match_scalar_break.ty</code>) and a chain below; the resolver folds const-name arms, checks dup/overlap by interval merge, and requires <code>_</code> on int/char. <code>make test</code> 580/0, <code>make corelib</code> green, <code>make vm-check</code> green. <strong>Measured:</strong> 300 fib runs best-of-3: 2.354 s → 2.311 s (<strong>-1.8%</strong>); 500 sort runs best-of-5: 0.616 s → 0.601 s (<strong>-2.4%</strong>). Dispatch was ~1% of instruction time; the switch is marginally faster — ergonomics and fail-closed semantics were the point.</li>
 </ul>
 <ul>
 <li>[x] <strong>Phase 3 — DESIGN: a cheap reference to an aggregate</strong></li>
-<li>Deliverable was a written design at <code>docs/internals/design-aggregate-ref.md</code>,</li>
-</ul>
-<p><strong>not code</strong>.</p>
-<ul>
-<li><strong>Three programs, three symptoms, one cause.</strong> A parameter is borrowed</li>
-</ul>
-<p>read-only, <code>y := a</code> copies, and <code>inout</code> reads as copy-in/copy-out, so nothing appeared able to</p>
-<p>touch part of a large value without copying it:</p>
-<ul>
-<li><code>tools/tycho-ar/main.ty</code> — a streaming digest cannot thread state through</li>
-</ul>
-<p>calls, so <code>core:sha256</code> is one-shot and the archiver wrote its own.</p>
-<ul>
-<li><code>corelib/decimal/decimal.ty</code> and the corelib generally — the same default</li>
-</ul>
-<p>shapes every hashing and compression interface in the tree.</p>
-<ul>
-<li><code>tools/tycho-vm/main.ty</code> — push/pop had to be inlined into one function,</li>
-</ul>
-<p>because a <code>vpush(&amp;st, &amp;sp, v)</code> helper copies a 1024-entry stack twice per</p>
-<p>instruction. <strong>815 ns vs 110 ns, measured.</strong></p>
-<ul>
+<li>Deliverable was a written design at <code>docs/internals/design-aggregate-ref.md</code>, <strong>not code</strong>.</li>
+<li><strong>Three programs, three symptoms, one cause.</strong> A parameter is borrowed read-only, <code>y := a</code> copies, and <code>inout</code> reads as copy-in/copy-out, so nothing appeared able to touch part of a large value without copying it:</li>
+<li><code>tools/tycho-ar/main.ty</code> — a streaming digest cannot thread state through calls, so <code>core:sha256</code> is one-shot and the archiver wrote its own.</li>
+<li><code>corelib/decimal/decimal.ty</code> and the corelib generally — the same default shapes every hashing and compression interface in the tree.</li>
+<li><code>tools/tycho-vm/main.ty</code> — push/pop had to be inlined into one function, because a <code>vpush(&amp;st, &amp;sp, v)</code> helper copies a 1024-entry stack twice per instruction. <strong>815 ns vs 110 ns, measured.</strong></li>
 <li>The design answers: what the construct is; how it interacts with arenas and <code>inout</code>; what stops it outliving its target; whether it appears in a type or only at a binding; what it does to corelib signatures shaped by its absence.</li>
 <li><strong>It includes the counter-argument.</strong> Value semantics with no references is a deliberate position — the design states what is lost and whether it is worth it.</li>
 <li>Verify: the document exists, both doc gates green. No build gate.</li>
-<li><strong>DONE 2026-08-03.</strong> The design is</li>
+<li><strong>DONE 2026-08-03.</strong> The design is <code>docs/internals/design-aggregate-ref.md</code>; both doc gates green. <strong>The premise was stale in a measured place:</strong> <code>inout</code> already passes a pointer plus the value's owning arena (<code>_ina_</code>) — no aggregate is copied in or out (verified in emitted C: <code>h_vm(&amp;_scr2, &amp;_scope, &amp;(h_st), &amp;(h_sp), ...)</code>). The tycho-vm <code>vpush</code> helper is free today; tycho-ar's streaming state threads through in-place <code>inout</code>; the spec's "copy-in/copy-out" is the semantic contract (<code>x = f(x)</code>), not the implementation. Recommendation: build nothing new; the compatible construct already ships twice (in-place <code>inout</code>, yielding subscripts). Two real findings became the phases below: <code>&amp;</code> outside argument position compiles to invalid C, and the <code>inout</code> docs read as implementation.</li>
 </ul>
-<p><code>docs/internals/design-aggregate-ref.md</code>; both doc gates green. **The</p>
-<p>premise was stale in a measured place:** <code>inout</code> already passes a pointer</p>
-<p>plus the value's owning arena (<code>_ina_</code>) — no aggregate is copied in or out</p>
-<p>(verified in emitted C: <code>h_vm(&amp;_scr2, &amp;_scope, &amp;(h_st), &amp;(h_sp), ...)</code>). The tycho-vm <code>vpush</code> helper is free today;</p>
-<p>tycho-ar's streaming state threads through in-place <code>inout</code>; the spec's</p>
-<p>"copy-in/copy-out" is the semantic contract (<code>x = f(x)</code>), not the</p>
-<p>implementation. Recommendation: build nothing new; the compatible</p>
-<p>construct already ships twice (in-place <code>inout</code>, yielding subscripts). Two</p>
-<p>real findings became the phases below: <code>&amp;</code> outside argument position</p>
-<p>compiles to invalid C, and the <code>inout</code> docs read as implementation.</p>
 <ul>
 <li>[x] <strong>Phase 4 — REJECT <code>&amp;</code> outside an inout argument</strong></li>
-<li>Found by phase 3's design. <code>&amp;</code> parsed as unary <code>E_ADDR</code> everywhere</li>
-</ul>
-<p>(<code>src/tychoc.c:3454-3457</code>) and the resolver only validated it at call</p>
-<p>sites (<code>src/tychoc.c:6872-6874</code>), so <code>r := &amp;a</code> compiled to invalid C</p>
-<p>(<code>TychoArrInt h_r = &amp;(h_a);</code> — cc: "invalid initializer") and <code>&amp;a + 1</code></p>
-<p>emitted garbage. The one valid use is the direct argument of an inout</p>
-<p>parameter.</p>
-<ul>
-<li>Scope: <code>src/tychoc.c</code> (an E_ADDR context check), reject fixtures under</li>
-</ul>
-<p><code>tests/reject/</code>, <code>docs/spec/</code> if the grammar implies otherwise.</p>
-<ul>
-<li>Done when: <code>r := &amp;a</code>, <code>x := &amp;a</code>, <code>&amp;a + 1</code> reject with a clean diagnostic;</li>
-</ul>
-<p><code>f(&amp;x)</code> into an <code>inout</code> param still compiles; <code>make test</code> green.</p>
-<ul>
+<li>Found by phase 3's design. <code>&amp;</code> parsed as unary <code>E_ADDR</code> everywhere (<code>src/tychoc.c:3454-3457</code>) and the resolver only validated it at call sites (<code>src/tychoc.c:6872-6874</code>), so <code>r := &amp;a</code> compiled to invalid C (<code>TychoArrInt h_r = &amp;(h_a);</code> — cc: "invalid initializer") and <code>&amp;a + 1</code> emitted garbage. The one valid use is the direct argument of an inout parameter.</li>
+<li>Scope: <code>src/tychoc.c</code> (an E_ADDR context check), reject fixtures under <code>tests/reject/</code>, <code>docs/spec/</code> if the grammar implies otherwise.</li>
+<li>Done when: <code>r := &amp;a</code>, <code>x := &amp;a</code>, <code>&amp;a + 1</code> reject with a clean diagnostic; <code>f(&amp;x)</code> into an <code>inout</code> param still compiles; <code>make test</code> green.</li>
 <li>Verify: <code>make test</code>.</li>
-<li><strong>DONE 2026-08-03.</strong> A <code>g_in_arg</code> resolve-context flag, set around the</li>
+<li><strong>DONE 2026-08-03.</strong> A <code>g_in_arg</code> resolve-context flag, set around the three argument-resolution paths (the <code>E_CALL</code> loop, <code>instantiate_generic</code> inference, and the two fn-value call loops) and cleared around lambda bodies, makes <code>resolve_expr</code>'s <code>E_ADDR</code> case reject anywhere else: <code>r := &amp;a</code>, <code>&amp;a + 1</code>, and <code>&amp;</code> in a lambda body all die with a clean diagnostic; <code>f(&amp;x)</code> into <code>inout</code>, subscripts as inout arguments, and generic inout calls all still compile. Reject fixtures <code>tests/reject/addr_{binding,expr}.ty</code>. <code>make test</code> 582/0.</li>
 </ul>
-<p>three argument-resolution paths (the <code>E_CALL</code> loop, <code>instantiate_generic</code></p>
-<p>inference, and the two fn-value call loops) and cleared around lambda</p>
-<p>bodies, makes <code>resolve_expr</code>'s <code>E_ADDR</code> case reject anywhere else:</p>
-<p><code>r := &amp;a</code>, <code>&amp;a + 1</code>, and <code>&amp;</code> in a lambda body all die with a clean</p>
-<p>diagnostic; <code>f(&amp;x)</code> into <code>inout</code>, subscripts as inout arguments, and</p>
-<p>generic inout calls all still compile. Reject fixtures</p>
-<p><code>tests/reject/addr_{binding,expr}.ty</code>. <code>make test</code> 582/0.</p>
 <ul>
 <li>[x] <strong>Phase 5 — CORRECT the stale <code>inout</code> documentation</strong></li>
-<li>Found by phase 3's design. The spec and reference said <code>inout</code> is</li>
-</ul>
-<p>copy-in/copy-out; that is the semantic contract, but it read as</p>
-<p>the implementation. The codegen is an in-place pointer pass with the owner arena carried</p>
-<p>(<code>src/tychoc.c:10365-10373</code>); no aggregate is copied.</p>
-<ul>
-<li>Scope: <code>docs/spec/07-memory-model.md</code> §11, <code>docs/reference/basics.md</code>,</li>
-</ul>
-<p>the stale "one big function" comment at <code>tools/tycho-vm/main.ty:475</code>.</p>
-<ul>
+<li>Found by phase 3's design. The spec and reference said <code>inout</code> is copy-in/copy-out; that is the semantic contract, but it read as the implementation. The codegen is an in-place pointer pass with the owner arena carried (<code>src/tychoc.c:10365-10373</code>); no aggregate is copied.</li>
+<li>Scope: <code>docs/spec/07-memory-model.md</code> §11, <code>docs/reference/basics.md</code>, the stale "one big function" comment at <code>tools/tycho-vm/main.ty:475</code>.</li>
 <li>Verify: the two doc gates, <code>make vm-check</code>. No build gate.</li>
-<li><strong>DONE 2026-08-03.</strong> <code>docs/spec/07-memory-model.md</code> §11 and</li>
+<li><strong>DONE 2026-08-03.</strong> <code>docs/spec/07-memory-model.md</code> §11 and <code>docs/reference/basics.md</code> now state the contract/codegen split (the promise is <code>x = f(x)</code>; the codegen is an in-place pointer pass plus the owner arena, so no aggregate is copied), and the stale comment at <code>tools/tycho-vm/main.ty:475</code> is corrected. The 41 spec citations shifted by phase 4's compiler edits were repointed. Doc gates, <code>make vm-check</code>, <code>make spec-check</code> green.</li>
 </ul>
-<p><code>docs/reference/basics.md</code> now state the contract/codegen split (the</p>
-<p>promise is <code>x = f(x)</code>; the codegen is an in-place pointer pass plus the</p>
-<p>owner arena, so no aggregate is copied), and the stale comment at <code>tools/tycho-vm/main.ty:475</code> is corrected. The 41 spec</p>
-<p>citations shifted by phase 4's compiler edits were repointed. Doc gates,</p>
-<p><code>make vm-check</code>, <code>make spec-check</code> green.</p>
 <h2 id="all-phases-complete">All phases complete</h2>
 <h2 id="not-in-this-plan">Not in this plan</h2>
-<p>The backlog as filed was stale on arrival — the three-gates audit it came from</p>
-<p>admitted nineteen unchecked items across four rotations with colliding counts</p>
-<p>and false claims. Re-scored against the demand test (does a program</p>
-<p>that is not its own test need it?) on 2026-08-03, four survive:</p>
+<p>The backlog as filed was stale on arrival — the three-gates audit it came from admitted nineteen unchecked items across four rotations with colliding counts and false claims. Re-scored against the demand test (does a program that is not its own test need it?) on 2026-08-03, four survive:</p>
 <ul>
-<li><strong>incremental digest</strong> — <code>core:sha256</code> init/update/final over in-place</li>
-</ul>
-<p><code>inout</code> state; tycho-ar wrote its own streaming sha256 for want of it</p>
-<p>(<code>tools/tycho-ar/main.ty:140-162</code>).</p>
-<ul>
+<li><strong>incremental digest</strong> — <code>core:sha256</code> init/update/final over in-place <code>inout</code> state; tycho-ar wrote its own streaming sha256 for want of it (<code>tools/tycho-ar/main.ty:140-162</code>).</li>
 <li><strong>JSON UTF-8 validation</strong> — raw UTF-8 in strings is not validated.</li>
-<li><strong><code>strings.parse_int</code> failing open</strong> — <code>0</code> is both "zero" and "garbage";</li>
+<li><strong><code>strings.parse_int</code> failing open</strong> — <code>0</code> is both "zero" and "garbage"; the corelib's own house style is a <code>Result</code> for exactly this class.</li>
+<li><strong><code>io.write_bytes</code></strong> — the read side has <code>read_bytes</code>/<code>read_at</code>; the write side stops at strings.</li>
 </ul>
-<p>the corelib's own house style is a <code>Result</code> for exactly this class.</p>
-<ul>
-<li><strong><code>io.write_bytes</code></strong> — the read side has <code>read_bytes</code>/<code>read_at</code>; the write</li>
-</ul>
-<p>side stops at strings.</p>
-<p>Filed, not phases — the demand test fails, the customer would have to appear</p>
-<p>first: recursive <code>make_dirs</code>, writable mtime, the libpng image shim, the</p>
-<p>ParallelFor width slot. <code>eprintln</code> is stale (<code>eprint</code> ships). All four real</p>
-<p>items are library work; none is a language change.</p>
+<p>Filed, not phases — the demand test fails, the customer would have to appear first: recursive <code>make_dirs</code>, writable mtime, the libpng image shim, the ParallelFor width slot. <code>eprintln</code> is stale (<code>eprint</code> ships). All four real items are library work; none is a language change.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

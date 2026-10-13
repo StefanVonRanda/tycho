@@ -4,27 +4,46 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Enums, options, and `match` — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / reference/enums-options.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details open><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html" aria-current="page">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#enum--user-defined-sum-types">enum — user-defined sum types</a>
+<a class="sub" href="#recursive-enums-are-asts">Recursive enums are ASTs</a>
+<a href="#match--the-exhaustive-eliminator">match — the exhaustive eliminator</a>
+<a class="sub" href="#if--match-as-an-expression-tail-position">if / match as an expression (tail position)</a>
+<a href="#optiont--a-value-or-nothing">Option(T) — a value, or nothing</a>
+<a href="#resultt-e--success-or-an-error">Result(T, E) — success, or an error</a>
+<a href="#or-return--propagating-errors-without-boilerplate">or_return — propagating errors without boilerplate</a>
+<a href="#or-else--returning-something-else-on-failure">or_else — returning something else on failure</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / reference/enums-options.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="enums-options-and-match">Enums, options, and <code>match</code></h1>
 <blockquote>
 <p><strong>Memory:</strong> copying an enum copies its whole payload. <code>Option</code> and <code>Result</code> work the same way — no null, no exceptions.</p>
 </blockquote>
-<p>A *sum type* is a value that is exactly one of several alternatives. Tycho has one</p>
-<p>general form, the user-defined <code>enum</code>, plus two built-in special cases for two common</p>
-<p>problems: <code>Option(T)</code> (a value that might be absent, without <code>null</code>) and <code>Result(T, E)</code></p>
-<p>(failure, without exceptions). You take all three apart the same way — an exhaustive</p>
-<p><code>match</code> — and all three are ordinary values, copied on assignment and compared</p>
-<p>structurally with <code>==</code>, like everything else in the language.</p>
+<p>A *sum type* is a value that is exactly one of several alternatives. Tycho has one general form, the user-defined <code>enum</code>, plus two built-in special cases for two common problems: <code>Option(T)</code> (a value that might be absent, without <code>null</code>) and <code>Result(T, E)</code> (failure, without exceptions). You take all three apart the same way — an exhaustive <code>match</code> — and all three are ordinary values, copied on assignment and compared structurally with <code>==</code>, like everything else in the language.</p>
 <h2 id="enum--user-defined-sum-types"><code>enum</code> — user-defined sum types</h2>
-<p>An <code>enum</code> declares a type whose value is exactly one of several named <strong>variants</strong>, each</p>
-<p>carrying a <strong>payload</strong> of zero or more values. It is a tagged union: each value carries a</p>
-<p>tag naming the variant it holds:</p>
+<p>An <code>enum</code> declares a type whose value is exactly one of several named <strong>variants</strong>, each carrying a <strong>payload</strong> of zero or more values. It is a tagged union: each value carries a tag naming the variant it holds:</p>
 <pre><code class="language-tycho">enum Shape:
     Circle(float)            # a variant with a payload
     Rect(float, float)
@@ -39,16 +58,10 @@ fn area(s: Shape) -&gt; float:
         Unit:
             return 1.0
 </code></pre>
-<p>You build a value by naming a variant — <code>Circle(2.0)</code>, or a bare <code>Unit</code> for a payload-less</p>
-<p>one — and take it apart with <code>match</code> (below). Variant names are global: you write <code>Circle</code>,</p>
-<p>not <code>Shape.Circle</code>, and no two enums may share a variant name.</p>
-<p>An enum value is an ordinary value: copying one copies the whole payload, and <code>==</code></p>
-<p>compares two values structurally. An enum may appear anywhere a type may — a struct field,</p>
-<p>an array element (<code>[Shape]</code>), a map value, a function parameter or return.</p>
+<p>You build a value by naming a variant — <code>Circle(2.0)</code>, or a bare <code>Unit</code> for a payload-less one — and take it apart with <code>match</code> (below). Variant names are global: you write <code>Circle</code>, not <code>Shape.Circle</code>, and no two enums may share a variant name.</p>
+<p>An enum value is an ordinary value: copying one copies the whole payload, and <code>==</code> compares two values structurally. An enum may appear anywhere a type may — a struct field, an array element (<code>[Shape]</code>), a map value, a function parameter or return.</p>
 <h3 id="recursive-enums-are-asts">Recursive enums are ASTs</h3>
-<p>A variant may carry the enum itself, which makes the type a tree — the shape compilers</p>
-<p>call an abstract syntax tree. Each level holds the rest of the tree, so a recursive enum</p>
-<p>still names a finite value, and copying one copies the entire tree:</p>
+<p>A variant may carry the enum itself, which makes the type a tree — the shape compilers call an abstract syntax tree. Each level holds the rest of the tree, so a recursive enum still names a finite value, and copying one copies the entire tree:</p>
 <pre><code class="language-tycho">enum Expr:
     Num(float)
     Add(Expr, Expr)          # recursive: a variant carrying Expr
@@ -67,12 +80,9 @@ fn main():
     e := Add(Num(2.0), Neg(Num(4.0)))
     print(str(eval(e)))      # -2.0
 </code></pre>
-<p>An enum may also be <strong>generic</strong> — <code>enum Tree($T)</code> — and is then stamped out per concrete</p>
-<p>type like a generic struct, including recursive payloads that name the enum itself.</p>
-<p>See <a href="generics.html">Generics</a>.</p>
+<p>An enum may also be <strong>generic</strong> — <code>enum Tree($T)</code> — and is then stamped out per concrete type like a generic struct, including recursive payloads that name the enum itself. See <a href="generics.html">Generics</a>.</p>
 <h2 id="match--the-exhaustive-eliminator"><code>match</code> — the exhaustive eliminator</h2>
-<p><code>match</code> is how every sum type is consumed. It dispatches on the variant and binds the</p>
-<p>payload in one step:</p>
+<p><code>match</code> is how every sum type is consumed. It dispatches on the variant and binds the payload in one step:</p>
 <pre><code class="language-tycho">enum Shape:
     Circle(float)
     Rect(int, int)
@@ -90,20 +100,12 @@ match shape:
 </code></pre>
 <p>Two rules keep <code>match</code> safe:</p>
 <ul>
-<li><strong>It is exhaustive.</strong> Every variant of the matched type must have an arm; a missing case</li>
+<li><strong>It is exhaustive.</strong> Every variant of the matched type must have an arm; a missing case is a compile error, so adding a variant forces you to handle it everywhere. A wildcard arm <code>_:</code> matches any remaining variant when you really want a catch-all.</li>
+<li><strong>Bindings are local to their arm.</strong> <code>r</code> exists only inside the <code>Circle</code> arm. There is no way to read a payload that does not belong to the current variant.</li>
 </ul>
-<p>is a compile error, so adding a variant forces you to handle it everywhere. A wildcard</p>
-<p>arm <code>_:</code> matches any remaining variant when you really want a catch-all.</p>
-<ul>
-<li><strong>Bindings are local to their arm.</strong> <code>r</code> exists only inside the <code>Circle</code> arm. There is no</li>
-</ul>
-<p>way to read a payload that does not belong to the current variant.</p>
-<p><code>match</code> is a statement. To produce a value, assign or <code>return</code> from inside each arm, as the</p>
-<p><code>eval</code> example does — or use the <strong>expression form</strong> below.</p>
+<p><code>match</code> is a statement. To produce a value, assign or <code>return</code> from inside each arm, as the <code>eval</code> example does — or use the <strong>expression form</strong> below.</p>
 <h3 id="if--match-as-an-expression-tail-position"><code>if</code> / <code>match</code> as an expression (tail position)</h3>
-<p>An <code>if</code> or <code>match</code> may stand as the whole right-hand side of a <code>:=</code>, a typed <code>x : T =</code>, a</p>
-<p>plain <code>x =</code> / place assignment, or a <code>return</code>. The value of the taken branch/arm becomes the</p>
-<p>value bound, assigned, or returned:</p>
+<p>An <code>if</code> or <code>match</code> may stand as the whole right-hand side of a <code>:=</code>, a typed <code>x : T =</code>, a plain <code>x =</code> / place assignment, or a <code>return</code>. The value of the taken branch/arm becomes the value bound, assigned, or returned:</p>
 <pre><code class="language-tycho">enum Status:
     Active
     Idle
@@ -139,17 +141,10 @@ _x := match parse(s):            # each arm's value is the result
     Err(_):
         0
 </code></pre>
-<p>Rules: each branch/arm is a <strong>single expression</strong> (its value); a value <code>if</code> <strong>must</strong> have an</p>
-<p><code>else</code> (every path must produce a value); a value <code>match</code> is exhaustive as always; and all</p>
-<p>branches must have the <strong>same type</strong>, which becomes the type of the whole expression. This is</p>
-<p>shorthand for declaring a variable and assigning it in each arm.</p>
-<p>Not yet supported: multi-statement branches, a branch that <code>return</code>s</p>
-<p>instead of yielding a value, and use as a nested sub-expression (e.g. <code>1 + if …</code>). Use the</p>
-<p>statement form for those.</p>
+<p>Rules: each branch/arm is a <strong>single expression</strong> (its value); a value <code>if</code> <strong>must</strong> have an <code>else</code> (every path must produce a value); a value <code>match</code> is exhaustive as always; and all branches must have the <strong>same type</strong>, which becomes the type of the whole expression. This is shorthand for declaring a variable and assigning it in each arm.</p>
+<p>Not yet supported: multi-statement branches, a branch that <code>return</code>s instead of yielding a value, and use as a nested sub-expression (e.g. <code>1 + if …</code>). Use the statement form for those.</p>
 <h2 id="optiont--a-value-or-nothing"><code>Option(T)</code> — a value, or nothing</h2>
-<p><code>Option(T)</code> is the built-in enum with variants <code>Some(x)</code> and <code>None</code>. It replaces the null</p>
-<p>reference with a typed absence: a value that may be missing is *typed* as possibly missing,</p>
-<p>and you cannot ignore the absence, because reading it requires an exhaustive <code>match</code>.</p>
+<p><code>Option(T)</code> is the built-in enum with variants <code>Some(x)</code> and <code>None</code>. It replaces the null reference with a typed absence: a value that may be missing is *typed* as possibly missing, and you cannot ignore the absence, because reading it requires an exhaustive <code>match</code>.</p>
 <pre><code class="language-tycho">fn index_of(xs: [int], target: int) -&gt; Option(int):
     for i := 0; i &lt; len(xs); i += 1:
         if xs[i] == target:
@@ -163,22 +158,11 @@ fn main():
         None:
             println("not found")
 </code></pre>
-<p><code>None</code> has no type of its own, so it is only allowed where the expected type is already</p>
-<p>known — a return type, a declaration annotation (<code>box : Option(string) = None</code>), an</p>
-<p>assignment target, or a call argument. A bare <code>x := None</code> is a compile error, because there</p>
-<p>is nothing to fix <code>T</code>.</p>
-<p><code>T</code> may be any type, including another option (<code>Option(Option(int))</code>); each instantiation is</p>
-<p>a distinct tagged value, copied like any other. An option is a fine struct field</p>
-<p>(<code>age: Option(int)</code>) or array element (<code>[Option(int)]</code> — a list of optionals, where a <code>None</code></p>
-<p>element takes its type from the others, so the first element cannot be a bare <code>None</code>).</p>
-<p>Two options compare with <code>==</code> (structurally — <code>Some(1) == Some(1)</code> is <code>true</code>), and so</p>
-<p>do values that merely contain them. A bare <code>None</code> has no type for <code>==</code> to use as an</p>
-<p>expected type, so <code>Some(1) == None</code> and <code>opt == None</code> are rejected; bind or annotate</p>
-<p>the absent value first, or use <code>opt is None</code> when testing its variant.</p>
+<p><code>None</code> has no type of its own, so it is only allowed where the expected type is already known — a return type, a declaration annotation (<code>box : Option(string) = None</code>), an assignment target, or a call argument. A bare <code>x := None</code> is a compile error, because there is nothing to fix <code>T</code>.</p>
+<p><code>T</code> may be any type, including another option (<code>Option(Option(int))</code>); each instantiation is a distinct tagged value, copied like any other. An option is a fine struct field (<code>age: Option(int)</code>) or array element (<code>[Option(int)]</code> — a list of optionals, where a <code>None</code> element takes its type from the others, so the first element cannot be a bare <code>None</code>).</p>
+<p>Two options compare with <code>==</code> (structurally — <code>Some(1) == Some(1)</code> is <code>true</code>), and so do values that merely contain them. A bare <code>None</code> has no type for <code>==</code> to use as an expected type, so <code>Some(1) == None</code> and <code>opt == None</code> are rejected; bind or annotate the absent value first, or use <code>opt is None</code> when testing its variant.</p>
 <h2 id="resultt-e--success-or-an-error"><code>Result(T, E)</code> — success, or an error</h2>
-<p><code>Result(T, E)</code> is the built-in enum with variants <code>Ok(value)</code> and <code>Err(error)</code> — error</p>
-<p>handling without exceptions. A function that can fail returns one, and the</p>
-<p>caller handles both outcomes in a <code>match</code>:</p>
+<p><code>Result(T, E)</code> is the built-in enum with variants <code>Ok(value)</code> and <code>Err(error)</code> — error handling without exceptions. A function that can fail returns one, and the caller handles both outcomes in a <code>match</code>:</p>
 <pre><code class="language-tycho">fn checked_div(a: int, b: int) -&gt; Result(int, string):
     if b == 0:
         return Err("divide by zero")
@@ -191,16 +175,9 @@ fn main():
         Err(e):
             println("error: " + e)
 </code></pre>
-<p>Like <code>None</code>, a bare <code>Ok(v)</code> or <code>Err(e)</code> fixes only one of the two type parameters, so the</p>
-<p>other comes from context (a return type, an annotation, an assignment target, or an</p>
-<p>argument); a bare <code>x := Ok(1)</code> is a compile error. Both <code>T</code> and <code>E</code> may be any type,</p>
-<p>including heap ones such as <code>Result([int], string)</code>. Two <code>Result</code> values compare with <code>==</code>,</p>
-<p>recursing through <code>T</code> and <code>E</code>.</p>
+<p>Like <code>None</code>, a bare <code>Ok(v)</code> or <code>Err(e)</code> fixes only one of the two type parameters, so the other comes from context (a return type, an annotation, an assignment target, or an argument); a bare <code>x := Ok(1)</code> is a compile error. Both <code>T</code> and <code>E</code> may be any type, including heap ones such as <code>Result([int], string)</code>. Two <code>Result</code> values compare with <code>==</code>, recursing through <code>T</code> and <code>E</code>.</p>
 <h2 id="or-return--propagating-errors-without-boilerplate"><code>or_return</code> — propagating errors without boilerplate</h2>
-<p>Chaining fallible calls with <code>match</code> at every step gets noisy. <code>or_return</code> cuts it: writing</p>
-<p><code>v := expr or_return</code> unwraps an <code>Ok</code> (binding <code>v</code> to the value) or, the moment <code>expr</code> is an</p>
-<p><code>Err</code>, returns that <code>Err</code> from the enclosing function — which must itself return a</p>
-<p><code>Result(_, E)</code> with the *same* error type <code>E</code>:</p>
+<p>Chaining fallible calls with <code>match</code> at every step gets noisy. <code>or_return</code> cuts it: writing <code>v := expr or_return</code> unwraps an <code>Ok</code> (binding <code>v</code> to the value) or, the moment <code>expr</code> is an <code>Err</code>, returns that <code>Err</code> from the enclosing function — which must itself return a <code>Result(_, E)</code> with the *same* error type <code>E</code>:</p>
 <pre><code class="language-tycho">fn parse_digit(s: string) -&gt; Result(int, string):
     if len(s) == 1 and s &gt;= "0" and s &lt;= "9":
         return Ok(to_int(to_float(s[0]) - to_float("0"[0])))
@@ -211,20 +188,10 @@ fn add_two(a: string, b: string) -&gt; Result(int, string):
     y := parse_digit(b) or_return
     return Ok(x + y)
 </code></pre>
-<p><code>or_return</code> comes after the expression it applies to and binds tighter than any arithmetic,</p>
-<p>so it is valid anywhere the unwrapped value is wanted — <code>foo(parse(s) or_return)</code>,</p>
-<p><code>return Ok(parse(s) or_return + 1)</code>, and inside nested blocks. The short-circuited <code>Err</code></p>
-<p>lives as long as the caller needs it.</p>
-<p>The same operator works on <code>Option</code>: inside a function that returns <code>Option(T)</code>,</p>
-<p><code>v := opt or_return</code> binds <code>v</code> on <code>Some(v)</code> and returns <code>None</code> on <code>None</code>.</p>
+<p><code>or_return</code> comes after the expression it applies to and binds tighter than any arithmetic, so it is valid anywhere the unwrapped value is wanted — <code>foo(parse(s) or_return)</code>, <code>return Ok(parse(s) or_return + 1)</code>, and inside nested blocks. The short-circuited <code>Err</code> lives as long as the caller needs it.</p>
+<p>The same operator works on <code>Option</code>: inside a function that returns <code>Option(T)</code>, <code>v := opt or_return</code> binds <code>v</code> on <code>Some(v)</code> and returns <code>None</code> on <code>None</code>.</p>
 <h2 id="or-else--returning-something-else-on-failure"><code>or_else</code> — returning something else on failure</h2>
-<p><code>or_return</code> hands back the error it was given. When the caller should see a</p>
-<p>*different* value — your own error type wrapping a library's, or <code>false</code>/<code>None</code></p>
-<p>from a function that does not return a <code>Result</code> at all — use <code>or_else</code>:</p>
-<p><code>v := e or_else x: h</code> binds <code>v</code> on <code>Ok(v)</code>/<code>Some(v)</code>; on <code>Err(err)</code> it binds <code>err</code></p>
-<p>to <code>x</code> and <strong>returns</strong> <code>h</code> from the enclosing function. <code>h</code> must have that</p>
-<p>function's return type. Write <code>_</code> to bind nothing, and on an <code>Option</code> you must,</p>
-<p>since <code>None</code> carries no value.</p>
+<p><code>or_return</code> hands back the error it was given. When the caller should see a *different* value — your own error type wrapping a library's, or <code>false</code>/<code>None</code> from a function that does not return a <code>Result</code> at all — use <code>or_else</code>: <code>v := e or_else x: h</code> binds <code>v</code> on <code>Ok(v)</code>/<code>Some(v)</code>; on <code>Err(err)</code> it binds <code>err</code> to <code>x</code> and <strong>returns</strong> <code>h</code> from the enclosing function. <code>h</code> must have that function's return type. Write <code>_</code> to bind nothing, and on an <code>Option</code> you must, since <code>None</code> carries no value.</p>
 <pre><code class="language-tycho">enum ConfErr:
     BadPort(string)
 
@@ -247,13 +214,23 @@ fn main():
         Err(BadPort(m)): println(m)
     println(str(is_digit("x")))
 </code></pre>
-<p><code>h</code> runs to the end of the line (or the closing bracket), so it is one</p>
-<p>expression, never a block. The full rules are <a href="../spec/10-statements.html#1461-or_else">§14.6.1</a>.</p>
+<p><code>h</code> runs to the end of the line (or the closing bracket), so it is one expression, never a block. The full rules are <a href="../spec/10-statements.html#1461-or_else">§14.6.1</a>.</p>
 <hr/>
-<p>How this is implemented — payload layout, why recursive enums stay finite, how the</p>
-<p>value form and the error operators lower — is in <a href="../internals/design-enums.html">design-enums</a>,</p>
-<p>for maintainers.</p>
+<p>How this is implemented — payload layout, why recursive enums stay finite, how the value form and the error operators lower — is in <a href="../internals/design-enums.html">design-enums</a>, for maintainers.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

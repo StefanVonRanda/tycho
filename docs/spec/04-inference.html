@@ -4,121 +4,87 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>6. Type inference — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/04-inference.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html" aria-current="page">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#61-synthesis-and-checking">6.1 Synthesis and checking</a>
+<a href="#62-what-checking-adds-beyond-synthesis">6.2 What checking adds beyond synthesis</a>
+<a href="#63-declarations">6.3 Declarations</a>
+<a href="#64-pending-types">6.4 Pending types</a>
+<a href="#65-branch-unification-for-value-if--match">6.5 Branch unification for value if / match</a>
+<a href="#66-non-goals-of-inference">6.6 Non-goals of inference</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/04-inference.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="6-type-inference">6. Type inference</h1>
-<p>Tycho types every expression <strong>at its own site</strong>. There is no global type</p>
-<p>inference, no Hindley-Milner unification, and no type variables in the checker.</p>
-<p>Inference is <strong>bidirectional and local</strong>: a site is</p>
-<p>either *synthesized* (its type is computed bottom-up from the expression) or</p>
-<p>*checked* against an expected type supplied by its context (<a href="00-conventions.html">§1.1</a>).</p>
+<p>Tycho types every expression <strong>at its own site</strong>. There is no global type inference, no Hindley-Milner unification, and no type variables in the checker. Inference is <strong>bidirectional and local</strong>: a site is either *synthesized* (its type is computed bottom-up from the expression) or *checked* against an expected type supplied by its context (<a href="00-conventions.html">§1.1</a>).</p>
 <h2 id="61-synthesis-and-checking">6.1 Synthesis and checking</h2>
 <ul>
-<li><strong>Synthesis.</strong> Given an expression with no expected type, the checker computes</li>
+<li><strong>Synthesis.</strong> Given an expression with no expected type, the checker computes its type from its form and its already-typed sub-expressions (an integer literal synthesizes <code>int</code>, <code>a + b</code> synthesizes from its operands, a call synthesizes its callee's return type, and so on).</li>
+<li><strong>Checking.</strong> When a context supplies an <strong>expected type</strong> <code>T</code>, the checker verifies the expression against <code>T</code>. Checking is not a separate type algorithm; it performs only the things synthesis cannot do on its own (§6.2), then falls back to synthesizing and requiring the result to equal <code>T</code>.</li>
 </ul>
-<p>its type from its form and its already-typed sub-expressions (an integer</p>
-<p>literal synthesizes <code>int</code>, <code>a + b</code> synthesizes from its operands, a call</p>
-<p>synthesizes its callee's return type, and so on).</p>
-<ul>
-<li><strong>Checking.</strong> When a context supplies an <strong>expected type</strong> <code>T</code>, the checker</li>
-</ul>
-<p>verifies the expression against <code>T</code>. Checking is not a separate type</p>
-<p>algorithm; it performs only the things synthesis cannot do on its own</p>
-<p>(§6.2), then falls back to synthesizing and requiring the result to equal <code>T</code>.</p>
-<p>An expected type flows from exactly these contexts: a typed declaration's</p>
-<p>annotation, an assignment's target type, a call argument's parameter type, a</p>
-<p>struct/enum/newtype constructor's field/payload type, a <code>return</code>'s function</p>
-<p>return type, a map/element/field store's slot type, and a tuple or array</p>
-<p>literal's element type.</p>
+<p>An expected type flows from exactly these contexts: a typed declaration's annotation, an assignment's target type, a call argument's parameter type, a struct/enum/newtype constructor's field/payload type, a <code>return</code>'s function return type, a map/element/field store's slot type, and a tuple or array literal's element type.</p>
 <h2 id="62-what-checking-adds-beyond-synthesis">6.2 What checking adds beyond synthesis</h2>
-<p>When checking an expression against an expected type <code>T</code>, and only then, the</p>
-<p>following groundings occur:</p>
-<p>1. <strong>Ground a pending type.</strong> A declaration whose initializer is an</p>
-<p>otherwise-untypeable empty form is *pending* until first use (§6.4); checking</p>
-<p>against <code>T</code> grounds it to <code>T</code>.</p>
-<p>2. <strong>Fill an empty aggregate.</strong> A bare <code>[]</code> takes its element types (array or</p>
-<p>soa) or its key/value types (map) from <code>T</code>.</p>
-<p>3. <strong>Coerce a bracket literal to a fixed-size array.</strong> A <code>[a, b, c]</code> literal</p>
-<p>checked against <code>[N]U</code> becomes a fixed-size array, with the element count and</p>
-<p>element types verified against <code>N</code> and <code>U</code>.</p>
-<p>4. <strong>Adapt a numeric literal.</strong> An integer or float <strong>literal</strong> (not a typed</p>
-<p>value) adapts to <code>T</code> when <code>T</code> is a numeric type it can represent (§8).</p>
-<p>5. <strong>Elide a lambda's types.</strong> A lambda checked against a function type <code>T</code> may</p>
-<p>omit its parameter and return type annotations, taking them from <code>T</code>.</p>
-<p>6. <strong>Fix a bare sum constructor.</strong> A bare <code>None</code>, <code>Ok(v)</code>, or <code>Err(e)</code> takes its</p>
-<p>missing type parameter from <code>T</code> (an <code>Option</code>/<code>Result</code>). A payload-less <code>Ok()</code></p>
-<p>already knows its half — the ok payload is <code>void</code></p>
-<p>(<a href="03-types.html#536-enums-option-result">§5.3.6</a>) — so it takes only the error</p>
-<p>type from <code>T</code>, and fails if <code>T</code>'s ok payload is anything but <code>void</code>.</p>
-<p>7. <strong>Check a tuple literal element-wise.</strong> A tuple literal checked against a tuple</p>
-<p>type of the same arity checks <strong>each element</strong> against the corresponding element</p>
-<p>type, so an <code>Ok</code>/<code>Err</code>/<code>None</code>/<code>[]</code> element grounds inside a tuple exactly as it</p>
-<p>does anywhere else: <code>return (Err(A), "partial")</code> from a</p>
-<p><code>-&gt; (Result(int, E), string)</code> function is well typed.</p>
-<p>If none of these applies, the expression is synthesized and its synthesized type</p>
-<p>MUST equal <code>T</code>; otherwise the program is rejected with a type-mismatch</p>
-<p>diagnostic naming both the expected and the actual type.</p>
+<p>When checking an expression against an expected type <code>T</code>, and only then, the following groundings occur:</p>
+<ol>
+<li><strong>Ground a pending type.</strong> A declaration whose initializer is an otherwise-untypeable empty form is *pending* until first use (§6.4); checking against <code>T</code> grounds it to <code>T</code>.</li>
+<li><strong>Fill an empty aggregate.</strong> A bare <code>[]</code> takes its element types (array or soa) or its key/value types (map) from <code>T</code>.</li>
+<li><strong>Coerce a bracket literal to a fixed-size array.</strong> A <code>[a, b, c]</code> literal checked against <code>[N]U</code> becomes a fixed-size array, with the element count and element types verified against <code>N</code> and <code>U</code>.</li>
+<li><strong>Adapt a numeric literal.</strong> An integer or float <strong>literal</strong> (not a typed value) adapts to <code>T</code> when <code>T</code> is a numeric type it can represent (§8).</li>
+<li><strong>Elide a lambda's types.</strong> A lambda checked against a function type <code>T</code> may omit its parameter and return type annotations, taking them from <code>T</code>.</li>
+<li><strong>Fix a bare sum constructor.</strong> A bare <code>None</code>, <code>Ok(v)</code>, or <code>Err(e)</code> takes its missing type parameter from <code>T</code> (an <code>Option</code>/<code>Result</code>). A payload-less <code>Ok()</code> already knows its half — the ok payload is <code>void</code> (<a href="03-types.html#536-enums-option-result">§5.3.6</a>) — so it takes only the error type from <code>T</code>, and fails if <code>T</code>'s ok payload is anything but <code>void</code>.</li>
+<li><strong>Check a tuple literal element-wise.</strong> A tuple literal checked against a tuple type of the same arity checks <strong>each element</strong> against the corresponding element type, so an <code>Ok</code>/<code>Err</code>/<code>None</code>/<code>[]</code> element grounds inside a tuple exactly as it does anywhere else: <code>return (Err(A), "partial")</code> from a <code>-&gt; (Result(int, E), string)</code> function is well typed.</li>
+</ol>
+<p>If none of these applies, the expression is synthesized and its synthesized type MUST equal <code>T</code>; otherwise the program is rejected with a type-mismatch diagnostic naming both the expected and the actual type.</p>
 <h2 id="63-declarations">6.3 Declarations</h2>
 <ul>
-<li><code>x := e</code> (declare-and-infer) <strong>synthesizes</strong> the type of <code>e</code> and gives it to</li>
-</ul>
-<p><code>x</code>. The initializer MUST NOT be <code>void</code>.</p>
-<ul>
-<li><code>x : T = e</code> (typed declaration) <strong>checks</strong> <code>e</code> against <code>T</code>. A mismatch — for</li>
-</ul>
-<p>example a <code>U</code> value where a newtype over <code>U</code> is declared — is rejected. This</p>
-<p>is where newtype distinctness (<a href="03-types.html#54-newtypes">§5.4</a>) is enforced.</p>
-<ul>
+<li><code>x := e</code> (declare-and-infer) <strong>synthesizes</strong> the type of <code>e</code> and gives it to <code>x</code>. The initializer MUST NOT be <code>void</code>.</li>
+<li><code>x : T = e</code> (typed declaration) <strong>checks</strong> <code>e</code> against <code>T</code>. A mismatch — for example a <code>U</code> value where a newtype over <code>U</code> is declared — is rejected. This is where newtype distinctness (<a href="03-types.html#54-newtypes">§5.4</a>) is enforced.</li>
 <li><code>x = e</code> (assignment) checks <code>e</code> against the existing type of <code>x</code>.</li>
-<li>Function parameter and return types are <strong>always explicit</strong> in the signature;</li>
+<li>Function parameter and return types are <strong>always explicit</strong> in the signature; they are the fixed points from which inference within a body proceeds.</li>
 </ul>
-<p>they are the fixed points from which inference within a body proceeds.</p>
 <h2 id="64-pending-types">6.4 Pending types</h2>
-<p>Two initializers cannot be typed in isolation: a bare empty array <code>[]</code> and a</p>
-<p>bare <code>None</code>. When used as a declaration initializer without an annotation, the</p>
-<p>variable's type is <strong>pending</strong> and is grounded by the type expected at its first</p>
-<p>use within the same block; a pending type that is <strong>never</strong> grounded is rejected</p>
-<p>(a program MUST annotate or ground it, e.g. <code>x : [int] = []</code>, `x : Option(int) =</p>
-<p>None`). The pending mechanism resolves a type with exactly <strong>one</strong> free parameter</p>
-<p>that a single later use can pin — <code>[]</code> is <code>[?T]</code> and <code>None</code> is <code>Option(?T)</code>.</p>
-<p>The <code>Result</code> constructors are an <strong>exception</strong>: <code>x := Ok(v)</code> and</p>
-<p><code>x := Err(e)</code> are <strong>not</strong> pending. A bare constructor fixes only one of <code>Result</code>'s</p>
-<p>two parameters, leaving the other free, so they are rejected <strong>immediately</strong></p>
-<p>at the declaration and MUST be annotated</p>
-<p>(<code>x : Result(int, string) = Ok(v)</code>).</p>
+<p>Two initializers cannot be typed in isolation: a bare empty array <code>[]</code> and a bare <code>None</code>. When used as a declaration initializer without an annotation, the variable's type is <strong>pending</strong> and is grounded by the type expected at its first use within the same block; a pending type that is <strong>never</strong> grounded is rejected (a program MUST annotate or ground it, e.g. <code>x : [int] = []</code>, <code>x : Option(int) = None</code>). The pending mechanism resolves a type with exactly <strong>one</strong> free parameter that a single later use can pin — <code>[]</code> is <code>[?T]</code> and <code>None</code> is <code>Option(?T)</code>.</p>
+<p>The <code>Result</code> constructors are an <strong>exception</strong>: <code>x := Ok(v)</code> and <code>x := Err(e)</code> are <strong>not</strong> pending. A bare constructor fixes only one of <code>Result</code>'s two parameters, leaving the other free, so they are rejected <strong>immediately</strong> at the declaration and MUST be annotated (<code>x : Result(int, string) = Ok(v)</code>).</p>
 <p>Rationale: a single later use generally cannot ground the remaining free parameter.</p>
 <h2 id="65-branch-unification-for-value-if--match">6.5 Branch unification for value <code>if</code> / <code>match</code></h2>
-<p>A value-producing <code>if</code> or <code>match</code> in tail position (<a href="02-grammar.html">§4.3.2</a>,</p>
-<p><a href="09-expressions.html">§13</a>/<a href="10-statements.html">§14</a>) requires **all</p>
-<p>branches to have the same type**, which becomes the type of the whole</p>
-<p>expression. For the <code>:=</code> and typed <code>x : T =</code> forms, unification is <strong>strict</strong></p>
-<p>equality of the independently-synthesized branch types: there is no</p>
-<p>numeric-literal adaptation across branches and no type variable, and a bare</p>
-<p><code>None</code>/<code>Ok</code>/<code>Err</code> branch is rejected (it must be annotated). In the <code>x =</code> /</p>
-<p>place-assignment / <code>return</code> tail positions a destination type flows into each</p>
-<p>branch, so adaptation and bare-sum-constructor fixing apply there. A branch</p>
-<p>whose type cannot be made equal to the others is rejected.</p>
-<p>A branch whose tail is a <strong>diverging</strong> call — <code>die(msg)</code> or <code>exit(code)</code></p>
-<p>(<a href="16-builtins.html">§29.12.1</a>) — is <strong>exempt</strong>: control never leaves it, so it</p>
-<p>carries no type, takes no part in unification, and is not rewritten into an</p>
-<p>assignment to the destination. This is what makes the failure arm of a <code>Result</code></p>
-<p>readable (<code>Err(e): die("cannot bind")</code>) instead of costing a dummy initializer and</p>
-<p>a statement <code>match</code>. If every branch diverges there is no value at all and the</p>
-<p>declaration is rejected.</p>
+<p>A value-producing <code>if</code> or <code>match</code> in tail position (<a href="02-grammar.html">§4.3.2</a>, <a href="09-expressions.html">§13</a>/<a href="10-statements.html">§14</a>) requires <strong>all branches to have the same type</strong>, which becomes the type of the whole expression. For the <code>:=</code> and typed <code>x : T =</code> forms, unification is <strong>strict</strong> equality of the independently-synthesized branch types: there is no numeric-literal adaptation across branches and no type variable, and a bare <code>None</code>/<code>Ok</code>/<code>Err</code> branch is rejected (it must be annotated). In the <code>x =</code> / place-assignment / <code>return</code> tail positions a destination type flows into each branch, so adaptation and bare-sum-constructor fixing apply there. A branch whose type cannot be made equal to the others is rejected.</p>
+<p>A branch whose tail is a <strong>diverging</strong> call — <code>die(msg)</code> or <code>exit(code)</code> (<a href="16-builtins.html">§29.12.1</a>) — is <strong>exempt</strong>: control never leaves it, so it carries no type, takes no part in unification, and is not rewritten into an assignment to the destination. This is what makes the failure arm of a <code>Result</code> readable (<code>Err(e): die("cannot bind")</code>) instead of costing a dummy initializer and a statement <code>match</code>. If every branch diverges there is no value at all and the declaration is rejected.</p>
 <h2 id="66-non-goals-of-inference">6.6 Non-goals of inference</h2>
-<p>A conforming implementation MUST NOT perform inference beyond the local,</p>
-<p>bidirectional rules above. In particular there is no whole-program or</p>
-<p>whole-function unification, no flow across statement boundaries other than the</p>
-<p>within-block pending-grounding of §6.4, and no inference of function signatures.</p>
-<p>Every expression's type is decidable from that expression, the types already</p>
-<p>assigned to its sub-expressions, and at most one expected type supplied by its</p>
-<p>immediate context.</p>
+<p>A conforming implementation MUST NOT perform inference beyond the local, bidirectional rules above. In particular there is no whole-program or whole-function unification, no flow across statement boundaries other than the within-block pending-grounding of §6.4, and no inference of function signatures. Every expression's type is decidable from that expression, the types already assigned to its sub-expressions, and at most one expected type supplied by its immediate context.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

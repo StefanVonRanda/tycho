@@ -4,22 +4,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thinking in Tycho — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="index.html">docs</a> / idioms.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../#idea">Overview</a>
+    <a href="../#costs">Tradeoffs</a>
+    <a href="../#try">Install</a>
+    <a href="index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="index.html">Documentation home</a><details open><summary>Guide</summary><a href="tutorial.html">Tutorial</a><a href="README.html">Tycho documentation</a><a href="from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="idioms.html" aria-current="page">Thinking in Tycho</a><a href="memory-model.html">The memory model</a><a href="quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="performance.html">Performance and memory</a><a href="platforms.html">Platforms and toolchains, in detail</a><a href="debugging.html">Debugging generated C</a><a href="architecture.html">Architecture &amp; project status</a><a href="thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="perf.html">Performance: the compiler and the C it emits</a><a href="controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="reference/arrays-slices.html">Arrays and slices</a><a href="reference/basics.html">Basics</a><a href="reference/builtins.html">Builtins</a><a href="reference/concurrency.html">Concurrency</a><a href="reference/corelib.html">corelib — Tycho's core library</a><a href="reference/enums-options.html">Enums, options, and `match`</a><a href="reference/ffi.html">FFI (calling C)</a><a href="reference/functions.html">Functions and closures</a><a href="reference/generics.html">Generics</a><a href="reference/index.html">Tycho language reference</a><a href="reference/maps.html">Maps</a><a href="reference/packages.html">Packages</a><a href="reference/strings.html">Strings</a><a href="reference/structs-tuples.html">Structs and tuples</a><a href="reference/subscripts.html">Subscripts (user-defined projections)</a><a href="reference/types.html">Types</a></details><details><summary>Specification</summary><a href="spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="spec/01-lexical.html">3. Lexical structure</a><a href="spec/02-grammar.html">4. Grammar</a><a href="spec/03-types.html">5. Types</a><a href="spec/04-inference.html">6. Type inference</a><a href="spec/05-generics.html">7. Generics</a><a href="spec/06-conversions.html">8. Conversions and casts</a><a href="spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="spec/09-expressions.html">13. Expressions</a><a href="spec/10-statements.html">14. Statements and control flow</a><a href="spec/11-functions.html">15. Functions</a><a href="spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="spec/16-builtins.html">29. Builtins</a><a href="spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="spec/README.html">The Tycho language specification</a><a href="spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="internals/FRICTION.html">FRICTION</a><a href="internals/README.html">Internals</a><a href="internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="internals/audit-brief.html">Brief for an external security review</a><a href="internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="internals/design-aggregates.html">Aggregates design note</a><a href="internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="internals/design-corelib.html">corelib design notes (maintainers)</a><a href="internals/design-enums.html">Enum design notes (maintainers)</a><a href="internals/design-ffi.html">FFI design notes (maintainers)</a><a href="internals/design-functions.html">Function design notes (maintainers)</a><a href="internals/design-generics.html">Generics design notes (maintainers)</a><a href="internals/design-maps.html">Map design notes (maintainers)</a><a href="internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="internals/probe-procedure.html">Running an agent probe</a><a href="internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="rfc/README.html">RFCs</a><a href="rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="changelog.html">Changelog</a><a href="release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#graphs-hold-nodes-in-a-pool-link-by-index">Graphs: hold nodes in a pool, link by index</a>
+<a href="#observers-send-messages-dont-hold-pointers">Observers: send messages, don't hold pointers</a>
+<a href="#heterogeneity-close-the-set-with-an-enum">Heterogeneity: close the set with an enum</a>
+<a href="#long-lived-state-mutate-dont-rebuild">Long-lived state: mutate, don't rebuild</a>
+<a href="#transients-scope-the-work-free-the-proof">Transients: scope the work, free the proof</a>
+<a href="#views-name-a-projection-with-subscript">Views: name a projection with subscript</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="index.html">Docs</a> / idioms.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="thinking-in-tycho">Thinking in Tycho</h1>
-<p>Tycho has no references, no stored borrows, and no interface values. This page</p>
-<p>is what to reach for instead — one idiom per shape, each the recommended way</p>
-<p>rather than a workaround. Every idiom below is also the faster and safer</p>
-<p>spelling: the performance note with each one says by how much.</p>
+<p>Tycho has no references, no stored borrows, and no interface values. This page is what to reach for instead — one idiom per shape, each the recommended way rather than a workaround. Every idiom below is also the faster and safer spelling: the performance note with each one says by how much.</p>
 <h2 id="graphs-hold-nodes-in-a-pool-link-by-index">Graphs: hold nodes in a pool, link by index</h2>
-<p>When nodes point at each other, hold every node in one array and make an edge</p>
-<p>an integer index into it. Sharing is two indices naming one slot; cycles are</p>
-<p>index cycles, which value semantics permits.</p>
+<p>When nodes point at each other, hold every node in one array and make an edge an integer index into it. Sharing is two indices naming one slot; cycles are index cycles, which value semantics permits.</p>
 <pre><code class="language-tycho">struct Node:
     kids: [int: int]           # next byte -&gt; node INDEX, not a Node by value
     word: bool
@@ -42,20 +61,9 @@ fn main():
 </code></pre>
 <pre><code class="language-output">4 nodes, root fanout 1
 </code></pre>
-<p>Why this way: one contiguous array, 8-byte indices instead of scattered</p>
-<p>pointers, traversal that walks cache lines. The same layout data-oriented C</p>
-<p>engines choose on purpose — value semantics make it the default. Measured: a</p>
-<p>300k-node graph as index adjacency is ~1.3× C's memory (vs ~1.55× by value),</p>
-<p>and the shape expresses sharing — DAGs, cycles — that by-value storage cannot</p>
-<p>represent at all. When nodes must be *deleted*, reach for <code>core:pool</code>, the</p>
-<p>packaged generational pool: per-slot generations reject stale indices instead</p>
-<p>of silently aliasing a reused slot. The full figures are in</p>
-<p><a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
+<p>Why this way: one contiguous array, 8-byte indices instead of scattered pointers, traversal that walks cache lines. The same layout data-oriented C engines choose on purpose — value semantics make it the default. Measured: a 300k-node graph as index adjacency is ~1.3× C's memory (vs ~1.55× by value), and the shape expresses sharing — DAGs, cycles — that by-value storage cannot represent at all. When nodes must be *deleted*, reach for <code>core:pool</code>, the packaged generational pool: per-slot generations reject stale indices instead of silently aliasing a reused slot. The full figures are in <a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
 <h2 id="observers-send-messages-dont-hold-pointers">Observers: send messages, don't hold pointers</h2>
-<p>When one value must react to another, don't store a pointer back at the</p>
-<p>subject — send the event over a channel to a task that owns the observer</p>
-<p>state. The edge is a message, not an alias, so nothing can dangle and nothing</p>
-<p>races.</p>
+<p>When one value must react to another, don't store a pointer back at the subject — send the event over a channel to a task that owns the observer state. The edge is a message, not an alias, so nothing can dangle and nothing races.</p>
 <pre><code class="language-tycho">fn watcher(events: Channel(string)) -&gt; int:
     n := 0
     for true:
@@ -79,13 +87,9 @@ fn main():
 saw close
 2
 </code></pre>
-<p>Why this way: each task owns its arena and every crossing value is a copy, so</p>
-<p>separate tasks cannot race on Tycho values — no locks, no Sendable machinery.</p>
-<p>See <a href="reference/concurrency.html">concurrency</a>.</p>
+<p>Why this way: each task owns its arena and every crossing value is a copy, so separate tasks cannot race on Tycho values — no locks, no Sendable machinery. See <a href="reference/concurrency.html">concurrency</a>.</p>
 <h2 id="heterogeneity-close-the-set-with-an-enum">Heterogeneity: close the set with an enum</h2>
-<p>When several shapes flow through one place and the set is known, make it a</p>
-<p>closed <code>enum</code> and take it apart with exhaustive <code>match</code>. No vtable, no</p>
-<p>indirection — and the compiler checks that every variant is handled.</p>
+<p>When several shapes flow through one place and the set is known, make it a closed <code>enum</code> and take it apart with exhaustive <code>match</code>. No vtable, no indirection — and the compiler checks that every variant is handled.</p>
 <pre><code class="language-tycho">enum Shape:
     Circle(float)
     Rect(float, float)
@@ -98,16 +102,9 @@ fn area(s: Shape) -&gt; float:
 fn main():
     println(str(area(Circle(2.0))))
 </code></pre>
-<p>Why this way: a generic body already covers the static half (one function over</p>
-<p>many types, monomorphized per instantiation, no indirection). The enum covers</p>
-<p>the mixed half wherever the variants are known. Only the *open* set —</p>
-<p>plugins, unknown implementors — stays outside the language, because an open</p>
-<p>set needs a stored reference by definition. See</p>
-<p><a href="reference/enums-options.html">enums</a> and <a href="reference/generics.html">generics</a>.</p>
+<p>Why this way: a generic body already covers the static half (one function over many types, monomorphized per instantiation, no indirection). The enum covers the mixed half wherever the variants are known. Only the *open* set — plugins, unknown implementors — stays outside the language, because an open set needs a stored reference by definition. See <a href="reference/enums-options.html">enums</a> and <a href="reference/generics.html">generics</a>.</p>
 <h2 id="long-lived-state-mutate-dont-rebuild">Long-lived state: mutate, don't rebuild</h2>
-<p>When a value outlives every scope that would reclaim it — an editor buffer, a</p>
-<p>session cache, server state — change it in place rather than rebuilding it per</p>
-<p>operation. Rebuilding pays a full copy per edit; a mutation pays for the edit.</p>
+<p>When a value outlives every scope that would reclaim it — an editor buffer, a session cache, server state — change it in place rather than rebuilding it per operation. Rebuilding pays a full copy per edit; a mutation pays for the edit.</p>
 <pre><code class="language-tycho">fn bump(hits: inout [string: int], k: string):
     hits[k] += 1
 
@@ -117,28 +114,12 @@ fn main():
     bump(&amp;hits, "open")
     println(str(hits["open"]))   # 2
 </code></pre>
-<p>Why this way: <code>inout</code> is an exclusive, call-scoped borrow — equivalent to</p>
-<p><code>x = f(x)</code>, checked by the compiler — so the callee genuinely shares the</p>
-<p>caller's aggregate across frames. Measured: a memoized <code>fib(40)</code> collapses</p>
-<p>from 0.60s to under a millisecond, which is the proof the table is shared,</p>
-<p>not copied per call. For hot text, hold the buffer as <code>[int]</code> and convert at</p>
-<p>the boundary; a keystroke then writes bytes instead of copying a line. The</p>
-<p>worked editor case is in <a href="thesis.html">thesis §4c</a>. See</p>
-<p><a href="reference/maps.html">maps</a> (<code>m[k] += 1</code>, <code>push(m[k], v)</code> update in place).</p>
+<p>Why this way: <code>inout</code> is an exclusive, call-scoped borrow — equivalent to <code>x = f(x)</code>, checked by the compiler — so the callee genuinely shares the caller's aggregate across frames. Measured: a memoized <code>fib(40)</code> collapses from 0.60s to under a millisecond, which is the proof the table is shared, not copied per call. For hot text, hold the buffer as <code>[int]</code> and convert at the boundary; a keystroke then writes bytes instead of copying a line. The worked editor case is in <a href="thesis.html">thesis §4c</a>. See <a href="reference/maps.html">maps</a> (<code>m[k] += 1</code>, <code>push(m[k], v)</code> update in place).</p>
 <h2 id="transients-scope-the-work-free-the-proof">Transients: scope the work, free the proof</h2>
-<p>When a long-lived scope builds throwaway values — parsing a document, loading</p>
-<p>an input — do that work in an inner function so its arena frees on return.</p>
-<p>The caller keeps the result; the transient never outlives the call.</p>
-<p>Why this way: arenas reclaim at scope exit, so a scope that holds its</p>
-<p>transients holds its high-water mark. Splitting the load from the loop turns</p>
-<p>bulk-free into per-item free with no code beyond a function boundary. See</p>
-<p><a href="from-c-to-arenas.html">from <code>malloc</code> to arenas</a> and the</p>
-<p><a href="internals/value-semantics-limits.html">limits note</a>.</p>
+<p>When a long-lived scope builds throwaway values — parsing a document, loading an input — do that work in an inner function so its arena frees on return. The caller keeps the result; the transient never outlives the call.</p>
+<p>Why this way: arenas reclaim at scope exit, so a scope that holds its transients holds its high-water mark. Splitting the load from the loop turns bulk-free into per-item free with no code beyond a function boundary. See <a href="from-c-to-arenas.html">from <code>malloc</code> to arenas</a> and the <a href="internals/value-semantics-limits.html">limits note</a>.</p>
 <h2 id="views-name-a-projection-with-subscript">Views: name a projection with <code>subscript</code></h2>
-<p>When pool indexing gets noisy, name the projection. A <code>subscript</code> is a</p>
-<p>zero-copy view into a value you already hold — usable for reads, writes, and</p>
-<p><code>inout</code> — that cannot be stored or carried past its statement, which is what</p>
-<p>keeps it sound.</p>
+<p>When pool indexing gets noisy, name the projection. A <code>subscript</code> is a zero-copy view into a value you already hold — usable for reads, writes, and <code>inout</code> — that cannot be stored or carried past its statement, which is what keeps it sound.</p>
 <pre><code class="language-tycho">struct Node:
     weight: int
 struct Graph:
@@ -152,10 +133,21 @@ fn main():
     g.edge(1).weight = 10
     println(str(g.edge(1).weight))   # 10
 </code></pre>
-<p>Why this way: it reads like a pointer and stores like an index — the</p>
-<p>ergonomics of references over the representation that fits the model. See</p>
-<p><a href="reference/subscripts.html">subscripts</a>.</p>
+<p>Why this way: it reads like a pointer and stores like an index — the ergonomics of references over the representation that fits the model. See <a href="reference/subscripts.html">subscripts</a>.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="tutorial.html">Tutorial</a>
+    <a href="reference/index.html">Reference</a>
+    <a href="thesis.html">The thesis</a>
+    <a href="idioms.html">Thinking in Tycho</a>
+    <a href="changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

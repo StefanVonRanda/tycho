@@ -4,459 +4,229 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FFI &amp; Threading — design review and improvement plan — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / rfc/ffi-threading-design-review.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html" aria-current="page">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#summary">Summary</a>
+<a href="#ffi--pain-points-with-citations">FFI — pain points (with citations)</a>
+<a class="sub" href="#the-boundary-today">The boundary today</a>
+<a class="sub" href="#pain-point-1--no-composite-types-cross">Pain point 1 — no composite types cross</a>
+<a class="sub" href="#pain-point-2--no-byte-buffer-binary-marshaled-as-hex-the-biggest-one">Pain point 2 — no byte buffer; binary marshaled as hex (the biggest one)</a>
+<a class="sub" href="#pain-point-3--ptr-is-opaque-and-unsafe">Pain point 3 — ptr is opaque and unsafe</a>
+<a class="sub" href="#pain-point-4--string-lifetime-footguns">Pain point 4 — string-lifetime footguns</a>
+<a class="sub" href="#pain-point-5--manual-shims-for-every-out-param--callback">Pain point 5 — manual shims for every out-param / callback</a>
+<a class="sub" href="#pain-point-6--no-variadics-no-callbacks-into-tycho">Pain point 6 — no variadics, no callbacks into Tycho</a>
+<a class="sub" href="#ffi--ranked-recommendations">FFI — ranked recommendations</a>
+<a href="#threading--cost-analysis--safety-envelope-with-citations">Threading — cost analysis + safety envelope (with citations)</a>
+<a class="sub" href="#why-it-is-heavy">Why it is heavy</a>
+<a class="sub" href="#where-it-is-actually-unsafe-despite-copy-incopy-out">Where it is actually unsafe (despite copy-in/copy-out)</a>
+<a class="sub" href="#threading--ranked-recommendations">Threading — ranked recommendations</a>
+<a href="#suggested-next-steps-in-order">Suggested next steps (in order)</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / rfc/ffi-threading-design-review.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="ffi--threading--design-review-and-improvement-plan">FFI &amp; Threading — design review and improvement plan</h1>
-<p>Status: original read-only review (citations to <code>path:line</code>); **most</p>
-<p>recommendations have since shipped** — re-verify against the compilers before</p>
-<p>treating any item below as open.</p>
+<p>Status: original read-only review (citations to <code>path:line</code>); <strong>most recommendations have since shipped</strong> — re-verify against the compilers before treating any item below as open.</p>
 <ul>
-<li><strong>FFI — shipped:</strong> R1 <code>bytes</code> (<code>tests/bytes*</code>), R2 typed <code>handle</code>s with</li>
+<li><strong>FFI — shipped:</strong> R1 <code>bytes</code> (<code>tests/bytes*</code>), R2 typed <code>handle</code>s with destructors, R3 nullable <code>-&gt; Option(string)</code>, R4 <code>inout</code> out-parameter constructors (<code>src/tychoc.c:3411</code>, <code>examples/sqlite/demo.ty</code>).</li>
+<li><strong>FFI — deliberate non-goals:</strong> R5 variadics / callbacks-into-Tycho; the auto-shim for *non-scalar* out-params is rejected by ABI design, not pending.</li>
+<li><strong>Threading — shipped:</strong> R1 docs-honesty pass; the unbounded-spawn vector is closed by a spawn <strong>cap</strong> (ceiling, default 1024 / <code>TYCHO_MAX_TASKS</code>) plus <code>parallel for x in ch:</code> bounded fan-out (<code>ncpu()</code> workers) — covering R2's and R3's safety goal without the full work-stealing pool R2 literally described.</li>
+<li><strong>Threading — open / deliberate:</strong> R4 per-task failure isolation (panic still <code>exit(1)</code>s the process) remains a documented fail-stop stance, not built.</li>
 </ul>
-<p>destructors, R3 nullable <code>-&gt; Option(string)</code>, R4 <code>inout</code> out-parameter</p>
-<p>constructors (<code>src/tychoc.c:3411</code>, <code>examples/sqlite/demo.ty</code>).</p>
-<ul>
-<li><strong>FFI — deliberate non-goals:</strong> R5 variadics / callbacks-into-Tycho; the</li>
-</ul>
-<p>auto-shim for *non-scalar* out-params is rejected by ABI design, not pending.</p>
-<ul>
-<li><strong>Threading — shipped:</strong> R1 docs-honesty pass; the unbounded-spawn vector is</li>
-</ul>
-<p>closed by a spawn <strong>cap</strong> (ceiling, default 1024 / <code>TYCHO_MAX_TASKS</code>) plus</p>
-<p><code>parallel for x in ch:</code> bounded fan-out (<code>ncpu()</code> workers) — covering R2's and</p>
-<p>R3's safety goal without the full work-stealing pool R2 literally described.</p>
-<ul>
-<li><strong>Threading — open / deliberate:</strong> R4 per-task failure isolation (panic still</li>
-</ul>
-<p><code>exit(1)</code>s the process) remains a documented fail-stop stance, not built.</p>
 <p>The review below is preserved as the original analysis.</p>
 <p>This document responds to two pieces of feedback:</p>
 <ul>
 <li><strong>FFI</strong> is "too narrow, hard to use, and unsafe."</li>
 <li><strong>Threading</strong> is "very heavy and very very unsafe."</li>
 </ul>
-<p>Both critiques are largely fair against the current implementation. This</p>
-<p>review enumerates the concrete pain points with evidence, then proposes</p>
-<p>prioritized improvements that fit Tycho's value-semantics + implicit-arena</p>
-<p>model. Each recommendation states whether it is an incremental change or a</p>
-<p>fundamental one, and the risk it poses to the value-semantic invariant.</p>
+<p>Both critiques are largely fair against the current implementation. This review enumerates the concrete pain points with evidence, then proposes prioritized improvements that fit Tycho's value-semantics + implicit-arena model. Each recommendation states whether it is an incremental change or a fundamental one, and the risk it poses to the value-semantic invariant.</p>
 <hr/>
 <h2 id="summary">Summary</h2>
-<p><strong>FFI.</strong> The boundary is deliberately tiny: only scalars, NUL-terminated</p>
-<p><code>string</code>, and an opaque <code>ptr</code> cross it (<code>docs/reference/ffi.md:61-86</code>,</p>
-<p><code>src/tychoc.c:3144-3190</code>). That keeps the *language* sound — no foreign</p>
-<p>pointer enters Tycho's owned world — but it pushes real cost onto users:</p>
-<p>1. No composite types cross (rejected at parse, <code>src/tychoc.c</code>).</p>
-<p>2. No byte-buffer / <code>(ptr,len)</code> story. A <code>string</code> cannot hold <code>0x00</code></p>
-<p>(<code>corelib/hex/hex.ty:7-11</code>), so all binary is marshaled as hex — see the</p>
-<p>crypto package marshaling *every* key/nonce/ciphertext/digest as a hex</p>
-<p>string (<code>corelib/crypto/crypto.ty:11-18</code>, <code>corelib/crypto/crypto_shim.c:1-27</code>).</p>
-<p>3. <code>ptr</code> is fully opaque and unsafe: no type tag, no compiler-known</p>
-<p>destructor, so handles leak and nothing prevents use-after-free or</p>
-<p>passing the wrong handle type (<code>docs/reference/ffi.md:107-109</code>; no destructor exists</p>
-<p>— verified by searching <code>src/tychoc.c</code> for destructor/drop/dealloc/free).</p>
-<p>4. String lifetime rules have a subtle read-once-borrow footgun</p>
-<p>(<code>src/tychoc.c</code>).</p>
-<p>5. Every out-param / callback API needs a hand-written C shim</p>
-<p>(<code>docs/reference/ffi.md:130-141</code>, <code>examples/sqlite/</code>, <code>corelib/crypto/crypto_shim.c</code>).</p>
-<p>6. No variadics, no callbacks into Tycho (<code>docs/reference/ffi.md</code>).</p>
-<p><strong>Threading.</strong> "Race-free by construction" (<code>README.md:16-18</code>,</p>
-<p><code>docs/reference/concurrency.md:5-9</code>) is *true for pure Tycho values* and **false the</p>
-<p>moment FFI, process-global C state, or a panic is involved**. It is also</p>
-<p>heavy: every <code>spawn</code> is one OS thread via <code>pthread_create</code></p>
-<p>(<code>runtime/tycho_rt.c:315-317</code>), <code>parallel for</code> fans out <code>ncpu</code> threads with a</p>
-<p>full deep-copy of captures per chunk (<code>src/tychoc.c:5020-5033</code>), there is no</p>
-<p>thread pool or work-stealing (<code>docs/reference/concurrency.md:137-139</code>), spawning is</p>
-<p>unbounded, and a panic/abort in any task <code>exit(1)</code>s the whole process</p>
-<p>(<code>docs/reference/concurrency.md:141</code>, <code>runtime/tycho_rt.c:1135-1148</code>).</p>
+<p><strong>FFI.</strong> The boundary is deliberately tiny: only scalars, NUL-terminated <code>string</code>, and an opaque <code>ptr</code> cross it (<code>docs/reference/ffi.md:61-86</code>, <code>src/tychoc.c:3144-3190</code>). That keeps the *language* sound — no foreign pointer enters Tycho's owned world — but it pushes real cost onto users:</p>
+<ol>
+<li>No composite types cross (rejected at parse, <code>src/tychoc.c</code>).</li>
+<li>No byte-buffer / <code>(ptr,len)</code> story. A <code>string</code> cannot hold <code>0x00</code> (<code>corelib/hex/hex.ty:7-11</code>), so all binary is marshaled as hex — see the crypto package marshaling *every* key/nonce/ciphertext/digest as a hex string (<code>corelib/crypto/crypto.ty:11-18</code>, <code>corelib/crypto/crypto_shim.c:1-27</code>).</li>
+<li><code>ptr</code> is fully opaque and unsafe: no type tag, no compiler-known destructor, so handles leak and nothing prevents use-after-free or passing the wrong handle type (<code>docs/reference/ffi.md:107-109</code>; no destructor exists — verified by searching <code>src/tychoc.c</code> for destructor/drop/dealloc/free).</li>
+<li>String lifetime rules have a subtle read-once-borrow footgun (<code>src/tychoc.c</code>).</li>
+<li>Every out-param / callback API needs a hand-written C shim (<code>docs/reference/ffi.md:130-141</code>, <code>examples/sqlite/</code>, <code>corelib/crypto/crypto_shim.c</code>).</li>
+<li>No variadics, no callbacks into Tycho (<code>docs/reference/ffi.md</code>).</li>
+</ol>
+<p><strong>Threading.</strong> "Race-free by construction" (<code>README.md:16-18</code>, <code>docs/reference/concurrency.md:5-9</code>) is *true for pure Tycho values* and <strong>false the moment FFI, process-global C state, or a panic is involved</strong>. It is also heavy: every <code>spawn</code> is one OS thread via <code>pthread_create</code> (<code>runtime/tycho_rt.c:315-317</code>), <code>parallel for</code> fans out <code>ncpu</code> threads with a full deep-copy of captures per chunk (<code>src/tychoc.c:5020-5033</code>), there is no thread pool or work-stealing (<code>docs/reference/concurrency.md:137-139</code>), spawning is unbounded, and a panic/abort in any task <code>exit(1)</code>s the whole process (<code>docs/reference/concurrency.md:141</code>, <code>runtime/tycho_rt.c:1135-1148</code>).</p>
 <p><strong>Top recommendations (ranked, both areas):</strong></p>
-<p>1. <strong>First-class immutable <code>bytes</code> type crossing as <code>(ptr,len)</code></strong> — removes</p>
-<p>the hex-marshaling tax, the single biggest FFI usability win. Fundamental</p>
-<p>(new type) but fits value semantics cleanly.</p>
-<p>2. <strong>Tighten the safety claim in docs</strong> — cheap, high trust value.</p>
-<p>State exactly what "race-free by construction" covers and what it does not</p>
-<p>(FFI, global C state, panic). Add an FFI-from-threads guidance section.</p>
-<p>3. <strong>Typed handles with a compiler-known destructor</strong> (<code>handle "Lib" Db</code>) —</p>
-<p>fixes leaks + wrong-handle bugs. Incremental on top of <code>ptr</code>.</p>
-<p>4. <strong>Bounded worker pool for <code>spawn</code> / <code>parallel for</code></strong> — caps the</p>
-<p>thread-explosion and thread-creation cost. Runtime-only, no language change.</p>
-<p>5. <strong>Auto-shim / out-param sugar</strong> — reduces hand-written C. Incremental,</p>
-<p>medium effort.</p>
+<ol>
+<li><strong>First-class immutable <code>bytes</code> type crossing as <code>(ptr,len)</code></strong> — removes the hex-marshaling tax, the single biggest FFI usability win. Fundamental (new type) but fits value semantics cleanly.</li>
+<li><strong>Tighten the safety claim in docs</strong> — cheap, high trust value. State exactly what "race-free by construction" covers and what it does not (FFI, global C state, panic). Add an FFI-from-threads guidance section.</li>
+<li><strong>Typed handles with a compiler-known destructor</strong> (<code>handle "Lib" Db</code>) — fixes leaks + wrong-handle bugs. Incremental on top of <code>ptr</code>.</li>
+<li><strong>Bounded worker pool for <code>spawn</code> / <code>parallel for</code></strong> — caps the thread-explosion and thread-creation cost. Runtime-only, no language change.</li>
+<li><strong>Auto-shim / out-param sugar</strong> — reduces hand-written C. Incremental, medium effort.</li>
+</ol>
 <hr/>
 <h2 id="ffi--pain-points-with-citations">FFI — pain points (with citations)</h2>
 <h3 id="the-boundary-today">The boundary today</h3>
-<p><code>extern fn</code> is bodyless and calls a C symbol directly; the type checker</p>
-<p>rejects anything outside the scalar/string/<code>ptr</code> table, failing closed:</p>
+<p><code>extern fn</code> is bodyless and calls a C symbol directly; the type checker rejects anything outside the scalar/string/<code>ptr</code> table, failing closed:</p>
 <ul>
-<li>Parse + type gate: <code>src/tychoc.c:3254</code> (<code>ffi_scalar_type</code>), <code>:3260</code></li>
+<li>Parse + type gate: <code>src/tychoc.c:3254</code> (<code>ffi_scalar_type</code>), <code>:3260</code> (<code>parse_extern_fn</code>), <code>:3279</code> (rejects <code>inout</code>/<code>inout</code> params), <code>:3281</code> (rejects composite params), <code>:3293</code> (rejects composite return).</li>
+<li>Type table: <code>docs/reference/ffi.md:61-70</code>. <code>int/char/float/bool</code> → scalar long/double; <code>string</code> → <code>char *</code>; <code>ptr</code> → <code>void *</code>; void return allowed.</li>
+<li>Link line assembled in one <code>cc</code> call: <code>src/tychoc.c:10522-10549</code>. Each <code>extern "Lib"</code> adds <code>-lLib</code> (<code>:6600</code> <code>add_link</code>). <code>--link/--shim/--pkg</code> passthrough at <code>:10829-10833</code>. Auto-discovered <code>&lt;pkg&gt;_shim.c</code> + <code>deps</code> pkg-config at <code>:10584-10587</code>, <code>:3772-3797</code>, <code>:11489-11499</code>.</li>
+<li>String return is arena-copied so Tycho never holds a foreign pointer (<code>src/tychoc.c:7534-7541</code>, <code>tycho_str_from_c</code>, NULL→<code>""</code>).</li>
 </ul>
-<p>(<code>parse_extern_fn</code>), <code>:3279</code> (rejects <code>inout</code>/<code>inout</code> params), <code>:3281</code></p>
-<p>(rejects composite params), <code>:3293</code> (rejects composite return).</p>
-<ul>
-<li>Type table: <code>docs/reference/ffi.md:61-70</code>. <code>int/char/float/bool</code> → scalar long/double;</li>
-</ul>
-<p><code>string</code> → <code>char *</code>; <code>ptr</code> → <code>void *</code>; void return allowed.</p>
-<ul>
-<li>Link line assembled in one <code>cc</code> call: <code>src/tychoc.c:10522-10549</code>. Each</li>
-</ul>
-<p><code>extern "Lib"</code> adds <code>-lLib</code> (<code>:6600</code> <code>add_link</code>). <code>--link/--shim/--pkg</code></p>
-<p>passthrough at <code>:10829-10833</code>. Auto-discovered <code>&lt;pkg&gt;_shim.c</code> + <code>deps</code></p>
-<p>pkg-config at <code>:10584-10587</code>, <code>:3772-3797</code>, <code>:11489-11499</code>.</p>
-<ul>
-<li>String return is arena-copied so Tycho never holds a foreign pointer</li>
-</ul>
-<p>(<code>src/tychoc.c:7534-7541</code>, <code>tycho_str_from_c</code>, NULL→<code>""</code>).</p>
 <h3 id="pain-point-1--no-composite-types-cross">Pain point 1 — no composite types cross</h3>
-<p>Arrays, maps, structs, <code>Option</code>/<code>Result</code>, tuples are all rejected</p>
-<p>(<code>src/tychoc.c</code>; <code>docs/reference/ffi.md:77-86</code>). Rationale is sound: those</p>
-<p>have Tycho-internal C layouts, not a stable ABI. But it means any aggregate</p>
-<p>must be flattened into scalars/strings/<code>ptr</code> or carried through a hand-written</p>
-<p>shim. For a struct-heavy C API this is a lot of boilerplate.</p>
+<p>Arrays, maps, structs, <code>Option</code>/<code>Result</code>, tuples are all rejected (<code>src/tychoc.c</code>; <code>docs/reference/ffi.md:77-86</code>). Rationale is sound: those have Tycho-internal C layouts, not a stable ABI. But it means any aggregate must be flattened into scalars/strings/<code>ptr</code> or carried through a hand-written shim. For a struct-heavy C API this is a lot of boilerplate.</p>
 <h3 id="pain-point-2--no-byte-buffer-binary-marshaled-as-hex-the-biggest-one">Pain point 2 — no byte buffer; binary marshaled as hex (the biggest one)</h3>
-<p>A Tycho <code>string</code> is a NUL-terminated <code>char *</code> (<code>docs/reference/ffi.md:73</code>), so it cannot</p>
-<p>carry an interior <code>0x00</code>. <code>corelib/hex/hex.ty:7-11</code> documents this directly:</p>
-<p><code>decode("00")</code> is <code>""</code> — a NUL byte is dropped. Consequence: the entire crypto</p>
-<p>package marshals <strong>all</strong> binary data as lowercase hex</p>
-<p>(<code>corelib/crypto/crypto.ty:11-18</code>, shim header <code>corelib/crypto/crypto_shim.c:1-17</code>):</p>
+<p>A Tycho <code>string</code> is a NUL-terminated <code>char *</code> (<code>docs/reference/ffi.md:73</code>), so it cannot carry an interior <code>0x00</code>. <code>corelib/hex/hex.ty:7-11</code> documents this directly: <code>decode("00")</code> is <code>""</code> — a NUL byte is dropped. Consequence: the entire crypto package marshals <strong>all</strong> binary data as lowercase hex (<code>corelib/crypto/crypto.ty:11-18</code>, shim header <code>corelib/crypto/crypto_shim.c:1-17</code>):</p>
 <ul>
-<li>Every key, nonce, ciphertext, signature, digest crosses as hex</li>
+<li>Every key, nonce, ciphertext, signature, digest crosses as hex (<code>crypto.ty</code> externs <code>cx_sha256_hex</code>, <code>cx_aead_encrypt</code>, etc.).</li>
+<li>The shim hex-decodes on the way in and hex-encodes on the way out (<code>crypto_shim.c:38-50</code> <code>out_hex</code>, <code>:60-73</code> <code>hexdec</code>).</li>
+<li>Cost: 2× memory for every buffer, plus encode/decode CPU on every call, plus a layer of conversion code the user must write and audit. This is the single clearest "FFI is hard to use" datapoint in the repo.</li>
 </ul>
-<p>(<code>crypto.ty</code> externs <code>cx_sha256_hex</code>, <code>cx_aead_encrypt</code>, etc.).</p>
-<ul>
-<li>The shim hex-decodes on the way in and hex-encodes on the way out</li>
-</ul>
-<p>(<code>crypto_shim.c:38-50</code> <code>out_hex</code>, <code>:60-73</code> <code>hexdec</code>).</p>
-<ul>
-<li>Cost: 2× memory for every buffer, plus encode/decode CPU on every call, plus</li>
-</ul>
-<p>a layer of conversion code the user must write and audit. This is the single</p>
-<p>clearest "FFI is hard to use" datapoint in the repo.</p>
 <h3 id="pain-point-3--ptr-is-opaque-and-unsafe">Pain point 3 — <code>ptr</code> is opaque and unsafe</h3>
-<p><code>ptr</code> is <code>void *</code> with only three operations: pass back to C, compare</p>
-<p>(<code>==</code>/<code>!=</code> vs another <code>ptr</code> or <code>null</code>), and <code>is_null</code> (<code>docs/reference/ffi.md:107-109</code>;</p>
-<p><code>E_NULL</code> → <code>T_PTR</code> at <code>src/tychoc.c:4232</code>; literal at <code>:2137</code>). Three distinct</p>
-<p>hazards, none mitigated:</p>
+<p><code>ptr</code> is <code>void *</code> with only three operations: pass back to C, compare (<code>==</code>/<code>!=</code> vs another <code>ptr</code> or <code>null</code>), and <code>is_null</code> (<code>docs/reference/ffi.md:107-109</code>; <code>E_NULL</code> → <code>T_PTR</code> at <code>src/tychoc.c:4232</code>; literal at <code>:2137</code>). Three distinct hazards, none mitigated:</p>
 <ul>
-<li><strong>No type tag.</strong> A <code>sqlite3 *</code> and a <code>FILE *</code> are both <code>ptr</code>; the compiler</li>
+<li><strong>No type tag.</strong> A <code>sqlite3 *</code> and a <code>FILE *</code> are both <code>ptr</code>; the compiler cannot stop you passing one where the other is expected.</li>
+<li><strong>No destructor / leak.</strong> Nothing in the compiler frees a <code>ptr</code> at scope exit (verified: no destructor/drop/dealloc/free-for-ptr in <code>src/tychoc.c</code>; only task/channel finalizers exist, <code>:6380-6390</code>). A handle from <code>sqlite3_open</code> leaks unless the user remembers to call <code>sqlite3_close</code>.</li>
+<li><strong>Dangling / double-free.</strong> Tycho copies a <code>ptr</code> by value freely (it rides scalar paths, <code>docs/reference/ffi.md:109</code>), so the same handle can be live in several places; use-after-free and double-free are entirely on the user.</li>
 </ul>
-<p>cannot stop you passing one where the other is expected.</p>
-<ul>
-<li><strong>No destructor / leak.</strong> Nothing in the compiler frees a <code>ptr</code> at scope</li>
-</ul>
-<p>exit (verified: no destructor/drop/dealloc/free-for-ptr in <code>src/tychoc.c</code>;</p>
-<p>only task/channel finalizers exist, <code>:6380-6390</code>). A handle from</p>
-<p><code>sqlite3_open</code> leaks unless the user remembers to call <code>sqlite3_close</code>.</p>
-<ul>
-<li><strong>Dangling / double-free.</strong> Tycho copies a <code>ptr</code> by value freely (it rides</li>
-</ul>
-<p>scalar paths, <code>docs/reference/ffi.md:109</code>), so the same handle can be live in several</p>
-<p>places; use-after-free and double-free are entirely on the user.</p>
 <h3 id="pain-point-4--string-lifetime-footguns">Pain point 4 — string-lifetime footguns</h3>
-<p>The rule (<code>docs/reference/ffi.md:88-105</code>): a returned <code>string</code> is copied into the</p>
-<p>caller's arena; <code>NULL</code> becomes <code>""</code>. An optimization — the **read-once</p>
-<p>borrow** — skips the copy when the result is the *direct* argument of</p>
-<p><code>len()</code>/<code>print()</code>/<code>println()</code> (<code>src/tychoc.c@is_extern_str_call</code>, applied at</p>
-<p><code>src/tychoc.c:11986</code> for <code>len</code>, <code>:12121</code> and <code>:12128</code> for print/println). Footguns:</p>
+<p>The rule (<code>docs/reference/ffi.md:88-105</code>): a returned <code>string</code> is copied into the caller's arena; <code>NULL</code> becomes <code>""</code>. An optimization — the <strong>read-once borrow</strong> — skips the copy when the result is the *direct* argument of <code>len()</code>/<code>print()</code>/<code>println()</code> (<code>src/tychoc.c@is_extern_str_call</code>, applied at <code>src/tychoc.c:11986</code> for <code>len</code>, <code>:12121</code> and <code>:12128</code> for print/println). Footguns:</p>
 <ul>
-<li><code>NULL → ""</code> silently erases the C/Tycho distinction between "no value" and</li>
+<li><code>NULL → ""</code> silently erases the C/Tycho distinction between "no value" and "empty string". A caller that needs to detect absence cannot (the crypto shim works around this with an explicit <code>"!err"</code> sentinel, <code>crypto_shim.c:17-20</code>, <code>crypto.ty:14-17</code>).</li>
+<li>The read-once optimization is invisible and shape-sensitive: <code>len(f())</code> reads in place, but <code>x := f(); len(x)</code> copies. Equivalent-looking code takes different paths. It is sound today (the borrow cannot escape the consuming call), but it is a sharp edge for anyone extending the FFI, and a shim that returns a recycled buffer (see crypto <code>__thread g_out</code>, below) is only safe *because* of the arena copy — a future "borrow more aggressively" change could break that contract.</li>
 </ul>
-<p>"empty string". A caller that needs to detect absence cannot (the crypto</p>
-<p>shim works around this with an explicit <code>"!err"</code> sentinel,</p>
-<p><code>crypto_shim.c:17-20</code>, <code>crypto.ty:14-17</code>).</p>
-<ul>
-<li>The read-once optimization is invisible and shape-sensitive: <code>len(f())</code> reads</li>
-</ul>
-<p>in place, but <code>x := f(); len(x)</code> copies. Equivalent-looking code takes</p>
-<p>different paths. It is sound today (the borrow cannot escape the consuming</p>
-<p>call), but it is a sharp edge for anyone extending the FFI, and a shim that</p>
-<p>returns a recycled buffer (see crypto <code>__thread g_out</code>, below) is only safe</p>
-<p>*because* of the arena copy — a future "borrow more aggressively" change</p>
-<p>could break that contract.</p>
 <h3 id="pain-point-5--manual-shims-for-every-out-param--callback">Pain point 5 — manual shims for every out-param / callback</h3>
-<p>Out-parameter constructors (the dominant C idiom, e.g.</p>
-<p><code>sqlite3_open(path, &amp;db)</code>) cannot be expressed; the user writes a C wrapper</p>
-<p>that returns the handle and passes it with <code>--shim</code> (<code>docs/reference/ffi.md:130-141</code>,</p>
-<p><code>examples/sqlite/</code>). Same for any function whose result comes back through a</p>
-<p>pointer argument. The crypto package is essentially one large shim</p>
-<p>(<code>corelib/crypto/crypto_shim.c</code>).</p>
+<p>Out-parameter constructors (the dominant C idiom, e.g. <code>sqlite3_open(path, &amp;db)</code>) cannot be expressed; the user writes a C wrapper that returns the handle and passes it with <code>--shim</code> (<code>docs/reference/ffi.md:130-141</code>, <code>examples/sqlite/</code>). Same for any function whose result comes back through a pointer argument. The crypto package is essentially one large shim (<code>corelib/crypto/crypto_shim.c</code>).</p>
 <h3 id="pain-point-6--no-variadics-no-callbacks-into-tycho">Pain point 6 — no variadics, no callbacks into Tycho</h3>
-<p><code>printf</code>-style variadics need a fixed-arity C wrapper (<code>docs/reference/ffi.md</code>).</p>
-<p>A Tycho function value is a non-C-ABI fat pointer, so C cannot call back into</p>
-<p>Tycho (<code>docs/reference/ffi.md</code>) — qsort-comparator / event-callback APIs</p>
-<p>are unreachable without a C trampoline. These are documented as by-design</p>
-<p>non-goals; listed here for completeness, not necessarily to fix.</p>
+<p><code>printf</code>-style variadics need a fixed-arity C wrapper (<code>docs/reference/ffi.md</code>). A Tycho function value is a non-C-ABI fat pointer, so C cannot call back into Tycho (<code>docs/reference/ffi.md</code>) — qsort-comparator / event-callback APIs are unreachable without a C trampoline. These are documented as by-design non-goals; listed here for completeness, not necessarily to fix.</p>
 <h3 id="ffi--ranked-recommendations">FFI — ranked recommendations</h3>
 <p>Ranked by value / effort.</p>
 <p><strong>R1 (highest value). First-class immutable <code>bytes</code> type, crosses as <code>(ptr,len)</code>.</strong></p>
 <ul>
-<li>*Design.* Add an immutable byte buffer type (<code>bytes</code>, or <code>[u8]</code>). It owns a</li>
+<li>*Design.* Add an immutable byte buffer type (<code>bytes</code>, or <code>[u8]</code>). It owns a length-carrying buffer in the arena like any value, deep-copies on the value seam exactly as a <code>string</code> does, but allows interior <code>0x00</code>. Across the FFI it lowers to two C arguments <code>(const unsigned char *ptr, long len)</code> for a parameter, and an extern returning <code>bytes</code> uses an out-param-len shim convention (or a small compiler-known <code>{ptr,len}</code> return struct emitted by Tycho, copied into the arena like the current string return at <code>src/tychoc.c:7534-7541</code>).</li>
+<li>*Why.* Eliminates the hex-marshaling tax that dominates the crypto package and would hit any binary-data library (compression, image, network, hashing). Halves memory and removes the encode/decode CPU and code.</li>
+<li>*Incremental or fundamental.* Fundamental — a new core type with its own arena/copy paths in the implementation — but it is *parallel* to <code>string</code>, so much of the string machinery is a template.</li>
+<li>*Risk to value semantics.* Low. <code>bytes</code> is just another value type; deep-copy on the seam preserves the no-aliasing invariant. The only new surface is the <code>(ptr,len)</code> lowering, which is as safe as the existing <code>string</code> <code>char *</code> lowering (arena-copy on return keeps foreign memory out).</li>
 </ul>
-<p>length-carrying buffer in the arena like any value, deep-copies on the value</p>
-<p>seam exactly as a <code>string</code> does, but allows interior <code>0x00</code>. Across the FFI</p>
-<p>it lowers to two C arguments <code>(const unsigned char *ptr, long len)</code> for a</p>
-<p>parameter, and an extern returning <code>bytes</code> uses an out-param-len shim</p>
-<p>convention (or a small compiler-known <code>{ptr,len}</code> return struct emitted by</p>
-<p>Tycho, copied into the arena like the current string return at</p>
-<p><code>src/tychoc.c:7534-7541</code>).</p>
-<ul>
-<li>*Why.* Eliminates the hex-marshaling tax that dominates the crypto package</li>
-</ul>
-<p>and would hit any binary-data library (compression, image, network, hashing).</p>
-<p>Halves memory and removes the encode/decode CPU and code.</p>
-<ul>
-<li>*Incremental or fundamental.* Fundamental — a new core type with its own</li>
-</ul>
-<p>arena/copy paths in the implementation — but it is *parallel* to <code>string</code>, so</p>
-<p>much of the string machinery is a template.</p>
-<ul>
-<li>*Risk to value semantics.* Low. <code>bytes</code> is just another value type; deep-copy</li>
-</ul>
-<p>on the seam preserves the no-aliasing invariant. The only new surface is the</p>
-<p><code>(ptr,len)</code> lowering, which is as safe as the existing <code>string</code> <code>char *</code></p>
-<p>lowering (arena-copy on return keeps foreign memory out).</p>
 <p><strong>R2. Typed handle wrapper over <code>ptr</code>, with an optional compiler-known free.</strong></p>
 <ul>
-<li>*Design.* Allow a newtype-style declaration that tags a handle and names its</li>
+<li>*Design.* Allow a newtype-style declaration that tags a handle and names its destructor, e.g. <code>extern handle "sqlite3" Db free sqlite3_close</code>. The compiler treats <code>Db</code> as distinct from <code>ptr</code> and from other handles (fixes the wrong-handle hazard, pain point 3a), and emits the named free at scope exit for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing task/channel finalizer mechanism (<code>src/tychoc.c:8013-8026</code>) that already runs destructor calls at scope end.</li>
+<li>*Why.* Turns the most dangerous FFI primitive into something the compiler can reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.</li>
+<li>*Incremental or fundamental.* Incremental — <code>ptr</code> stays as the escape hatch; the handle type is a tagged newtype over it plus a finalizer registration.</li>
+<li>*Risk to value semantics.* Medium. Ownership of a foreign resource is *not* value-semantic (you cannot deep-copy a live <code>sqlite3 *</code>). Must define handles as <strong>affine like tasks</strong> (<code>docs/reference/concurrency.md:37-48</code>): no copying, single owner, freed once at scope exit. This is the same affine machinery tasks already use, so it is consistent with the model rather than a violation of it. Decide explicitly whether handles are movable (<code>inout</code>) or strictly local.</li>
 </ul>
-<p>destructor, e.g. <code>extern handle "sqlite3" Db free sqlite3_close</code>. The</p>
-<p>compiler treats <code>Db</code> as distinct from <code>ptr</code> and from other handles (fixes the</p>
-<p>wrong-handle hazard, pain point 3a), and emits the named free at scope exit</p>
-<p>for an *owned* handle (fixes the leak, pain point 3b) — reusing the existing</p>
-<p>task/channel finalizer mechanism (<code>src/tychoc.c:8013-8026</code>) that already runs</p>
-<p>destructor calls at scope end.</p>
+<p><strong>R3. <code>len</code>-carrying / nullable string variants, or an explicit "no read-once" opt-out.</strong></p>
 <ul>
-<li>*Why.* Turns the most dangerous FFI primitive into something the compiler can</li>
-</ul>
-<p>reason about. Most handle-based libs (SQLite, SDL, curl) become safe-by-default.</p>
-<ul>
-<li>*Incremental or fundamental.* Incremental — <code>ptr</code> stays as the escape hatch;</li>
-</ul>
-<p>the handle type is a tagged newtype over it plus a finalizer registration.</p>
-<ul>
-<li>*Risk to value semantics.* Medium. Ownership of a foreign resource is *not*</li>
-</ul>
-<p>value-semantic (you cannot deep-copy a live <code>sqlite3 *</code>). Must define handles</p>
-<p>as <strong>affine like tasks</strong> (<code>docs/reference/concurrency.md:37-48</code>): no copying, single</p>
-<p>owner, freed once at scope exit. This is the same affine machinery tasks</p>
-<p>already use, so it is consistent with the model rather than a violation of it.</p>
-<p>Decide explicitly whether handles are movable (<code>inout</code>) or strictly local.</p>
-<p>**R3. <code>len</code>-carrying / nullable string variants, or an explicit "no read-once"</p>
-<p>opt-out.**</p>
-<ul>
-<li>*Design.* Two small pieces: (a) an <code>extern fn ... -&gt; string?</code> form that</li>
-</ul>
-<p>surfaces a real <code>None</code> for a C <code>NULL</code> return instead of silently mapping to</p>
-<p><code>""</code> (fixes pain point 4a); (b) document the read-once borrow as a stable</p>
-<p>guarantee or gate it behind an attribute, so shim authors can rely on it.</p>
-<ul>
-<li>*Why.* Removes the silent <code>NULL</code>/<code>""</code> conflation that forces sentinel hacks</li>
-</ul>
-<p>like crypto's <code>"!err"</code>.</p>
-<ul>
+<li>*Design.* Two small pieces: (a) an <code>extern fn ... -&gt; string?</code> form that surfaces a real <code>None</code> for a C <code>NULL</code> return instead of silently mapping to <code>""</code> (fixes pain point 4a); (b) document the read-once borrow as a stable guarantee or gate it behind an attribute, so shim authors can rely on it.</li>
+<li>*Why.* Removes the silent <code>NULL</code>/<code>""</code> conflation that forces sentinel hacks like crypto's <code>"!err"</code>.</li>
 <li>*Incremental or fundamental.* Incremental.</li>
 <li>*Risk.* Low. <code>Option(string)</code> already exists in the language.</li>
 </ul>
 <p><strong>R4. Auto-shim generation for out-parameter constructors.</strong></p>
 <ul>
-<li>*Design.* A declaration form that lets the compiler synthesize the trivial</li>
-</ul>
-<p>out-param→return shim it currently makes users write by hand, e.g.</p>
-<p><code>extern fn sqlite3_open(path: string, out db: ptr) -&gt; int</code> emitting the</p>
-<p><code>&amp;db</code> wrapper automatically. Keeps <code>--shim</code> for everything the synthesizer</p>
-<p>cannot express.</p>
-<ul>
+<li>*Design.* A declaration form that lets the compiler synthesize the trivial out-param→return shim it currently makes users write by hand, e.g. <code>extern fn sqlite3_open(path: string, out db: ptr) -&gt; int</code> emitting the <code>&amp;db</code> wrapper automatically. Keeps <code>--shim</code> for everything the synthesizer cannot express.</li>
 <li>*Why.* Removes the most common reason a binding needs hand-written C.</li>
-<li>*Incremental or fundamental.* Incremental, medium effort (codegen of a small</li>
+<li>*Incremental or fundamental.* Incremental, medium effort (codegen of a small C wrapper, alongside the existing shim plumbing at <code>src/tychoc.c:10260-10263</code>).</li>
+<li>*Risk.* Low — generated C is mechanical; fail closed to <code>--shim</code> if the shape is anything non-trivial.</li>
 </ul>
-<p>C wrapper, alongside the existing shim plumbing at <code>src/tychoc.c:10260-10263</code>).</p>
-<ul>
-<li>*Risk.* Low — generated C is mechanical; fail closed to <code>--shim</code> if the shape</li>
-</ul>
-<p>is anything non-trivial.</p>
 <p><strong>R5 (lowest priority). Variadics / callbacks-into-Tycho.</strong></p>
 <ul>
-<li>These are documented non-goals (<code>docs/reference/ffi.md</code>). A callback</li>
+<li>These are documented non-goals (<code>docs/reference/ffi.md</code>). A callback story would require emitting a C-ABI trampoline that re-enters Tycho with a fresh arena — large, and it punctures the "no foreign control flow into Tycho" stance. Recommend leaving as-is unless a concrete library forces it.</li>
 </ul>
-<p>story would require emitting a C-ABI trampoline that re-enters Tycho with a</p>
-<p>fresh arena — large, and it punctures the "no foreign control flow into</p>
-<p>Tycho" stance. Recommend leaving as-is unless a concrete library forces it.</p>
 <hr/>
 <h2 id="threading--cost-analysis--safety-envelope-with-citations">Threading — cost analysis + safety envelope (with citations)</h2>
 <h3 id="why-it-is-heavy">Why it is heavy</h3>
 <ul>
-<li><strong>One OS thread per <code>spawn</code>.</strong> <code>tycho_task_start</code> calls <code>pthread_create</code></li>
+<li><strong>One OS thread per <code>spawn</code>.</strong> <code>tycho_task_start</code> calls <code>pthread_create</code> directly with no pool (<code>runtime/tycho_rt.c:315-318</code>). Each task allocates a fresh root arena (<code>tycho_task_new</code>, <code>:297-303</code>). Thread creation + teardown + a fresh arena per task is the per-spawn cost.</li>
+<li><strong><code>parallel for</code> forks <code>ncpu</code> threads with full capture copy per chunk.</strong> K = <code>tycho_ncpu()</code> chunk tasks (<code>src/tychoc.c:5121-5134</code>; runtime <code>:925-932</code>, <code>TYCHO_THREADS</code> overrides). Every captured variable is deep-copied into each chunk's root arena — the per-chunk cost, documented at <code>docs/reference/concurrency.md:59</code>. For large captures this is real memory and time.</li>
+<li><strong>No thread pool, no work-stealing.</strong> Explicitly: "no work-stealing runtime: a blocked waiter is a parked OS thread" (<code>docs/reference/concurrency.md:137-139</code>). Fine for the benchmark shape (a fixed fan-out of long tasks), painful for many short tasks (each pays full thread create/destroy).</li>
+<li><strong>Blocking is a parked OS thread.</strong> A <code>recv</code>/<code>wait</code>/select waits on a spin → <code>sched_yield</code> → 1ms timed-park ladder (<code>runtime/tycho_rt.c:498-518</code>, <code>docs/reference/concurrency.md:114-117</code>). Mostly cheap on the fast path, but a blocked task holds a whole OS thread.</li>
 </ul>
-<p>directly with no pool (<code>runtime/tycho_rt.c:315-318</code>). Each task allocates a</p>
-<p>fresh root arena (<code>tycho_task_new</code>, <code>:297-303</code>). Thread creation +</p>
-<p>teardown + a fresh arena per task is the per-spawn cost.</p>
-<ul>
-<li><strong><code>parallel for</code> forks <code>ncpu</code> threads with full capture copy per chunk.</strong> K =</li>
-</ul>
-<p><code>tycho_ncpu()</code> chunk tasks (<code>src/tychoc.c:5121-5134</code>; runtime <code>:925-932</code>,</p>
-<p><code>TYCHO_THREADS</code> overrides). Every captured variable is deep-copied into each</p>
-<p>chunk's root arena — the per-chunk cost, documented at</p>
-<p><code>docs/reference/concurrency.md:59</code>. For large captures this is real memory and time.</p>
-<ul>
-<li><strong>No thread pool, no work-stealing.</strong> Explicitly: "no work-stealing runtime:</li>
-</ul>
-<p>a blocked waiter is a parked OS thread" (<code>docs/reference/concurrency.md:137-139</code>).</p>
-<p>Fine for the benchmark shape (a fixed fan-out of long tasks), painful for</p>
-<p>many short tasks (each pays full thread create/destroy).</p>
-<ul>
-<li><strong>Blocking is a parked OS thread.</strong> A <code>recv</code>/<code>wait</code>/select waits on a</li>
-</ul>
-<p>spin → <code>sched_yield</code> → 1ms timed-park ladder (<code>runtime/tycho_rt.c:498-518</code>,</p>
-<p><code>docs/reference/concurrency.md:114-117</code>). Mostly cheap on the fast path, but a blocked</p>
-<p>task holds a whole OS thread.</p>
-<p>The measured numbers are good for the *intended* shape (parreduce at C parity,</p>
-<p>pipeline beating Go — <code>docs/reference/concurrency.md:122-132</code>), which is why this is a</p>
-<p>cost-model issue, not a correctness one. The heaviness bites a workload of many</p>
-<p>small or short-lived tasks.</p>
+<p>The measured numbers are good for the *intended* shape (parreduce at C parity, pipeline beating Go — <code>docs/reference/concurrency.md:122-132</code>), which is why this is a cost-model issue, not a correctness one. The heaviness bites a workload of many small or short-lived tasks.</p>
 <h3 id="where-it-is-actually-unsafe-despite-copy-incopy-out">Where it is actually unsafe (despite copy-in/copy-out)</h3>
-<p>The claim "race-free by construction" (<code>README.md:16-18</code>,</p>
-<p><code>docs/reference/concurrency.md:5-9</code>) holds for <strong>pure Tycho values</strong> — after copy-in a</p>
-<p>task shares zero bytes (<code>runtime/tycho_rt.c:354-363</code>). It does <strong>not</strong> hold in</p>
-<p>these cases, and the docs only partially flag them:</p>
-<p>1. <strong>FFI into non-thread-safe or stateful C.</strong> Tycho's value isolation says</p>
-<p>nothing about C's global state. Two tasks each calling into the same C</p>
-<p>library hit whatever sharing that library has. The repo's own crypto shim is</p>
-<p>a live example to scrutinize:</p>
+<p>The claim "race-free by construction" (<code>README.md:16-18</code>, <code>docs/reference/concurrency.md:5-9</code>) holds for <strong>pure Tycho values</strong> — after copy-in a task shares zero bytes (<code>runtime/tycho_rt.c:354-363</code>). It does <strong>not</strong> hold in these cases, and the docs only partially flag them:</p>
+<ol>
+<li><strong>FFI into non-thread-safe or stateful C.</strong> Tycho's value isolation says nothing about C's global state. Two tasks each calling into the same C library hit whatever sharing that library has. The repo's own crypto shim is a live example to scrutinize:</li>
+</ol>
 <ul>
-<li>The recycled return buffer is <code>static __thread char *g_out</code></li>
+<li>The recycled return buffer is <code>static __thread char *g_out</code> (<code>corelib/crypto/crypto_shim.c:15@g_out</code>), so it *is* per-thread-safe — good. But this is a property of *this* shim, not of the FFI, and it relies on Tycho arena-copying the returned string before the next call (<code>crypto_shim.c:10-14</code>). A shim author who uses a plain <code>static</code> buffer (not <code>__thread</code>) would have a cross-thread data race that the language's "race-free by construction" claim does nothing to prevent.</li>
+<li>OpenSSL EVP one-shot calls as used here (<code>EVP_Digest</code>, <code>HMAC</code>, <code>EVP_PKEY_*</code> with a fresh <code>EVP_PKEY_CTX</code> per call, <code>crypto_shim.c:88-173, 219-317</code>) are generally thread-safe in OpenSSL 1.1+/3.x because each call builds its own context. That is an OpenSSL property the Tycho model cannot guarantee; a different library, or OpenSSL with an <code>ENGINE</code>/global config, would not be covered.</li>
 </ul>
-<p>(<code>corelib/crypto/crypto_shim.c:15@g_out</code>), so it *is* per-thread-safe — good.</p>
-<p>But this is a property of *this* shim, not of the FFI, and it relies on</p>
-<p>Tycho arena-copying the returned string before the next call</p>
-<p>(<code>crypto_shim.c:10-14</code>). A shim author who uses a plain <code>static</code> buffer</p>
-<p>(not <code>__thread</code>) would have a cross-thread data race that the language's</p>
-<p>"race-free by construction" claim does nothing to prevent.</p>
-<ul>
-<li>OpenSSL EVP one-shot calls as used here (<code>EVP_Digest</code>, <code>HMAC</code>,</li>
-</ul>
-<p><code>EVP_PKEY_*</code> with a fresh <code>EVP_PKEY_CTX</code> per call, `crypto_shim.c:88-173,</p>
-<p>219-317`) are generally thread-safe in OpenSSL 1.1+/3.x because each call</p>
-<p>builds its own context. That is an OpenSSL property the Tycho model cannot</p>
-<p>guarantee; a different library, or OpenSSL with an <code>ENGINE</code>/global config,</p>
-<p>would not be covered.</p>
-<p>2. <strong>Channels are shared mutable state — by design.</strong> The channel is "the ONE</p>
-<p>intentionally shared object" (<code>runtime/tycho_rt.c:363-377</code>). It is</p>
-<p>internally synchronized, so it is safe, but it *is* a shared-state mechanism,</p>
-<p>so "no shared state" is an overstatement; "the only shared state is the</p>
-<p>internally-synchronized channel" is the accurate phrasing.</p>
-<p>3. <strong>Unbounded spawning / resource exhaustion.</strong> Nothing caps the number of</p>
-<p>live threads. A <code>spawn</code> in a loop, or recursive spawning, creates threads</p>
-<p>until <code>pthread_create</code> fails, at which point the runtime prints and</p>
-<p><code>exit(1)</code>s (<code>runtime/tycho_rt.c:316-318</code>). That is a fail-stop, not memory</p>
-<p>corruption, but it is a trivial fork-bomb / resource-exhaustion vector and is</p>
-<p>not mentioned as a limit.</p>
-<p>4. <strong>Panic/abort in a task kills the whole process.</strong> Any runtime error in a</p>
-<p>task — bounds check, <code>pop</code> from empty, OOM, divide, <code>exit(1)</code> paths</p>
-<p>throughout <code>runtime/tycho_rt.c</code> (e.g. <code>:1125-1140</code>, <code>:163</code>, <code>:1131-1132</code>) — takes</p>
-<p>down every other task with it. Documented (<code>docs/reference/concurrency.md:141</code>) but</p>
-<p>worth elevating: there is no task-level isolation of failure, unlike Erlang</p>
-<p>processes, which the intro compares Tycho to (<code>docs/reference/concurrency.md:8-9</code>).</p>
-<p>5. <strong>Affine/implicit-join edge cases.</strong> The affine rules are enforced and look</p>
-<p>sound (double-wait dies loudly, <code>runtime/tycho_rt.c:326-347</code>; implicit join</p>
-<p>at every scope exit, <code>:357-362</code>; <code>parallel for</code> rejects captured tasks /</p>
-<p>inout captures / cross-chunk mutation, <code>src/tychoc.c:5092-5184</code>). No unsafety</p>
-<p>found here — call out as *verified sound*, not a gap.</p>
+<ol start="2">
+<li><strong>Channels are shared mutable state — by design.</strong> The channel is "the ONE intentionally shared object" (<code>runtime/tycho_rt.c:363-377</code>). It is internally synchronized, so it is safe, but it *is* a shared-state mechanism, so "no shared state" is an overstatement; "the only shared state is the internally-synchronized channel" is the accurate phrasing.</li>
+<li><strong>Unbounded spawning / resource exhaustion.</strong> Nothing caps the number of live threads. A <code>spawn</code> in a loop, or recursive spawning, creates threads until <code>pthread_create</code> fails, at which point the runtime prints and <code>exit(1)</code>s (<code>runtime/tycho_rt.c:316-318</code>). That is a fail-stop, not memory corruption, but it is a trivial fork-bomb / resource-exhaustion vector and is not mentioned as a limit.</li>
+<li><strong>Panic/abort in a task kills the whole process.</strong> Any runtime error in a task — bounds check, <code>pop</code> from empty, OOM, divide, <code>exit(1)</code> paths throughout <code>runtime/tycho_rt.c</code> (e.g. <code>:1125-1140</code>, <code>:163</code>, <code>:1131-1132</code>) — takes down every other task with it. Documented (<code>docs/reference/concurrency.md:141</code>) but worth elevating: there is no task-level isolation of failure, unlike Erlang processes, which the intro compares Tycho to (<code>docs/reference/concurrency.md:8-9</code>).</li>
+<li><strong>Affine/implicit-join edge cases.</strong> The affine rules are enforced and look sound (double-wait dies loudly, <code>runtime/tycho_rt.c:326-347</code>; implicit join at every scope exit, <code>:357-362</code>; <code>parallel for</code> rejects captured tasks / inout captures / cross-chunk mutation, <code>src/tychoc.c:5092-5184</code>). No unsafety found here — call out as *verified sound*, not a gap.</li>
+</ol>
 <h3 id="threading--ranked-recommendations">Threading — ranked recommendations</h3>
 <p><strong>R1 (highest value, lowest risk). Make the safety claim honest in the docs.</strong></p>
 <ul>
-<li>*Action.* Reword <code>README.md:16-18</code> and <code>docs/reference/concurrency.md:5-9</code> from</li>
+<li>*Action.* Reword <code>README.md:16-18</code> and <code>docs/reference/concurrency.md:5-9</code> from "race-free by construction" (unqualified) to scope it explicitly:</li>
 </ul>
-<p>"race-free by construction" (unqualified) to scope it explicitly:</p>
 <blockquote>
-<p>Pure Tycho values crossing a thread boundary are race-free by construction</p>
-<p>(deep copy = zero sharing). This does <strong>not</strong> extend to: FFI calls into C</p>
-<p>(the C library's own thread-safety applies — see below), the channel itself</p>
-<p>(shared but internally synchronized), or failure isolation (a panic in any</p>
-<p>task aborts the whole process).</p>
+<p>Pure Tycho values crossing a thread boundary are race-free by construction (deep copy = zero sharing). This does <strong>not</strong> extend to: FFI calls into C (the C library's own thread-safety applies — see below), the channel itself (shared but internally synchronized), or failure isolation (a panic in any task aborts the whole process).</p>
 </blockquote>
 <ul>
-<li>Add an <strong>"FFI from threads"</strong> subsection: shims that return a buffer must use</li>
+<li>Add an <strong>"FFI from threads"</strong> subsection: shims that return a buffer must use <code>__thread</code> (point to <code>corelib/crypto/crypto_shim.c:15@g_out</code> as the reference pattern), and the bound C library must be documented thread-safe for the calls made.</li>
+<li>*Effort.* Trivial. *Value.* High — the current wording is the specific thing the feedback flagged as overclaiming.</li>
 </ul>
-<p><code>__thread</code> (point to <code>corelib/crypto/crypto_shim.c:15@g_out</code> as the reference</p>
-<p>pattern), and the bound C library must be documented thread-safe for the</p>
-<p>calls made.</p>
-<ul>
-<li>*Effort.* Trivial. *Value.* High — the current wording is the specific thing</li>
-</ul>
-<p>the feedback flagged as overclaiming.</p>
 <p><strong>R2. Bounded worker pool / thread cap for <code>spawn</code> and <code>parallel for</code>.</strong></p>
 <ul>
-<li>*Design.* A runtime worker pool sized to <code>tycho_ncpu()</code> (reuse the existing</li>
+<li>*Design.* A runtime worker pool sized to <code>tycho_ncpu()</code> (reuse the existing <code>tycho_ncpu</code> / <code>TYCHO_THREADS</code> knob, <code>runtime/tycho_rt.c:661-668</code>). <code>spawn</code> submits a closure to the pool instead of <code>pthread_create</code> per call; <code>wait</code> blocks on that task's completion. <code>parallel for</code> already fans out exactly K chunks so it maps onto the pool directly. Keep the per-task root arena (the isolation guarantee is unchanged); only the *thread* is pooled.</li>
+<li>*Why.* Removes per-spawn thread create/destroy cost and caps live threads — directly answers "very heavy" and the unbounded-spawn exhaustion vector.</li>
+<li>*Incremental or fundamental.* Runtime-only; no language or codegen change if the pool presents the same <code>tycho_task_start</code> / <code>tycho_task_join</code> interface (<code>runtime/tycho_rt.c:315-347</code>). Genuinely incremental.</li>
+<li>*Risk to value semantics.* None — pooling threads does not change which bytes are shared; the copy-in/copy-out seam is untouched. One subtlety: a pooled worker must flush its thread-local block pool (<code>tycho_pool_flush</code>, <code>:307-313</code>) between tasks or hand arenas back correctly, since the block pool is <code>__thread</code> (<code>:103</code>) and a pooled thread outlives a single task. *Caveat:* a blocking <code>recv</code>/<code>wait</code> inside a pooled task can starve the pool (classic pool-deadlock); needs either a "block creates a temporary extra worker" rule or documentation that blocking tasks should not be pooled. This is the one real design risk in R2 — call it out before building.</li>
 </ul>
-<p><code>tycho_ncpu</code> / <code>TYCHO_THREADS</code> knob, <code>runtime/tycho_rt.c:661-668</code>). <code>spawn</code></p>
-<p>submits a closure to the pool instead of <code>pthread_create</code> per call; <code>wait</code></p>
-<p>blocks on that task's completion. <code>parallel for</code> already fans out exactly K</p>
-<p>chunks so it maps onto the pool directly. Keep the per-task root arena</p>
-<p>(the isolation guarantee is unchanged); only the *thread* is pooled.</p>
-<ul>
-<li>*Why.* Removes per-spawn thread create/destroy cost and caps live threads —</li>
-</ul>
-<p>directly answers "very heavy" and the unbounded-spawn exhaustion vector.</p>
-<ul>
-<li>*Incremental or fundamental.* Runtime-only; no language or codegen change if</li>
-</ul>
-<p>the pool presents the same <code>tycho_task_start</code> / <code>tycho_task_join</code> interface</p>
-<p>(<code>runtime/tycho_rt.c:315-347</code>). Genuinely incremental.</p>
-<ul>
-<li>*Risk to value semantics.* None — pooling threads does not change which bytes</li>
-</ul>
-<p>are shared; the copy-in/copy-out seam is untouched. One subtlety: a pooled</p>
-<p>worker must flush its thread-local block pool (<code>tycho_pool_flush</code>,</p>
-<p><code>:307-313</code>) between tasks or hand arenas back correctly, since the block pool</p>
-<p>is <code>__thread</code> (<code>:103</code>) and a pooled thread outlives a single task.</p>
-<p>*Caveat:* a blocking <code>recv</code>/<code>wait</code> inside a pooled task can starve the pool</p>
-<p>(classic pool-deadlock); needs either a "block creates a temporary extra</p>
-<p>worker" rule or documentation that blocking tasks should not be pooled. This</p>
-<p>is the one real design risk in R2 — call it out before building.</p>
 <p><strong>R3. Optional bounded-concurrency primitive for fan-out loops.</strong></p>
 <ul>
-<li>*Design.* A way to spawn N tasks with a live-cap (semaphore over the pool), so</li>
-</ul>
-<p><code>spawn</code> in a loop cannot exhaust resources even without R2's full pool.</p>
-<ul>
+<li>*Design.* A way to spawn N tasks with a live-cap (semaphore over the pool), so <code>spawn</code> in a loop cannot exhaust resources even without R2's full pool.</li>
 <li>*Why.* Cheap safety net for the fork-bomb vector if R2 is deferred.</li>
 <li>*Incremental.* Yes. *Risk.* Low.</li>
 </ul>
 <p><strong>R4 (document, do not necessarily build). Failure isolation.</strong></p>
 <ul>
-<li>True per-task failure isolation (a panic in one task not killing the process)</li>
+<li>True per-task failure isolation (a panic in one task not killing the process) would require catching aborts at the thread boundary and propagating a result rather than <code>exit(1)</code> — a large change touching every <code>exit(1)</code> path in <code>runtime/tycho_rt.c</code>. Recommend documenting the current fail-stop behavior prominently (R1) rather than building isolation now; Tycho's "abort = stop the program" stance is internally consistent and changing it is a big project.</li>
 </ul>
-<p>would require catching aborts at the thread boundary and propagating a result</p>
-<p>rather than <code>exit(1)</code> — a large change touching every <code>exit(1)</code> path in</p>
-<p><code>runtime/tycho_rt.c</code>. Recommend documenting the current fail-stop behavior</p>
-<p>prominently (R1) rather than building isolation now; Tycho's "abort = stop the</p>
-<p>program" stance is internally consistent and changing it is a big project.</p>
 <hr/>
 <h2 id="suggested-next-steps-in-order">Suggested next steps (in order)</h2>
-<p>1. <strong>Docs honesty pass (Threading R1 + FFI pain-point notes).</strong> Lowest effort,</p>
-<p>highest trust return; directly addresses the "unsafe / overclaiming"</p>
-<p>feedback. Scope the race-free claim, add FFI-from-threads guidance, document</p>
-<p>the unbounded-spawn and panic-kills-process limits as first-class.</p>
-<p>2. <strong><code>bytes</code> type (FFI R1).</strong> The biggest usability win; removes the</p>
-<p>hex-marshaling tax that the crypto package demonstrates. Prototype the</p>
-<p><code>(ptr,len)</code> lowering against a binary-data library (e.g. re-bind a hash</p>
-<p>function to take <code>bytes</code> directly and compare to the hex path).</p>
-<p>3. <strong>Bounded worker pool (Threading R2).</strong> Runtime-only; resolves "very heavy"</p>
-<p>and the exhaustion vector. Watch the pooled-blocking-task starvation caveat.</p>
-<p>4. <strong>Typed handles with destructors (FFI R2).</strong> Makes <code>ptr</code> safe-by-default for</p>
-<p>the common handle libraries; reuses the affine + finalizer machinery that</p>
-<p>already exists for tasks.</p>
-<p>5. <strong>Auto-shim out-params + nullable string return (FFI R3/R4).</strong> Ergonomics</p>
-<p>polish once the foundational types/handles land.</p>
-<p>Everything above preserves the two pillars (value semantics + implicit arenas).</p>
-<p>The <code>bytes</code> type and the worker pool are pure additions to those pillars; typed</p>
-<p>handles are the one place foreign-resource ownership is *not* value-semantic, so</p>
-<p>they must be affine (single-owner, no copy) exactly as tasks already are.</p>
+<ol>
+<li><strong>Docs honesty pass (Threading R1 + FFI pain-point notes).</strong> Lowest effort, highest trust return; directly addresses the "unsafe / overclaiming" feedback. Scope the race-free claim, add FFI-from-threads guidance, document the unbounded-spawn and panic-kills-process limits as first-class.</li>
+<li><strong><code>bytes</code> type (FFI R1).</strong> The biggest usability win; removes the hex-marshaling tax that the crypto package demonstrates. Prototype the <code>(ptr,len)</code> lowering against a binary-data library (e.g. re-bind a hash function to take <code>bytes</code> directly and compare to the hex path).</li>
+<li><strong>Bounded worker pool (Threading R2).</strong> Runtime-only; resolves "very heavy" and the exhaustion vector. Watch the pooled-blocking-task starvation caveat.</li>
+<li><strong>Typed handles with destructors (FFI R2).</strong> Makes <code>ptr</code> safe-by-default for the common handle libraries; reuses the affine + finalizer machinery that already exists for tasks.</li>
+<li><strong>Auto-shim out-params + nullable string return (FFI R3/R4).</strong> Ergonomics polish once the foundational types/handles land.</li>
+</ol>
+<p>Everything above preserves the two pillars (value semantics + implicit arenas). The <code>bytes</code> type and the worker pool are pure additions to those pillars; typed handles are the one place foreign-resource ownership is *not* value-semantic, so they must be affine (single-owner, no copy) exactly as tasks already are.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

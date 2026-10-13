@@ -4,13 +4,38 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Optimizing data structures for the arena model — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/value-semantics-limits.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html" aria-current="page">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#where-the-model-is-competitive-for-context">Where the model is competitive (for context)</a>
+<a href="#where-the-model-wants-a-data-oriented-representation">Where the model wants a data-oriented representation</a>
+<a class="sub" href="#1-pointer-shaped--structurally-shared-structures-the-big-one">1. Pointer-shaped / structurally-shared structures (the big one)</a>
+<a class="sub" href="#2-long-lived-scope-holding-transient-garbage-build-and-hold">2. Long-lived scope holding transient garbage ("build-and-hold")</a>
+<a class="sub" href="#3-maps--arrays-of-a-large-value-type-many-small-instances">3. Maps / arrays of a large value type, many small instances</a>
+<a class="sub" href="#4-in-place-mutation-of-a-large-value-passed-around">4. In-place mutation of a large value passed around</a>
+<a href="#decision-guide">Decision guide</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/value-semantics-limits.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="optimizing-data-structures-for-the-arena-model">Optimizing data structures for the arena model</h1>
 <blockquote>
 <p>Status: evergreen analysis (current — reflects shipped behaviour).</p>
@@ -25,32 +50,18 @@
 <tr><td>long-lived scope holding transients</td><td>holds high-water mark to scope exit</td><td>scope transients in an inner function (§2)</td></tr>
 <tr><td>rebuilding a long-lived value per edit (<code>tools/tycho-ed/</code>)</td><td>one full copy per operation</td><td>mutate in place; hold hot text as <code>[int]</code> (§2)</td></tr>
 </table>
-<p>Tycho's model — value semantics with no pointers, memory managed by implicit arenas — shapes</p>
-<p>how you represent data, and the shapes it rewards are not always the ones you'd reach for in C.</p>
-<p>The trade: no <code>malloc</code>/<code>free</code>, no use-after-free, no GC pauses, and value equality that just</p>
-<p>works; the price is the table above. All figures measured on one machine (AMD Ryzen 7 7735HS,</p>
-<p>Debian x86-64); where a workload's shape fights the model even after the right representation,</p>
-<p>the note says so and names a different tool.</p>
-<p><strong>If you read one section, read §2.</strong> §1 is the better introduction to *why* the model</p>
-<p>behaves as it does, but §2 — rebuilding a long-lived value on every edit pays a full copy each</p>
-<p>time — is the limit ordinary code with nothing graph-shaped in it is most likely to hit.</p>
+<p>Tycho's model — value semantics with no pointers, memory managed by implicit arenas — shapes how you represent data, and the shapes it rewards are not always the ones you'd reach for in C. The trade: no <code>malloc</code>/<code>free</code>, no use-after-free, no GC pauses, and value equality that just works; the price is the table above. All figures measured on one machine (AMD Ryzen 7 7735HS, Debian x86-64); where a workload's shape fights the model even after the right representation, the note says so and names a different tool.</p>
+<p><strong>If you read one section, read §2.</strong> §1 is the better introduction to *why* the model behaves as it does, but §2 — rebuilding a long-lived value on every edit pays a full copy each time — is the limit ordinary code with nothing graph-shaped in it is most likely to hit.</p>
 <h2 id="where-the-model-is-competitive-for-context">Where the model is competitive (for context)</h2>
 <p>Measured head-to-head against hand-written C and Go (<code>bench/</code>, same checksum):</p>
 <ul>
-<li><strong>Value-shaped trees</strong> — <code>bench/json</code>: parse a 50k-object document into a tagged value</li>
-</ul>
-<p>tree. tycho 37 MB vs C 35 MB vs Go 29 MB. Essentially **C's memory profile with zero</p>
-<p>manual management.** This is the model at its best: data that is naturally owned in one</p>
-<p>place, copied rarely, and freed all at once.</p>
-<ul>
+<li><strong>Value-shaped trees</strong> — <code>bench/json</code>: parse a 50k-object document into a tagged value tree. tycho 37 MB vs C 35 MB vs Go 29 MB. Essentially <strong>C's memory profile with zero manual management.</strong> This is the model at its best: data that is naturally owned in one place, copied rarely, and freed all at once.</li>
 <li><strong>Flat data + libraries</strong> — <code>bench/dbquery</code>, <code>bench/invindex</code>: tycho ≈ C, &lt; Go on memory.</li>
 </ul>
 <h2 id="where-the-model-wants-a-data-oriented-representation">Where the model wants a data-oriented representation</h2>
 <h3 id="1-pointer-shaped--structurally-shared-structures-the-big-one">1. Pointer-shaped / structurally-shared structures (the big one)</h3>
-<p>Tries, graphs with shared nodes, DAGs, adjacency structures, anything where the natural C/Go</p>
-<p>representation is *a node referenced by many parents via 8-byte pointers*.</p>
-<p>Value semantics store children <strong>by value</strong>, not by reference. A <code>[int: Trie]</code> field holds</p>
-<p>whole <code>Trie</code> structs inline; there are no pointers to share. So:</p>
+<p>Tries, graphs with shared nodes, DAGs, adjacency structures, anything where the natural C/Go representation is *a node referenced by many parents via 8-byte pointers*.</p>
+<p>Value semantics store children <strong>by value</strong>, not by reference. A <code>[int: Trie]</code> field holds whole <code>Trie</code> structs inline; there are no pointers to share. So:</p>
 <ul>
 <li>every "edge" costs the size of a <strong>node</strong> (tens–hundreds of bytes), not a pointer (8 B);</li>
 <li>a node reachable from N parents is <strong>copied N times</strong> — there is no sharing.</li>
@@ -60,15 +71,8 @@
 <tr><th></th><th>tycho</th><th>C</th><th>Go</th></tr>
 <tr><td>peak RSS</td><td>58.7 MB</td><td>37.8 MB</td><td>33.8 MB</td></tr>
 </table>
-<p>~1.55× C — down from ~3.2× (119 MB) once the map moved to a <strong>compact indexed-dict</strong></p>
-<p>layout: an <code>int32</code> index table pointing at dense value entries sized to the live child</p>
-<p>count (a 1-child node no longer carries three empty inline-struct slots), and no per-slot</p>
-<p>insertion-order list. That roughly halved the trie and, at ~59 ms, brought its wall below</p>
-<p>Go's (~66 ms). The residual gap below is value-vs-pointer storage and is structural — see</p>
-<p><code>bench/trie/RESULTS.md</code>.</p>
-<p><strong>Idiom — a flat node pool with integer-index children.</strong> Keep all nodes in one array and</p>
-<p>make children indices into it, so an "edge" is an 8-byte <code>int</code>, sharing is just two indices</p>
-<p>pointing at the same slot, and the whole pool is one arena-backed array:</p>
+<p>~1.55× C — down from ~3.2× (119 MB) once the map moved to a <strong>compact indexed-dict</strong> layout: an <code>int32</code> index table pointing at dense value entries sized to the live child count (a 1-child node no longer carries three empty inline-struct slots), and no per-slot insertion-order list. That roughly halved the trie and, at ~59 ms, brought its wall below Go's (~66 ms). The residual gap below is value-vs-pointer storage and is structural — see <code>bench/trie/RESULTS.md</code>.</p>
+<p><strong>Idiom — a flat node pool with integer-index children.</strong> Keep all nodes in one array and make children indices into it, so an "edge" is an 8-byte <code>int</code>, sharing is just two indices pointing at the same slot, and the whole pool is one arena-backed array:</p>
 <pre><code class="language-tycho">struct TrieNode:
     kids: [int: int]           # next-byte -&gt; node INDEX (not a Trie by value)
     word: bool
@@ -86,70 +90,14 @@ fn insert(t: inout Trie, s: string):
         cur = t.nodes[cur].kids[c]
     t.nodes[cur].word = true
 </code></pre>
-<p>Indices are pointer-sized, this allows sharing (DAGs: point two parents at one index), and it</p>
-<p>stays within the model — the pool grows, the arena reclaims it, no <code>free</code>. This is the same</p>
-<p>data-oriented layout high-performance C engines reach for *on purpose*: one contiguous array,</p>
-<p>8-byte indices instead of scattered pointers, traversal that walks cache lines instead of chasing</p>
-<p>them. So it is a representation worth choosing, not merely a constraint to satisfy — value</p>
-<p>semantics just make it the default rather than the optimization you remember to apply. The cost</p>
-<p>is ergonomic: you index a pool instead of following references, and you cannot delete a single</p>
-<p>node without compacting — the packaged answer to that is <code>core:pool</code>, below.</p>
-<p><strong>Stale-index protection — generational indices (<code>core:pool</code>).</strong> The raw pool's one hazard</p>
-<p>is deletion: removing a node, reusing its slot, and later dereferencing the old index</p>
-<p>silently aliases the new occupant (the ABA problem). The fix — the same design standardized</p>
-<p>across the Rust ecosystem (<code>slotmap</code>, <code>generational-arena</code>) and every ECS entity store — is</p>
-<p>a <strong>generation counter per slot</strong>: an index is <code>(slot, generation)</code>, the generation is</p>
-<p>bumped whenever the slot is reused, and a stale generation is rejected at lookup instead of</p>
-<p>aliased. Cost is one word per slot plus one compare per dereference. Tycho packages this as</p>
-<p><code>core:pool</code> (<code>corelib/pool/pool.ty</code>): a <code>Handle</code> newtype packs <code>(generation &lt;&lt; 24) | slot</code></p>
-<p>so a handle is type-distinct from a raw index, <code>remove</code> bumps the slot's generation, and</p>
-<p><code>get</code>/<code>set</code>/<code>remove</code> die on a stale handle rather than silently reading the new occupant.</p>
-<p>Use the raw <code>[Node]</code> pool when it only grows; reach for <code>core:pool</code> the moment deletion</p>
-<p>enters. For graphs, the same pattern (<code>[Node]</code> + <code>[[int]]</code> adjacency by</p>
-<p>index) is the idiomatic Tycho representation. Use it whenever the C/Go version would lean on</p>
-<p>shared pointers.</p>
-<p>Measured on <code>bench/dijkstra</code>, which runs single-source shortest paths on a</p>
-<p>300k-node graph stored as an <strong>adjacency list of indices</strong> (<code>[[Edge]]</code>), and tycho lands at</p>
-<p><strong>~1.3× C memory / ~1.2× wall, ≈ Go</strong> — *competitive*. Expressed the value-semantic way</p>
-<p>(indices, not pointers), the graph is value-shaped — the edge arrays are flat in every</p>
-<p>language — so the residual gap is just a 24-byte array descriptor per node, not the</p>
-<p>pointer-vs-struct blowup. The index idiom still edges out the by-value recursive form</p>
-<p>(~1.3× vs the trie's ~1.55× C), but since the compact map layout roughly halved the</p>
-<p>recursive trie the memory delta is now modest — the idiom's decisive payoff is expressing</p>
-<p>*sharing* (DAGs, cycles) that by-value storage cannot represent at all.</p>
-<p><code>bench/lru</code> is a second index-pool case: a fixed-capacity LRU cache as a <code>[Node]</code> pool</p>
-<p>(<code>prev</code>/<code>next</code> are <code>int</code> indices) plus an <code>[int: int]</code> map, the tail slot recycled on</p>
-<p>eviction — the pointer-linked list a textbook LRU uses, expressed value-shaped. It lands at</p>
-<p><strong>~2.8× C memory, ~2× C wall, and now ahead of Go on both</strong> (32.6 MB / 303 ms vs Go's</p>
-<p>21.4 MB / 336 ms), after the map costs it surfaced were fixed: an O(1) churn-bounded delete</p>
-<p>(deletes were once O(map size) via a flat order vector, and delete-churn once held ~19× C</p>
-<p>until rehash-to-purge was bounded), and most recently the <strong>compact indexed-dict</strong> layout,</p>
-<p>which dropped it from ~40 MB by deleting the per-slot insertion-order list entirely. The</p>
-<p>residual ~2.8× is the index table's open-addressing load-factor slack, the same header-cost</p>
-<p>family as the trie, not a pointer blowup. See <code>bench/lru/RESULTS.md</code>.</p>
-<p>Measured on the same 150k-word workload, the by-value recursive version is now <strong>~59 MB</strong></p>
-<p>(the compact indexed-dict layout roughly halved it). The flat-pool trie stays below that by</p>
-<p>pooling the nodes and holding an 8-byte index per edge instead of an inline child struct; it</p>
-<p>still does *not* reach C's 38 MB, because each node keeps an <code>[int: int]</code> child map whose</p>
-<p>header + backing arrays dominate. The most compact tries drop the per-node map entirely for</p>
-<p><strong>first-child / next-sibling links</strong> (each node is a handful of <code>int</code>s: child index, sibling</p>
-<p>index, key, flag), which gets within a small factor of C at the cost of linked-list child</p>
-<p>traversal instead of a map lookup. The progression is the point: each step toward C's</p>
-<p>memory trades away ergonomics, and you choose how far to walk it.</p>
+<p>Indices are pointer-sized, this allows sharing (DAGs: point two parents at one index), and it stays within the model — the pool grows, the arena reclaims it, no <code>free</code>. This is the same data-oriented layout high-performance C engines reach for *on purpose*: one contiguous array, 8-byte indices instead of scattered pointers, traversal that walks cache lines instead of chasing them. So it is a representation worth choosing, not merely a constraint to satisfy — value semantics just make it the default rather than the optimization you remember to apply. The cost is ergonomic: you index a pool instead of following references, and you cannot delete a single node without compacting — the packaged answer to that is <code>core:pool</code>, below.</p>
+<p><strong>Stale-index protection — generational indices (<code>core:pool</code>).</strong> The raw pool's one hazard is deletion: removing a node, reusing its slot, and later dereferencing the old index silently aliases the new occupant (the ABA problem). The fix — the same design standardized across the Rust ecosystem (<code>slotmap</code>, <code>generational-arena</code>) and every ECS entity store — is a <strong>generation counter per slot</strong>: an index is <code>(slot, generation)</code>, the generation is bumped whenever the slot is reused, and a stale generation is rejected at lookup instead of aliased. Cost is one word per slot plus one compare per dereference. Tycho packages this as <code>core:pool</code> (<code>corelib/pool/pool.ty</code>): a <code>Handle</code> newtype packs <code>(generation &lt;&lt; 24) | slot</code> so a handle is type-distinct from a raw index, <code>remove</code> bumps the slot's generation, and <code>get</code>/<code>set</code>/<code>remove</code> die on a stale handle rather than silently reading the new occupant. Use the raw <code>[Node]</code> pool when it only grows; reach for <code>core:pool</code> the moment deletion enters. For graphs, the same pattern (<code>[Node]</code> + <code>[[int]]</code> adjacency by index) is the idiomatic Tycho representation. Use it whenever the C/Go version would lean on shared pointers.</p>
+<p>Measured on <code>bench/dijkstra</code>, which runs single-source shortest paths on a 300k-node graph stored as an <strong>adjacency list of indices</strong> (<code>[[Edge]]</code>), and tycho lands at <strong>~1.3× C memory / ~1.2× wall, ≈ Go</strong> — *competitive*. Expressed the value-semantic way (indices, not pointers), the graph is value-shaped — the edge arrays are flat in every language — so the residual gap is just a 24-byte array descriptor per node, not the pointer-vs-struct blowup. The index idiom still edges out the by-value recursive form (~1.3× vs the trie's ~1.55× C), but since the compact map layout roughly halved the recursive trie the memory delta is now modest — the idiom's decisive payoff is expressing *sharing* (DAGs, cycles) that by-value storage cannot represent at all.</p>
+<p><code>bench/lru</code> is a second index-pool case: a fixed-capacity LRU cache as a <code>[Node]</code> pool (<code>prev</code>/<code>next</code> are <code>int</code> indices) plus an <code>[int: int]</code> map, the tail slot recycled on eviction — the pointer-linked list a textbook LRU uses, expressed value-shaped. It lands at <strong>~2.8× C memory, ~2× C wall, and now ahead of Go on both</strong> (32.6 MB / 303 ms vs Go's 21.4 MB / 336 ms), after the map costs it surfaced were fixed: an O(1) churn-bounded delete (deletes were once O(map size) via a flat order vector, and delete-churn once held ~19× C until rehash-to-purge was bounded), and most recently the <strong>compact indexed-dict</strong> layout, which dropped it from ~40 MB by deleting the per-slot insertion-order list entirely. The residual ~2.8× is the index table's open-addressing load-factor slack, the same header-cost family as the trie, not a pointer blowup. See <code>bench/lru/RESULTS.md</code>.</p>
+<p>Measured on the same 150k-word workload, the by-value recursive version is now <strong>~59 MB</strong> (the compact indexed-dict layout roughly halved it). The flat-pool trie stays below that by pooling the nodes and holding an 8-byte index per edge instead of an inline child struct; it still does *not* reach C's 38 MB, because each node keeps an <code>[int: int]</code> child map whose header + backing arrays dominate. The most compact tries drop the per-node map entirely for <strong>first-child / next-sibling links</strong> (each node is a handful of <code>int</code>s: child index, sibling index, key, flag), which gets within a small factor of C at the cost of linked-list child traversal instead of a map lookup. The progression is the point: each step toward C's memory trades away ergonomics, and you choose how far to walk it.</p>
 <h3 id="2-long-lived-scope-holding-transient-garbage-build-and-hold">2. Long-lived scope holding transient garbage ("build-and-hold")</h3>
-<p>An arena returns memory at <strong>scope exit</strong>, not incrementally — but dead buffers are reused</p>
-<p>incrementally. The compiler proves when a heap buffer is dead and uniquely owned (a</p>
-<p>reassigned loop-carried local; value semantics guarantees no aliasing) and hands it back to</p>
-<p>the arena via <code>arena_recycle</code> (<code>runtime/tycho_rt.c@arena_recycle</code>, emitted by the compiler at</p>
-<p><code>src/tychoc.c:13224@arena_recycle</code>); the next same-or-smaller allocation in that arena reuses it instead</p>
-<p>of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from</p>
-<p>static value semantics. So transient churn inside one scope recycles, and peak is bounded</p>
-<p>by the largest single transient rather than the sum — but the arena keeps its high-water</p>
-<p>mark until the scope exits, and memory is not returned to the OS mid-scope. In <code>bench/json</code></p>
-<p>this is the ~2.5 MB input string tycho/C hold to the end while Go's GC drops it (Go's lower</p>
-<p>peak).</p>
-<p><strong>Idiom — scope the transient in an inner function/block</strong> so its arena is freed (returned</p>
-<p>to the OS) before the long-lived work continues:</p>
+<p>An arena returns memory at <strong>scope exit</strong>, not incrementally — but dead buffers are reused incrementally. The compiler proves when a heap buffer is dead and uniquely owned (a reassigned loop-carried local; value semantics guarantees no aliasing) and hands it back to the arena via <code>arena_recycle</code> (<code>runtime/tycho_rt.c@arena_recycle</code>, emitted by the compiler at <code>src/tychoc.c:13224@arena_recycle</code>); the next same-or-smaller allocation in that arena reuses it instead of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from static value semantics. So transient churn inside one scope recycles, and peak is bounded by the largest single transient rather than the sum — but the arena keeps its high-water mark until the scope exits, and memory is not returned to the OS mid-scope. In <code>bench/json</code> this is the ~2.5 MB input string tycho/C hold to the end while Go's GC drops it (Go's lower peak).</p>
+<p><strong>Idiom — scope the transient in an inner function/block</strong> so its arena is freed (returned to the OS) before the long-lived work continues:</p>
 <pre><code class="language-text">fn load() -&gt; Doc:
     raw := read_huge_input()       # the transient
     return parse(raw)              # `raw`'s arena is reclaimed when load() returns
@@ -157,111 +105,49 @@ fn insert(t: inout Trie, s: string):
 </code></pre>
 <p>If a transient is built and consumed in the same scope as long-lived results, split it out.</p>
 <p>#### Rebuilding a long-lived value on every operation</p>
-<p>Recycling is broader than the paragraph above suggests, and it is worth knowing</p>
-<p>exactly how far it reaches before concluding that a workload is doomed. There are</p>
-<p>two distinct paths:</p>
+<p>Recycling is broader than the paragraph above suggests, and it is worth knowing exactly how far it reaches before concluding that a workload is doomed. There are two distinct paths:</p>
 <ul>
-<li><strong>Loop-carried reassignment of a named array local</strong> — <code>a = f(a)</code> inside a loop</li>
+<li><strong>Loop-carried reassignment of a named array local</strong> — <code>a = f(a)</code> inside a loop (<code>src/tychoc.c:13216@do_recycle</code>). Narrow by design: it requires a *named variable* (not an element or field store), a type for which <code>is_array</code> holds (<code>src/tychoc.c:1282@is_array</code> — note a <code>string</code> is <strong>not</strong> an array here), a loop, a non-<code>inout</code> non-accumulator target, and at least two reads in the function (the soundness condition — a read-once variable may have been moved out from under it).</li>
+<li><strong>Heap-bearing array-element overwrite</strong> — <code>xs[i] = v</code> copies the new element into the array's owner before recursively recycling the evicted value. This covers strings and nested arrays, maps, structs, enums, tuples, options/results, struct-of-arrays values and closure environments; owner checks keep literals and cross-arena values safe. The string leaf uses <code>runtime/tycho_rt.c@tycho_str_recycle</code>, and the sliding-window ring-buffer case remains bounded.</li>
+<li><strong>Composite-map value overwrite or deletion</strong> — <code>m[k] = v</code> likewise copies the replacement first, then releases the old value's nested owned graph. <code>delete</code> releases both the removed composite key and value. Both compiler paths emit typed recyclers for arrays, maps, structs, enums, tuples, options/results, struct-of-arrays and captured closures; leaf allocations are recycled only by their owning arena. <code>tests/map_overwrite_scale.sh</code> bounds repeated string, nested-array, struct, enum and closure replacements under both compilers.</li>
 </ul>
-<p>(<code>src/tychoc.c:13216@do_recycle</code>). Narrow by design: it requires a *named</p>
-<p>variable* (not an element or field store), a type for which <code>is_array</code> holds</p>
-<p>(<code>src/tychoc.c:1282@is_array</code> — note a <code>string</code> is <strong>not</strong> an array here), a</p>
-<p>loop, a non-<code>inout</code> non-accumulator target, and at least two reads in the</p>
-<p>function (the soundness condition — a read-once variable may have been moved</p>
-<p>out from under it).</p>
-<ul>
-<li><strong>Heap-bearing array-element overwrite</strong> — <code>xs[i] = v</code> copies the new element</li>
-</ul>
-<p>into the array's owner before recursively recycling the evicted value. This</p>
-<p>covers strings and nested arrays, maps, structs, enums, tuples, options/results,</p>
-<p>struct-of-arrays values and closure environments; owner checks keep literals and</p>
-<p>cross-arena values safe. The string leaf uses</p>
-<p><code>runtime/tycho_rt.c@tycho_str_recycle</code>, and the sliding-window ring-buffer case</p>
-<p>remains bounded.</p>
-<ul>
-<li><strong>Composite-map value overwrite or deletion</strong> — <code>m[k] = v</code> likewise copies the</li>
-</ul>
-<p>replacement first, then releases the old value's nested owned graph. <code>delete</code></p>
-<p>releases both the removed composite key and value. Both compiler paths emit</p>
-<p>typed recyclers for arrays, maps, structs, enums, tuples, options/results,</p>
-<p>struct-of-arrays and captured closures; leaf allocations are recycled only by</p>
-<p>their owning arena. <code>tests/map_overwrite_scale.sh</code> bounds repeated string,</p>
-<p>nested-array, struct, enum and closure replacements under both compilers.</p>
-<p><strong>So the bytes are usually reused. The cost that survives is the work.</strong> Rebuilding</p>
-<p>a value on every operation pays an allocation, a deep copy of the whole value, and</p>
-<p>the recycle bookkeeping *per operation*, regardless of whether the old bytes come</p>
-<p>back. Where the value is a whole line, a whole document, or a whole record, that</p>
-<p>per-operation copy is the dominant term and it scales with the value's size, not</p>
-<p>with the size of the edit.</p>
-<p>The worked case is <code>tools/tycho-ed/</code>, measured in both directions in</p>
-<p><a href="../thesis.html">the thesis §4c</a>. A text editor whose line buffer does</p>
+<p><strong>So the bytes are usually reused. The cost that survives is the work.</strong> Rebuilding a value on every operation pays an allocation, a deep copy of the whole value, and the recycle bookkeeping *per operation*, regardless of whether the old bytes come back. Where the value is a whole line, a whole document, or a whole record, that per-operation copy is the dominant term and it scales with the value's size, not with the size of the edit.</p>
+<p>The worked case is <code>tools/tycho-ed/</code>, measured in both directions in <a href="../thesis.html">the thesis §4c</a>. A text editor whose line buffer does</p>
 <pre><code class="language-text">buf.lines[ln] = s[0:c] + t + s[c:len(s)]      # a whole new line, per keystroke
 </code></pre>
-<p>degrades to ~7× its starting cost per edit by a million edits. Holding the edited</p>
-<p>line in a mutable <code>[int]</code> gap buffer instead — a keystroke writes one byte into a</p>
-<p>hole and rebuilds the string once per *focus change* rather than per keystroke —</p>
-<p>flattens the curve completely. <strong>Peak RSS is identical between the two backends</strong></p>
-<p>(95.7 MB), which is the measurement that says the retained memory was never the</p>
-<p>line churn: it is the undo journal, one entry per keystroke, which is the feature</p>
-<p>working as intended. Two costs that rose together turned out to be one cost and</p>
-<p>one coincidence, and only building the fix separated them.</p>
-<p><strong>Idiom — mutate, don't rebuild, whenever a value is edited many times.</strong> Hold</p>
-<p>hot mutable text as <code>[int]</code> rather than <code>string</code> and convert at</p>
-<p>the boundary; mutate through <code>inout</code> rather than returning a rebuilt copy (§4);</p>
-<p>and where a loop must rebuild, rebuild a *named array local* so the first recycle</p>
-<p>path above can fire. The test is not "will the memory come back" — usually it</p>
-<p>will — but "am I copying the whole value to change a small part of it".</p>
+<p>degrades to ~7× its starting cost per edit by a million edits. Holding the edited line in a mutable <code>[int]</code> gap buffer instead — a keystroke writes one byte into a hole and rebuilds the string once per *focus change* rather than per keystroke — flattens the curve completely. <strong>Peak RSS is identical between the two backends</strong> (95.7 MB), which is the measurement that says the retained memory was never the line churn: it is the undo journal, one entry per keystroke, which is the feature working as intended. Two costs that rose together turned out to be one cost and one coincidence, and only building the fix separated them.</p>
+<p><strong>Idiom — mutate, don't rebuild, whenever a value is edited many times.</strong> Hold hot mutable text as <code>[int]</code> rather than <code>string</code> and convert at the boundary; mutate through <code>inout</code> rather than returning a rebuilt copy (§4); and where a loop must rebuild, rebuild a *named array local* so the first recycle path above can fire. The test is not "will the memory come back" — usually it will — but "am I copying the whole value to change a small part of it".</p>
 <h3 id="3-maps--arrays-of-a-large-value-type-many-small-instances">3. Maps / arrays of a large value type, many small instances</h3>
-<p>A composite map with a big value type over-allocates its backing array (empty slots cost</p>
-<p>value-size each). This was tuned (initial capacity 8→4) and is bounded by load factor, but</p>
-<p>the slot waste is still value-size × spare slots.</p>
-<p><strong>Idioms:</strong> <code>reserve(m, n)</code> / <code>reserve(a, n)</code> when you know the size up front (one</p>
-<p>right-sized allocation, no rehash garbage); prefer a small value type in hot maps (store an</p>
-<p>index or a small handle, not a big struct inline — same move as §1). Note the arena twist</p>
-<p>measured in <code>bench/trie</code>: a *smaller* initial capacity can make peak <strong>worse</strong>, because the</p>
-<p>arena can't reclaim the abandoned arrays from the extra rehashing. Size up front instead of</p>
-<p>starting tiny.</p>
+<p>A composite map with a big value type over-allocates its backing array (empty slots cost value-size each). This was tuned (initial capacity 8→4) and is bounded by load factor, but the slot waste is still value-size × spare slots.</p>
+<p><strong>Idioms:</strong> <code>reserve(m, n)</code> / <code>reserve(a, n)</code> when you know the size up front (one right-sized allocation, no rehash garbage); prefer a small value type in hot maps (store an index or a small handle, not a big struct inline — same move as §1). Note the arena twist measured in <code>bench/trie</code>: a *smaller* initial capacity can make peak <strong>worse</strong>, because the arena can't reclaim the abandoned arrays from the extra rehashing. Size up front instead of starting tiny.</p>
 <h3 id="4-in-place-mutation-of-a-large-value-passed-around">4. In-place mutation of a large value passed around</h3>
-<p>Assigning or passing a large value can deep-copy it. This is correct (value semantics) but</p>
-<p>costs a copy.</p>
-<p><strong>Idiom:</strong> thread large values through <code>inout</code> parameters so they are passed by</p>
-<p>reference and mutated in place, instead of returning rebuilt copies. The compiler already</p>
-<p>borrows (does not copy) <code>match</code>/<code>for</code> bindings that aren't mutated; lean on that.</p>
+<p>Assigning or passing a large value can deep-copy it. This is correct (value semantics) but costs a copy.</p>
+<p><strong>Idiom:</strong> thread large values through <code>inout</code> parameters so they are passed by reference and mutated in place, instead of returning rebuilt copies. The compiler already borrows (does not copy) <code>match</code>/<code>for</code> bindings that aren't mutated; lean on that.</p>
 <h2 id="decision-guide">Decision guide</h2>
 <ul>
 <li>Owned, value-shaped, copied-rarely data, freed in bulk → <strong>the model fits; expect ≈ C.</strong></li>
-<li>Shared / pointer-shaped / cyclic structures → <strong>flat pool + index children</strong> (§1);</li>
-</ul>
-<p><code>core:pool</code> (the packaged generational pool) when nodes must be deleted, not just appended.</p>
-<ul>
-<li>Streaming / long-lived process with heavy transients → **scope transients in inner</li>
-</ul>
-<p>functions** (§2) so arenas reclaim.</p>
-<ul>
-<li>A long-lived mutable value edited many times (editor buffer, session cache, server</li>
-</ul>
-<p>state) → <strong>mutate it in place; do not rebuild it per operation</strong> (§2). The arena usually</p>
-<p>recycles the old bytes; what it cannot give back is the full copy you paid to make them.</p>
-<ul>
+<li>Shared / pointer-shaped / cyclic structures → <strong>flat pool + index children</strong> (§1); <code>core:pool</code> (the packaged generational pool) when nodes must be deleted, not just appended.</li>
+<li>Streaming / long-lived process with heavy transients → <strong>scope transients in inner functions</strong> (§2) so arenas reclaim.</li>
+<li>A long-lived mutable value edited many times (editor buffer, session cache, server state) → <strong>mutate it in place; do not rebuild it per operation</strong> (§2). The arena usually recycles the old bytes; what it cannot give back is the full copy you paid to make them.</li>
 <li>Known-size or hot maps of large values → <strong><code>reserve</code>, or store handles not structs</strong> (§3).</li>
 </ul>
-<p>None of these makes Tycho a systems allocator's equal on its worst cases. They keep you on</p>
-<p>the value-semantics path — no <code>malloc</code>/<code>free</code>, no UAF — for the workloads where that path is</p>
-<p>viable, and tell you when to step off it.</p>
-<p>Is the trie/graph cost fundamental to value semantics, or just this implementation?</p>
-<p>The most mature mutable-value-semantics language (Hylo) hits the same wall and answers</p>
-<p>it with the same indices-into-a-pool idiom, so it is fundamental, not a Tycho shortfall.</p>
-<p>And it can't be sidestepped by quietly adding back references: a spike on stored</p>
-<p>references (<a href="../rfc/limited-references-spike.html">limited-references spike</a>) settled this as a decision. A reference that</p>
-<p>*stores* a graph edge is incompatible with the two invariants that make Tycho what it is — the</p>
-<p>deep-copy thread boundary (a stored pointer can't survive a call's copy-in) and the no-escape</p>
-<p>arena model — so adding it would dismantle the value-semantics guarantees, not extend them. The</p>
-<p>index-pool isn't the fallback after references didn't make it; within this model it *is* the way</p>
-<p>to store a graph, and the copy-cost side of the same question is what <a href="../reference/basics.html"><code>sink</code></a></p>
-<p>answers for call arguments. The only reference-shaped feature that fits — user-defined</p>
-<p>projections, a generalization of the shipped <code>&amp;m[k]</code> — is an ergonomic convenience over the</p>
-<p>index idiom, not a different way to store the data.</p>
+<p>None of these makes Tycho a systems allocator's equal on its worst cases. They keep you on the value-semantics path — no <code>malloc</code>/<code>free</code>, no UAF — for the workloads where that path is viable, and tell you when to step off it.</p>
+<p>Is the trie/graph cost fundamental to value semantics, or just this implementation? The most mature mutable-value-semantics language (Hylo) hits the same wall and answers it with the same indices-into-a-pool idiom, so it is fundamental, not a Tycho shortfall.</p>
+<p>And it can't be sidestepped by quietly adding back references: a spike on stored references (<a href="../rfc/limited-references-spike.html">limited-references spike</a>) settled this as a decision. A reference that *stores* a graph edge is incompatible with the two invariants that make Tycho what it is — the deep-copy thread boundary (a stored pointer can't survive a call's copy-in) and the no-escape arena model — so adding it would dismantle the value-semantics guarantees, not extend them. The index-pool isn't the fallback after references didn't make it; within this model it *is* the way to store a graph, and the copy-cost side of the same question is what <a href="../reference/basics.html"><code>sink</code></a> answers for call arguments. The only reference-shaped feature that fits — user-defined projections, a generalization of the shipped <code>&amp;m[k]</code> — is an ergonomic convenience over the index idiom, not a different way to store the data.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

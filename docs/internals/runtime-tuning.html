@@ -4,187 +4,86 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Runtime tuning: keeping the per-scope arena tax down — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/runtime-tuning.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html" aria-current="page">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#the-per-scope-block-churn-problem">The per-scope block churn problem</a>
+<a href="#codegen-level-arena-handling-srctychocc">Codegen-level arena handling (src/tychoc.c)</a>
+<a href="#where-the-remaining-time-goes">Where the remaining time goes</a>
+<a class="sub" href="#the-real-hotspots">The real hotspots</a>
+<a class="sub" href="#the-diffuse-floor-turned-out-to-be-one-thing-ctx-reconstruction">The "diffuse floor" turned out to be one thing: Ctx reconstruction</a>
+<a class="sub" href="#push-loop-fusion--register-resident-array-building">Push-loop fusion — register-resident array building</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/runtime-tuning.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="runtime-tuning-keeping-the-per-scope-arena-tax-down">Runtime tuning: keeping the per-scope arena tax down</h1>
-<p>Maintainer record for <a href="../perf.html">docs/perf.md</a>. That page states what to run</p>
-<p>and what the bounds mean; everything below is the tuning diary behind it — the</p>
-<p>mechanisms, the blind alleys, and the profiler notes — kept here so the user</p>
-<p>page stays short.</p>
+<p>Maintainer record for <a href="../perf.html">docs/perf.md</a>. That page states what to run and what the bounds mean; everything below is the tuning diary behind it — the mechanisms, the blind alleys, and the profiler notes — kept here so the user page stays short.</p>
 <h2 id="the-per-scope-block-churn-problem">The per-scope block churn problem</h2>
-<p><code>TYCHO_BLOCK_DEFAULT</code> is 64 KB, and a fresh arena is created per block scope,</p>
-<p>call, and loop iteration. A naive <code>arena_alloc</code>/<code>arena_free</code> does a</p>
-<p><code>malloc</code>/<code>free</code> of a 64 KB block for *every* scope that allocates even a few</p>
-<p>bytes; on deeply-recursive code that is a flood of <code>malloc(64K)</code>/<code>free</code> pairs</p>
-<p>(plus page faults), and it dominates. Two runtime</p>
-<p>mechanisms keep that churn off the hot path:</p>
+<p><code>TYCHO_BLOCK_DEFAULT</code> is 64 KB, and a fresh arena is created per block scope, call, and loop iteration. A naive <code>arena_alloc</code>/<code>arena_free</code> does a <code>malloc</code>/<code>free</code> of a 64 KB block for *every* scope that allocates even a few bytes; on deeply-recursive code that is a flood of <code>malloc(64K)</code>/<code>free</code> pairs (plus page faults), and it dominates. Two runtime mechanisms keep that churn off the hot path:</p>
 <ul>
-<li><strong>Global block free-list (pool).</strong> <code>arena_reset</code>/<code>arena_free</code> hand their</li>
+<li><strong>Global block free-list (pool).</strong> <code>arena_reset</code>/<code>arena_free</code> hand their blocks to a process-global free-list instead of <code>free</code>ing; <code>arena_alloc</code> takes from it first. Block churn is O(1) pointer ops with no <code>malloc</code>/<code>free</code> and no page re-faulting. Peak live memory is unchanged (the pool holds at most what a scope just released; reclaimed by the OS at exit).</li>
+<li><strong>Block-retaining <code>arena_reset</code>.</strong> A loop's scratch arena keeps its head block and just rewinds it (<code>off = 0</code>), releasing only overflow blocks. The common one-block-per-iteration loop does zero pool traffic per iteration.</li>
 </ul>
-<p>blocks to a process-global free-list instead of <code>free</code>ing; <code>arena_alloc</code></p>
-<p>takes from it first. Block churn is O(1) pointer ops with no <code>malloc</code>/<code>free</code></p>
-<p>and no page re-faulting. Peak live memory is unchanged (the pool holds at</p>
-<p>most what a scope just released; reclaimed by the OS at exit).</p>
-<ul>
-<li><strong>Block-retaining <code>arena_reset</code>.</strong> A loop's scratch arena keeps its head</li>
-</ul>
-<p>block and just rewinds it (<code>off = 0</code>), releasing only overflow blocks. The</p>
-<p>common one-block-per-iteration loop does zero pool traffic per iteration.</p>
-<p>The pool is the load-bearing one: it turns per-scope block churn into O(1)</p>
-<p>pointer traffic, and it is why <code>arena_child</code>/<code>arena_free</code> do not appear as a cost</p>
-<p>in any current profile. Retain-reset is neutral on code that allocates once per</p>
-<p>scope and pays off on loop-scratch-heavy code, which is what it was added for.</p>
-<p>Peak live memory is unchanged by either.</p>
-<p><strong>What the pool does NOT fix.</strong> With block churn off the hot path, what remained</p>
-<p>was the value-semantics deep copies the arena model performs and a</p>
-<p>leak-everything allocator skips — not arena bookkeeping. That is what the codegen</p>
-<p>work below addresses.</p>
+<p>The pool is the load-bearing one: it turns per-scope block churn into O(1) pointer traffic, and it is why <code>arena_child</code>/<code>arena_free</code> do not appear as a cost in any current profile. Retain-reset is neutral on code that allocates once per scope and pays off on loop-scratch-heavy code, which is what it was added for. Peak live memory is unchanged by either.</p>
+<p><strong>What the pool does NOT fix.</strong> With block churn off the hot path, what remained was the value-semantics deep copies the arena model performs and a leak-everything allocator skips — not arena bookkeeping. That is what the codegen work below addresses.</p>
 <h2 id="codegen-level-arena-handling-srctychocc">Codegen-level arena handling (src/tychoc.c)</h2>
 <p>Two codegen properties keep the arena model's overhead low.</p>
-<p><strong>Child arenas are elided for if/match blocks.</strong> if/else/match-arm blocks would</p>
-<p>otherwise create a child arena (<code>_b%d = arena_child(scope)</code>) freed at block end.</p>
-<p>The enclosing <code>scope</code> always outlives the block, so block transients fall back</p>
-<p>to it with no early-free, and escaping values promote to <code>_parent</code> independent</p>
-<p>of any <code>_bN</code>. Eliding them removes the great majority of <code>arena_child</code> calls from</p>
-<p>a typical emission. Wall-clock and RSS are unchanged — the pool already makes</p>
-<p>those ops nearly free — but the emitted C is smaller, with fewer runtime ops per</p>
-<p>program, which isolates the real cost.</p>
-<p><strong>Read-only heap struct params are borrowed, not deep-copied.</strong> This is the real</p>
-<p>lever. A heap-bearing by-value struct param would otherwise be unconditionally</p>
-<p>deep-copied into the callee <code>_scope</code> on entry (for independence under mutation).</p>
-<p>Gating that copy on <code>block_mutates(body, param)</code> — copy only if the body mutates</p>
-<p>the param, else borrow the caller's value (the caller outlives the call;</p>
-<p>unmutated aliasing is unobservable; <code>return param</code> still deep-copies via the</p>
-<p>return path) — removes the dominant cost: the <code>Ctx</code> symbol table cloned on every</p>
-<p>call.</p>
-<p>On a compiler-shaped workload this eliminated the symbol-table clone entirely and</p>
-<p>cut string-copy and allocation counts by two orders of magnitude, with peak</p>
-<p>memory flat. It is the single largest win in this file.</p>
-<p><strong>Net effect.</strong> With the copy gated, the value-semantic implicit-arena model</p>
-<p>lands close to a leak-everything allocator on an allocation-heavy,</p>
-<p>deeply-recursive workload — while holding peak memory bounded where the</p>
-<p>leak-everything version grows without limit. That, plus the grow-in-place win</p>
-<p>in perf.md, is the case for the model.</p>
-<p>The borrow-iff-not-mutated rule is the same predicate used on match-arm</p>
-<p>payloads.</p>
+<p><strong>Child arenas are elided for if/match blocks.</strong> if/else/match-arm blocks would otherwise create a child arena (<code>_b%d = arena_child(scope)</code>) freed at block end. The enclosing <code>scope</code> always outlives the block, so block transients fall back to it with no early-free, and escaping values promote to <code>_parent</code> independent of any <code>_bN</code>. Eliding them removes the great majority of <code>arena_child</code> calls from a typical emission. Wall-clock and RSS are unchanged — the pool already makes those ops nearly free — but the emitted C is smaller, with fewer runtime ops per program, which isolates the real cost.</p>
+<p><strong>Read-only heap struct params are borrowed, not deep-copied.</strong> This is the real lever. A heap-bearing by-value struct param would otherwise be unconditionally deep-copied into the callee <code>_scope</code> on entry (for independence under mutation). Gating that copy on <code>block_mutates(body, param)</code> — copy only if the body mutates the param, else borrow the caller's value (the caller outlives the call; unmutated aliasing is unobservable; <code>return param</code> still deep-copies via the return path) — removes the dominant cost: the <code>Ctx</code> symbol table cloned on every call.</p>
+<p>On a compiler-shaped workload this eliminated the symbol-table clone entirely and cut string-copy and allocation counts by two orders of magnitude, with peak memory flat. It is the single largest win in this file.</p>
+<p><strong>Net effect.</strong> With the copy gated, the value-semantic implicit-arena model lands close to a leak-everything allocator on an allocation-heavy, deeply-recursive workload — while holding peak memory bounded where the leak-everything version grows without limit. That, plus the grow-in-place win in perf.md, is the case for the model.</p>
+<p>The borrow-iff-not-mutated rule is the same predicate used on match-arm payloads.</p>
 <h2 id="where-the-remaining-time-goes">Where the remaining time goes</h2>
-<p>Profiling put the arena memory model itself — <code>arena_child</code>, <code>arena_alloc</code>,</p>
-<p><code>tycho_str_copy</code> — at a small share of run time. What dominates is algorithmic</p>
-<p>work in the compiler's own source, not the memory model.</p>
-<p><strong>One caution, because it is easy to read a profile wrong.</strong> gprof self-times</p>
-<p>once pointed at <code>is_variant</code> (the enum-variant scan) as a major bottleneck. It</p>
-<p>is not one. Two independent checks settled it: replacing all four variant</p>
-<p>lookups with an O(1) <code>{string:int}</code> map removed the <code>is_variant</code> line from a</p>
-<p>fresh gprof and changed <code>-O2</code> wall-clock by nothing at all; and the cause is a</p>
-<p>gprof <code>mcount</code> artifact — <code>is_variant</code> is a tiny branch-predicted loop called</p>
-<p>enormously often, and gprof's per-call instrumentation overhead, present only in</p>
-<p>the <code>-pg</code> build, is charged to it. The same artifact inflates every call-heavy</p>
-<p>tiny function in such a profile. **Do not trust gprof self-times for functions</p>
-<p>with huge call counts; trust <code>-O2</code> wall-clock deltas.** The variant-map change</p>
-<p>was reverted — no real win, and it would have added a map to source that had</p>
-<p>none.</p>
-<p>The genuine <code>-O2</code> cost is <strong>memory traffic</strong>. gprof *call counts* are not</p>
-<p>distorted the way self-times are, and they show the shape: many small</p>
-<p><code>arena_alloc</code>s and <code>tycho_str_copy</code>s, which is the volume of short-lived string</p>
-<p>allocation the string-building codegen does, plus value-semantic copies.</p>
+<p>Profiling put the arena memory model itself — <code>arena_child</code>, <code>arena_alloc</code>, <code>tycho_str_copy</code> — at a small share of run time. What dominates is algorithmic work in the compiler's own source, not the memory model.</p>
+<p><strong>One caution, because it is easy to read a profile wrong.</strong> gprof self-times once pointed at <code>is_variant</code> (the enum-variant scan) as a major bottleneck. It is not one. Two independent checks settled it: replacing all four variant lookups with an O(1) <code>{string:int}</code> map removed the <code>is_variant</code> line from a fresh gprof and changed <code>-O2</code> wall-clock by nothing at all; and the cause is a gprof <code>mcount</code> artifact — <code>is_variant</code> is a tiny branch-predicted loop called enormously often, and gprof's per-call instrumentation overhead, present only in the <code>-pg</code> build, is charged to it. The same artifact inflates every call-heavy tiny function in such a profile. <strong>Do not trust gprof self-times for functions with huge call counts; trust <code>-O2</code> wall-clock deltas.</strong> The variant-map change was reverted — no real win, and it would have added a map to source that had none.</p>
+<p>The genuine <code>-O2</code> cost is <strong>memory traffic</strong>. gprof *call counts* are not distorted the way self-times are, and they show the shape: many small <code>arena_alloc</code>s and <code>tycho_str_copy</code>s, which is the volume of short-lived string allocation the string-building codegen does, plus value-semantic copies.</p>
 <h3 id="the-real-hotspots">The real hotspots</h3>
-<p>Because <code>perf</code> is blocked on the measurement machine (<code>perf_event_paranoid=3</code>,</p>
-<p>with a "no new privileges" flag that stops <code>sudo</code> even with a password) and</p>
-<p>valgrind is not installable, a dependency-free statistical CPU-time sampler</p>
-<p>is used instead (<code>tools/prof/</code>, using <code>ITIMER_PROF</code>+<code>SIGPROF</code>, with no <code>mcount</code></p>
-<p>artifact). It surfaced a hotspot the gprof profile hid entirely: **<code>scan_token</code></p>
-<p>recomputed <code>len(src)</code> — a full <code>strlen</code> of the whole source — once per token**,</p>
-<p>so lexing was O(tokens × len) = <strong>O(n²)</strong>. The fix is purely algorithmic and</p>
-<p>touches no bounds-checking: thread the already-known length (<code>lex</code> computes</p>
-<p><code>n := len(src)</code> once) into <code>scan_token</code> instead of recomputing it, which takes</p>
-<p>lexing from O(n²) back to O(n).</p>
-<p>It also exposed a second O(n²), this one in <code>tychoc</code>'s own output: the emitted</p>
-<p><code>strlen</code>-bounds-checked <code>tycho_str_get</code> was O(n) *per access*, so any compiled</p>
-<p>program indexing a large string in a loop paid O(n²).</p>
-<p>That is fixed with a length-carrying check.</p>
-<p><code>tychoc</code>'s codegen gains a per-proc pass: a string variable that is indexed</p>
-<p>(<code>s[i]</code>) and never reassigned (<code>block_mutates</code>==0, so for a string its length is</p>
-<p>invariant) gets one hoisted <code>_slen_h_&lt;v&gt; = strlen(v)</code> sidecar at scope entry,</p>
-<p>and its index sites use a new <code>tycho_str_get_n(s, i, len)</code> — the **same bounds</p>
-<p>check, now O(1)** instead of re-<code>strlen</code>-ing per access. Full safety is kept</p>
-<p>(verified: out-of-bounds and negative indices still <code>exit(1)</code> with the bounds</p>
-<p>error), and <code>tests/str_index.ty</code> guards it with hand-verifiable output.</p>
+<p>Because <code>perf</code> is blocked on the measurement machine (<code>perf_event_paranoid=3</code>, with a "no new privileges" flag that stops <code>sudo</code> even with a password) and valgrind is not installable, a dependency-free statistical CPU-time sampler is used instead (<code>tools/prof/</code>, using <code>ITIMER_PROF</code>+<code>SIGPROF</code>, with no <code>mcount</code> artifact). It surfaced a hotspot the gprof profile hid entirely: <strong><code>scan_token</code> recomputed <code>len(src)</code> — a full <code>strlen</code> of the whole source — once per token</strong>, so lexing was O(tokens × len) = <strong>O(n²)</strong>. The fix is purely algorithmic and touches no bounds-checking: thread the already-known length (<code>lex</code> computes <code>n := len(src)</code> once) into <code>scan_token</code> instead of recomputing it, which takes lexing from O(n²) back to O(n).</p>
+<p>It also exposed a second O(n²), this one in <code>tychoc</code>'s own output: the emitted <code>strlen</code>-bounds-checked <code>tycho_str_get</code> was O(n) *per access*, so any compiled program indexing a large string in a loop paid O(n²).</p>
+<p>That is fixed with a length-carrying check. <code>tychoc</code>'s codegen gains a per-proc pass: a string variable that is indexed (<code>s[i]</code>) and never reassigned (<code>block_mutates</code>==0, so for a string its length is invariant) gets one hoisted <code>_slen_h_&lt;v&gt; = strlen(v)</code> sidecar at scope entry, and its index sites use a new <code>tycho_str_get_n(s, i, len)</code> — the <strong>same bounds check, now O(1)</strong> instead of re-<code>strlen</code>-ing per access. Full safety is kept (verified: out-of-bounds and negative indices still <code>exit(1)</code> with the bounds error), and <code>tests/str_index.ty</code> guards it with hand-verifiable output.</p>
 <h3 id="the-diffuse-floor-turned-out-to-be-one-thing-ctx-reconstruction">The "diffuse floor" turned out to be one thing: Ctx reconstruction</h3>
-<p>After the two O(n²) fixes, the cost looked like diffuse <code>memcpy</code>/<code>malloc</code> from</p>
-<p>value-semantic copies — but that was a profiler blind spot, not the truth.</p>
-<p>Improving the sampler's caller attribution (a saved-RBP-chain walk, so libc</p>
-<p>leaves like <code>malloc</code> are blamed on the Tycho function that called them) cut the</p>
-<p>unattributed share dramatically and revealed the real floor: <code>with_owner</code> plus</p>
-<p><code>enter_block</code> — that is, <code>Ctx</code> *reconstruction*. <code>with_owner</code> is called only to change the <code>owner</code> string, but</p>
-<p>the returned <code>Ctx</code> escapes, so value semantics deep-copied <strong>every</strong> field —</p>
-<p>including the large, parse-invariant <code>sigs</code>/<code>structs</code>/<code>enums</code> — on every</p>
-<p>owner/depth change. <code>tychoc</code> never had this because it threads <code>arena</code> as a plain</p>
-<p>parameter.</p>
-<p>The fix splits the immutable parse data into a <code>Decls</code> struct, built once and</p>
-<p>threaded read-only (<code>dc</code>), never reconstructed; <code>Ctx</code> keeps only the 7 mutable</p>
-<p>per-scope/per-fn fields, so <code>with_owner</code>/<code>enter_block</code> rebuild a tiny struct.</p>
-<p><code>dc</code> is threaded through all 67 <code>ctx</code>-taking functions (which pushed</p>
-<p><code>gen_match_optres</code> to 9 params, so <code>tychoc</code>'s fixed <code>Sig</code> param cap was raised</p>
-<p>8→16). <code>with_owner</code>/<code>enter_block</code> leave the profile entirely; what surfaces</p>
-<p>underneath is genuine codegen logic (<code>type_of</code>, <code>gen_expr</code>, <code>compute_movables</code>,</p>
-<p><code>sig_ret</code>) — a smaller, more diffuse next layer.</p>
-<p>Two more from that layer, both output-invariant. The Decls split also made it</p>
-<p>safe to add O(1) lookup *maps* to the immutable <code>Decls</code> (built once, never</p>
-<p>reconstructed — the per-clone copy cost that doomed an earlier such attempt is</p>
-<p>gone). (1) <code>compute_movables</code> (the move-on-last-use pre-pass) was O(reads²) — it</p>
-<p>called <code>count_str_occ(reads, n)</code> for every read; a one-pass frequency map plus</p>
-<p>loopreads set makes it O(reads). (2) <code>sig_ret</code>'s per-call linear <code>dc.sigs</code> scan</p>
-<p>became an O(1) <code>dc.sigmap</code> lookup. What remains (<code>gen_expr</code>/<code>type_of</code> plus a large unattributed <code>memcpy</code>/<code>malloc</code> chunk)</p>
-<p>is the</p>
-<p>inherent string-building codegen: concatenated owned strings mean output bytes</p>
-<p>are copied once per nesting level — the value-semantic string-copy floor. No</p>
-<p>logic-level change moves it.</p>
+<p>After the two O(n²) fixes, the cost looked like diffuse <code>memcpy</code>/<code>malloc</code> from value-semantic copies — but that was a profiler blind spot, not the truth. Improving the sampler's caller attribution (a saved-RBP-chain walk, so libc leaves like <code>malloc</code> are blamed on the Tycho function that called them) cut the unattributed share dramatically and revealed the real floor: <code>with_owner</code> plus <code>enter_block</code> — that is, <code>Ctx</code> *reconstruction*. <code>with_owner</code> is called only to change the <code>owner</code> string, but the returned <code>Ctx</code> escapes, so value semantics deep-copied <strong>every</strong> field — including the large, parse-invariant <code>sigs</code>/<code>structs</code>/<code>enums</code> — on every owner/depth change. <code>tychoc</code> never had this because it threads <code>arena</code> as a plain parameter.</p>
+<p>The fix splits the immutable parse data into a <code>Decls</code> struct, built once and threaded read-only (<code>dc</code>), never reconstructed; <code>Ctx</code> keeps only the 7 mutable per-scope/per-fn fields, so <code>with_owner</code>/<code>enter_block</code> rebuild a tiny struct. <code>dc</code> is threaded through all 67 <code>ctx</code>-taking functions (which pushed <code>gen_match_optres</code> to 9 params, so <code>tychoc</code>'s fixed <code>Sig</code> param cap was raised 8→16). <code>with_owner</code>/<code>enter_block</code> leave the profile entirely; what surfaces underneath is genuine codegen logic (<code>type_of</code>, <code>gen_expr</code>, <code>compute_movables</code>, <code>sig_ret</code>) — a smaller, more diffuse next layer.</p>
+<p>Two more from that layer, both output-invariant. The Decls split also made it safe to add O(1) lookup *maps* to the immutable <code>Decls</code> (built once, never reconstructed — the per-clone copy cost that doomed an earlier such attempt is gone). (1) <code>compute_movables</code> (the move-on-last-use pre-pass) was O(reads²) — it called <code>count_str_occ(reads, n)</code> for every read; a one-pass frequency map plus loopreads set makes it O(reads). (2) <code>sig_ret</code>'s per-call linear <code>dc.sigs</code> scan became an O(1) <code>dc.sigmap</code> lookup. What remains (<code>gen_expr</code>/<code>type_of</code> plus a large unattributed <code>memcpy</code>/<code>malloc</code> chunk) is the inherent string-building codegen: concatenated owned strings mean output bytes are copied once per nesting level — the value-semantic string-copy floor. No logic-level change moves it.</p>
 <h3 id="push-loop-fusion--register-resident-array-building">Push-loop fusion — register-resident array building</h3>
-<p>The generated-code counterpart to the wins above. A loop that only pushes to a</p>
-<p>local scalar array paid, <strong>per element</strong>, for the array descriptor</p>
-<p>(<code>data</code>/<code>len</code>/<code>cap</code>) round-tripping through memory: the C compiler must assume</p>
-<p><code>&amp;arr</code> aliases the arena pointer also passed to <code>push</code>, so it cannot keep the</p>
-<p>cursor in registers. Profiling <code>iter_transform</code> (a 200M-element push loop)</p>
-<p>isolated it: <code>push</code> dominated the loop, and hand-hoisting the descriptor brought</p>
-<p>it back down to roughly the cost of the arithmetic alone. <code>reserve</code>, <code>restrict</code>,</p>
-<p>and a cheaper empty-arena <code>reset</code> all failed to move it — the cost is the</p>
-<p>descriptor traffic, not growth or the capacity branch.</p>
-<p><strong>Fusion:</strong> when a loop's body uses a local scalar array (<code>[int]</code>/<code>[float]</code>)</p>
-<p>ONLY as <code>push(arr, …)</code>, codegen caches <code>data</code>/<code>len</code>/<code>cap</code> in C locals across the</p>
-<p>loop (hot path <code>_fd[_fl++] = v</code>), calls a grow hook (<code>tycho_arr_int/float_grow</code>)</p>
-<p>only on overflow, and writes the descriptor back at loop exit. <code>break</code> needs</p>
-<p>nothing (the flush sits after the loop, which <code>break</code> falls through to);</p>
-<p><code>continue</code>'s cursor survives in registers; <code>return</code> flushes via the registry</p>
-<p>first; nested loops pushing the same array reuse the outer cursor.</p>
-<p><strong>Sound by construction</strong> — fuse ONLY when <code>count_reads == pushcount</code> (used</p>
-<p>solely as a push target), the array is a plain non-inout scalar local not</p>
-<p>defined/shadowed in the body, and (for a <code>while</code>) the condition does not read</p>
-<p>it. Any miss falls back to the standard codegen, so a non-fused loop is never</p>
-<p>wrong. The registry is C globals (<code>g_fuse</code>).</p>
-<p><strong>Result:</strong> a large multiple on push-dominated loops, closing most of the gap to</p>
-<p>hand-written C, with peak memory slightly down. It applies generally — every</p>
-<p>scalar push loop. <code>tests/push_fusion.ty</code> covers</p>
-<p>break/continue/return/nested/two-array/while/bail.</p>
-<p><strong>Every element type now fuses</strong>: not just scalars, but</p>
-<p><code>[string]</code>, structs, tuples, nested arrays, options/results, and enums — any</p>
-<p>array whose element family has a <code>_grow</code> hook (all of them). The grow hook is</p>
-<p>element-generic: regrow the *spine* (the element buffer), recycle the old spine;</p>
-<p>the heap each element points to was already deep-copied into the array's arena,</p>
-<p>so the shallow per-element spine copy keeps it valid. This is sound because a</p>
-<p>push only *appends* — no element is ever overwritten — and the fused store</p>
-<p>deep-copies the element into the array's owning arena exactly as the non-fused</p>
-<p>push does, preserving value semantics. The win is largest for scalars; for heap</p>
-<p>elements the per-element deep-copy dominates, so the descriptor-elision is a</p>
-<p>smaller fraction — a consistency/completeness close more than a hot-path</p>
-<p>multiplier, though it still cuts a call plus a descriptor write-back per push on</p>
-<p>the very common build-a-list loop. <code>tests/str_fuse.ty</code> and <code>tests/comp_fuse.ty</code></p>
-<p>cover it. Every array element type fuses.</p>
+<p>The generated-code counterpart to the wins above. A loop that only pushes to a local scalar array paid, <strong>per element</strong>, for the array descriptor (<code>data</code>/<code>len</code>/<code>cap</code>) round-tripping through memory: the C compiler must assume <code>&amp;arr</code> aliases the arena pointer also passed to <code>push</code>, so it cannot keep the cursor in registers. Profiling <code>iter_transform</code> (a 200M-element push loop) isolated it: <code>push</code> dominated the loop, and hand-hoisting the descriptor brought it back down to roughly the cost of the arithmetic alone. <code>reserve</code>, <code>restrict</code>, and a cheaper empty-arena <code>reset</code> all failed to move it — the cost is the descriptor traffic, not growth or the capacity branch.</p>
+<p><strong>Fusion:</strong> when a loop's body uses a local scalar array (<code>[int]</code>/<code>[float]</code>) ONLY as <code>push(arr, …)</code>, codegen caches <code>data</code>/<code>len</code>/<code>cap</code> in C locals across the loop (hot path <code>_fd[_fl++] = v</code>), calls a grow hook (<code>tycho_arr_int/float_grow</code>) only on overflow, and writes the descriptor back at loop exit. <code>break</code> needs nothing (the flush sits after the loop, which <code>break</code> falls through to); <code>continue</code>'s cursor survives in registers; <code>return</code> flushes via the registry first; nested loops pushing the same array reuse the outer cursor.</p>
+<p><strong>Sound by construction</strong> — fuse ONLY when <code>count_reads == pushcount</code> (used solely as a push target), the array is a plain non-inout scalar local not defined/shadowed in the body, and (for a <code>while</code>) the condition does not read it. Any miss falls back to the standard codegen, so a non-fused loop is never wrong. The registry is C globals (<code>g_fuse</code>).</p>
+<p><strong>Result:</strong> a large multiple on push-dominated loops, closing most of the gap to hand-written C, with peak memory slightly down. It applies generally — every scalar push loop. <code>tests/push_fusion.ty</code> covers break/continue/return/nested/two-array/while/bail.</p>
+<p><strong>Every element type now fuses</strong>: not just scalars, but <code>[string]</code>, structs, tuples, nested arrays, options/results, and enums — any array whose element family has a <code>_grow</code> hook (all of them). The grow hook is element-generic: regrow the *spine* (the element buffer), recycle the old spine; the heap each element points to was already deep-copied into the array's arena, so the shallow per-element spine copy keeps it valid. This is sound because a push only *appends* — no element is ever overwritten — and the fused store deep-copies the element into the array's owning arena exactly as the non-fused push does, preserving value semantics. The win is largest for scalars; for heap elements the per-element deep-copy dominates, so the descriptor-elision is a smaller fraction — a consistency/completeness close more than a hot-path multiplier, though it still cuts a call plus a descriptor write-back per push on the very common build-a-list loop. <code>tests/str_fuse.ty</code> and <code>tests/comp_fuse.ty</code> cover it. Every array element type fuses.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

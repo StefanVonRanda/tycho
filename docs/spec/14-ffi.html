@@ -4,157 +4,78 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/14-ffi.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html" aria-current="page">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#24-extern-and-the-c-boundary">24. extern and the C boundary</a>
+<a class="sub" href="#241-crossable-types">24.1 Crossable types</a>
+<a class="sub" href="#2411-returning-a-payload-and-a-classification">24.1.1 Returning a payload and a classification</a>
+<a class="sub" href="#242-linking">24.2 Linking</a>
+<a href="#25-typed-handles">25. Typed handles</a>
+<a href="#26-ffi-and-concurrency">26. FFI and concurrency</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/14-ffi.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="24-extern-and-the-c-boundary--25-typed-handles--26-ffi-and-concurrency">24. <code>extern</code> and the C boundary · 25. Typed handles · 26. FFI and concurrency</h1>
-<p>Tycho calls C through <code>extern</code> functions. The boundary is deliberately narrow and</p>
-<p><strong>fails closed</strong>: only a fixed set of types may cross, and everything that</p>
-<p>crosses is copied so that Tycho never holds a pointer into C-owned memory nor</p>
-<p>exposes its own storage to C.</p>
+<p>Tycho calls C through <code>extern</code> functions. The boundary is deliberately narrow and <strong>fails closed</strong>: only a fixed set of types may cross, and everything that crosses is copied so that Tycho never holds a pointer into C-owned memory nor exposes its own storage to C.</p>
 <h2 id="24-extern-and-the-c-boundary">24. <code>extern</code> and the C boundary</h2>
-<p>An <code>extern</code> function is bodyless and binds to a C symbol</p>
-<p>(<a href="02-grammar.html#413-extern-functions-and-subscripts">§4.1.3</a>); an optional</p>
-<p>library name (<code>extern "m" fn cos(x: float) -&gt; float</code>) adds a link flag. Its name</p>
-<p>is emitted unmangled and it receives no arena argument.</p>
+<p>An <code>extern</code> function is bodyless and binds to a C symbol (<a href="02-grammar.html#413-extern-functions-and-subscripts">§4.1.3</a>); an optional library name (<code>extern "m" fn cos(x: float) -&gt; float</code>) adds a link flag. Its name is emitted unmangled and it receives no arena argument.</p>
 <h3 id="241-crossable-types">24.1 Crossable types</h3>
-<p>Only these may appear in an <code>extern</code> signature; a **map, struct, or any array</p>
-<p>outside the list below** is rejected at the boundary:</p>
+<p>Only these may appear in an <code>extern</code> signature; a <strong>map, struct, or any array outside the list below</strong> is rejected at the boundary:</p>
 <ul>
 <li><strong>Scalars</strong> <code>int</code>, <code>char</code>, <code>float</code>, <code>bool</code>.</li>
-<li><strong>Sized integers.</strong> The whole fixed-width integer family — <code>u8</code>/<code>u16</code>/<code>u32</code>/</li>
-</ul>
-<p><code>u64</code> and <code>i8</code>/<code>i16</code>/<code>i32</code>/<code>i64</code> — and <code>f32</code> (<a href="03-types.html#52-scalar-types">§5.2</a>)</p>
-<p>are first-class types that cross as themselves: an <code>extern</code> parameter or return</p>
-<p>of one of these takes or produces a value of that exact type, emitted as the</p>
-<p>matching fixed-width C type so the call matches the C ABI. An argument of a</p>
-<p>different type is a type error — use the <code>to_uN</code> / <code>to_iN</code> / <code>to_f32</code> conversion</p>
-<p>to produce the sized value.</p>
-<ul>
-<li><strong><code>string</code></strong> — passed as a C <code>char*</code>, with no length alongside it. A <code>string</code></li>
-</ul>
-<p><strong>returned</strong> from C is copied into the caller's storage at the call site, so</p>
-<p>Tycho never retains a pointer into C memory. A nullable C return is declared</p>
-<p><code>-&gt; Option(string)</code>. A <code>string</code> holding an interior <code>NUL</code> does <strong>not</strong> survive</p>
-<p>the round trip in either direction — see "Interior <code>NUL</code>s" below.</p>
-<ul>
-<li><strong><code>bytes</code></strong> — crosses as a <code>(pointer, length)</code> pair, preserving interior <code>NUL</code>s;</li>
-</ul>
-<p>a <code>bytes</code>/array returned from C is copied into an arena and the C buffer freed.</p>
-<ul>
-<li><strong><code>[int]</code> and <code>[float]</code></strong> — a <strong>scalar</strong> array crosses as a <code>(const T*, int64_t)</code></li>
-</ul>
-<p>pair (like <code>bytes</code>), in either direction; an array of any other element type,</p>
-<p>and any map or struct, is rejected (no flat, self-describing C ABI).</p>
-<ul>
-<li><strong><code>[string]</code> — parameter direction only.</strong> It crosses as a</li>
-</ul>
-<p><code>(const char *const *, int64_t)</code> pair, the same <code>(ptr, len)</code> convention as</p>
-<p><code>[int]</code>/<code>[float]</code> and <strong>not</strong> a <code>NULL</code>-terminated <code>argv</code>; a callee wanting</p>
-<p><code>execv</code> shape appends its own <code>NULL</code>. No marshalling happens: a Tycho string is</p>
-<p>NUL-terminated at its end, so the pointer handed over is the array's own</p>
-<p>element storage. The length counts *pointers*, not bytes, and no per-element</p>
-<p>length crosses — an element holding an interior <code>NUL</code> is therefore read short</p>
-<p>by the callee (see "Interior <code>NUL</code>s" below).</p>
-<p>The array is <strong>borrowed for the duration of the call</strong> — the</p>
-<p>callee may read the strings while it runs, and **must not retain the pointer, any</p>
-<p>element, or write through either** after returning. Nothing is copied, and nobody</p>
-<p>frees. This contract is <strong>not enforceable by the implementation</strong>; violating it is</p>
-<p>undefined behaviour. When the array is empty the pointer may be null and the</p>
-<p>length is <code>0</code>, so a callee must check the length before dereferencing.</p>
-<p>A <code>[string]</code> <strong>return</strong> is rejected: a <code>char**</code> out of C carries no length, the</p>
-<p>same reason an <code>inout string</code> out-parameter is rejected below.</p>
-<ul>
-<li><strong><code>ptr</code></strong> — an opaque <code>void*</code> Tycho never dereferences; the <code>null</code> literal and</li>
-</ul>
-<p><code>is_null(p)</code> apply.</p>
-<ul>
+<li><strong>Sized integers.</strong> The whole fixed-width integer family — <code>u8</code>/<code>u16</code>/<code>u32</code>/ <code>u64</code> and <code>i8</code>/<code>i16</code>/<code>i32</code>/<code>i64</code> — and <code>f32</code> (<a href="03-types.html#52-scalar-types">§5.2</a>) are first-class types that cross as themselves: an <code>extern</code> parameter or return of one of these takes or produces a value of that exact type, emitted as the matching fixed-width C type so the call matches the C ABI. An argument of a different type is a type error — use the <code>to_uN</code> / <code>to_iN</code> / <code>to_f32</code> conversion to produce the sized value.</li>
+<li><strong><code>string</code></strong> — passed as a C <code>char*</code>, with no length alongside it. A <code>string</code> <strong>returned</strong> from C is copied into the caller's storage at the call site, so Tycho never retains a pointer into C memory. A nullable C return is declared <code>-&gt; Option(string)</code>. A <code>string</code> holding an interior <code>NUL</code> does <strong>not</strong> survive the round trip in either direction — see "Interior <code>NUL</code>s" below.</li>
+<li><strong><code>bytes</code></strong> — crosses as a <code>(pointer, length)</code> pair, preserving interior <code>NUL</code>s; a <code>bytes</code>/array returned from C is copied into an arena and the C buffer freed.</li>
+<li><strong><code>[int]</code> and <code>[float]</code></strong> — a <strong>scalar</strong> array crosses as a <code>(const T*, int64_t)</code> pair (like <code>bytes</code>), in either direction; an array of any other element type, and any map or struct, is rejected (no flat, self-describing C ABI).</li>
+<li><strong><code>[string]</code> — parameter direction only.</strong> It crosses as a <code>(const char *const *, int64_t)</code> pair, the same <code>(ptr, len)</code> convention as <code>[int]</code>/<code>[float]</code> and <strong>not</strong> a <code>NULL</code>-terminated <code>argv</code>; a callee wanting <code>execv</code> shape appends its own <code>NULL</code>. No marshalling happens: a Tycho string is NUL-terminated at its end, so the pointer handed over is the array's own element storage. The length counts *pointers*, not bytes, and no per-element length crosses — an element holding an interior <code>NUL</code> is therefore read short by the callee (see "Interior <code>NUL</code>s" below). The array is <strong>borrowed for the duration of the call</strong> — the callee may read the strings while it runs, and <strong>must not retain the pointer, any element, or write through either</strong> after returning. Nothing is copied, and nobody frees. This contract is <strong>not enforceable by the implementation</strong>; violating it is undefined behaviour. When the array is empty the pointer may be null and the length is <code>0</code>, so a callee must check the length before dereferencing. A <code>[string]</code> <strong>return</strong> is rejected: a <code>char**</code> out of C carries no length, the same reason an <code>inout string</code> out-parameter is rejected below.</li>
+<li><strong><code>ptr</code></strong> — an opaque <code>void*</code> Tycho never dereferences; the <code>null</code> literal and <code>is_null(p)</code> apply.</li>
 <li><strong>typed <code>handle</code>s</strong> — §25.</li>
-<li><strong><code>inout</code> out-parameters</strong> — a numeric scalar or <code>ptr</code> only (<code>int</code>/<code>char</code>/</li>
+<li><strong><code>inout</code> out-parameters</strong> — a numeric scalar or <code>ptr</code> only (<code>int</code>/<code>char</code>/ <code>float</code>/<code>bool</code>/<code>ptr</code>); a <code>string</code>, <code>bytes</code>, handle, or composite <code>inout</code> out-parameter is <strong>rejected</strong> (no trivial out-param ABI).</li>
 </ul>
-<p><code>float</code>/<code>bool</code>/<code>ptr</code>); a <code>string</code>, <code>bytes</code>, handle, or composite <code>inout</code></p>
-<p>out-parameter is <strong>rejected</strong> (no trivial out-param ABI).</p>
-<p>Every value returned from C that carries storage (<code>string</code>, <code>bytes</code>, an array) is</p>
-<p><strong>deep-copied into the caller's storage at the call site</strong>; a program never holds</p>
-<p>a live pointer into C-owned memory.</p>
+<p>Every value returned from C that carries storage (<code>string</code>, <code>bytes</code>, an array) is <strong>deep-copied into the caller's storage at the call site</strong>; a program never holds a live pointer into C-owned memory.</p>
 <p>#### Interior <code>NUL</code>s: a <code>string</code> is truncated at the boundary, silently</p>
-<p>A Tycho <code>string</code> carries an explicit length and <strong>may hold an interior <code>0x00</code></strong> —</p>
-<p><code>to_bytes</code> on an <code>[int]</code> is the documented way to build one</p>
-<p>(<a href="16-builtins.html">§16</a>), and <code>chr(0)</code> concatenates like any other byte. A C</p>
-<p><code>char*</code> carries no length: it ends at its first <code>NUL</code>. The two disagree, and the</p>
-<p>ABI has nowhere to put the difference.</p>
-<p>So wherever a <code>string</code> crosses the FFI <strong>as a <code>char*</code></strong>, the bytes at and after</p>
-<p>the first interior <code>NUL</code> are invisible to the other side. This is **not</p>
-<p>diagnosed** — there is no error, no truncation warning, and no way to detect it</p>
-<p>after the fact. It applies in every <code>char*</code> direction:</p>
+<p>A Tycho <code>string</code> carries an explicit length and <strong>may hold an interior <code>0x00</code></strong> — <code>to_bytes</code> on an <code>[int]</code> is the documented way to build one (<a href="16-builtins.html">§16</a>), and <code>chr(0)</code> concatenates like any other byte. A C <code>char*</code> carries no length: it ends at its first <code>NUL</code>. The two disagree, and the ABI has nowhere to put the difference.</p>
+<p>So wherever a <code>string</code> crosses the FFI <strong>as a <code>char*</code></strong>, the bytes at and after the first interior <code>NUL</code> are invisible to the other side. This is <strong>not diagnosed</strong> — there is no error, no truncation warning, and no way to detect it after the fact. It applies in every <code>char*</code> direction:</p>
 <ul>
-<li>a <strong>scalar <code>string</code> parameter</strong> — the callee's <code>strlen</code> reports the prefix</li>
-</ul>
-<p>length, not <code>len(s)</code>;</p>
-<ul>
-<li><strong>each element of a <code>[string]</code> parameter</strong> — the length counts pointers, so no</li>
-</ul>
-<p>element length is available to the callee at all;</p>
-<ul>
+<li>a <strong>scalar <code>string</code> parameter</strong> — the callee's <code>strlen</code> reports the prefix length, not <code>len(s)</code>;</li>
+<li><strong>each element of a <code>[string]</code> parameter</strong> — the length counts pointers, so no element length is available to the callee at all;</li>
 <li>a <strong><code>string</code> return from C</strong> — the arena copy is <code>strlen</code>-bounded</li>
 </ul>
-<p>, so a C buffer holding <code>"h\0i"</code> becomes</p>
-<p>a Tycho <code>string</code> of length 1.</p>
-<p>Given <code>s := "a" + chr(0) + "c"</code>, <code>len(s)</code> is <code>3</code> while a callee declared</p>
-<p><code>int64_t f(const char *)</code> returns <code>1</code> for <code>strlen</code>. The trailing bytes are still in</p>
-<p>memory and still reachable by index through the borrowed pointer; what is lost is</p>
-<p>the *length*, which is the only thing telling the callee they are there.</p>
+<p>, so a C buffer holding <code>"h\0i"</code> becomes a Tycho <code>string</code> of length 1.</p>
+<p>Given <code>s := "a" + chr(0) + "c"</code>, <code>len(s)</code> is <code>3</code> while a callee declared <code>int64_t f(const char *)</code> returns <code>1</code> for <code>strlen</code>. The trailing bytes are still in memory and still reachable by index through the borrowed pointer; what is lost is the *length*, which is the only thing telling the callee they are there.</p>
 <p><strong>This follows from the borrow.</strong></p>
 <p>Rationale: passing <code>(ptr, len)</code> per element would copy, and scanning for <code>NUL</code> before every call would turn an O(1) borrow into an O(total bytes) one.</p>
-<p><strong>Use <code>bytes</code> for any payload that may hold a <code>NUL</code>.</strong> <code>bytes</code> crosses as a</p>
-<p><code>(pointer, length)</code> pair in both directions and preserves interior <code>NUL</code>s exactly</p>
-<p>— that is what the explicit length is for. Convert with <code>to_bytes(s)</code> at the call</p>
-<p>and <code>to_str(b)</code> on the way back, both zero-cost reinterprets</p>
-<p>(<a href="16-builtins.html">§16</a>). Reserve a <code>string</code> parameter for what C means by a</p>
-<p>string: text that ends at its first <code>NUL</code>.</p>
-<p>A string *literal* cannot contain a <code>NUL</code> — <code>\0</code> is not a supported escape and is</p>
-<p>rejected at compile time — so a truncating value always arrives from <code>chr(0)</code>,</p>
-<p>from <code>to_str</code> over a constructed <code>bytes</code>, or from C.</p>
-<p><strong>A package built on this boundary does not inherit the exemption.</strong> "Documented,</p>
-<p>not enforced" is a statement about the ABI, not about a library whose answer is a</p>
-<p>yes/no about untrusted bytes: such a caller must cross as <code>bytes</code>, or refuse the</p>
-<p>input by name. <code>core:regex</code> does the first — the subject crosses as</p>
-<p><code>(pointer, length)</code> and <code>REG_STARTEND</code> bounds the match by it</p>
-<p><code>. </code>core:io<code>, </code>core:net<code> and </code>core:os` do the</p>
-<p>second, since a path, a host and a command line have no length-bearing syscall to</p>
-<p>cross by: each checks the argument before anything is attempted</p>
-<p>and refuses — <code>Err(BadPath)</code> / <code>Err(BadAddr)</code> where</p>
-<p>there is an error channel, and each call's documented "this did not happen"</p>
-<p>sentinel where there is not. <code>core:path</code> is mostly lexical, but <code>path.real</code> rejects an interior NUL before crossing its C-string boundary.</p>
-<p>The sized-integer conversions truncate or extend by the C cast. <code>to_uN</code> / <code>to_iN</code> narrows a value to the type's low <code>N</code> bits; widening</p>
-<p>back with <code>to_int</code> <strong>sign-extends</strong> the signed types (<code>i8</code>/<code>i16</code>/<code>i32</code>/<code>i64</code>) and</p>
-<p><strong>zero-extends</strong> the unsigned (<code>u8</code>/<code>u16</code>/<code>u32</code>/<code>u64</code>): e.g. <code>to_i32(-1)</code> → <code>-1</code>,</p>
-<p><code>to_i32(2^32)</code> → <code>0</code>, <code>to_u8(-1)</code> → <code>255</code>, <code>to_u8(256)</code> → <code>0</code>, <code>to_i8(200)</code> →</p>
-<p><code>-56</code>. An <code>extern</code> parameter of a sized type requires an argument of that exact</p>
-<p>type (a bare <code>int</code> is a type error).</p>
+<p><strong>Use <code>bytes</code> for any payload that may hold a <code>NUL</code>.</strong> <code>bytes</code> crosses as a <code>(pointer, length)</code> pair in both directions and preserves interior <code>NUL</code>s exactly — that is what the explicit length is for. Convert with <code>to_bytes(s)</code> at the call and <code>to_str(b)</code> on the way back, both zero-cost reinterprets (<a href="16-builtins.html">§16</a>). Reserve a <code>string</code> parameter for what C means by a string: text that ends at its first <code>NUL</code>.</p>
+<p>A string *literal* cannot contain a <code>NUL</code> — <code>\0</code> is not a supported escape and is rejected at compile time — so a truncating value always arrives from <code>chr(0)</code>, from <code>to_str</code> over a constructed <code>bytes</code>, or from C.</p>
+<p><strong>A package built on this boundary does not inherit the exemption.</strong> "Documented, not enforced" is a statement about the ABI, not about a library whose answer is a yes/no about untrusted bytes: such a caller must cross as <code>bytes</code>, or refuse the input by name. <code>core:regex</code> does the first — the subject crosses as <code>(pointer, length)</code> and <code>REG_STARTEND</code> bounds the match by it <code>. </code>core:io<code>, </code>core:net<code> and </code>core:os<code> do the second, since a path, a host and a command line have no length-bearing syscall to cross by: each checks the argument before anything is attempted and refuses — </code>Err(BadPath)<code> / </code>Err(BadAddr)<code> where there is an error channel, and each call's documented "this did not happen" sentinel where there is not. </code>core:path<code> is mostly lexical, but </code>path.real` rejects an interior NUL before crossing its C-string boundary.</p>
+<p>The sized-integer conversions truncate or extend by the C cast. <code>to_uN</code> / <code>to_iN</code> narrows a value to the type's low <code>N</code> bits; widening back with <code>to_int</code> <strong>sign-extends</strong> the signed types (<code>i8</code>/<code>i16</code>/<code>i32</code>/<code>i64</code>) and <strong>zero-extends</strong> the unsigned (<code>u8</code>/<code>u16</code>/<code>u32</code>/<code>u64</code>): e.g. <code>to_i32(-1)</code> → <code>-1</code>, <code>to_i32(2^32)</code> → <code>0</code>, <code>to_u8(-1)</code> → <code>255</code>, <code>to_u8(256)</code> → <code>0</code>, <code>to_i8(200)</code> → <code>-56</code>. An <code>extern</code> parameter of a sized type requires an argument of that exact type (a bare <code>int</code> is a type error).</p>
 <h3 id="2411-returning-a-payload-and-a-classification">24.1.1 Returning a payload <strong>and</strong> a classification</h3>
-<p>An <code>extern</code> return is one value, and <code>-&gt; Result(T, E)</code> is <strong>not</strong> a crossable</p>
-<p>return shape: <code>Result</code> is a Tycho aggregate with no flat C ABI, and it is absent</p>
-<p>from §24.1. So a C function whose failure has more</p>
-<p>than one *cause* — <code>bytes</code> that came back empty because the peer closed, because</p>
-<p>a timeout expired, or because the read failed — has one documented spelling:</p>
-<p>**a numeric <code>inout</code> out-parameter carrying the classification, alongside the</p>
-<p>payload return.** The classification is a plain <code>int</code> (a small enumerated code the</p>
-<p>package maps onto its own error enum); the payload keeps whatever crossable return</p>
-<p>type it already had.</p>
+<p>An <code>extern</code> return is one value, and <code>-&gt; Result(T, E)</code> is <strong>not</strong> a crossable return shape: <code>Result</code> is a Tycho aggregate with no flat C ABI, and it is absent from §24.1. So a C function whose failure has more than one *cause* — <code>bytes</code> that came back empty because the peer closed, because a timeout expired, or because the read failed — has one documented spelling:</p>
+<p><strong>a numeric <code>inout</code> out-parameter carrying the classification, alongside the payload return.</strong> The classification is a plain <code>int</code> (a small enumerated code the package maps onto its own error enum); the payload keeps whatever crossable return type it already had.</p>
 <pre><code class="language-tycho"># corelib/net/net.ty: 0 EOF, 1 data, 2 timeout, 3 error
 extern fn netx_read(fd: int, max: int, status: inout int) -&gt; bytes
 </code></pre>
-<p>**Written parameters are passed in</p>
-<p>written order**, an <code>inout</code> becoming a <code>T*</code> (§24.1); a <code>bytes</code> or array *return*</p>
-<p>is a <code>void</code> function with <strong>two trailing</strong> out-params</p>
-<p>(<code>unsigned char **out, tycho_int *outlen</code>) appended after all of them. So the</p>
-<p>classification pointer sits <strong>ahead</strong> of the payload out-params even though it is</p>
-<p>written last, and the C definition must match that order exactly:</p>
+<p><strong>Written parameters are passed in written order</strong>, an <code>inout</code> becoming a <code>T*</code> (§24.1); a <code>bytes</code> or array *return* is a <code>void</code> function with <strong>two trailing</strong> out-params (<code>unsigned char **out, tycho_int *outlen</code>) appended after all of them. So the classification pointer sits <strong>ahead</strong> of the payload out-params even though it is written last, and the C definition must match that order exactly:</p>
 <pre><code class="language-c">void netx_read(tycho_int fd, tycho_int max, tycho_int *status,
                unsigned char **out, tycho_int *outlen);
 </code></pre>
@@ -164,163 +85,61 @@ extern void iox_read_file(char *, tycho_int *, unsigned char **, tycho_int *);
 </code></pre>
 <p>Rules that follow from §24.1 and are not optional:</p>
 <ul>
-<li>The classification parameter must be a <strong>numeric scalar or <code>ptr</code></strong> — that is the</li>
+<li>The classification parameter must be a <strong>numeric scalar or <code>ptr</code></strong> — that is the whole <code>inout</code> crossable set. A <code>string</code>, <code>bytes</code>, handle or composite <code>inout</code> is rejected, so the classification cannot be a message; it is a code.</li>
+<li><strong>Set it on every path, first.</strong> The shim writes a failure code before anything can fail (<code>*status = TY_RD_ERR;</code> in <code>corelib/net/net_shim.c</code>) so an early <code>return</code> fails closed rather than leaving the caller's variable untouched.</li>
+<li><strong>The payload must still be valid on the failure paths.</strong> Leaving <code>*out = NULL</code> is correct: <code>tycho_bytes_from_c</code> builds an empty buffer and frees nothing.</li>
+<li>The Tycho-side wrapper is what turns the pair into a <code>Result</code> — the FFI never produces one. <code>net.read</code> reads <code>status</code> and returns <code>Ok(b)</code> / <code>Err(Eof)</code> / <code>Err(Timeout)</code> / <code>Err(Failed)</code>; <code>io.read_bytes</code> does the same over <code>iox_read_file</code>'s codes.</li>
 </ul>
-<p>whole <code>inout</code> crossable set. A <code>string</code>, <code>bytes</code>, handle or composite <code>inout</code> is</p>
-<p>rejected, so the classification cannot be a message; it is a code.</p>
+<p><strong>The mirror arrangement, and why there are exactly two.</strong> The shape above puts the payload in the return and the classification in the <code>inout</code>. That assignment is <strong>forced, not preferred</strong> — and the constraint that forces it only exists for one kind of payload:</p>
 <ul>
-<li><strong>Set it on every path, first.</strong> The shim writes a failure code before anything</li>
+<li><strong>A <code>bytes</code> or array payload cannot be an <code>inout</code> at all.</strong> The crossable <code>inout</code> set is int/char/float/bool/ptr (the rule above), and the compiler rejects the rest by name —  is the predicate and its diagnostic spells out "string/bytes/handle/composite have no trivial out-param ABI". So a <code>bytes</code> payload has only the return available, and the classification takes the <code>inout</code> because nothing else is left. That is §24.1.1's case.</li>
+<li><strong>A scalar payload can occupy either slot</strong>, so nothing above decides it and a second constraint does: the two halves must not share one integer's code space. An epoch second, a file size or a byte count can take *any* value, including every value the status codes use, so returning both as one integer is the <code>-1</code>-means-error conflation this section exists to avoid. The classification therefore keeps the return — where its code space is its own — and the payload takes the <code>inout</code>:</li>
 </ul>
-<p>can fail (<code>*status = TY_RD_ERR;</code> in <code>corelib/net/net_shim.c</code>) so an early</p>
-<p><code>return</code> fails closed rather than leaving the caller's variable untouched.</p>
-<ul>
-<li><strong>The payload must still be valid on the failure paths.</strong> Leaving <code>*out = NULL</code></li>
-</ul>
-<p>is correct: <code>tycho_bytes_from_c</code> builds an empty buffer and frees nothing.</p>
-<ul>
-<li>The Tycho-side wrapper is what turns the pair into a <code>Result</code> — the FFI never</li>
-</ul>
-<p>produces one. <code>net.read</code> reads <code>status</code> and returns <code>Ok(b)</code> / <code>Err(Eof)</code> /</p>
-<p><code>Err(Timeout)</code> / <code>Err(Failed)</code>; <code>io.read_bytes</code> does the same over</p>
-<p><code>iox_read_file</code>'s codes.</p>
-<p><strong>The mirror arrangement, and why there are exactly two.</strong> The shape above puts</p>
-<p>the payload in the return and the classification in the <code>inout</code>. That assignment</p>
-<p>is <strong>forced, not preferred</strong> — and the constraint that forces it only exists for</p>
-<p>one kind of payload:</p>
-<ul>
-<li><strong>A <code>bytes</code> or array payload cannot be an <code>inout</code> at all.</strong> The crossable</li>
-</ul>
-<p><code>inout</code> set is int/char/float/bool/ptr (the rule above), and the compiler</p>
-<p>rejects the rest by name —  is the predicate and</p>
-<p>its diagnostic spells out "string/bytes/handle/composite have no trivial</p>
-<p>out-param ABI". So a <code>bytes</code> payload has only the return available, and the</p>
-<p>classification takes the <code>inout</code> because nothing else is left. That is</p>
-<p>§24.1.1's case.</p>
-<ul>
-<li><strong>A scalar payload can occupy either slot</strong>, so nothing above decides it and a</li>
-</ul>
-<p>second constraint does: the two halves must not share one integer's code space.</p>
-<p>An epoch second, a file size or a byte count can take *any* value, including</p>
-<p>every value the status codes use, so returning both as one integer is the</p>
-<p><code>-1</code>-means-error conflation this section exists to avoid. The classification</p>
-<p>therefore keeps the return — where its code space is its own — and the payload</p>
-<p>takes the <code>inout</code>:</p>
 <pre><code class="language-tycho"># corelib/io/io.ty: the same 0..3 codes, with `mtime` as the payload
 extern fn iox_stat_mtime(path: string, mtime: inout int) -&gt; int
 </code></pre>
-<p>The C ABI for the mirror is the ordinary one, because a scalar return needs no</p>
-<p>out-params: written parameters in written order, the <code>inout</code> lowering to a <code>T*</code>,</p>
-<p>the classification as the C function's own return value. No reordering surprise —</p>
-<p>that only arises when a <code>bytes</code> return appends its two out-params.</p>
+<p>The C ABI for the mirror is the ordinary one, because a scalar return needs no out-params: written parameters in written order, the <code>inout</code> lowering to a <code>T*</code>, the classification as the C function's own return value. No reordering surprise — that only arises when a <code>bytes</code> return appends its two out-params.</p>
 <pre><code class="language-c">tycho_int iox_stat_mtime(const char *path, tycho_int *mtime);
 </code></pre>
-<p>So the two arrangements are one rule seen from both sides: **the classification</p>
-<p>and the payload never share a slot, and which slot each takes is settled by what</p>
-<p>can cross as an <code>inout</code> — never by taste.** Every other rule above (numeric</p>
-<p>classification, set it first on every path, the payload valid on failure paths,</p>
-<p>the Tycho wrapper being what builds the <code>Result</code>) applies unchanged to both.</p>
-<p><strong>When NOT to use it.</strong> If the classification and the failure share one integer</p>
-<p>and there is no separate payload, return the code directly and skip the out-param:</p>
-<p><code>extern fn iox_stat_kind(path: string) -&gt; int</code> is the same four codes as</p>
-<p><code>iox_read_file</code>'s with no <code>inout</code>, because the *kind* is the whole answer.</p>
+<p>So the two arrangements are one rule seen from both sides: <strong>the classification and the payload never share a slot, and which slot each takes is settled by what can cross as an <code>inout</code> — never by taste.</strong> Every other rule above (numeric classification, set it first on every path, the payload valid on failure paths, the Tycho wrapper being what builds the <code>Result</code>) applies unchanged to both.</p>
+<p><strong>When NOT to use it.</strong> If the classification and the failure share one integer and there is no separate payload, return the code directly and skip the out-param: <code>extern fn iox_stat_kind(path: string) -&gt; int</code> is the same four codes as <code>iox_read_file</code>'s with no <code>inout</code>, because the *kind* is the whole answer.</p>
 <h3 id="242-linking">24.2 Linking</h3>
-<p>An <code>extern "Lib"</code> adds <code>-lLib</code> to the link line; a package's <code>deps</code> file adds</p>
-<p><code>pkg-config</code> flags, and a co-located <code>&lt;pkg&gt;_shim.c</code> is compiled and linked</p>
-<p>automatically (<a href="15-program.html">§28</a>). <code>-lm</code> (a link flag) and <code>-fwrapv</code> (a</p>
-<p>compile flag) are always on this single <code>cc</code> command line.</p>
+<p>An <code>extern "Lib"</code> adds <code>-lLib</code> to the link line; a package's <code>deps</code> file adds <code>pkg-config</code> flags, and a co-located <code>&lt;pkg&gt;_shim.c</code> is compiled and linked automatically (<a href="15-program.html">§28</a>). <code>-lm</code> (a link flag) and <code>-fwrapv</code> (a compile flag) are always on this single <code>cc</code> command line.</p>
 <h2 id="25-typed-handles">25. Typed handles</h2>
-<p>A <code>handle</code> declaration is a <strong>header over an indented <code>free:</code> line</strong> — a block,</p>
-<p>not a one-liner. It declares a nominal, affine, opaque C resource: a <code>void*</code></p>
-<p>whose destructor runs automatically at scope exit (RAII).</p>
+<p>A <code>handle</code> declaration is a <strong>header over an indented <code>free:</code> line</strong> — a block, not a one-liner. It declares a nominal, affine, opaque C resource: a <code>void*</code> whose destructor runs automatically at scope exit (RAII).</p>
 <pre><code class="language-tycho">handle File:
     free: fh_close
 
 extern fn fh_open(path: string) -&gt; File   # the opener
 extern fn fh_close(f: File) -&gt; int        # the destructor, called at scope exit
 </code></pre>
-<p>A handle is typically produced by an <code>extern</code> "opener" (the only kind of function</p>
-<p>permitted to *return* a handle) and released without explicit calls.</p>
+<p>A handle is typically produced by an <code>extern</code> "opener" (the only kind of function permitted to *return* a handle) and released without explicit calls.</p>
 <ul>
-<li><strong>A handle name is a type name, and the collision rule is symmetric.</strong> A</li>
+<li><strong>A handle name is a type name, and the collision rule is symmetric.</strong> A handle shares the one type namespace with structs, enums and newtypes — it is written in type position and mangled to a C typedef like them — so a duplicate would otherwise reach <code>cc</code> as two declarations of one name, with no Tycho-level diagnostic. The rule therefore runs in <strong>both</strong> directions: a <code>handle Name</code> MUST NOT repeat a struct, enum, newtype or handle name declared earlier in the file, and a <code>struct</code>, <code>enum</code> or <code>type</code> declaration MUST NOT repeat a <strong>handle</strong> name declared earlier in the file. Either order is a compile error, reported at the second declaration. Locked by <code>tests/reject/handle_dup_name.ty</code> (the handle-second order) and <code>tests/reject/handle_then_struct.ty</code>, <code>handle_then_enum.ty</code>, <code>handle_then_newtype.ty</code> (the handle-first order).</li>
+<li><strong>Neither borrow mode applies.</strong> A <code>handle</code> parameter MUST NOT be <code>sink</code> or <code>inout</code>. It has one owner and a scope-bound destructor, so there is nothing to consume and nothing to copy back; passing it plainly is already the borrow above. Both were accepted and silently IGNORED until 2026-08-14 — a <code>sink</code> callee borrowed exactly like a default parameter — which is why they are now refused at the declaration. The same rule covers <code>Task(T)</code> and <code>Channel(T)</code>.</li>
+<li><strong>Scope-exit free.</strong> The owning variable's destructor runs at every exit from the <strong>owning</strong> scope — block end, early <code>return</code>, <code>break</code>, <code>continue</code>, <code>or_return</code>. A <code>break</code> or <code>continue</code> leaves only the scopes inside its loop, so it frees a handle declared in the loop body and not one owned outside the loop.</li>
+<li><strong>Borrow on pass.</strong> Passing a handle passes the <code>void*</code>; the callee does <strong>not</strong> free it — only the owning scope does.</li>
+<li><strong>Affine, exactly one owner.</strong> A handle MUST NOT be copied, and a handle variable MUST NOT be reassigned — both are compile errors. It cannot be stored in an array, map, struct, tuple, <code>Option</code>, or <code>Result</code>, captured by a closure or <code>parallel for</code>, or returned from a Tycho function.</li>
+<li><strong>An opener's result MUST be bound.</strong> A handle-typed call is legal only as the direct right-hand side of a declaration (<code>d := open(p)</code>). As a bare statement, as an argument (<code>use(open(p))</code>), or in any other position it is a compile error: the scope-exit finalizer frees the owning *variable*, so a handle with no variable is never freed. <code>close(open(p))</code> is refused by the <code>close</code> rule below rather than by this one, because <code>close</code> does free it.</li>
+<li><strong>Early <code>close(h)</code>.</strong> <code>close(h)</code> runs the destructor immediately and sets the handle to null; the scope-exit finalizer is null-guarded, so the destructor runs <strong>exactly once</strong>. <code>close</code> requires a handle <strong>variable</strong> (a call result has no owning scope); otherwise it is a compile error. A handle <strong>parameter</strong> cannot be closed either, and that is a compile error too: the callee holds a borrowed copy of the <code>void*</code>, so <code>close</code> would null only that copy and the caller's scope-exit free would run the destructor a second time. Close it in the owning scope.</li>
+<li><strong>Use after <code>close</code>.</strong> A <code>close(h)</code> <strong>statement</strong> closes <code>h</code> for the rest of the block it is written in, including every block nested after it. Any later mention of <code>h</code> there is a compile error — a call that passes it, a second <code>close(h)</code>, and <code>is_null(h)</code>, which could only be a constant <code>true</code>. Each such mention is on every path through the close, and a handle cannot be reassigned, so nothing can reopen it. The rule is lexical and claims only certainties: a <code>close(h)</code> inside an <code>if</code>, a loop body or a <code>match</code> arm closes <code>h</code> only until the end of *that* block. A mention after the <code>if</code> is a maybe and compiles; so does the next loop iteration's use of a handle closed in the body. On such a path the handle may be null, and passing it to C is a logic bug, <strong>not</strong> memory corruption. There <code>is_null(h)</code> is true when the branch closed it *or* the opener failed, and nothing distinguishes the two — keep a <code>bool</code> beside it if the difference matters. Locked by <code>tests/reject/handle_use_after_close.ty</code>, <code>handle_close_twice.ty</code> and <code>handle_is_null_after_close.ty</code>; the branch case runs in <code>tests/ffi/main.ty</code>.</li>
 </ul>
-<p>handle shares the one type namespace with structs, enums and newtypes — it is</p>
-<p>written in type position and mangled to a C typedef like them — so a duplicate</p>
-<p>would otherwise reach <code>cc</code> as two declarations of one name, with no Tycho-level</p>
-<p>diagnostic. The rule therefore runs in <strong>both</strong> directions: a <code>handle Name</code></p>
-<p>MUST NOT repeat a struct, enum, newtype or handle name declared earlier in the</p>
-<p>file, and a <code>struct</code>, <code>enum</code> or <code>type</code> declaration MUST NOT repeat a <strong>handle</strong></p>
-<p>name declared earlier in the file. Either order is a compile error, reported at</p>
-<p>the second declaration. Locked by <code>tests/reject/handle_dup_name.ty</code> (the</p>
-<p>handle-second order) and <code>tests/reject/handle_then_struct.ty</code>,</p>
-<p><code>handle_then_enum.ty</code>, <code>handle_then_newtype.ty</code> (the handle-first order).</p>
-<ul>
-<li><strong>Neither borrow mode applies.</strong> A <code>handle</code> parameter MUST NOT be <code>sink</code> or</li>
-</ul>
-<p><code>inout</code>. It has one owner and a scope-bound destructor, so there is nothing to</p>
-<p>consume and nothing to copy back; passing it plainly is already the borrow</p>
-<p>above. Both were accepted and silently IGNORED until 2026-08-14 — a <code>sink</code></p>
-<p>callee borrowed exactly like a default parameter — which is why they are now</p>
-<p>refused at the declaration. The same rule covers <code>Task(T)</code> and <code>Channel(T)</code>.</p>
-<ul>
-<li><strong>Scope-exit free.</strong> The owning variable's destructor runs at every exit from</li>
-</ul>
-<p>the <strong>owning</strong> scope — block end, early <code>return</code>, <code>break</code>, <code>continue</code>,</p>
-<p><code>or_return</code>. A <code>break</code> or <code>continue</code> leaves only the scopes inside its loop, so</p>
-<p>it frees a handle declared in the loop body and not one owned outside the loop.</p>
-<ul>
-<li><strong>Borrow on pass.</strong> Passing a handle passes the <code>void*</code>; the callee does <strong>not</strong></li>
-</ul>
-<p>free it — only the owning scope does.</p>
-<ul>
-<li><strong>Affine, exactly one owner.</strong> A handle MUST NOT be copied, and a handle</li>
-</ul>
-<p>variable MUST NOT be reassigned — both are compile errors. It cannot be stored</p>
-<p>in an array, map, struct, tuple, <code>Option</code>, or <code>Result</code>, captured by a closure</p>
-<p>or <code>parallel for</code>, or returned from a Tycho function.</p>
-<ul>
-<li><strong>An opener's result MUST be bound.</strong> A handle-typed call is legal only as the</li>
-</ul>
-<p>direct right-hand side of a declaration (<code>d := open(p)</code>). As a bare statement,</p>
-<p>as an argument (<code>use(open(p))</code>), or in any other position it is a compile</p>
-<p>error: the scope-exit finalizer frees the owning *variable*, so a handle with</p>
-<p>no variable is never freed. <code>close(open(p))</code> is refused by the <code>close</code> rule</p>
-<p>below rather than by this one, because <code>close</code> does free it.</p>
-<ul>
-<li><strong>Early <code>close(h)</code>.</strong> <code>close(h)</code> runs the destructor immediately and sets the</li>
-</ul>
-<p>handle to null; the scope-exit finalizer is null-guarded, so the destructor</p>
-<p>runs <strong>exactly once</strong>. <code>close</code> requires a handle <strong>variable</strong> (a call result has</p>
-<p>no owning scope); otherwise it is a compile error. A handle <strong>parameter</strong> cannot</p>
-<p>be closed either, and that is a compile error too: the callee holds a borrowed</p>
-<p>copy of the <code>void*</code>, so <code>close</code> would null only that copy and the caller's</p>
-<p>scope-exit free would run the destructor a second time. Close it in the</p>
-<p>owning scope.</p>
-<ul>
-<li><strong>Use after <code>close</code>.</strong> A <code>close(h)</code> <strong>statement</strong> closes <code>h</code> for the rest of</li>
-</ul>
-<p>the block it is written in, including every block nested after it. Any later</p>
-<p>mention of <code>h</code> there is a compile error — a call that passes it, a second</p>
-<p><code>close(h)</code>, and <code>is_null(h)</code>, which could only be a constant <code>true</code>. Each such</p>
-<p>mention is on every path through the close, and a handle cannot be</p>
-<p>reassigned, so nothing can reopen it. The rule is lexical and claims only</p>
-<p>certainties: a <code>close(h)</code> inside an <code>if</code>, a loop body or a <code>match</code> arm closes</p>
-<p><code>h</code> only until the end of *that* block. A mention after the <code>if</code> is a maybe</p>
-<p>and compiles; so does the next loop iteration's use of a handle closed in the</p>
-<p>body. On such a path the handle may be null, and passing it to C is a logic</p>
-<p>bug, <strong>not</strong> memory corruption. There <code>is_null(h)</code> is true when the branch</p>
-<p>closed it *or* the opener failed, and nothing distinguishes the two — keep a</p>
-<p><code>bool</code> beside it if the difference matters. Locked by</p>
-<p><code>tests/reject/handle_use_after_close.ty</code>, <code>handle_close_twice.ty</code> and</p>
-<p><code>handle_is_null_after_close.ty</code>; the branch case runs in <code>tests/ffi/main.ty</code>.</p>
 <h2 id="26-ffi-and-concurrency">26. FFI and concurrency</h2>
-<p>The race-freedom guarantee of <a href="13-concurrency.html#20-the-concurrency-model">§20</a></p>
-<p>covers <strong>Tycho values only and does not cross the FFI boundary</strong>. A C function</p>
-<p>that reads or writes process-global or <code>static</code> state is invisible to the</p>
-<p>compiler; two tasks calling it race exactly as the same C would. Code that calls</p>
-<p>such a C function from multiple tasks MUST make the C side thread-safe itself —</p>
-<p>the reference corelib shims do this with per-thread state (<code>static __thread …</code>).</p>
-<p>A conforming implementation makes no thread-safety guarantee about foreign code.</p>
+<p>The race-freedom guarantee of <a href="13-concurrency.html#20-the-concurrency-model">§20</a> covers <strong>Tycho values only and does not cross the FFI boundary</strong>. A C function that reads or writes process-global or <code>static</code> state is invisible to the compiler; two tasks calling it race exactly as the same C would. Code that calls such a C function from multiple tasks MUST make the C side thread-safe itself — the reference corelib shims do this with per-thread state (<code>static __thread …</code>). A conforming implementation makes no thread-safety guarantee about foreign code.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

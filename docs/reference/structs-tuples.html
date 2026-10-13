@@ -4,21 +4,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Structs and tuples — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / reference/structs-tuples.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details open><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html" aria-current="page">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#structs">Structs</a>
+<a class="sub" href="#layout-packed-and-alignn">Layout: packed and align(N)</a>
+<a href="#tuples-and-multiple-return-values">Tuples and multiple return values</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / reference/structs-tuples.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="structs-and-tuples">Structs and tuples</h1>
 <blockquote>
-<p><strong>Memory:</strong> Copying a struct copies its whole tree — strings, arrays, and nested</p>
-<p>structs included — so two variables never share storage. Tuples copy the same way.</p>
+<p><strong>Memory:</strong> Copying a struct copies its whole tree — strings, arrays, and nested structs included — so two variables never share storage. Tuples copy the same way.</p>
 </blockquote>
-<p>Both are product types — a value made of several fields. A <code>struct</code> names its fields and is</p>
-<p>declared as a type; a tuple is anonymous and is how a function returns more than one value.</p>
-<p>Both are values, deep-copied on every bind, so two never share storage.</p>
+<p>Both are product types — a value made of several fields. A <code>struct</code> names its fields and is declared as a type; a tuple is anonymous and is how a function returns more than one value. Both are values, deep-copied on every bind, so two never share storage.</p>
 <h2 id="structs">Structs</h2>
 <pre><code class="language-tycho">struct Point:
     x: int
@@ -36,17 +54,9 @@ fn main():
     r := Rect(a, Point(4, 6))
     r.lo.x = 100               # nested field write, in place
 </code></pre>
-<p>A field name follows the same rule as any other name: it may not be a</p>
-<p><a href="basics.html#declarations-and-assignment">reserved word</a>, which includes the type names —</p>
-<p><code>bytes: int</code> or <code>string: int</code> is refused.</p>
-<p>A field may be <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code>, an array (including an array of structs —</p>
-<p>even of the struct being defined, so <code>children: [Node]</code> builds a recursive tree), an</p>
-<p><code>Option</code> (a nullable field, <code>age: Option(int)</code>), or another struct. A field that would make</p>
-<p>the struct infinitely large *by value* — <code>next: Option(Node)</code> directly inside <code>Node</code> — is a</p>
-<p>compile error; use indirection through an array (<code>[Node]</code>), whose elements are arena-allocated.</p>
-<p>Structs are values, and the copy is <strong>deep</strong>: a field that owns heap bytes (a <code>string</code> or</p>
-<p>array, at any nesting depth) is duplicated too, so copying a struct copies its whole tree and</p>
-<p>two struct variables never share storage.</p>
+<p>A field name follows the same rule as any other name: it may not be a <a href="basics.html#declarations-and-assignment">reserved word</a>, which includes the type names — <code>bytes: int</code> or <code>string: int</code> is refused.</p>
+<p>A field may be <code>int</code>, <code>float</code>, <code>bool</code>, <code>string</code>, an array (including an array of structs — even of the struct being defined, so <code>children: [Node]</code> builds a recursive tree), an <code>Option</code> (a nullable field, <code>age: Option(int)</code>), or another struct. A field that would make the struct infinitely large *by value* — <code>next: Option(Node)</code> directly inside <code>Node</code> — is a compile error; use indirection through an array (<code>[Node]</code>), whose elements are arena-allocated.</p>
+<p>Structs are values, and the copy is <strong>deep</strong>: a field that owns heap bytes (a <code>string</code> or array, at any nesting depth) is duplicated too, so copying a struct copies its whole tree and two struct variables never share storage.</p>
 <pre><code class="language-tycho">struct Person:
     name: string
     tags: [string]
@@ -55,17 +65,10 @@ a := Person("Ada", ["x"])
 b := a                         # deep copy: b.name and b.tags are independent
 b.name = "Alan"                # never touches a
 </code></pre>
-<p>Fields are read with <code>p.x</code> and written with <code>p.x = v</code>, including nested (<code>r.lo.x = v</code>) and an</p>
-<p>array-field element (<code>p.tags[0] = v</code>). Construction is positional, in declaration order, and</p>
-<p>a struct must be declared before it is used as a type. Two structs compare by value with</p>
-<p><code>==</code>/<code>!=</code> — field-wise, recursing into nested structs, arrays, and strings — so <code>a == b</code> is</p>
-<p>true exactly when <code>b</code> is an independent copy of <code>a</code>. A struct may be a method receiver</p>
-<p>(<code>r.area()</code> calls <code>area(r)</code>); see <a href="functions.html#methods-ufcs">Methods</a>.</p>
+<p>Fields are read with <code>p.x</code> and written with <code>p.x = v</code>, including nested (<code>r.lo.x = v</code>) and an array-field element (<code>p.tags[0] = v</code>). Construction is positional, in declaration order, and a struct must be declared before it is used as a type. Two structs compare by value with <code>==</code>/<code>!=</code> — field-wise, recursing into nested structs, arrays, and strings — so <code>a == b</code> is true exactly when <code>b</code> is an independent copy of <code>a</code>. A struct may be a method receiver (<code>r.area()</code> calls <code>area(r)</code>); see <a href="functions.html#methods-ufcs">Methods</a>.</p>
 <h3 id="layout-packed-and-alignn">Layout: <code>packed</code> and <code>align(N)</code></h3>
 <p>An ordinary struct's layout is up to the implementation. Two declaration attributes pin it.</p>
-<p><strong><code>packed struct</code></strong> removes all padding: its size is exactly the sum of its field sizes, each</p>
-<p>field sits right after the one before, and it is the one aggregate that converts to and from</p>
-<p><code>bytes</code>, little-endian, for file formats and wire protocols.</p>
+<p><strong><code>packed struct</code></strong> removes all padding: its size is exactly the sum of its field sizes, each field sits right after the one before, and it is the one aggregate that converts to and from <code>bytes</code>, little-endian, for file formats and wire protocols.</p>
 <pre><code class="language-tycho">packed struct Ins:          # exactly 9 bytes: 1 + 4 + 4
     op: u8
     a: i32
@@ -79,26 +82,13 @@ fn main():
 </code></pre>
 <pre><code class="language-output">9 9 -1
 </code></pre>
-<p>Every field must be fixed-width: <code>int</code>, <code>float</code>, <code>bool</code>, <code>char</code>, a sized numeric</p>
-<p>(<code>u8</code>…<code>u64</code>, <code>i8</code>…<code>i64</code>, <code>f32</code>), a newtype over one, or another packed struct. A <code>string</code>,</p>
-<p>array, map, <code>Option</code> or other heap-owning field is refused. <code>from_bytes$</code> aborts unless the</p>
-<p>length is exactly <code>size_of$(T)</code>; see <a href="builtins.html">builtins</a>.</p>
-<p><strong><code>align(N) struct</code></strong> raises the struct's alignment to <code>N</code> bytes (a power of two, at most 8,</p>
-<p>the arena's own alignment). Its size rounds up to a multiple of <code>N</code>, so every element of an</p>
-<p>array of it stays aligned. It never lowers alignment, and <code>packed</code> and <code>align</code> on one struct</p>
-<p>are refused.</p>
-<p><code>size_of$(T)</code> accepts an <code>align(N)</code> struct too, and is how you observe the attribute. The</p>
-<p>size is implementation-defined, like any unpacked struct's layout, but it is always a</p>
-<p>multiple of <code>N</code>: an <code>align(8)</code> struct of two <code>u8</code> fields is 8, two bytes rounded up. <code>to_bytes</code></p>
-<p>and <code>from_bytes$</code> still take only a packed struct, because only a packed struct has a</p>
-<p>byte-exact layout.</p>
-<p>Worked examples: <code>BmpHeader</code> in <a href="../../corelib/raster/raster.ty"><code>corelib/raster/raster.ty</code></a> and</p>
-<p><code>TgaHeader</code> in <a href="../../tools/tycho-grade/main.ty"><code>tools/tycho-grade/</code></a>. Neither uses <code>align(N)</code>, for</p>
-<p>the reason above.</p>
+<p>Every field must be fixed-width: <code>int</code>, <code>float</code>, <code>bool</code>, <code>char</code>, a sized numeric (<code>u8</code>…<code>u64</code>, <code>i8</code>…<code>i64</code>, <code>f32</code>), a newtype over one, or another packed struct. A <code>string</code>, array, map, <code>Option</code> or other heap-owning field is refused. <code>from_bytes$</code> aborts unless the length is exactly <code>size_of$(T)</code>; see <a href="builtins.html">builtins</a>.</p>
+<p><strong><code>align(N) struct</code></strong> raises the struct's alignment to <code>N</code> bytes (a power of two, at most 8, the arena's own alignment). Its size rounds up to a multiple of <code>N</code>, so every element of an array of it stays aligned. It never lowers alignment, and <code>packed</code> and <code>align</code> on one struct are refused.</p>
+<p><code>size_of$(T)</code> accepts an <code>align(N)</code> struct too, and is how you observe the attribute. The size is implementation-defined, like any unpacked struct's layout, but it is always a multiple of <code>N</code>: an <code>align(8)</code> struct of two <code>u8</code> fields is 8, two bytes rounded up. <code>to_bytes</code> and <code>from_bytes$</code> still take only a packed struct, because only a packed struct has a byte-exact layout.</p>
+<p>Worked examples: <code>BmpHeader</code> in <a href="https://github.com/StefanVonRanda/tycho/blob/main/corelib/raster/raster.ty"><code>corelib/raster/raster.ty</code></a> and <code>TgaHeader</code> in <a href="https://github.com/StefanVonRanda/tycho/blob/main/tools/tycho-grade/main.ty"><code>tools/tycho-grade/</code></a>. Neither uses <code>align(N)</code>, for the reason above.</p>
 <p>Rules: <a href="../spec/12-aggregates.html#171a-packed-layout">spec §17.1a</a>.</p>
 <h2 id="tuples-and-multiple-return-values">Tuples and multiple return values</h2>
-<p>A tuple <code>(T1, ..., Tn)</code> (2–8 elements) is an anonymous product — the way a function returns</p>
-<p>more than one thing. <code>return a, b</code> builds one, and you <strong>destructure</strong> it at the call:</p>
+<p>A tuple <code>(T1, ..., Tn)</code> (2–8 elements) is an anonymous product — the way a function returns more than one thing. <code>return a, b</code> builds one, and you <strong>destructure</strong> it at the call:</p>
 <pre><code class="language-tycho">fn divmod(a: int, b: int) -&gt; (int, int):
     q := a / b
     return q, a - q * b           # builds the tuple (q, remainder)
@@ -106,19 +96,23 @@ fn main():
 fn main():
     quot, rem := divmod(17, 5)     # destructure -&gt; quot = 3, rem = 2
 </code></pre>
-<p>Tuples are first-class values, not only a return convention: store one whole</p>
-<p>(<code>t := divmod(17, 5)</code>), index it by position (<code>t.0</code>, <code>t.1</code>), write a literal (<code>p := (10, 20)</code>),</p>
-<p>pass it as an argument or a struct field, and compare two with <code>==</code> (element-wise). Any</p>
-<p>element type works, including heap ones (<code>(string, [int])</code>); a tuple is deep-copied on bind</p>
-<p>like everything else, so two are independent. Destructuring comes in two forms — <code>a, b := f()</code></p>
-<p>declares fresh locals, <code>a, b = f()</code> assigns into existing variables. A tuple element is also a</p>
-<p>writable place: <code>t.0 = v</code> updates it in place, and value semantics is preserved — a copy taken</p>
-<p>beforehand is unaffected.</p>
+<p>Tuples are first-class values, not only a return convention: store one whole (<code>t := divmod(17, 5)</code>), index it by position (<code>t.0</code>, <code>t.1</code>), write a literal (<code>p := (10, 20)</code>), pass it as an argument or a struct field, and compare two with <code>==</code> (element-wise). Any element type works, including heap ones (<code>(string, [int])</code>); a tuple is deep-copied on bind like everything else, so two are independent. Destructuring comes in two forms — <code>a, b := f()</code> declares fresh locals, <code>a, b = f()</code> assigns into existing variables. A tuple element is also a writable place: <code>t.0 = v</code> updates it in place, and value semantics is preserved — a copy taken beforehand is unaffected.</p>
 <hr/>
-<p>*Design background:* why deep-copied aggregates stay sound, and why a struct that would</p>
-<p>contain itself by value is rejected (use indirection through an array), is in</p>
-<p><a href="../internals/design-aggregates.html">the aggregates design note</a>.</p>
+<p>*Design background:* why deep-copied aggregates stay sound, and why a struct that would contain itself by value is rejected (use indirection through an array), is in <a href="../internals/design-aggregates.html">the aggregates design note</a>.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

@@ -4,137 +4,92 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>1. Scope and conformance · 2. Notation — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/00-conventions.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html" aria-current="page">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#1-scope-and-conformance">1. Scope and conformance</a>
+<a class="sub" href="#11-scope">1.1 Scope</a>
+<a class="sub" href="#12-the-reference-implementation">1.2 The reference implementation</a>
+<a class="sub" href="#13-conformance">1.3 Conformance</a>
+<a class="sub" href="#14-requirement-keywords">1.4 Requirement keywords</a>
+<a class="sub" href="#15-versioning">1.5 Versioning</a>
+<a href="#2-notation">2. Notation</a>
+<a class="sub" href="#21-grammar-notation">2.1 Grammar notation</a>
+<a class="sub" href="#22-source-of-record">2.2 Source of record</a>
+<a class="sub" href="#23-examples-and-code-fences">2.3 Examples and code fences</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/00-conventions.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="1-scope-and-conformance--2-notation">1. Scope and conformance · 2. Notation</h1>
 <h2 id="1-scope-and-conformance">1. Scope and conformance</h2>
 <h3 id="11-scope">1.1 Scope</h3>
-<p>This document specifies the syntax and semantics of the Tycho programming</p>
-<p>language and its standard library (the *corelib*). It defines:</p>
+<p>This document specifies the syntax and semantics of the Tycho programming language and its core library (the *corelib*). It defines:</p>
 <ul>
-<li>the lexical and phrase grammar of a Tycho source program (<a href="01-lexical.html">§3</a>,</li>
-</ul>
-<p><a href="02-grammar.html">§4</a>);</p>
-<ul>
+<li>the lexical and phrase grammar of a Tycho source program (<a href="01-lexical.html">§3</a>, <a href="02-grammar.html">§4</a>);</li>
 <li>the type system, type inference, and generic instantiation;</li>
-<li>the memory and object model — value semantics and the implicit hierarchical</li>
-</ul>
-<p>arena model on which the language rests;</p>
-<ul>
+<li>the memory and object model — value semantics and the implicit hierarchical arena model on which the language rests;</li>
 <li>the meaning of every declaration, statement, and expression;</li>
 <li>the concurrency model and its ordering guarantees;</li>
 <li>the foreign-function interface (FFI) to C;</li>
-<li>the built-in functions and the standard library.</li>
+<li>the built-in functions and the corelib.</li>
 </ul>
-<p>It does <strong>not</strong> specify: the compiler's command-line interface, its diagnostic</p>
-<p>message text, the layout of generated C, or the performance of any construct</p>
-<p>(performance characteristics are described informatively in</p>
-<p><a href="../thesis.html">docs/thesis.md</a> and <a href="../perf.html">docs/perf.md</a>).</p>
-<p>Tycho is defined <strong>abstractly</strong>: scalar widths and behavior are fixed</p>
-<p>independently of any compilation target (§5). The reference</p>
-<p>implementation transpiles to C; that lowering is *one conforming realization*,</p>
-<p>never the definition. The single, minimal register of behavior an</p>
-<p>implementation is permitted to vary is collected in</p>
-<p><a href="appendix-f-impl-defined.html">Appendix F</a>.</p>
+<p>It does <strong>not</strong> specify: the compiler's command-line interface, its diagnostic message text, the layout of generated C, or the performance of any construct (performance characteristics are described informatively in <a href="../thesis.html">docs/thesis.md</a> and <a href="../perf.html">docs/perf.md</a>).</p>
+<p>Tycho is defined <strong>abstractly</strong>: scalar widths and behavior are fixed independently of any compilation target (§5). The reference implementation transpiles to C; that lowering is *one conforming realization*, never the definition. The single, minimal register of behavior an implementation is permitted to vary is collected in <a href="appendix-f-impl-defined.html">Appendix F</a>.</p>
 <h3 id="12-the-reference-implementation">1.2 The reference implementation</h3>
-<p><strong><code>tychoc</code></strong> — the transpiler in  — is the **reference</p>
-<p>implementation** of this specification. Where an example, a fixture, or a</p>
-<p>diagnostic is cited below, it is <code>tychoc</code>'s.</p>
-<p>This document is nonetheless *normative* and <code>tychoc</code> is not: where the two</p>
-<p>disagree, it is a defect in one of them, to be reconciled. The specification</p>
-<p>does not defer to the implementation, and no implementation's behavior</p>
-<p>establishes a requirement this document does not state.</p>
+<p><strong><code>tychoc</code></strong> — the transpiler in  — is the <strong>reference implementation</strong> of this specification. Where an example, a fixture, or a diagnostic is cited below, it is <code>tychoc</code>'s.</p>
+<p>This document is nonetheless *normative* and <code>tychoc</code> is not: where the two disagree, it is a defect in one of them, to be reconciled. The specification does not defer to the implementation, and no implementation's behavior establishes a requirement this document does not state.</p>
 <h3 id="13-conformance">1.3 Conformance</h3>
-<p>A <strong>conforming program</strong> is a Tycho source program (or package) that this</p>
-<p>specification permits, together with any inputs it reads.</p>
+<p>A <strong>conforming program</strong> is a Tycho source program (or package) that this specification permits, together with any inputs it reads.</p>
 <p>A <strong>conforming implementation</strong> is one that:</p>
-<p>1. accepts every conforming program this specification requires to be accepted,</p>
-<p>and rejects (with a diagnostic, before producing an executable) every program</p>
-<p>this specification requires to be rejected; and</p>
-<p>2. for an accepted program, produces an executable whose observable behavior</p>
-<p>(its output, exit status, and externally-visible effects) is one this</p>
-<p>specification permits for that program on its inputs.</p>
+<ol>
+<li>accepts every conforming program this specification requires to be accepted, and rejects (with a diagnostic, before producing an executable) every program this specification requires to be rejected; and</li>
+<li>for an accepted program, produces an executable whose observable behavior (its output, exit status, and externally-visible effects) is one this specification permits for that program on its inputs.</li>
+</ol>
 <p>Conformance is defined at two tiers:</p>
 <ul>
-<li><strong>Core tier.</strong> The language (<a href="01-lexical.html">§3</a> onward) and the corelib</li>
+<li><strong>Core tier.</strong> The language (<a href="01-lexical.html">§3</a> onward) and the corelib packages that are pure Tycho or depend only on the C standard library. A core-tier implementation MUST provide all of these.</li>
+<li><strong>Extended tier.</strong> Additionally the corelib packages that depend on an external C library via <code>pkg-config</code> (<code>http</code> → libcurl, <code>crypto</code> → libcrypto, <code>compress</code> → zlib, <code>image</code> → libpng, <code>tls</code> → openssl). An implementation MAY omit the extended tier and still conform at the core tier; a program that imports an absent extended package MUST be diagnosed, not silently mis-linked.</li>
 </ul>
-<p>packages that are pure Tycho or depend only on the C standard library. A</p>
-<p>core-tier implementation MUST provide all of these.</p>
-<ul>
-<li><strong>Extended tier.</strong> Additionally the corelib packages that depend on an</li>
-</ul>
-<p>external C library via <code>pkg-config</code> (<code>http</code> → libcurl, <code>crypto</code> → libcrypto,</p>
-<p><code>compress</code> → zlib, <code>image</code> → libpng, <code>tls</code> → openssl). An implementation MAY</p>
-<p>omit the extended tier and still conform at the core tier; a program that</p>
-<p>imports an absent extended package MUST be diagnosed, not silently mis-linked.</p>
-<p>The reference test harness already embodies this split: <code>deps</code>-gated package</p>
-<p>tests skip (rather than fail) when the external library is absent.</p>
-<p>An implementation MUST NOT accept a program this specification requires to be</p>
-<p>rejected. <strong>Failing closed</strong> — rejecting a doubtful program rather than</p>
-<p>compiling it to undefined behavior — is a normative principle of this language</p>
-<p>(<a href="17-runtime.html">§30</a>), inherited from the reference</p>
-<p>implementation's design.</p>
-<p>Conformance is a claim about <strong>this specification</strong>, not about agreement with any</p>
-<p>particular compiler. It is *checked* against the reference implementation and the</p>
-<p>golden fixture corpus of <a href="appendix-e-conformance.html">Appendix E</a> — a fixture</p>
-<p>records the behavior this document requires, so a second implementation that</p>
-<p>reproduces the corpus and this document's requirements conforms whether or not it</p>
-<p>resembles <code>tychoc</code> internally.</p>
+<p>The reference test harness already embodies this split: <code>deps</code>-gated package tests skip (rather than fail) when the external library is absent.</p>
+<p>An implementation MUST NOT accept a program this specification requires to be rejected. <strong>Failing closed</strong> — rejecting a doubtful program rather than compiling it to undefined behavior — is a normative principle of this language (<a href="17-runtime.html">§30</a>), inherited from the reference implementation's design.</p>
+<p>Conformance is a claim about <strong>this specification</strong>, not about agreement with any particular compiler. It is *checked* against the reference implementation and the golden fixture corpus of <a href="appendix-e-conformance.html">Appendix E</a> — a fixture records the behavior this document requires, so a second implementation that reproduces the corpus and this document's requirements conforms whether or not it resembles <code>tychoc</code> internally.</p>
 <h3 id="14-requirement-keywords">1.4 Requirement keywords</h3>
-<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>REQUIRED</strong>, <strong>SHALL</strong>, <strong>SHALL NOT</strong>,</p>
-<p><strong>SHOULD</strong>, <strong>SHOULD NOT</strong>, <strong>RECOMMENDED</strong>, <strong>MAY</strong>, and <strong>OPTIONAL</strong> in this</p>
-<p>document are to be interpreted as described in RFC 2119 and RFC 8174 when, and</p>
-<p>only when, they appear in all capitals.</p>
-<p>Two further terms are used, always explicitly and collected in</p>
-<p><a href="appendix-f-impl-defined.html">Appendix F</a>:</p>
+<p>The key words <strong>MUST</strong>, <strong>MUST NOT</strong>, <strong>REQUIRED</strong>, <strong>SHALL</strong>, <strong>SHALL NOT</strong>, <strong>SHOULD</strong>, <strong>SHOULD NOT</strong>, <strong>RECOMMENDED</strong>, <strong>MAY</strong>, and <strong>OPTIONAL</strong> in this document are to be interpreted as described in RFC 2119 and RFC 8174 when, and only when, they appear in all capitals.</p>
+<p>Two further terms are used, always explicitly and collected in <a href="appendix-f-impl-defined.html">Appendix F</a>:</p>
 <ul>
-<li><strong>unspecified</strong> — behavior for which this specification imposes no</li>
+<li><strong>unspecified</strong> — behavior for which this specification imposes no requirement and provides no choices. A conforming program MUST NOT depend on it; different conforming implementations may behave differently, and the same implementation may behave differently on different occasions.</li>
+<li><strong>implementation-defined</strong> — behavior an implementation is permitted to choose but MUST document. Tycho's abstract-exact policy keeps this register deliberately small.</li>
 </ul>
-<p>requirement and provides no choices. A conforming program MUST NOT depend on</p>
-<p>it; different conforming implementations may behave differently, and the same</p>
-<p>implementation may behave differently on different occasions.</p>
-<ul>
-<li><strong>implementation-defined</strong> — behavior an implementation is permitted to</li>
-</ul>
-<p>choose but MUST document. Tycho's abstract-exact policy keeps this register</p>
-<p>deliberately small.</p>
 <h3 id="15-versioning">1.5 Versioning</h3>
-<p>This specification defines <strong>Tycho 0.5</strong> and is maintained against the current</p>
-<p>release (0.8.6); where the two differ, <code>CHANGELOG.md</code> records the change. It was</p>
-<p>ratified on 2026-07-13 under the</p>
-<p>name *Tycho 1.0* and renamed on 2026-08-09 when the project was demoted to 0.5;</p>
-<p>no technical content changed with the rename.</p>
-<p><strong>0.5 is NOT a frozen version.</strong> The freeze was the substance of the 1.0 claim,</p>
-<p>and it is withdrawn with it: until 1.0, a change to observable behavior is issued</p>
-<p>as a changelog entry against a named version rather than as an erratum, and there</p>
-<p>is no deprecation window. The document remains normative — the implementation is</p>
-<p>gated against it, so a divergence is a bug in one of the two, not a licence to</p>
-<p>ignore the spec.</p>
-<p>From 1.0 onward the original scheme applies: the version is frozen, subsequent</p>
-<p>releases are named by year (e.g. <code>Tycho 2027</code>), a release names the language</p>
-<p>version it specifies, a conforming implementation states which version it</p>
-<p>implements, and corrections that change observable behavior are issued as errata</p>
-<p>against a named version, never silently.</p>
+<p>This specification defines <strong>Tycho 0.5</strong> and is maintained against the current release (0.8.6); where the two differ, <code>CHANGELOG.md</code> records the change. It was ratified on 2026-07-13 under the name *Tycho 1.0* and renamed on 2026-08-09 when the project was demoted to 0.5; no technical content changed with the rename.</p>
+<p><strong>0.5 is NOT a frozen version.</strong> The freeze was the substance of the 1.0 claim, and it is withdrawn with it: until 1.0, a change to observable behavior is issued as a changelog entry against a named version rather than as an erratum, and there is no deprecation window. The document remains normative — the implementation is gated against it, so a divergence is a bug in one of the two, not a licence to ignore the spec.</p>
+<p>From 1.0 onward the original scheme applies: the version is frozen, subsequent releases are named by year (e.g. <code>Tycho 2027</code>), a release names the language version it specifies, a conforming implementation states which version it implements, and corrections that change observable behavior are issued as errata against a named version, never silently.</p>
 <h2 id="2-notation">2. Notation</h2>
 <h3 id="21-grammar-notation">2.1 Grammar notation</h3>
 <p>Tycho's grammar is presented in two layers.</p>
 <ul>
-<li>The <strong>lexical grammar</strong> (<a href="01-lexical.html">§3</a>) maps source *characters* to</li>
+<li>The <strong>lexical grammar</strong> (<a href="01-lexical.html">§3</a>) maps source *characters* to *tokens*, including the synthetic layout tokens <code>NEWLINE</code>, <code>INDENT</code>, and <code>DEDENT</code>. Tycho is indentation-sensitive, so this layer is not context-free and is described partly by prose (the indentation algorithm, §3.4).</li>
+<li>The <strong>phrase grammar</strong> (<a href="02-grammar.html">§4</a>) maps *tokens* to program structure. Its terminals are token kinds, written in <code>UPPER_CASE</code> (e.g. <code>IDENT</code>, <code>INT</code>, <code>NEWLINE</code>) or as the literal spelling of punctuation and keywords in double quotes (e.g. <code>"fn"</code>, <code>":="</code>, <code>"-&gt;"</code>).</li>
 </ul>
-<p>*tokens*, including the synthetic layout tokens <code>NEWLINE</code>, <code>INDENT</code>, and</p>
-<p><code>DEDENT</code>. Tycho is indentation-sensitive, so this layer is not context-free</p>
-<p>and is described partly by prose (the indentation algorithm, §3.4).</p>
-<ul>
-<li>The <strong>phrase grammar</strong> (<a href="02-grammar.html">§4</a>) maps *tokens* to program</li>
-</ul>
-<p>structure. Its terminals are token kinds, written in <code>UPPER_CASE</code> (e.g.</p>
-<p><code>IDENT</code>, <code>INT</code>, <code>NEWLINE</code>) or as the literal spelling of punctuation and</p>
-<p>keywords in double quotes (e.g. <code>"fn"</code>, <code>":="</code>, <code>"-&gt;"</code>).</p>
 <p>Both use a W3C-style EBNF:</p>
 <table>
 <tr><th>Form</th><th>Meaning</th></tr>
@@ -150,45 +105,33 @@
 <tr><td><code>[abc]</code>, <code>[0-9]</code></td><td>a character class (lexical grammar only)</td></tr>
 <tr><td><code>/* … */</code></td><td>a comment on the production, non-normative</td></tr>
 </table>
-<p>Where the grammar accepts a form that a later static rule then rejects (for</p>
-<p>example, a value <code>if</code> with no <code>else</code>), the grammar production is annotated and</p>
-<p>the rejecting rule is stated in the relevant semantic section. The grammar</p>
-<p>alone does not define validity; a program is valid only if it also satisfies</p>
-<p>the static-semantic rules.</p>
+<p>Where the grammar accepts a form that a later static rule then rejects (for example, a value <code>if</code> with no <code>else</code>), the grammar production is annotated and the rejecting rule is stated in the relevant semantic section. The grammar alone does not define validity; a program is valid only if it also satisfies the static-semantic rules.</p>
 <h3 id="22-source-of-record">2.2 Source of record</h3>
-<p>The tree-sitter grammar under <code>editors/zed/</code> is a <strong>non-normative</strong> editor</p>
-<p>highlighter. It does not model indentation and is known to diverge from the</p>
-<p>language in several places (enumerated in <a href="01-lexical.html#310-non-normative-tree-sitter-grammar">§3.10</a>);</p>
-<p>it MUST NOT be treated as a grammar of record.</p>
+<p>The tree-sitter grammar under <code>editors/zed/</code> is a <strong>non-normative</strong> editor highlighter. It does not model indentation and is known to diverge from the language in several places (enumerated in <a href="01-lexical.html#310-non-normative-tree-sitter-grammar">§3.10</a>); it MUST NOT be treated as a grammar of record.</p>
 <h3 id="23-examples-and-code-fences">2.3 Examples and code fences</h3>
 <p>Fenced code blocks carry a language tag identifying their kind:</p>
 <ul>
-<li><strong><code>ebnf</code></strong> — a grammar production (see §2.1). The collected grammar in</li>
+<li><strong><code>ebnf</code></strong> — a grammar production (see §2.1). The collected grammar in <a href="appendix-a-grammar.html">Appendix A</a> is generated from these blocks.</li>
+<li><strong><code>tycho</code></strong> — Tycho source. Most such blocks are *illustrative fragments* — a declaration, an expression, or a few statements shown in isolation, often referring to names defined in the surrounding prose. A fragment is not a complete program and is not executed.</li>
+<li><strong><code>output</code></strong> — the exact expected standard output of the immediately preceding <code>tycho</code> block.</li>
+<li><strong><code>text</code></strong> — a keyword list, a shell/<code>cc</code> invocation, or *meta-syntax*: prose notation that is not literal Tycho. Meta-syntax uses <code>…</code> for elision, <code>&lt;name&gt;</code> for a placeholder, <code>{ a | b }</code> for a choice, and <code>[ x ]</code> for an optional part.</li>
 </ul>
-<p><a href="appendix-a-grammar.html">Appendix A</a> is generated from these blocks.</p>
-<ul>
-<li><strong><code>tycho</code></strong> — Tycho source. Most such blocks are *illustrative fragments* — a</li>
-</ul>
-<p>declaration, an expression, or a few statements shown in isolation, often</p>
-<p>referring to names defined in the surrounding prose. A fragment is not a</p>
-<p>complete program and is not executed.</p>
-<ul>
-<li><strong><code>output</code></strong> — the exact expected standard output of the immediately preceding</li>
-</ul>
-<p><code>tycho</code> block.</p>
-<ul>
-<li><strong><code>text</code></strong> — a keyword list, a shell/<code>cc</code> invocation, or *meta-syntax*: prose</li>
-</ul>
-<p>notation that is not literal Tycho. Meta-syntax uses <code>…</code> for elision, <code>&lt;name&gt;</code></p>
-<p>for a placeholder, <code>{ a | b }</code> for a choice, and <code>[ x ]</code> for an optional part.</p>
-<p>A <strong>runnable example</strong> is a <code>tycho</code> block immediately followed (blank lines</p>
-<p>permitted) by an <code>output</code> block: the <code>tycho</code> block is then a complete program</p>
-<p>and its standard output MUST equal the <code>output</code> block byte-for-byte. The `make</p>
-<p>spec-check` gate (<a href="appendix-e-conformance.html">Appendix E.3</a>) builds and runs</p>
-<p>every runnable example on the reference implementation and asserts this.</p>
-<p>Examples are illustrative; a conflict between an example and a normative rule is</p>
-<p>a defect to be corrected in favor of the rule.</p>
+<p>A <strong>runnable example</strong> is a <code>tycho</code> block immediately followed (blank lines permitted) by an <code>output</code> block: the <code>tycho</code> block is then a complete program and its standard output MUST equal the <code>output</code> block byte-for-byte. The <code>make spec-check</code> gate (<a href="appendix-e-conformance.html">Appendix E.3</a>) builds and runs every runnable example on the reference implementation and asserts this.</p>
+<p>Examples are illustrative; a conflict between an example and a normative rule is a defect to be corrected in favor of the rule.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

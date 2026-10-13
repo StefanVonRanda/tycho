@@ -2,24 +2,48 @@
 <html lang="en">
 <head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>corelib — Tycho's standard library — Tycho docs</title>
+<title>corelib — Tycho's core library — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / reference/corelib.md</nav>
-<h1 id="corelib--tychos-standard-library">corelib — Tycho's standard library</h1>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details open><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html" aria-current="page">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#quick-start">Quick start</a>
+<a href="#resolution">Resolution</a>
+<a href="#how-corelib-is-shaped">How corelib is shaped</a>
+<a href="#packages">Packages</a>
+<a href="#c-shim-ffi-backed-modules">C-shim (FFI-backed) modules</a>
+<a class="sub" href="#freeing-a-shim-handle">Freeing a shim handle</a>
+<a class="sub" href="#external-dependencies-c-shim-deps">External dependencies (C-shim deps)</a>
+<a href="#testing">Testing</a>
+<a href="#examples">Examples</a>
+<a href="#the-corelib-surface-pre-10--not-frozen">The corelib surface (pre-1.0 — NOT frozen)</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / reference/corelib.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
+<h1 id="corelib--tychos-core-library">corelib — Tycho's core library</h1>
 <blockquote>
-<p><strong>Memory:</strong> Every corelib function puts its results in the caller's memory and</p>
-<p>returns independent values, never aliasing the inputs. The one exception is a</p>
-<p>C-owned opaque handle (<code>ptr</code>) from the C-backed packages below, which is not</p>
-<p>caller-managed: release it with that package's own free function.</p>
+<p><strong>Memory:</strong> Every corelib function puts its results in the caller's memory and returns independent values, never aliasing the inputs. The one exception is a C-owned opaque handle (<code>ptr</code>) from the C-backed packages below, which is not caller-managed: release it with that package's own free function.</p>
 </blockquote>
-<p>corelib is Tycho's standard library: a set of packages under <code>corelib/</code>, imported with the</p>
-<p><code>core:</code> collection root. The modules below are usable today.</p>
+<p>corelib is Tycho's core library: a set of packages under <code>corelib/</code>, imported with the <code>core:</code> collection root. The modules below are usable today.</p>
 <pre><code class="language-tycho">package main
 
 import "core:math"
@@ -28,747 +52,114 @@ fn main():
     println(f"gcd={math.gcd(12, 18)}")
 </code></pre>
 <h2 id="quick-start">Quick start</h2>
-<p>1. <code>import "core:&lt;pkg&gt;"</code> in your source. The name <code>&lt;pkg&gt;</code> is bound to the package.</p>
-<p>The transpiler finds <code>corelib/</code> next to its own binary by default, so no setup is</p>
-<p>needed in this repo. Set <code>TYCHO_CORELIB</code> to a corelib directory to override.</p>
-<p>2. Call its functions either free-standing (<code>math.gcd(12, 18)</code>) or method-style</p>
-<p>(<code>x.abs()</code> — any function can be called with its first argument as the</p>
-<p>receiver, see <a href="functions.html#methods-ufcs">Methods</a>).</p>
+<ol>
+<li><code>import "core:&lt;pkg&gt;"</code> in your source. The name <code>&lt;pkg&gt;</code> is bound to the package. The transpiler finds <code>corelib/</code> next to its own binary by default, so no setup is needed in this repo. Set <code>TYCHO_CORELIB</code> to a corelib directory to override.</li>
+<li>Call its functions either free-standing (<code>math.gcd(12, 18)</code>) or method-style (<code>x.abs()</code> — any function can be called with its first argument as the receiver, see <a href="functions.html#methods-ufcs">Methods</a>).</li>
+</ol>
 <h2 id="resolution">Resolution</h2>
-<p><code>import "core:&lt;pkg&gt;"</code> resolves to <code>&lt;corelib&gt;/&lt;pkg&gt;</code> and binds the name <code>&lt;pkg&gt;</code>, where</p>
-<p><code>&lt;corelib&gt;</code> is <code>TYCHO_CORELIB</code> if set, otherwise <code>corelib/</code> next to the transpiler binary.</p>
-<p>Non-<code>core:</code> imports stay relative to the importing package, unchanged. <code>tychoc</code> resolves <code>core:</code> natively, with no</p>
-<p>bundling step required.</p>
+<p><code>import "core:&lt;pkg&gt;"</code> resolves to <code>&lt;corelib&gt;/&lt;pkg&gt;</code> and binds the name <code>&lt;pkg&gt;</code>, where <code>&lt;corelib&gt;</code> is <code>TYCHO_CORELIB</code> if set, otherwise <code>corelib/</code> next to the transpiler binary. Non-<code>core:</code> imports stay relative to the importing package, unchanged. <code>tychoc</code> resolves <code>core:</code> natively, with no bundling step required.</p>
 <h2 id="how-corelib-is-shaped">How corelib is shaped</h2>
-<p>corelib is <strong>generic free functions over a type parameter <code>$T</code></strong>, with <code>where</code></p>
-<p>constraints (<code>comparable(T)</code>, <code>numeric(T)</code>, <code>has_str(T)</code>) picking which element</p>
-<p>types each function accepts. Array and iterator utilities are single generic</p>
-<p>packages over any element type <code>[$T]</code> (<code>core:arrays</code>, <code>core:iter</code>) rather than</p>
-<p>one package per element type. The functions are also callable method-style</p>
-<p>through method-style call, so <code>index_of(xs, v)</code> and <code>xs.index_of(v)</code> are the same call.</p>
-<p>Higher-order helpers (map / filter / reduce that take a function) live in <code>core:iter</code> and</p>
-<p>its siblings, and take a first-class <code>fn</code>/closure argument. Lambdas in Tycho are</p>
-<p>expression-bodied; pass a named function where you need a multi-line body.</p>
+<p>corelib is <strong>generic free functions over a type parameter <code>$T</code></strong>, with <code>where</code> constraints (<code>comparable(T)</code>, <code>numeric(T)</code>, <code>has_str(T)</code>) picking which element types each function accepts. Array and iterator utilities are single generic packages over any element type <code>[$T]</code> (<code>core:arrays</code>, <code>core:iter</code>) rather than one package per element type. The functions are also callable method-style through method-style call, so <code>index_of(xs, v)</code> and <code>xs.index_of(v)</code> are the same call.</p>
+<p>Higher-order helpers (map / filter / reduce that take a function) live in <code>core:iter</code> and its siblings, and take a first-class <code>fn</code>/closure argument. Lambdas in Tycho are expression-bodied; pass a named function where you need a multi-line body.</p>
 <h2 id="packages">Packages</h2>
 <ul>
-<li><strong><code>math</code></strong> — <code>min</code>/<code>max</code>/<code>clamp(x, lo, hi)</code> are generic over any comparable type</li>
+<li><strong><code>math</code></strong> — <code>min</code>/<code>max</code>/<code>clamp(x, lo, hi)</code> are generic over any comparable type (int/float/string/char) and lane-wise at a <code>vector[N]T</code>; <code>sign(x)</code> over any numeric type (returns an int −1/0/1); <code>abs</code>, <code>gcd</code>, <code>ipow(base, exp)</code> (exp ≥ 0) are integer- specific. (<code>sqrt</code>/<code>pow</code>/<code>floor</code>/<code>fabs</code> are float builtins.)</li>
+<li><strong><code>fmath</code></strong> — float-only helpers (scalar <code>min</code>/<code>max</code>/<code>clamp</code>/<code>sign</code> live in <code>math</code>): <code>pi</code>, <code>e</code>, <code>round</code> (half away from zero), <code>trunc</code>, <code>lerp(a, b, t)</code>, <code>approx_eq(a, b, eps)</code>. (No trig — the language has no libm sin/cos builtin.)</li>
+<li><strong><code>char</code></strong> — byte/char classification &amp; conversion over int byte values (what <code>s[i]</code>/<code>chr</code> use): <code>is_digit</code>, <code>is_alpha</code>, <code>is_alnum</code>, <code>is_upper</code>, <code>is_lower</code>, <code>is_space</code>, <code>is_hex</code>, <code>to_upper</code>/<code>to_lower</code> (one byte), <code>digit_val</code> (−1 if not a digit), <code>hex_val</code> (0..15 or −1).</li>
+<li><strong><code>strings</code></strong> — <code>to_upper</code>, <code>to_lower</code>, <code>starts_with</code>, <code>ends_with</code>, <code>contains</code>, <code>repeat(s, n)</code>, <code>trim</code> (ASCII whitespace), <code>parse_int</code>, <code>is_space</code>, <code>lines</code> (splits on <code>\n</code>, drops one trailing <code>\r</code> per line, trailing newline adds no empty line), <code>replace</code> (non-overlapping, left to right; empty <code>old</code> returns the input unchanged), <code>count(s, sub)</code>, <code>strip_prefix</code>/<code>strip_suffix</code>, <code>pad_left</code>/<code>pad_right(s, width, pad)</code> (pad is one byte), <code>reverse</code>, <code>capitalize</code>, <code>split_once(s, sep) -&gt; (before, after)</code> (<code>(s, "")</code> if absent). (<code>split</code>/<code>find</code>/<code>substr</code>/<code>len</code>/<code>chr</code> are builtins.) <strong>On untrusted input, reach for the checked siblings:</strong> <code>parse_int_checked(s) -&gt; Result(int, IntErr)</code> and <code>parse_float(s) -&gt; Result(float, FloatErr)</code> — the bare <code>parse_int</code> <strong>fails open</strong> (<code>"3x"</code> is <code>3</code>, not an error). <code>slice_str(s, start, stop) -&gt; Result(string, SliceErr)</code> and <code>slice_bytes(b, start, stop)</code> — a plain slice <strong>clamps</strong> rather than bounds-checking (<code>b[1:99]</code> on three bytes gives two and no trap), so these are the forms that refuse an out-of-range window instead of narrowing it. <code>format_g17(v)</code> renders a float at the 17 significant digits that round-trip.</li>
+<li><strong><code>path</code></strong> — POSIX path utilities (separator <code>/</code>). The pure functions below are string math only (no filesystem access, every function returns a fresh value): <code>base</code> (final element, trailing slashes ignored; <code>""</code>→<code>.</code>, <code>"/"</code>→<code>/</code>), <code>dir</code> (all but the final element), <code>ext</code> (extension incl. the dot, <code>""</code> if none; a leading dot is a dotfile, not an ext), <code>stem</code> (base minus ext), <code>join(a, b)</code> (exactly one separator, empty operands drop out), <code>is_abs</code>, <code>split_path(p) -&gt; (dir, base)</code> (the inverse of <code>join</code>), and <code>clean</code> (lexical normalize: collapse <code>//</code>, drop <code>.</code>, resolve <code>..</code> but never above the root or past a leading <code>..</code>). <code>last_slash(s)</code> is the shared scan helper (index of the last <code>/</code>, or -1). <code>safe_join(base, rel)</code> is the lexical containment prefilter: the cleaned join when an untrusted <code>rel</code> stays under <code>base</code>, <code>""</code> when it is absolute, escapes via <code>..</code>, or carries a backslash or an <code>X:</code> drive prefix.</li>
 </ul>
-<p>(int/float/string/char) and lane-wise at a <code>vector[N]T</code>; <code>sign(x)</code> over any numeric</p>
-<p>type (returns an int −1/0/1); <code>abs</code>, <code>gcd</code>, <code>ipow(base, exp)</code> (exp ≥ 0) are integer-</p>
-<p>specific. (<code>sqrt</code>/<code>pow</code>/<code>floor</code>/<code>fabs</code> are float builtins.)</p>
+<p><strong>The filesystem fence.</strong> A lexical check cannot see a symlink, so three functions make a real syscall, and all three fail closed — <code>""</code> is a refusal and callers must treat it as one before using the path.</p>
 <ul>
-<li><strong><code>fmath</code></strong> — float-only helpers (scalar <code>min</code>/<code>max</code>/<code>clamp</code>/<code>sign</code> live in <code>math</code>):</li>
+<li><code>real(p)</code> — the absolute path with every symlink and <code>..</code> resolved, or <code>""</code> if the path does not exist, cannot be read, contains a NUL, or does not fit.</li>
+<li><code>under(root, p)</code> — true when <code>p</code> <strong>is</strong> <code>root</code> or lies underneath it. The comparison only, not the resolution: both arguments must already be resolved.</li>
+<li><code>resolve_under(base, rel)</code> — <strong>the one to reach for first</strong> when a path is built from untrusted input; <code>safe_join</code> is the cheap prefilter inside it. It returns the path to use, or <code>""</code> when <code>rel</code> is refused — refused lexically, or because the resolved answer lands outside <code>base</code>, or because <code>base</code> itself does not resolve. A path that <strong>does not exist is not a refusal</strong>: the longest existing ancestor is resolved and checked instead, so the caller reports its own "not found" rather than a spurious "forbidden". A dangling symlink is refused.</li>
 </ul>
-<p><code>pi</code>, <code>e</code>, <code>round</code> (half away from zero), <code>trunc</code>, <code>lerp(a, b, t)</code>,</p>
-<p><code>approx_eq(a, b, eps)</code>. (No trig — the language has no libm sin/cos builtin.)</p>
+<p>One caution: a check followed by a separate open can race if an attacker can write inside the root. <code>resolve_under</code> narrows that window to an attacker with write access inside the root; a fully race-free form would need the open done inside the check.</p>
 <ul>
-<li><strong><code>char</code></strong> — byte/char classification &amp; conversion over int byte values (what</li>
+<li><strong><code>arrays</code></strong> — generic utilities over any element type <code>[T]</code>: <code>contains</code>, <code>index_of</code> (−1 if absent), <code>count</code>, <code>reverse</code>, <code>take(xs, n)</code>, <code>drop(xs, n)</code>, <code>concat(a, b)</code>, <code>fill(n, v)</code>, <code>dedup</code> (consecutive — sort first for a full dedup); <code>sort</code> (ascending), <code>is_sorted</code>, <code>min</code>, <code>max</code> (<code>where comparable</code> — int/char/float/string); <code>sum</code>, <code>product</code> (<code>where numeric</code> — int/float); <code>join(xs, sep)</code> (<code>where</code> the element converts to a string). All return a new array — value semantics, the input is never mutated. <code>min</code>/<code>max</code>/<code>sum</code>/ <code>product</code> seed from <code>xs[0]</code>, so they need a non-empty array. (<code>push</code>/<code>pop</code>/<code>len</code>/<code>range</code> are builtins; higher-order <code>map</code>/<code>filter</code>/<code>reduce</code> live in <code>iter</code>.)</li>
+<li><strong><code>iter</code></strong> — generic higher-order helpers over any <code>[T]</code>, each taking a <code>fn</code>/closure: <code>map</code> (two type variables — <code>map(xs: [$T], f: fn($T) -&gt; $U) -&gt; [$U]</code>, the only one that may change element type, so <code>iter.map(nums, to_str)</code> is a <code>[string]</code>), <code>filter</code>, <code>reduce</code>, <code>count</code>, <code>any</code>. Fallible stages get two siblings whose callback returns a <code>Result</code>: <code>try_map(xs, f: fn($T) -&gt; Result($U, $E)) -&gt; Result([$U], $E)</code> and <code>try_filter(xs, keep: fn($T) -&gt; Result(bool, $E)) -&gt; Result([$T], $E)</code>. Both stop at the <strong>first</strong> <code>Err</code> and return it unchanged. <code>reduce</code>/<code>count</code>/<code>any</code> have no fallible form — write the <code>for</code> loop with <code>or_return</code> if you need one.</li>
+<li><strong><code>sort</code></strong> — <code>argsort(keys)</code> / <code>argsort_desc(keys)</code>: return the index permutation that orders the keys — generic over any comparable key type (int/float/string/char). The way to order data by a derived value: keep it in parallel arrays, argsort one, and walk every array through the permutation. All stable. Plus <code>by_key(xs, key)</code>: sort an array by a derived int key (a fn/closure) — <strong>deprecated since 0.5.0, removed in 1.0</strong>: it is <code>sort_by(xs, fn(a, b) -&gt; int: key(a) - key(b))</code>. When the order needs more than one key, mixed directions, or a type with no <code>comparable</code> instance, <code>sort_by(xs, cmp)</code> takes a three-way compare <code>fn($T, $T) -&gt; int</code> — bottom-up merge, stable, so equal elements keep their input order under a descending compare too. <code>asc(a, b)</code> and <code>desc(a, b)</code> are the two ready-made comparators for that parameter, so the common orderings need no lambda: <code>sort_by(xs, sort.asc)</code>.</li>
+<li><strong><code>pool</code></strong> — a generational node pool for pointer-shaped data (graphs, trees, doubly-linked structures). Hold every node in one array and link by integer index; <code>pool</code> packages that idiom. Generic over the element type <code>Pool($T)</code>: <code>add(&amp;p, v) -&gt; Handle</code>, <code>get(p, h)</code>, <code>set(&amp;p, h, v)</code>, <code>remove(&amp;p, h)</code>, <code>alive(p, h)</code>, <code>count(p)</code>, and <code>live(p) -&gt; [Handle]</code> (all live handles in slot order — the way to walk a pool). A <code>Handle</code> carries a slot index plus a generation; every access checks the generation, so a handle to a freed-and- reused slot is caught at runtime instead of silently reading the new occupant. Create one with <code>p := pool.Pool([]pool.Slot(int), []int)</code>. It removes the hand-rolled bookkeeping, not the cost: pointer-shaped storage costs more in this model (see <a href="../internals/value-semantics-limits.html">value-semantics limits</a>).</li>
+<li><strong><code>intern</code></strong> — hash-consing / interning: canonical storage of values keyed by a hashable key. Generic <code>Interner($K, $V)</code>: <code>intern(&amp;i, k, v) -&gt; Handle</code> returns the canonical handle for key <code>k</code> — the first sight stores <code>v</code> and mints the handle, every later sight of the same key returns the <strong>same</strong> handle and ignores its <code>v</code> — plus <code>get(i, h)</code> and <code>count(i)</code>. Two handles are equal iff their keys were equal at first sight, so interning gives a cheap identity test and one canonical copy of each logical object. Handles are stable for the interner's lifetime; values are never removed — it is a *canonicalization* table, not a cache, so an unbounded working set grows by design (use a plain <code>[K: V]</code> map for a bounded cache). Keys are any map-key type — <code>string</code>, <code>[int]</code>, a struct, a tuple. Create one with <code>i := intern.Interner([]int, []string: int)</code>.</li>
+<li><strong><code>rand</code></strong> — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the state is an explicit int threaded via <code>inout</code> (the <code>&amp;</code> marks the <code>inout</code> call site, <a href="../reference/basics.html#procedures">Basics</a>). There is no <code>rand.State</code> type — a function of your own that draws numbers declares the parameter as a plain int, <code>fn pick(st: inout int) -&gt; int</code>. Calls: <code>st := rand.seed(42)</code>, <code>rand.next(&amp;st)</code> ([1, 2³²)), <code>rand.below(&amp;st, n)</code> ([0, n)), <code>rand.shuffle(&amp;st, xs)</code> (Fisher-Yates, returns a new array).</li>
+<li><strong><code>time</code></strong> — wraps the <code>clock()</code> (monotonic ns) and <code>now()</code> (UNIX seconds) builtins. Stopwatch (value-semantic, no inout — a reading is just an int): <code>sw := time.start()</code>, then <code>time.elapsed_ns(sw)</code> / <code>elapsed_us</code> / <code>elapsed_ms</code>. Duration conversions <code>ns_to_us</code> / <code>ns_to_ms</code> / <code>ns_to_s</code>. Wall clock <code>unix_secs()</code> (named so, not <code>now</code>, to avoid shadowing the builtin and recursing). Blocking sleep <code>sleep_ms(ms)</code> / <code>sleep_ns(ns)</code> (a libc-only shim over <code>nanosleep</code>): a non-positive duration returns immediately, the sleep is *not* interruptible (it retries with the remaining time, so the full duration always elapses), and it parks the <strong>calling task only</strong>.</li>
+<li><strong><code>datetime</code></strong> — civil (proleptic Gregorian) calendar math over UNIX timestamps, all pure integer arithmetic. A <code>DateTime</code> struct (<code>year</code>/<code>month</code>/<code>day</code>/<code>hour</code>/<code>minute</code>/<code>second</code>/<code>weekday</code>, all UTC). <code>from_unix(secs)</code> and its exact inverse <code>to_unix(dt)</code>; <code>days_from_civil</code>/<code>civil_from_days</code>/ <code>weekday_from_days</code> (the day-count core); <code>weekday(y,m,d)</code> (0=Sun..6=Sat), <code>is_leap</code>, <code>days_in_month</code>; <code>now_utc()</code> (the only non-pure fn — reads <code>now()</code>); formatting <code>format_iso</code> (<code>YYYY-MM-DDTHH:MM:SS</code>), <code>weekday_name</code>, <code>month_name</code>, <code>pad2</code>/<code>pad4</code>; and its inverse <strong>parsing</strong> <code>parse_iso</code> (wall-clock fields; <code>T</code> or space separator, trailing zone ignored) / <code>parse_iso_tz</code> (<code>+HH:MM</code> / <code>-HH:MM</code> / <code>Z</code> folded to the UTC instant), plus <code>parse_clf</code> / <code>parse_clf_tz</code> for the Common Log Format stamp (<code>dd/Mon/yyyy:HH:MM:SS ±HHMM</code>, as in Apache/nginx access logs) and <code>month_num</code> (<code>"Jan"</code>..<code>"Dec"</code> → 1..12), all fail-closed via a <code>year = -1</code> sentinel that <code>ok(dt)</code> checks. The core is UTC; timezone support is layered on — <strong>fixed offsets</strong> (<code>from_unix_at</code>, <code>to_unix_at</code>, <code>format_iso_tz</code>) in pure Tycho, plus DST-aware <strong>system/zone</strong> offsets via a small libc shim (<code>local_offset</code>, <code>offset_at</code>, <code>now_local</code>). There is no IANA tz database. <code>format_offset(offset_secs)</code> renders a UTC offset as <code>+HH:MM</code> / <code>-HH:MM</code>.</li>
+<li><strong><code>regex</code></strong> — POSIX extended regular expressions (ERE) over libc. <code>compile(pat) -&gt; ptr</code> (opaque handle; <code>ok</code>/<code>is_null</code> to check), <code>is_match</code>, <code>find</code> / <code>find_end</code> (offset or −1), <code>matched</code> (first match substring). <strong>Capture groups</strong> of the first match by index (0 = whole match): <code>ngroups</code>, <code>group_start</code> / <code>group_end</code> (offset or −1), <code>group(re, s, n)</code> (substring), <code>groups(re, s)</code> (all groups as <code>[string]</code>). <code>release</code> frees the C-owned handle — the compiled pattern is C-malloc'd, <strong>not</strong> caller-managed, so call it when done.</li>
+<li><strong><code>http</code></strong> — an HTTP(S) client over <strong>libcurl</strong>, and the first module to declare an <a href="#external-dependencies-c-shim-deps">external dependency</a> (<code>corelib/http/deps</code> → <code>libcurl</code>). <code>get(url) -&gt; ptr</code> / <code>post(url, body, content_type) -&gt; ptr</code> return an opaque response handle, or null on a transport failure (<code>ok</code>/<code>is_null</code>). <code>status(r)</code> (e.g. 200), <code>body(r)</code> (arena-copied), <code>release(r)</code> (the handle is C-owned). Convenience: <code>get_body(url)</code> / <code>get_status(url)</code> do the request and free the handle. The body is arena-copied via the FFI string-return, so a binary body with interior <code>0x00</code> truncates — <code>body(r)</code> is for text APIs; <code>body_bytes(r)</code> is the binary-safe sibling (interior NULs preserved). <code>post(url, body, content_type)</code> takes a <code>string</code> body and stops at the first interior <code>0x00</code>; <code>post_bytes(url, body, content_type)</code> is its binary-safe sibling, taking <code>bytes</code> and sending the whole length. Tests are skipped where libcurl is absent.</li>
+<li><strong><code>json</code></strong> — a recursive-descent JSON parser + serializer. The document is a value-semantic tree, the <code>Json</code> enum (<code>JNull</code>/<code>JBool</code>/<code>JNum</code>/<code>JFloat</code>/<code>JStr</code>/<code>JArr</code>/ <code>JObj</code>, objects as parallel key/value arrays). <strong><code>parse_checked(s) -&gt; Result(Json, JsonErr)</code> is the entry point new code wants</strong> — the grammar it accepts is exactly RFC 8259's and every refusal carries the byte offset that caused it (<code>err_reason</code>, <code>err_offset</code>, <code>err_str</code>). <code>parse(s) -&gt; Json</code> is the lenient wrapper that throws the error away and returns <code>JNull</code> for the whole document. <code>stringify(j) -&gt; string</code> (compact; escapes <code>"</code> <code>\</code> and every control byte, <code>\b \f \n \r \t</code> where a short form exists). Typed queries: <code>kind</code> (the variant tag as a string), <code>get(j, key)</code> (object field, else <code>JNull</code>), <code>at(j, i)</code> (array element, else <code>JNull</code>), <code>keys</code> (object keys in order), <code>len_of</code> (array/object count or string length), <code>as_num</code>/<code>as_str</code>/<code>as_bool</code>/<code>as_float</code>/<code>as_lexeme</code> (payload with a zero-value default). Variants are constructible cross-package (<code>json.JNum(1)</code>). Round-trip fidelity: an integer that fits 64 bits is <code>JNum</code> and everything else — a fraction, an exponent, or an integer too large — is <code>JFloat(value, lexeme)</code> carrying the original digits, so <code>stringify</code> re-emits every accepted number byte-for-byte; object keys keep insertion order; a duplicate key resolves to its <strong>last</strong> value at the first key's position, so a parsed object holds each key once; a <code>\uXXXX</code> escape decodes to its UTF-8 bytes. Two limits: a number outside binary64's range (<code>1e400</code>) is refused rather than represented, and <code>get</code> returns <code>JNull</code> for both a null-valued member and an absent one — walk <code>keys</code> to tell those apart. <code>err_at(code, off)</code> builds a <code>JsonErr</code> for a given code and byte offset, for a caller layering its own parse step on top of this one.</li>
+<li><strong><code>csv</code></strong> — an RFC 4180 CSV parser + serializer. A document is rows of fields, <code>[[string]]</code>. <code>parse(s) -&gt; [[string]]</code> handles quoted fields, the <code>""</code> escape, embedded delimiters/newlines inside quotes, and LF / CRLF / lone-CR line endings; it fails closed (an unterminated quote parses leniently, never aborts). Bytes after a closing quote JOIN the field (<code>"ab"cd</code> is <code>abcd</code>). A trailing newline adds no empty row; a mid-file blank line is a row with NO fields. <code>stringify(rows) -&gt; string</code> emits LF endings and quotes only fields containing the delimiter/quote/CR/LF (doubling internal quotes) -- <code>parse</code>/<code>stringify</code> round-trip. <code>parse_delim</code>/<code>stringify_delim</code> take an arbitrary single-byte delimiter (TSV is <code>parse_delim(s, 9)</code>); <code>get(rows, r, c)</code> is a bounds-safe cell read (<code>""</code> if OOB).</li>
+<li><strong><code>markdown</code></strong> — a pragmatic Markdown → HTML renderer in pure Tycho. <code>render(src)</code> handles ATX headings, fenced code (HTML-escaped), blockquotes, unordered/ordered lists, thematic breaks, and paragraphs; inline <code>**bold**</code>, <code>*italic*</code>/<code>_italic_</code>, <code></code> <code>code</code> <code></code>, <code>[text](url)</code>, <code>![alt](src)</code>. All text is HTML-escaped and unknown syntax degrades to escaped plain text (never a parse abort). Not full CommonMark (no nested lists, reference links, tables, or setext headings) — targets a blog/wiki. <code>esc(s)</code> is that HTML escaper on its own, for callers assembling markup around rendered output.</li>
+<li><strong><code>base64</code></strong> — Base64 (RFC 4648) <code>encode</code>/<code>decode</code>, plus <code>encode_url</code> (URL-safe <code>-</code>/<code>_</code> alphabet, no padding). <code>decode</code> is lenient: it skips any non-alphabet byte (padding <code>=</code>, whitespace, newlines in wrapped Base64) and accepts both alphabets. Tycho strings are length-carrying and can contain interior <code>0x00</code> bytes, so <code>decode</code> preserves NULs as well as other decoded bytes. Use <code>bytes</code> when crossing a binary C API.</li>
+<li><strong><code>hex</code></strong> — hexadecimal <code>encode</code> (lowercase) / <code>encode_upper</code> / <code>decode</code>, two digits per byte, plus <code>is_valid</code> (strict: even length, all hex digits). <code>decode</code> is lenient (skips any non-hex byte, so <code>de:ad:be:ef</code> and spaced/newlined hex work, either case) and reuses <code>core:char</code>'s <code>hex_val</code>. Decoding <code>"00"</code> returns a one-byte string containing NUL.</li>
+<li><strong><code>url</code></strong> — URL percent-encoding (RFC 3986). <code>encode</code> is component-style (like JS <code>encodeURIComponent</code> — everything but unreserved <code>A-Z a-z 0-9 - _ . ~</code> becomes <code>%XX</code>, uppercase, space → <code>%20</code>); <code>encode_form</code> / <code>decode_form</code> use the <code>x-www-form-urlencoded</code> convention (space ↔ <code>+</code>); <code>decode</code> decodes <code>%XX</code> (leaving <code>+</code>). <code>decode</code> is lenient (a <code>%</code> not followed by two hex digits is emitted literally) and reuses <code>core:char</code>'s <code>hex_val</code>. <code>%00</code> produces an interior NUL byte in the returned string.</li>
+<li><strong><code>uuid</code></strong> — version-4 UUIDs (RFC 4122) plus the nil UUID and helpers. <code>v4(&amp;st)</code> draws 16 bytes from <code>core:rand</code> (state threaded by <code>inout</code>) and sets the version/variant bits; it is <strong>not unguessable</strong> — use <code>crypto.random_hex</code> for a token. <code>nil()</code>, <code>parse(s) -&gt; [int]</code> (16 bytes, lenient on separators, <code>[]</code> unless exactly 32 hex digits), <code>format(bytes) -&gt; string</code> (canonical 8-4-4-4-12), <code>is_valid</code> (strict), <code>version</code> (the version nibble, <code>-1</code> if invalid). v1 and the name-based v3/v5 are out of scope. Zero bytes survive formatting.</li>
+<li><strong><code>hash</code></strong> — non-cryptographic 32-bit hashes for hash tables / checksums / dedup (NOT for security): <code>fnv1a_32</code>, <code>djb2</code>, <code>sdbm</code>, and <code>crc32</code> (IEEE/zlib, bit-by-bit), plus <code>to_hex</code> (8-digit lowercase). All return a non-negative int in <code>[0, 2^32)</code>. Matches published vectors: <code>crc32("123456789") = cbf43926</code>, <code>fnv1a_32("foobar") = bf9cf968</code>. For a hash of <strong>any</strong> hashable value (struct/tuple/array, not just a string) use the generic builtin <code>hash(x)</code> — deterministic (the same value hashes the same on every run and machine), full 64-bit as a signed int (<a href="../spec/16-builtins.html#297-maps">builtins §29.7</a>).</li>
+<li><strong><code>md5</code></strong> — the MD5 message-digest (RFC 1321): <code>hex(s)</code> (32-char lowercase digest) and <code>digest(s)</code> (16 raw bytes). <strong>MD5 is broken for security</strong> (use it for checksums / content-addressing / interop, never passwords or signatures). Bit-exact against the RFC 1321 suite (<code>md5("abc") = 900150983cd24fb0d6963f7d28e17f72</code>).</li>
+<li><strong><code>sha256</code></strong> — the SHA-256 hash (FIPS 180-4): <code>hex(s)</code> (64-char lowercase digest) and <code>digest(s)</code> (32 raw bytes). A <strong>real cryptographic digest</strong> — fine for checksums, content addressing, and HMAC building blocks (not a standalone password hash; use a KDF for that). Bit-exact against NIST vectors (<code>sha256("abc") = ba7816bf…f20015ad</code>). For input too large to hold at once there is a <strong>streaming</strong> form: <code>init()</code> gives a <code>State</code>, <code>update(&amp;st, data)</code> folds in each chunk, and <code>final_hex(&amp;st)</code> closes it and returns the digest — the same answer <code>hex(s)</code> gives for the concatenation.</li>
+<li><strong><code>bignum</code></strong> — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array), value-semantic: <code>from_int</code>/<code>from_str</code>/<code>to_str</code>/<code>to_int</code>, <code>add</code>/<code>sub</code>/<code>mul</code>/<code>divmod</code>/<code>div</code>/ <code>mod</code>/<code>pow</code>, <code>abs</code>/<code>neg</code>/<code>cmp</code>/<code>is_zero</code>.</li>
+<li><strong><code>decimal</code></strong> — arbitrary-precision base-10 fixed point, composed on <code>core:bignum</code> (a <code>Big</code> coefficient × 10⁻ˢᶜᵃˡᵉ), so decimal fractions are <strong>exact</strong> (<code>0.1 + 0.2 == 0.3</code>): <code>from_int</code>/<code>from_str</code>/<code>to_str</code>, <code>add</code>/<code>sub</code>/<code>mul</code> (exact), <code>cmp</code>, <code>neg</code>/<code>abs</code>/<code>is_zero</code>, <code>from_str_checked(s) -&gt; Result(Decimal, DecErr)</code> — the bare <code>from_str</code> fails open (<code>"1.5x"</code> is <code>0.15</code>), so use the checked one on anything a user or a file supplied — <code>rescale</code> (truncating). Division takes its policy from the caller: <code>div(a, b, scale, mode) -&gt; Result(Decimal, DivErr)</code>, where <code>mode</code> is <code>half_up()</code> (ties away from zero) or <code>toward_zero()</code> (agrees with <code>rescale</code>) — there is no default, because there is no correct one. A zero divisor, a negative scale and an unknown mode are each an <code>Err</code>.</li>
+<li><strong><code>crypto</code></strong> — the security-grade module, a C-shim over OpenSSL <code>libcrypto</code> (see <a href="#c-shim-ffi-backed-modules">C-shim modules</a>; needs the OpenSSL dev package). Where the pure-Tycho <code>sha256</code>/<code>md5</code> are for non-adversarial integrity, this is what to reach for when an attacker is in the threat model: CSPRNG (<code>random_hex</code>), <code>sha256</code>/<code>sha512</code> of binary, <code>hmac_sha256</code>, <code>pbkdf2_sha256</code>, constant-time <code>ct_equal</code>, ChaCha20-Poly1305 AEAD (<code>aead_encrypt</code>/<code>aead_decrypt</code>, <code>"!err"</code> on auth failure), Ed25519 (<code>ed25519_pubkey</code>/<code>sign</code>/<code>verify</code>), and X25519 (<code>x25519_pubkey</code>/<code>shared</code>). Pure Tycho arithmetic cannot promise constant-time behavior, so these primitives bind OpenSSL rather than reimplementing them. Every value (keys, nonces, ciphertext, signatures, digests) crosses as lowercase hexadecimal text at this interface; use <code>core:hex</code> to convert byte buffers. Checked against independent known-answer vectors (RFC 4231 HMAC, RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519). <strong>Keys are opaque handles — the lifecycle first:</strong> <code>key_random(n) -&gt; ptr</code> makes one from the CSPRNG, <code>key_from_hex(hex) -&gt; ptr</code> imports one, <code>key_export_hex(k) -&gt; string</code> exports it, <code>key_len(k) -&gt; int</code> is its byte length, and <code>key_free(k)</code> releases it. That handle is what <code>aead_encrypt</code>/<code>aead_decrypt</code> take. The signature keys have their own constructors — <code>ed25519_key_from_seed(seed_hex)</code>, then <code>ed25519_sign(key, msg_hex) -&gt; string</code> and <code>ed25519_verify(pub_hex, msg_hex, sig_hex) -&gt; bool</code> — as does key agreement: <code>x25519_key_random()</code>, <code>x25519_key_from_secret(secret_hex)</code>, and <code>x25519_shared(my_key, their_pubkey_hex) -&gt; ptr</code>, whose result is a key handle ready for the AEAD.</li>
+<li><strong><code>result</code></strong> — the <code>Result</code> / <code>Option</code> collapses, generic over <code>$T</code> and <code>$E</code>: <code>unwrap_or(r, fallback)</code>, <code>is_ok(r)</code>, <code>is_err(r)</code>, <code>err_or(r, fallback)</code>, <code>map_err(r, replacement)</code>, <code>map_err_with(r, f)</code>, and <code>some_or(o, fallback)</code> / <code>is_some(o)</code> for the <code>Option</code> half. <code>or_return</code> unwraps a <code>Result</code> only inside a function that itself returns a compatible <code>Result</code>, so a <code>main()</code>, or a handler that returns a <code>Response</code>, needs another way: <code>err_or</code> plus <code>==</code> asks *which* failure happened <strong>without writing a <code>match</code> at all</strong> — a one-line <code>if</code>. <code>map_err(r, replacement)</code> re-labels the error so <code>or_return</code> carries it — <code>req := result.map_err(httpd.read_request(fd), net.Failed) or_return</code> — at the cost of the original cause. <strong><code>map_err_with(r, f)</code> is its cause-preserving sibling</strong> — identical job and argument order, except <code>f</code> receives the <code>Err</code> payload and builds the replacement from it, so a <code>Syntax(7)</code> arrives as <code>FromParse(7)</code> rather than as a constant. Use it where the cause carries something the caller still needs (a byte offset, a column name) and <code>map_err</code> where it does not. A caller who *is* writing a <code>match</code> uses a nested pattern instead (<code>Err(io.IsDir):</code>, <a href="../spec/10-statements.html#1431-nested-patterns">§14.3.1</a>); the corelib's error enums stay payload-free so both spellings keep working.</li>
+<li><strong><code>testing</code></strong> — a unit-test framework, state threaded like <code>core:rand</code>'s: <code>t := testing.new("name")</code>, then <code>check(&amp;t, cond, msg)</code> and generic <code>eq(&amp;t, got, want, msg)</code> (comparable scalars — int/float/string/char; for a composite compare with <code>==</code> and pass the message), and <code>exit(testing.report(t))</code> — prints <code>ok name (N checks)</code> or the failing checks plus <code>FAIL name (N of M checks failed)</code> and returns 0/1 for the exit code.</li>
+<li><strong><code>toml</code></strong> — a TOML v1.0-subset parser: <code>parse(s) -&gt; Result(Value, string)</code> (fail-closed), a recursive <code>Value</code> enum (TStr/TInt/TFloat/TBool/TArr/TTable; tables are parallel keys/values arrays), and <code>get(t, "a.b.c") -&gt; Option(Value)</code> / <code>keys(t)</code>. <code>get</code> accepts quote-aware path segments for keys containing dots. Supports bare + quoted + dotted keys, <code>[table]</code> and <code>[[array-of-tables]]</code>, basic strings with escapes and \uXXXX, literal strings, ints (dec/0x/0o/0b/underscores), floats, bools, arrays with trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables or multi-line strings. <code>empty_table()</code> gives an empty <code>Value</code> table, the starting point for building one up rather than parsing it. Parsing is bounded to 64 KiB, 512 assignments/headers and 128 nesting levels; larger documents return <code>Err</code> rather than consuming unbounded time or memory.</li>
+<li><strong><code>zip</code></strong> — a ZIP archive reader and writer over core:compress's raw deflate: <code>list(bytes)</code> (names, methods, sizes, CRCs and local offsets), <code>extract_entry(bytes, meta)</code> for one-pass iteration, <code>extract(bytes, name)</code> (fail-closed: missing/corrupt entries or a CRC mismatch yield empty), and <code>create_checked([Entry(name, data)]) -&gt; Result(bytes, string)</code> validates classic-ZIP count, name, size and offset fields before writing; legacy <code>create(...)</code> remains a fail-fast wrapper. Entries are names, not paths — extracting never touches the filesystem. The writer's output is read back byte-exactly by Python's zipfile.</li>
+<li><strong><code>sqlite</code></strong> — a thin wrapper over libsqlite3, bound directly (no hand-written shim — the <code>extern "sqlite3"</code> forms name the pkg-config dependency, so the package and its test skip where sqlite3 is absent): <code>open(path)</code> (or <code>":memory:"</code>), <code>close(&amp;db)</code>, <code>exec(&amp;db, sql)</code> (change count), <code>query(&amp;db, sql)</code> / <code>query_params(&amp;db, sql, params)</code> → <code>[[string]]</code> (every column read as text), <code>errmsg(db)</code>. Parameters bind as text and coerce; fail-closed with sqlite's own messages. <code>exec_params(&amp;d, sql, params)</code> is the parameter-binding form of <code>exec</code>, returning the affected-row count.</li>
+<li><strong><code>log</code></strong> — a leveled logger, state threaded like <code>core:rand</code>'s: <code>l := log.init(log.level_info(), false)</code>, then <code>log.debug/info/warn/error(&amp;l, msg)</code> — each prints <code>[level] message</code>, dropping messages below the logger's level; <code>to_stderr</code> selects stderr over stdout. The level constants are functions: <code>level_info()</code>, <code>level_warn()</code>, <code>level_error()</code> (and <code>level_debug()</code>). No timestamps (they would make output non-deterministic); prepend your own.</li>
+<li><strong><code>utf8</code></strong> — Unicode validation and codepoint iteration over byte strings: <code>valid(s)</code> (strict — rejects overlong, surrogates, truncated), <code>decode(s, at)</code> → <code>(codepoint, width)</code> at a byte offset (the iteration idiom), <code>encode(cp)</code> → its UTF-8 bytes, <code>count(s)</code> → codepoints or -1. No case mapping or full tables — validation + iteration is the core.</li>
+<li><strong><code>io</code></strong> — filesystem helpers over the <code>read_file</code>/<code>write_file</code>/<code>list_dir</code> builtins. <code>read(p)</code> — <strong>fail-open</strong>: <code>""</code> for a missing file, an unreadable one and a genuinely empty one alike, so prefer <code>read_text(p) -&gt; Result(string, IoErr)</code> or <code>read_bytes(p)</code> when the difference matters — <code>write(p, s)</code> (truncate, returns false if unopenable), <code>append(p, s)</code> (no read-rewrite) and <code>append_text(p, s) -&gt; Result(void, IoErr)</code> (the same, with the error channel), <code>read_lines(p)</code> / <code>write_lines(p, lines)</code> (newline-terminated round-trip), <code>list(p)</code> (entry basenames) and <code>list_checked(p) -&gt; Result([string], IoErr)</code> (which distinguishes an empty directory from an unreadable one, where <code>list</code> cannot), <code>rename(src, dst) -&gt; Result(void, IoErr)</code> (atomically replaces a destination on the same filesystem), <code>lock_exclusive(p) -&gt; Result(bool, IoErr)</code> is a nonblocking process-lifetime lock (<code>Ok(false)</code> means busy; the OS releases it when the process exits), <code>exists(p)</code> (one <code>stat</code>, not a listing of the parent; <code>false</code> means "<code>stat</code> could not say yes", so it fails closed). For inputs too large to slurp, a bounded-memory streaming line reader over a libc shim: <code>open_lines(p) -&gt; Result(LineReader, io.IoErr)</code> → <code>read_line(r)</code> (<code>Some(line)</code> / <code>None</code> at EOF; embedded NUL bytes are preserved) → <code>close_lines(r)</code>. A <code>LineReader</code> is opaque, and the opener reports *why* it failed: <code>BadPath</code> for an interior NUL, else <code>NotFound</code> / <code>IsDir</code> / <code>Failed</code>. There is no <code>defer</code>, so <code>close_lines</code> is the caller's to make. Plus <code>fold_lines(p, init, f)</code> — peak memory is O(longest line), not O(file). <code>read_bytes(p) -&gt; Result(bytes, io.IoErr)</code> reads a whole file as raw <code>bytes</code> (binary-safe); an <strong>empty file is <code>Ok</code></strong> with zero bytes, a missing path is <code>Err(NotFound)</code> and a directory is <code>Err(IsDir)</code> — three outcomes a single empty <code>bytes</code> would collapse. The variants are payload-free, so <code>==</code> and a nested <code>Err(io.IsDir)</code> arm both work. Three helpers resolve <code>list</code>'s empty-directory ambiguity: <code>is_dir(p) -&gt; Result(bool, io.IoErr)</code>, and <code>make_dir(p)</code> / <code>remove(p)</code> — <strong>one entry each, never recursive</strong> — answering <code>Ok(true)</code> for "changed it" and <code>Ok(false)</code> for "already how you asked" (<code>EEXIST</code> on a directory is <code>Ok(false)</code>, on anything else <code>Err(Exists)</code>; <code>remove</code> refuses a <strong>non-empty directory</strong> with <code>Err(Failed)</code>). <code>make_dir_all(p)</code> is the recursive form under a <strong>separate name on purpose</strong>: no corelib name is secretly recursive. There is deliberately <strong>no <code>remove_all</code></strong>: a recursive delete is the one where a wrong path costs unrecoverable data. Three more answer what an HTTP server needs: <code>mtime(p) -&gt; Result(int, io.IoErr)</code> (whole seconds; a <strong>directory is <code>Ok</code></strong>), <code>size(p) -&gt; Result(int, io.IoErr)</code> (a length without reading; a <strong>directory is <code>Err(IsDir)</code></strong>), and <code>read_at(p, off, n) -&gt; Result(bytes, io.IoErr)</code> (allocates only what the file holds past <code>off</code>, so a length off the wire cannot over-allocate; past EOF is <code>Ok</code> with zero bytes). The <strong>writers that can only succeed or fail</strong> — <code>write_bytes(p, b)</code>, <code>write_at(p, off, b)</code>, <code>set_mtime(p, secs)</code>, <code>rename(src, dst)</code> and <code>sync(p)</code> — return <code>Result(void, io.IoErr)</code>, so <code>io.write_bytes(p, b) or_return</code> is a statement and a <code>match</code> arm is <code>Ok():</code>. Nothing aborts.</li>
+<li><strong><code>os</code></strong> — <code>is_windows()</code> reports the host family at runtime — run external commands via a <strong>libc-only FFI shim</strong> (no <code>deps</code>, nothing to install). <code>os.system(cmd)</code> runs <code>cmd</code> through the shell with stdout/stderr inherited, returning its exit code (0..255, <code>128+signal</code> if killed, <code>-1</code> if the shell won't start); <code>os.run(cmd)</code> additionally captures stdout into <code>Output{code, out}</code>. <code>cmd</code> is a <code>/bin/sh -c</code> line — shell metacharacters are active, so quote untrusted input yourself. <strong><code>os.exec(argv)</code> / <code>os.exec_out(argv)</code></strong> are the array-argv pair and take a <code>[string]</code>: no shell is started at all, so an argument of <code>"; rm -rf /"</code> is one ordinary argument rather than a second command — prefer them whenever the arguments are not compile-time constants. Neither replaces the calling process despite the name — both spawn, wait, and return. Same exit-code contract; <code>exec_out</code> captures stdout. They <strong>fail closed</strong> with <code>-1</code> on an empty argv, more than 4096 entries, an allocation failure mid-build, or a program that cannot be spawned — never a silent fallback to the shell. Implemented on both platforms — POSIX <code>posix_spawnp</code>, Windows <code>CreateProcess</code> (never <code>cmd.exe</code>) — but a program that parses its own command line by other rules (a <code>.bat</code>/<code>.cmd</code> file) can still read it differently, so don't hand a batch file untrusted argv.</li>
+<li><strong><code>net</code></strong> — TCP/UDP sockets over a <strong>libc-only FFI shim</strong> (POSIX sockets; no <code>deps</code>, nothing to install). <strong>The transfer calls block; readiness does not.</strong> <code>read</code>/<code>write</code>/<code>connect</code> block, so a worker-per-connection server still has its worker count as a ceiling on concurrent connections — size the pool for the concurrency needed and put a timeout on the socket. But two calls take a deadline and do not block on the peer: <code>wait_readable(fds, ms) -&gt; Result([int], NetErr)</code> names exactly the descriptors that are ready (or an empty list when <code>ms</code> elapses), and <code>accept_wait(fd, ms) -&gt; Result(int, NetErr)</code> waits for one inbound connection with a timeout. <code>close_fd(fd)</code> releases a descriptor obtained this way. Every fallible TCP call returns <strong><code>Result(T, net.NetErr)</code></strong>: <code>listen</code>/<code>accept</code>/<code>connect</code>/<code>port_of</code> give <code>Result(int, …)</code>, <code>peer_addr(fd)</code> gives <code>Result(string, …)</code> — the connected peer's address as text, the field a real access log leads with. <code>write</code> gives <code>Result(int, …)</code> (bytes sent), <code>read</code> gives <code>Result(bytes, …)</code>. Payloads are binary-safe <code>bytes</code>. <code>NetErr</code> is <code>Eof</code> / <code>Timeout</code> / <code>Failed</code>, all payload-free so a single cause can be tested with <code>==</code> without opening a <code>match</code> at all — or, inside one, with a nested <code>Err(net.Timeout)</code> arm (§14.3.1). <code>read</code> <strong>distinguishes</strong> a clean hangup (<code>Err(Eof)</code>) from an expired receive deadline (<code>Err(Timeout)</code>) from a hard error (<code>Err(Failed)</code>) — three answers a bare empty <code>bytes</code> would collapse into one. <code>set_read_timeout_ms(fd, ms)</code> arms a receive deadline and stays a plain <code>bool</code> — one failure, one cause; <code>ms &lt;= 0</code> restores the blocking default and <code>false</code> means the option could not be set (the socket keeps blocking). The <strong>UDP</strong> calls (<code>udp_bind</code>/<code>udp_send</code>/<code>udp_read</code>) are still sentinel-based on purpose: a zero-length datagram is legal, so <code>udp_read</code>'s empty result is a real success value.</li>
+<li><strong><code>httpd</code></strong> — a minimal HTTP/1.1 <strong>server</strong> toolkit over <code>core:net</code> (no external dependency — net is libc-only). The request/response plumbing is pure Tycho; the accept loop is the caller's. <code>parse_request(raw) -&gt; Result(Request, httpd.ReqErr)</code> (method/path/version, case-insensitive <code>header(r, name)</code>, <code>has_header(r, name)</code> distinguishes an absent field from a present-but-empty one, honors Content-Length; <code>Err(Malformed)</code> on a malformed request line); <code>response(status, body: bytes)</code> (standard reason phrase) / <code>response_reason(status, reason, body: bytes)</code> (a custom phrase for a status the table does not carry) / <code>text_response(status, body: string)</code> / <code>with_header(r, k, v)</code> / <code>with_body(r, b)</code> / <code>render_head(r) -&gt; string</code> / <code>render(r) -&gt; bytes</code> (Content-Length and a default <code>text/plain</code> Content-Type are added automatically); and the socket glue <code>read_request(fd) -&gt; Result(Request, httpd.ReqErr)</code> (reads until the header terminator, then exactly Content-Length body bytes, bounded so a hostile peer can't spin) — its <code>Err</code> says <strong>which</strong> failure, <code>Malformed</code> / <code>Closed</code> / <code>Timeout</code> / <code>Failed</code> / <code>TooLarge</code>, so a server can answer <code>400</code> to garbage while hanging up silently on a disconnect / <code>read_request_capped(fd, cap) -&gt; (Result(Request, httpd.ReqErr), string)</code> (the same read with a caller byte budget — reaching it with no header terminator is <code>Err(TooLarge)</code> — plus every byte read as the second tuple element, so an access log can name a request that would not parse; <code>read_request</code> is this with <code>cap = MAX_REQUEST</code>) / <code>read_request_deadline(fd, cap, deadline_ms)</code> (the same again, with a deadline on the <strong>whole</strong> head-and-body rather than on one <code>read</code>) / <code>read_request_resume(fd, cap, deadline_ms, have)</code> (the same again, resumed: <code>have</code> is the buffer a previous call returned beside <code>Err(Timeout)</code> on <strong>this same fd</strong>, so an event loop can give a slow head a short slice per visit. Hand the buffer back only after <code>Err(Timeout)</code> and drop it on every other outcome — carrying it past a completed request would splice two heads together; <code>cap</code> bounds <code>have</code> plus everything read after it) / <code>write_response(fd, r) -&gt; Result(int, net.NetErr)</code> (Ok = total bytes written; the same error type <code>net.write</code> returns, so <code>or_return</code> propagates a failed send). <strong>Binary-safe bodies</strong> — <code>Request.body</code> and <code>Response.body</code> are <code>bytes</code>, so a PNG or a font round-trips byte for byte; headers stay <code>string</code> (ASCII by spec). <code>content_type(path)</code> maps a file extension to a MIME type — <code>.html .htm .css .js .mjs .json .txt .xml .svg .png .jpg .jpeg .gif .webp .ico .woff .woff2 .pdf .wasm</code> — and an <strong>unknown extension yields <code>application/octet-stream</code>, never <code>text/plain</code></strong>. Keep-alive: <code>connection_close(req)</code> (HTTP/1.1 defaults open, 1.0 defaults closed, an empty <code>bad_request()</code> always closes) and <code>with_connection(r, alive)</code>; pair it with <code>net.set_read_timeout_ms</code> so an idle peer cannot pin a worker. CRLF is built with <code>chr(13)</code> (tycho strings have no <code>\r</code> escape). <strong>Framing is refused, never guessed</strong>, by all three read entry points: any <code>Transfer-Encoding</code> field and an empty/invalid <code>Content-Length</code> are refused — <strong>chunked bodies are not decoded</strong> — a <code>Content-Length</code> that is not a plain decimal, two <code>Content-Length</code> headers that disagree, or <code>Content-Length</code> together with <code>Transfer-Encoding</code>, are each <code>Err(Malformed)</code>, and the connection must not be reused. A framed size past <code>cap</code> is <code>Err(TooLarge)</code> *before* the body is read; a body shorter than its own <code>Content-Length</code> is <code>Err(Closed)</code>. <strong>Pipelining is not supported.</strong> Exactly the bytes this request framed are parsed; anything the peer sent past them is discarded with the buffer, so a client that pipelines loses every request after the first. What matters is that the leftover is never glued onto this request's body. The request-shaping helpers the server layer calls are public too: <code>reason_phrase(status)</code>, <code>bodyless(status)</code> (whether a status may carry a body at all — 204/304 and the 1xx range), <code>content_length_conflict(r)</code> (a request carrying both <code>Content-Length</code> and <code>Transfer-Encoding</code>), <code>parse_len(s) -&gt; (int, bool)</code> (a length header with its validity flag), <code>has_ext(path, ext)</code>, and <code>crlf()</code>.</li>
+<li><strong><code>cli</code></strong> — command-line argument parsing, pure string math. <code>parse(argv) -&gt; Cli</code> sorts the vector into three buckets: <code>--key=value</code> <strong>options</strong>, boolean <strong>flags</strong> (<code>--flag</code>, and short clusters <code>-abc</code> → <code>a</code>/<code>b</code>/<code>c</code>), and <strong>positionals</strong> (everything else, plus everything after a bare <code>--</code>). Values always attach with <code>=</code>, so <code>parse</code> needs <strong>no schema</strong> of which options take a value — <code>--verbose</code> is unambiguously a flag and <code>--out=x</code> unambiguously an option. <code>argv()</code> is the builtin <code>args()</code> with <code>args()[0]</code> (the program path) dropped, which is what <code>parse</code> wants, so a program's whole front door is <code>c := cli.parse(cli.argv())</code>. Pass a vector to <code>parse</code> yourself and it is used as given; the skip lives in <code>argv()</code>, not in <code>parse</code>. <code>parse_spec(argv, valued, boolean) -&gt; Cli</code> is the <strong>schema-carrying</strong> form, and it is what buys the space-separated Unix spelling <code>--root DIR</code>: <code>valued</code> and <code>boolean</code> list long option names and short flag letters <strong>without dashes</strong>, the same spelling <code>get</code>/<code>flag</code> take. It is an addition, not a migration — <code>parse</code> is unchanged and every <code>=</code>-attached spelling means the same thing in both. Its rules: a <code>valued</code> name consumes the next argument <strong>as-is</strong> (so <code>--root --port</code> sets root to <code>--port</code>) or lands in <code>missing(c)</code> if there is nothing after it; a <code>boolean</code> name spelled <code>--flag=v</code> sets the flag and <strong>drops</strong> <code>v</code>; a name in neither list, and a short cluster containing a letter in neither, land in <code>unknown(c)</code> as written. <code>parse_checked(argv, valued, boolean) -&gt; Result(Cli, CliErr)</code> is <code>parse_spec</code> that refuses instead of sorting: <code>Err(Unknown(tok))</code> or <code>Err(NoValue(name))</code> on the first offending token, so a program cannot forget to look at <code>unknown</code>/<code>missing</code>. No short option takes a value (<code>-p 80</code> is not a spelling this package has — it would make <code>-abc</code> ambiguous); use <code>--port 80</code>. Accessors: <code>get(c, key, default)</code>, <code>has(c, key)</code>, <code>flag(c, name)</code> (long or short), <code>positionals(c)</code>, <code>count(c)</code>, <code>missing(c)</code>, <code>unknown(c)</code>. Uses parallel arrays, not maps.</li>
+<li><strong><code>raster</code></strong> — pure-Tycho raster image codecs, <strong>BMP</strong> and <strong>QOI</strong>, with no external dependency (unlike <code>core:image</code>'s libpng-backed PNG). An <code>Image</code> is 8-bit RGBA (4 bytes/pixel, row-major, top-to-bottom); pixel data is <code>bytes</code>. <code>encode_bmp</code>/<code>decode_bmp</code> (writes 32-bit BGRA, bottom-up, uncompressed; reads 24- or 32-bpp <code>BI_RGB</code>) and <code>encode_qoi</code>/<code>decode_qoi</code> (all six QOI chunk types). Both <strong>round-trip losslessly</strong>; the decoders <strong>fail closed</strong> to a 0×0 Image on a malformed / truncated / wrong-format input (check <code>width &gt; 0</code>). <code>too_big(w, h)</code> is the decode guard in front of every codec here: it answers whether a declared width and height would allocate past the ceiling.</li>
+<li><strong><code>signal</code></strong> — <strong>clean shutdown on SIGTERM/SIGINT, and nothing else</strong>: a libc-only shim with nothing to install and nothing to link. <code>on_shutdown(fd) -&gt; bool</code> installs one handler for both signals whose <strong>only</strong> action is to shut down the listening socket, so every thread blocked in <code>net.accept(fd)</code> is released with <code>Err(Failed)</code> and the program winds down through the path it already has. It <strong>fails closed</strong>: <code>false</code> means the handler was not installed and the default disposition (die on SIGTERM) still stands. <code>shutdown_requested() -&gt; bool</code> reads the flag the handler set, for a loop that wants to stop for a reason other than a failed accept. <strong>Order matters</strong> — call <code>on_shutdown</code> *after* <code>net.listen</code>, with the listening fd, and *before* the accept loops start. There is deliberately no <code>signal.on(sig, handler)</code>: no Tycho code runs in handler context, so a general handler API would need answers about allocation, tasks, and signal delivery that do not exist here. Waking a blocked <code>accept()</code> this way is a Linux behavior rather than a portable guarantee, and connections still in the backlog are dropped rather than drained. For a server that must report which connections it dropped, <code>register_conn(slot, fd)</code> records a live descriptor against a slot and <code>retire_conn(slot)</code> clears it.</li>
 </ul>
-<p><code>s[i]</code>/<code>chr</code> use): <code>is_digit</code>, <code>is_alpha</code>, <code>is_alnum</code>, <code>is_upper</code>, <code>is_lower</code>,</p>
-<p><code>is_space</code>, <code>is_hex</code>, <code>to_upper</code>/<code>to_lower</code> (one byte), <code>digit_val</code> (−1 if not a</p>
-<p>digit), <code>hex_val</code> (0..15 or −1).</p>
-<ul>
-<li><strong><code>strings</code></strong> — <code>to_upper</code>, <code>to_lower</code>, <code>starts_with</code>, <code>ends_with</code>, <code>contains</code>,</li>
-</ul>
-<p><code>repeat(s, n)</code>, <code>trim</code> (ASCII whitespace), <code>parse_int</code>, <code>is_space</code>, <code>lines</code> (splits on</p>
-<p><code>\n</code>, drops one trailing <code>\r</code> per line, trailing newline adds no empty line), <code>replace</code></p>
-<p>(non-overlapping, left to right; empty <code>old</code> returns the input unchanged), <code>count(s, sub)</code>,</p>
-<p><code>strip_prefix</code>/<code>strip_suffix</code>, <code>pad_left</code>/<code>pad_right(s, width, pad)</code> (pad is one byte),</p>
-<p><code>reverse</code>, <code>capitalize</code>, <code>split_once(s, sep) -&gt; (before, after)</code> (<code>(s, "")</code> if absent).</p>
-<p>(<code>split</code>/<code>find</code>/<code>substr</code>/<code>len</code>/<code>chr</code> are builtins.)</p>
-<p><strong>On untrusted input, reach for the checked siblings:</strong></p>
-<p><code>parse_int_checked(s) -&gt; Result(int, IntErr)</code> and</p>
-<p><code>parse_float(s) -&gt; Result(float, FloatErr)</code> — the bare <code>parse_int</code> <strong>fails open</strong></p>
-<p>(<code>"3x"</code> is <code>3</code>, not an error). <code>slice_str(s, start, stop) -&gt; Result(string, SliceErr)</code></p>
-<p>and <code>slice_bytes(b, start, stop)</code> — a plain slice <strong>clamps</strong> rather than</p>
-<p>bounds-checking (<code>b[1:99]</code> on three bytes gives two and no trap), so these are</p>
-<p>the forms that refuse an out-of-range window instead of narrowing it.</p>
-<p><code>format_g17(v)</code> renders a float at the 17 significant digits that round-trip.</p>
-<ul>
-<li><strong><code>path</code></strong> — POSIX path utilities (separator <code>/</code>). The pure functions below are</li>
-</ul>
-<p>string math only (no filesystem access, every function returns a fresh value):</p>
-<p><code>base</code> (final element, trailing slashes ignored; <code>""</code>→<code>.</code>, <code>"/"</code>→<code>/</code>), <code>dir</code></p>
-<p>(all but the final element), <code>ext</code> (extension incl. the dot, <code>""</code> if none; a</p>
-<p>leading dot is a dotfile, not an ext), <code>stem</code> (base minus ext), <code>join(a, b)</code></p>
-<p>(exactly one separator, empty operands drop out), <code>is_abs</code>,</p>
-<p><code>split_path(p) -&gt; (dir, base)</code> (the inverse of <code>join</code>), and <code>clean</code> (lexical</p>
-<p>normalize: collapse <code>//</code>, drop <code>.</code>, resolve <code>..</code> but never above the root or</p>
-<p>past a leading <code>..</code>). <code>last_slash(s)</code> is the shared scan helper (index of</p>
-<p>the last <code>/</code>, or -1). <code>safe_join(base, rel)</code> is the lexical containment</p>
-<p>prefilter: the cleaned join when an untrusted <code>rel</code> stays under <code>base</code>, <code>""</code></p>
-<p>when it is absolute, escapes via <code>..</code>, or carries a backslash or an <code>X:</code> drive</p>
-<p>prefix.</p>
-<p><strong>The filesystem fence.</strong> A lexical check cannot see a symlink, so three</p>
-<p>functions make a real syscall, and all three fail closed — <code>""</code> is a refusal</p>
-<p>and callers must treat it as one before using the path.</p>
-<ul>
-<li><code>real(p)</code> — the absolute path with every symlink and <code>..</code> resolved, or <code>""</code></li>
-</ul>
-<p>if the path does not exist, cannot be read, contains a NUL, or does not fit.</p>
-<ul>
-<li><code>under(root, p)</code> — true when <code>p</code> <strong>is</strong> <code>root</code> or lies underneath it. The</li>
-</ul>
-<p>comparison only, not the resolution: both arguments must already be resolved.</p>
-<ul>
-<li><code>resolve_under(base, rel)</code> — <strong>the one to reach for first</strong> when a path is</li>
-</ul>
-<p>built from untrusted input; <code>safe_join</code> is the cheap prefilter inside it. It</p>
-<p>returns the path to use, or <code>""</code> when <code>rel</code> is refused — refused lexically,</p>
-<p>or because the resolved answer lands outside <code>base</code>, or because <code>base</code> itself</p>
-<p>does not resolve. A path that <strong>does not exist is not a refusal</strong>: the longest</p>
-<p>existing ancestor is resolved and checked instead, so the caller reports its</p>
-<p>own "not found" rather than a spurious "forbidden". A dangling symlink is</p>
-<p>refused.</p>
-<p>One caution: a check followed by a separate open can race if an attacker can</p>
-<p>write inside the root. <code>resolve_under</code> narrows that window to an attacker with</p>
-<p>write access inside the root; a fully race-free form would need the open done</p>
-<p>inside the check.</p>
-<ul>
-<li><strong><code>arrays</code></strong> — generic utilities over any element type <code>[T]</code>: <code>contains</code>, <code>index_of</code></li>
-</ul>
-<p>(−1 if absent), <code>count</code>, <code>reverse</code>, <code>take(xs, n)</code>, <code>drop(xs, n)</code>, <code>concat(a, b)</code>,</p>
-<p><code>fill(n, v)</code>, <code>dedup</code> (consecutive — sort first for a full dedup); <code>sort</code> (ascending),</p>
-<p><code>is_sorted</code>, <code>min</code>, <code>max</code> (<code>where comparable</code> — int/char/float/string); <code>sum</code>, <code>product</code></p>
-<p>(<code>where numeric</code> — int/float); <code>join(xs, sep)</code> (<code>where</code> the element converts to a string).</p>
-<p>All return a new array — value semantics, the input is never mutated. <code>min</code>/<code>max</code>/<code>sum</code>/</p>
-<p><code>product</code> seed from <code>xs[0]</code>, so they need a non-empty array. (<code>push</code>/<code>pop</code>/<code>len</code>/<code>range</code></p>
-<p>are builtins; higher-order <code>map</code>/<code>filter</code>/<code>reduce</code> live in <code>iter</code>.)</p>
-<ul>
-<li><strong><code>iter</code></strong> — generic higher-order helpers over any <code>[T]</code>, each taking a <code>fn</code>/closure:</li>
-</ul>
-<p><code>map</code> (two type variables — <code>map(xs: [$T], f: fn($T) -&gt; $U) -&gt; [$U]</code>, the only one that may change element type, so <code>iter.map(nums, to_str)</code> is a <code>[string]</code>), <code>filter</code>, <code>reduce</code>, <code>count</code>, <code>any</code>.</p>
-<p>Fallible stages get two siblings whose callback returns a <code>Result</code>:</p>
-<p><code>try_map(xs, f: fn($T) -&gt; Result($U, $E)) -&gt; Result([$U], $E)</code> and</p>
-<p><code>try_filter(xs, keep: fn($T) -&gt; Result(bool, $E)) -&gt; Result([$T], $E)</code>. Both stop at</p>
-<p>the <strong>first</strong> <code>Err</code> and return it unchanged. <code>reduce</code>/<code>count</code>/<code>any</code></p>
-<p>have no fallible form — write the <code>for</code> loop with <code>or_return</code> if you need one.</p>
-<ul>
-<li><strong><code>sort</code></strong> — <code>argsort(keys)</code> / <code>argsort_desc(keys)</code>: return the index permutation that</li>
-</ul>
-<p>orders the keys — generic over any comparable key type (int/float/string/char). The way</p>
-<p>to order data by a derived value: keep it in parallel arrays, argsort one, and walk every</p>
-<p>array through the permutation. All stable. Plus <code>by_key(xs, key)</code>: sort an array by a</p>
-<p>derived int key (a fn/closure) — <strong>deprecated since 0.5.0, removed in 1.0</strong>:</p>
-<p>it is <code>sort_by(xs, fn(a, b) -&gt; int: key(a) - key(b))</code>. When the order needs more than one key, mixed</p>
-<p>directions, or a type with no <code>comparable</code> instance, <code>sort_by(xs, cmp)</code> takes a</p>
-<p>three-way compare <code>fn($T, $T) -&gt; int</code> — bottom-up merge, stable, so equal elements</p>
-<p>keep their input order under a descending compare too. <code>asc(a, b)</code> and</p>
-<p><code>desc(a, b)</code> are the two ready-made comparators for that parameter, so the</p>
-<p>common orderings need no lambda: <code>sort_by(xs, sort.asc)</code>.</p>
-<ul>
-<li><strong><code>pool</code></strong> — a generational node pool for pointer-shaped data (graphs, trees,</li>
-</ul>
-<p>doubly-linked structures). Hold every node in one array and link by integer</p>
-<p>index; <code>pool</code> packages that idiom. Generic over the element type <code>Pool($T)</code>:</p>
-<p><code>add(&amp;p, v) -&gt; Handle</code>, <code>get(p, h)</code>, <code>set(&amp;p, h, v)</code>, <code>remove(&amp;p, h)</code>,</p>
-<p><code>alive(p, h)</code>, <code>count(p)</code>, and <code>live(p) -&gt; [Handle]</code> (all live handles in slot</p>
-<p>order — the way to walk a pool). A <code>Handle</code> carries a slot index plus a</p>
-<p>generation; every access checks the generation, so a handle to a freed-and-</p>
-<p>reused slot is caught at runtime instead of silently reading the new occupant.</p>
-<p>Create one with <code>p := pool.Pool([]pool.Slot(int), []int)</code>. It removes the</p>
-<p>hand-rolled bookkeeping, not the cost: pointer-shaped storage costs more in</p>
-<p>this model (see <a href="../internals/value-semantics-limits.html">value-semantics limits</a>).</p>
-<ul>
-<li><strong><code>intern</code></strong> — hash-consing / interning: canonical storage of values keyed by a hashable</li>
-</ul>
-<p>key. Generic <code>Interner($K, $V)</code>: <code>intern(&amp;i, k, v) -&gt; Handle</code> returns the canonical handle</p>
-<p>for key <code>k</code> — the first sight stores <code>v</code> and mints the handle, every later sight of the</p>
-<p>same key returns the <strong>same</strong> handle and ignores its <code>v</code> — plus <code>get(i, h)</code> and</p>
-<p><code>count(i)</code>. Two handles are equal iff their keys were equal at first sight, so</p>
-<p>interning gives a cheap identity test and one canonical copy of each logical</p>
-<p>object. Handles are stable for the interner's lifetime; values are never</p>
-<p>removed — it is a *canonicalization* table, not a cache, so an unbounded</p>
-<p>working set grows by design (use a plain <code>[K: V]</code> map for a bounded cache).</p>
-<p>Keys are any map-key type — <code>string</code>, <code>[int]</code>, a struct, a tuple. Create one</p>
-<p>with <code>i := intern.Interner([]int, []string: int)</code>.</p>
-<ul>
-<li><strong><code>rand</code></strong> — deterministic xorshift32 (not cryptographic). No globals in Tycho, so the</li>
-</ul>
-<p>state is an explicit int threaded via <code>inout</code> (the <code>&amp;</code> marks the <code>inout</code> call site,</p>
-<p><a href="../reference/basics.html#procedures">Basics</a>). There is no <code>rand.State</code> type — a</p>
-<p>function of your own that draws numbers declares the parameter as a plain int,</p>
-<p><code>fn pick(st: inout int) -&gt; int</code>. Calls: <code>st := rand.seed(42)</code>,</p>
-<p><code>rand.next(&amp;st)</code> ([1, 2³²)), <code>rand.below(&amp;st, n)</code> ([0, n)), <code>rand.shuffle(&amp;st, xs)</code></p>
-<p>(Fisher-Yates, returns a new array).</p>
-<ul>
-<li><strong><code>time</code></strong> — wraps the <code>clock()</code> (monotonic ns) and <code>now()</code> (UNIX seconds) builtins.</li>
-</ul>
-<p>Stopwatch (value-semantic, no inout — a reading is just an int): <code>sw := time.start()</code>,</p>
-<p>then <code>time.elapsed_ns(sw)</code> / <code>elapsed_us</code> / <code>elapsed_ms</code>. Duration conversions</p>
-<p><code>ns_to_us</code> / <code>ns_to_ms</code> / <code>ns_to_s</code>. Wall clock <code>unix_secs()</code> (named so, not <code>now</code>,</p>
-<p>to avoid shadowing the builtin and recursing). Blocking sleep <code>sleep_ms(ms)</code> /</p>
-<p><code>sleep_ns(ns)</code> (a libc-only shim over <code>nanosleep</code>): a non-positive duration returns</p>
-<p>immediately, the sleep is *not* interruptible (it retries with the remaining</p>
-<p>time, so the full duration always elapses), and it parks the <strong>calling task only</strong>.</p>
-<ul>
-<li><strong><code>datetime</code></strong> — civil (proleptic Gregorian) calendar math over UNIX timestamps, all</li>
-</ul>
-<p>pure integer arithmetic. A <code>DateTime</code> struct</p>
-<p>(<code>year</code>/<code>month</code>/<code>day</code>/<code>hour</code>/<code>minute</code>/<code>second</code>/<code>weekday</code>, all UTC). <code>from_unix(secs)</code></p>
-<p>and its exact inverse <code>to_unix(dt)</code>; <code>days_from_civil</code>/<code>civil_from_days</code>/</p>
-<p><code>weekday_from_days</code> (the day-count core); <code>weekday(y,m,d)</code> (0=Sun..6=Sat), <code>is_leap</code>,</p>
-<p><code>days_in_month</code>; <code>now_utc()</code> (the only non-pure fn — reads <code>now()</code>); formatting</p>
-<p><code>format_iso</code> (<code>YYYY-MM-DDTHH:MM:SS</code>), <code>weekday_name</code>, <code>month_name</code>, <code>pad2</code>/<code>pad4</code>; and its</p>
-<p>inverse <strong>parsing</strong> <code>parse_iso</code> (wall-clock fields; <code>T</code> or space separator, trailing zone</p>
-<p>ignored) / <code>parse_iso_tz</code> (<code>+HH:MM</code> / <code>-HH:MM</code> / <code>Z</code> folded to the UTC instant), plus</p>
-<p><code>parse_clf</code> / <code>parse_clf_tz</code> for the Common Log Format stamp (<code>dd/Mon/yyyy:HH:MM:SS ±HHMM</code>,</p>
-<p>as in Apache/nginx access logs) and <code>month_num</code> (<code>"Jan"</code>..<code>"Dec"</code> → 1..12), all</p>
-<p>fail-closed via a <code>year = -1</code> sentinel that <code>ok(dt)</code> checks. The core is UTC; timezone support is layered on — <strong>fixed offsets</strong> (<code>from_unix_at</code>,</p>
-<p><code>to_unix_at</code>, <code>format_iso_tz</code>) in pure Tycho, plus DST-aware <strong>system/zone</strong> offsets via a</p>
-<p>small libc shim (<code>local_offset</code>, <code>offset_at</code>, <code>now_local</code>). There is no IANA tz database.</p>
-<p><code>format_offset(offset_secs)</code> renders a UTC offset as <code>+HH:MM</code> / <code>-HH:MM</code>.</p>
-<ul>
-<li><strong><code>regex</code></strong> — POSIX extended regular expressions (ERE) over libc. `compile(pat) -&gt;</li>
-</ul>
-<p>ptr<code> (opaque handle; </code>ok<code>/</code>is_null<code> to check), </code>is_match<code>, </code>find<code> / </code>find_end`</p>
-<p>(offset or −1), <code>matched</code> (first match substring). <strong>Capture groups</strong> of the first</p>
-<p>match by index (0 = whole match): <code>ngroups</code>, <code>group_start</code> / <code>group_end</code> (offset</p>
-<p>or −1), <code>group(re, s, n)</code> (substring), <code>groups(re, s)</code> (all groups as <code>[string]</code>).</p>
-<p><code>release</code> frees the C-owned handle — the compiled pattern is C-malloc'd, <strong>not</strong></p>
-<p>caller-managed, so call it when done.</p>
-<ul>
-<li><strong><code>http</code></strong> — an HTTP(S) client over <strong>libcurl</strong>, and the first module to</li>
-</ul>
-<p>declare an <a href="#external-dependencies-c-shim-deps">external dependency</a> (<code>corelib/http/deps</code></p>
-<p>→ <code>libcurl</code>). <code>get(url) -&gt; ptr</code> / <code>post(url, body, content_type) -&gt; ptr</code> return an opaque</p>
-<p>response handle, or null on a transport failure (<code>ok</code>/<code>is_null</code>). <code>status(r)</code> (e.g. 200),</p>
-<p><code>body(r)</code> (arena-copied), <code>release(r)</code> (the handle is C-owned). Convenience: <code>get_body(url)</code></p>
-<p>/ <code>get_status(url)</code> do the request and free the handle. The body is arena-copied via the</p>
-<p>FFI string-return, so a binary body with interior <code>0x00</code> truncates — <code>body(r)</code> is for text</p>
-<p>APIs; <code>body_bytes(r)</code> is the binary-safe sibling (interior NULs preserved).</p>
-<p><code>post(url, body, content_type)</code> takes a <code>string</code> body and stops at the first interior</p>
-<p><code>0x00</code>; <code>post_bytes(url, body, content_type)</code> is its binary-safe sibling, taking</p>
-<p><code>bytes</code> and sending the whole length. Tests are skipped where libcurl is absent.</p>
-<ul>
-<li><strong><code>json</code></strong> — a recursive-descent JSON parser + serializer. The document is a</li>
-</ul>
-<p>value-semantic tree, the <code>Json</code> enum (<code>JNull</code>/<code>JBool</code>/<code>JNum</code>/<code>JFloat</code>/<code>JStr</code>/<code>JArr</code>/</p>
-<p><code>JObj</code>, objects as parallel key/value arrays). **`parse_checked(s) -&gt;</p>
-<p>Result(Json, JsonErr)` is the entry point new code wants** — the grammar it accepts</p>
-<p>is exactly RFC 8259's and every refusal carries the byte offset that caused it</p>
-<p>(<code>err_reason</code>, <code>err_offset</code>, <code>err_str</code>). <code>parse(s) -&gt; Json</code> is the lenient wrapper</p>
-<p>that throws the error away and returns <code>JNull</code> for the whole document.</p>
-<p><code>stringify(j) -&gt; string</code> (compact; escapes <code>"</code> <code>\</code> and every control byte, `\b \f</p>
-<p>\n \r \t<code> where a short form exists). Typed queries: </code>kind` (the variant tag as a</p>
-<p>string), <code>get(j, key)</code> (object field, else <code>JNull</code>), <code>at(j, i)</code> (array element, else</p>
-<p><code>JNull</code>), <code>keys</code> (object keys in order), <code>len_of</code> (array/object count or string</p>
-<p>length), <code>as_num</code>/<code>as_str</code>/<code>as_bool</code>/<code>as_float</code>/<code>as_lexeme</code> (payload with a zero-value</p>
-<p>default). Variants are constructible cross-package (<code>json.JNum(1)</code>).</p>
-<p>Round-trip fidelity: an integer that fits 64 bits is <code>JNum</code> and everything else — a</p>
-<p>fraction, an exponent, or an integer too large — is <code>JFloat(value, lexeme)</code> carrying</p>
-<p>the original digits, so <code>stringify</code> re-emits every accepted number byte-for-byte;</p>
-<p>object keys keep insertion order; a duplicate key resolves to its <strong>last</strong> value at</p>
-<p>the first key's position, so a parsed object holds each key once; a <code>\uXXXX</code> escape</p>
-<p>decodes to its UTF-8 bytes. Two limits: a number outside binary64's range</p>
-<p>(<code>1e400</code>) is refused rather than represented, and <code>get</code> returns <code>JNull</code> for both</p>
-<p>a null-valued member and an absent one — walk <code>keys</code> to tell those apart.</p>
-<p><code>err_at(code, off)</code> builds a <code>JsonErr</code> for a given code and byte offset, for a caller</p>
-<p>layering its own parse step on top of this one.</p>
-<ul>
-<li><strong><code>csv</code></strong> — an RFC 4180 CSV parser + serializer. A document is rows of fields,</li>
-</ul>
-<p><code>[[string]]</code>. <code>parse(s) -&gt; [[string]]</code> handles quoted fields, the <code>""</code> escape,</p>
-<p>embedded delimiters/newlines inside quotes, and LF / CRLF / lone-CR line endings;</p>
-<p>it fails closed (an unterminated quote parses leniently, never aborts). Bytes after</p>
-<p>a closing quote JOIN the field (<code>"ab"cd</code> is <code>abcd</code>). A trailing newline adds no empty</p>
-<p>row; a mid-file blank line is a row with NO fields. <code>stringify(rows) -&gt; string</code></p>
-<p>emits LF endings and quotes only fields containing the delimiter/quote/CR/LF</p>
-<p>(doubling internal quotes) -- <code>parse</code>/<code>stringify</code> round-trip.</p>
-<p><code>parse_delim</code>/<code>stringify_delim</code> take an arbitrary single-byte delimiter (TSV is</p>
-<p><code>parse_delim(s, 9)</code>); <code>get(rows, r, c)</code> is a bounds-safe cell read (<code>""</code> if OOB).</p>
-<ul>
-<li><strong><code>markdown</code></strong> — a pragmatic Markdown → HTML renderer in pure Tycho. <code>render(src)</code></li>
-</ul>
-<p>handles ATX headings, fenced code (HTML-escaped), blockquotes, unordered/ordered</p>
-<p>lists, thematic breaks, and paragraphs; inline <code>**bold**</code>, <code>*italic*</code>/<code>_italic_</code>,</p>
-<p><code></code> <code>code</code> <code></code>, <code>[text](url)</code>, <code>![alt](src)</code>. All text is HTML-escaped and unknown</p>
-<p>syntax degrades to escaped plain text (never a parse abort). Not full CommonMark</p>
-<p>(no nested lists, reference links, tables, or setext headings) — targets a</p>
-<p>blog/wiki. <code>esc(s)</code> is that HTML escaper on its own, for callers assembling</p>
-<p>markup around rendered output.</p>
-<ul>
-<li><strong><code>base64</code></strong> — Base64 (RFC 4648) <code>encode</code>/<code>decode</code>, plus <code>encode_url</code> (URL-safe</li>
-</ul>
-<p><code>-</code>/<code>_</code> alphabet, no padding). <code>decode</code> is lenient: it skips any non-alphabet byte</p>
-<p>(padding <code>=</code>, whitespace, newlines in wrapped Base64) and accepts both alphabets.</p>
-<p>Tycho strings are length-carrying and can contain interior <code>0x00</code> bytes, so <code>decode</code></p>
-<p>preserves NULs as well as other decoded bytes. Use <code>bytes</code> when crossing a binary C API.</p>
-<ul>
-<li><strong><code>hex</code></strong> — hexadecimal <code>encode</code> (lowercase) / <code>encode_upper</code> / <code>decode</code>, two digits per</li>
-</ul>
-<p>byte, plus <code>is_valid</code> (strict: even length, all hex digits). <code>decode</code> is lenient (skips</p>
-<p>any non-hex byte, so <code>de:ad:be:ef</code> and spaced/newlined hex work, either case) and reuses</p>
-<p><code>core:char</code>'s <code>hex_val</code>. Decoding <code>"00"</code> returns a one-byte string containing NUL.</p>
-<ul>
-<li><strong><code>url</code></strong> — URL percent-encoding (RFC 3986). <code>encode</code> is component-style (like JS</li>
-</ul>
-<p><code>encodeURIComponent</code> — everything but unreserved <code>A-Z a-z 0-9 - _ . ~</code> becomes <code>%XX</code>,</p>
-<p>uppercase, space → <code>%20</code>); <code>encode_form</code> / <code>decode_form</code> use the</p>
-<p><code>x-www-form-urlencoded</code> convention (space ↔ <code>+</code>); <code>decode</code> decodes <code>%XX</code> (leaving <code>+</code>).</p>
-<p><code>decode</code> is lenient (a <code>%</code> not followed by two hex digits is emitted literally) and reuses</p>
-<p><code>core:char</code>'s <code>hex_val</code>. <code>%00</code> produces an interior NUL byte in the returned string.</p>
-<ul>
-<li><strong><code>uuid</code></strong> — version-4 UUIDs (RFC 4122) plus the nil UUID and helpers. <code>v4(&amp;st)</code></li>
-</ul>
-<p>draws 16 bytes from <code>core:rand</code> (state threaded by <code>inout</code>) and sets the</p>
-<p>version/variant bits; it is <strong>not unguessable</strong> — use <code>crypto.random_hex</code> for a</p>
-<p>token. <code>nil()</code>, <code>parse(s) -&gt; [int]</code> (16 bytes, lenient on separators, <code>[]</code> unless</p>
-<p>exactly 32 hex digits), <code>format(bytes) -&gt; string</code> (canonical 8-4-4-4-12),</p>
-<p><code>is_valid</code> (strict), <code>version</code> (the version nibble, <code>-1</code> if invalid). v1 and the</p>
-<p>name-based v3/v5 are out of scope. Zero bytes survive formatting.</p>
-<ul>
-<li><strong><code>hash</code></strong> — non-cryptographic 32-bit hashes for hash tables / checksums / dedup (NOT for</li>
-</ul>
-<p>security): <code>fnv1a_32</code>, <code>djb2</code>, <code>sdbm</code>, and <code>crc32</code> (IEEE/zlib, bit-by-bit), plus <code>to_hex</code></p>
-<p>(8-digit lowercase). All return a non-negative int in <code>[0, 2^32)</code>. Matches published vectors:</p>
-<p><code>crc32("123456789") = cbf43926</code>, <code>fnv1a_32("foobar") = bf9cf968</code>. For a hash of</p>
-<p><strong>any</strong> hashable value (struct/tuple/array, not just a string) use the generic builtin</p>
-<p><code>hash(x)</code> — deterministic (the same value hashes the same on every run and machine),</p>
-<p>full 64-bit as a signed int (<a href="../spec/16-builtins.html#297-maps">builtins §29.7</a>).</p>
-<ul>
-<li><strong><code>md5</code></strong> — the MD5 message-digest (RFC 1321): <code>hex(s)</code> (32-char lowercase digest) and</li>
-</ul>
-<p><code>digest(s)</code> (16 raw bytes). <strong>MD5 is broken for security</strong> (use it for checksums /</p>
-<p>content-addressing / interop, never passwords or signatures). Bit-exact against the</p>
-<p>RFC 1321 suite (<code>md5("abc") = 900150983cd24fb0d6963f7d28e17f72</code>).</p>
-<ul>
-<li><strong><code>sha256</code></strong> — the SHA-256 hash (FIPS 180-4): <code>hex(s)</code> (64-char lowercase digest) and</li>
-</ul>
-<p><code>digest(s)</code> (32 raw bytes). A <strong>real cryptographic digest</strong> — fine for checksums,</p>
-<p>content addressing, and HMAC building blocks (not a standalone password hash; use a KDF</p>
-<p>for that). Bit-exact against NIST vectors (<code>sha256("abc") = ba7816bf…f20015ad</code>).</p>
-<p>For input too large to hold at once there is a <strong>streaming</strong> form: <code>init()</code> gives</p>
-<p>a <code>State</code>, <code>update(&amp;st, data)</code> folds in each chunk, and <code>final_hex(&amp;st)</code> closes</p>
-<p>it and returns the digest — the same answer <code>hex(s)</code> gives for the concatenation.</p>
-<ul>
-<li><strong><code>bignum</code></strong> — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array),</li>
-</ul>
-<p>value-semantic: <code>from_int</code>/<code>from_str</code>/<code>to_str</code>/<code>to_int</code>, <code>add</code>/<code>sub</code>/<code>mul</code>/<code>divmod</code>/<code>div</code>/</p>
-<p><code>mod</code>/<code>pow</code>, <code>abs</code>/<code>neg</code>/<code>cmp</code>/<code>is_zero</code>.</p>
-<ul>
-<li><strong><code>decimal</code></strong> — arbitrary-precision base-10 fixed point, composed on <code>core:bignum</code> (a <code>Big</code></li>
-</ul>
-<p>coefficient × 10⁻ˢᶜᵃˡᵉ), so decimal fractions are <strong>exact</strong> (<code>0.1 + 0.2 == 0.3</code>):</p>
-<p><code>from_int</code>/<code>from_str</code>/<code>to_str</code>, <code>add</code>/<code>sub</code>/<code>mul</code> (exact), <code>cmp</code>, <code>neg</code>/<code>abs</code>/<code>is_zero</code>,</p>
-<p><code>from_str_checked(s) -&gt; Result(Decimal, DecErr)</code> — the bare <code>from_str</code> fails open</p>
-<p>(<code>"1.5x"</code> is <code>0.15</code>), so use the checked one on anything a user or a file supplied —</p>
-<p><code>rescale</code> (truncating). Division takes its policy from the caller:</p>
-<p><code>div(a, b, scale, mode) -&gt; Result(Decimal, DivErr)</code>, where <code>mode</code> is <code>half_up()</code> (ties away</p>
-<p>from zero) or <code>toward_zero()</code> (agrees with <code>rescale</code>) — there is no default, because there</p>
-<p>is no correct one. A zero divisor, a negative scale and an unknown mode are each an <code>Err</code>.</p>
-<ul>
-<li><strong><code>crypto</code></strong> — the security-grade module, a C-shim over OpenSSL <code>libcrypto</code> (see</li>
-</ul>
-<p><a href="#c-shim-ffi-backed-modules">C-shim modules</a>; needs the OpenSSL dev package). Where the</p>
-<p>pure-Tycho <code>sha256</code>/<code>md5</code> are for non-adversarial integrity, this is what to reach for</p>
-<p>when an attacker is in the threat model: CSPRNG (<code>random_hex</code>), <code>sha256</code>/<code>sha512</code> of</p>
-<p>binary, <code>hmac_sha256</code>, <code>pbkdf2_sha256</code>, constant-time <code>ct_equal</code>, ChaCha20-Poly1305 AEAD</p>
-<p>(<code>aead_encrypt</code>/<code>aead_decrypt</code>, <code>"!err"</code> on auth failure), Ed25519</p>
-<p>(<code>ed25519_pubkey</code>/<code>sign</code>/<code>verify</code>), and X25519 (<code>x25519_pubkey</code>/<code>shared</code>). Pure Tycho</p>
-<p>arithmetic cannot promise constant-time behavior, so these primitives bind OpenSSL</p>
-<p>rather than reimplementing them. Every value (keys, nonces, ciphertext, signatures,</p>
-<p>digests) crosses as lowercase hexadecimal text at this interface; use <code>core:hex</code></p>
-<p>to convert byte buffers. Checked against independent known-answer vectors (RFC 4231 HMAC,</p>
-<p>RFC 7914 PBKDF2, RFC 8439 ChaCha20-Poly1305, Ed25519/X25519).</p>
-<p><strong>Keys are opaque handles — the lifecycle first:</strong></p>
-<p><code>key_random(n) -&gt; ptr</code> makes one from the CSPRNG, <code>key_from_hex(hex) -&gt; ptr</code></p>
-<p>imports one, <code>key_export_hex(k) -&gt; string</code> exports it, <code>key_len(k) -&gt; int</code> is</p>
-<p>its byte length, and <code>key_free(k)</code> releases it. That handle is what</p>
-<p><code>aead_encrypt</code>/<code>aead_decrypt</code> take. The signature keys have their own</p>
-<p>constructors — <code>ed25519_key_from_seed(seed_hex)</code>, then</p>
-<p><code>ed25519_sign(key, msg_hex) -&gt; string</code> and</p>
-<p><code>ed25519_verify(pub_hex, msg_hex, sig_hex) -&gt; bool</code> — as does key agreement:</p>
-<p><code>x25519_key_random()</code>, <code>x25519_key_from_secret(secret_hex)</code>, and</p>
-<p><code>x25519_shared(my_key, their_pubkey_hex) -&gt; ptr</code>, whose result is a key handle</p>
-<p>ready for the AEAD.</p>
-<ul>
-<li><strong><code>result</code></strong> — the <code>Result</code> / <code>Option</code> collapses, generic over <code>$T</code> and <code>$E</code>:</li>
-</ul>
-<p><code>unwrap_or(r, fallback)</code>, <code>is_ok(r)</code>, <code>is_err(r)</code>, <code>err_or(r, fallback)</code>,</p>
-<p><code>map_err(r, replacement)</code>, <code>map_err_with(r, f)</code>, and</p>
-<p><code>some_or(o, fallback)</code> / <code>is_some(o)</code> for the <code>Option</code> half. <code>or_return</code> unwraps a</p>
-<p><code>Result</code> only inside a function that itself returns a compatible <code>Result</code>, so a</p>
-<p><code>main()</code>, or a handler that returns a <code>Response</code>, needs another way:</p>
-<p><code>err_or</code> plus <code>==</code> asks *which* failure happened **without writing a <code>match</code> at</p>
-<p>all** — a one-line <code>if</code>. <code>map_err(r, replacement)</code> re-labels the error so</p>
-<p><code>or_return</code> carries it —</p>
-<p><code>req := result.map_err(httpd.read_request(fd), net.Failed) or_return</code> — at the cost of</p>
-<p>the original cause. <strong><code>map_err_with(r, f)</code> is its cause-preserving sibling</strong> —</p>
-<p>identical job and argument order, except <code>f</code> receives the <code>Err</code> payload and builds the</p>
-<p>replacement from it, so a <code>Syntax(7)</code> arrives as <code>FromParse(7)</code> rather than as a</p>
-<p>constant. Use it where the cause carries something the caller still needs (a byte</p>
-<p>offset, a column name) and <code>map_err</code> where it does not. A caller who *is* writing</p>
-<p>a <code>match</code> uses a nested pattern instead (<code>Err(io.IsDir):</code>,</p>
-<p><a href="../spec/10-statements.html#1431-nested-patterns">§14.3.1</a>); the corelib's error enums</p>
-<p>stay payload-free so both spellings keep working.</p>
-<ul>
-<li><strong><code>testing</code></strong> — a unit-test framework, state threaded like <code>core:rand</code>'s:</li>
-</ul>
-<p><code>t := testing.new("name")</code>, then <code>check(&amp;t, cond, msg)</code> and generic</p>
-<p><code>eq(&amp;t, got, want, msg)</code> (comparable scalars — int/float/string/char; for a</p>
-<p>composite compare with <code>==</code> and pass the message), and</p>
-<p><code>exit(testing.report(t))</code> — prints <code>ok name (N checks)</code> or the failing checks</p>
-<p>plus <code>FAIL name (N of M checks failed)</code> and returns 0/1 for the exit code.</p>
-<ul>
-<li><strong><code>toml</code></strong> — a TOML v1.0-subset parser: <code>parse(s) -&gt; Result(Value, string)</code></li>
-</ul>
-<p>(fail-closed), a recursive <code>Value</code> enum (TStr/TInt/TFloat/TBool/TArr/TTable;</p>
-<p>tables are parallel keys/values arrays), and <code>get(t, "a.b.c") -&gt; Option(Value)</code></p>
-<p>/ <code>keys(t)</code>. <code>get</code> accepts quote-aware path segments for keys containing dots. Supports bare + quoted + dotted keys, <code>[table]</code> and</p>
-<p><code>[[array-of-tables]]</code>, basic strings with escapes and \uXXXX, literal</p>
-<p>strings, ints (dec/0x/0o/0b/underscores), floats, bools, arrays with</p>
-<p>trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables</p>
-<p>or multi-line strings.</p>
-<p><code>empty_table()</code> gives an empty <code>Value</code> table, the starting point for building one up rather than parsing it. Parsing is bounded to 64 KiB, 512 assignments/headers and 128 nesting levels; larger documents return <code>Err</code> rather than consuming unbounded time or memory.</p>
-<ul>
-<li><strong><code>zip</code></strong> — a ZIP archive reader and writer over core:compress's raw</li>
-</ul>
-<p>deflate: <code>list(bytes)</code> (names, methods, sizes, CRCs and local offsets),</p>
-<p><code>extract_entry(bytes, meta)</code> for one-pass iteration, <code>extract(bytes, name)</code></p>
-<p>(fail-closed: missing/corrupt entries or a CRC mismatch yield empty), and</p>
-<p><code>create_checked([Entry(name, data)]) -&gt; Result(bytes, string)</code> validates classic-ZIP count,</p>
-<p>name, size and offset fields before writing; legacy <code>create(...)</code> remains a</p>
-<p>fail-fast wrapper. Entries are names, not paths — extracting never touches</p>
-<p>the filesystem. The writer's output is read back byte-exactly by Python's zipfile.</p>
-<ul>
-<li><strong><code>sqlite</code></strong> — a thin wrapper over libsqlite3, bound directly (no</li>
-</ul>
-<p>hand-written shim — the <code>extern "sqlite3"</code> forms name the pkg-config</p>
-<p>dependency, so the package and its test skip where sqlite3 is absent):</p>
-<p><code>open(path)</code> (or <code>":memory:"</code>), <code>close(&amp;db)</code>, <code>exec(&amp;db, sql)</code> (change</p>
-<p>count), <code>query(&amp;db, sql)</code> / <code>query_params(&amp;db, sql, params)</code> → <code>[[string]]</code></p>
-<p>(every column read as text), <code>errmsg(db)</code>. Parameters bind as text and</p>
-<p>coerce; fail-closed with sqlite's own messages.</p>
-<p><code>exec_params(&amp;d, sql, params)</code> is the parameter-binding form of <code>exec</code>, returning the affected-row count.</p>
-<ul>
-<li><strong><code>log</code></strong> — a leveled logger, state threaded like <code>core:rand</code>'s:</li>
-</ul>
-<p><code>l := log.init(log.level_info(), false)</code>, then `log.debug/info/warn/error(&amp;l,</p>
-<p>msg)<code> — each prints </code>[level] message`, dropping messages below the logger's</p>
-<p>level; <code>to_stderr</code> selects stderr over stdout. The level constants are</p>
-<p>functions: <code>level_info()</code>, <code>level_warn()</code>, <code>level_error()</code> (and <code>level_debug()</code>).</p>
-<p>No timestamps (they would make output non-deterministic); prepend your own.</p>
-<ul>
-<li><strong><code>utf8</code></strong> — Unicode validation and codepoint iteration over byte strings:</li>
-</ul>
-<p><code>valid(s)</code> (strict — rejects overlong, surrogates, truncated), <code>decode(s, at)</code></p>
-<p>→ <code>(codepoint, width)</code> at a byte offset (the iteration idiom), <code>encode(cp)</code> →</p>
-<p>its UTF-8 bytes, <code>count(s)</code> → codepoints or -1. No case mapping or full</p>
-<p>tables — validation + iteration is the core.</p>
-<ul>
-<li><strong><code>io</code></strong> — filesystem helpers over the <code>read_file</code>/<code>write_file</code>/<code>list_dir</code> builtins.</li>
-</ul>
-<p><code>read(p)</code> — <strong>fail-open</strong>: <code>""</code> for a missing file, an unreadable one and a genuinely</p>
-<p>empty one alike, so prefer <code>read_text(p) -&gt; Result(string, IoErr)</code> or <code>read_bytes(p)</code></p>
-<p>when the difference matters —</p>
-<p><code>write(p, s)</code> (truncate, returns false if unopenable),</p>
-<p><code>append(p, s)</code> (no read-rewrite) and <code>append_text(p, s) -&gt; Result(void, IoErr)</code></p>
-<p>(the same, with the error channel), <code>read_lines(p)</code> / <code>write_lines(p, lines)</code></p>
-<p>(newline-terminated round-trip), <code>list(p)</code> (entry basenames) and `list_checked(p) -&gt;</p>
-<p>Result([string], IoErr)` (which distinguishes an empty directory from an unreadable</p>
-<p>one, where <code>list</code> cannot), <code>rename(src, dst) -&gt; Result(void, IoErr)</code> (atomically</p>
-<p>replaces a destination on the same filesystem),</p>
-<p><code>lock_exclusive(p) -&gt; Result(bool, IoErr)</code> is a nonblocking process-lifetime lock</p>
-<p>(<code>Ok(false)</code> means busy; the OS releases it when the process exits),</p>
-<p><code>exists(p)</code> (one <code>stat</code>, not a listing of the parent; <code>false</code> means "<code>stat</code> could not</p>
-<p>say yes", so it fails closed). For inputs too large to slurp, a bounded-memory</p>
-<p>streaming line reader over a libc shim: <code>open_lines(p) -&gt; Result(LineReader, io.IoErr)</code></p>
-<p>→ <code>read_line(r)</code> (<code>Some(line)</code> / <code>None</code> at EOF; embedded NUL bytes are preserved) →</p>
-<p><code>close_lines(r)</code>. A <code>LineReader</code> is opaque, and the opener reports *why* it failed:</p>
-<p><code>BadPath</code> for an interior NUL, else <code>NotFound</code> / <code>IsDir</code> / <code>Failed</code>. There is no</p>
-<p><code>defer</code>, so <code>close_lines</code> is the caller's to make. Plus <code>fold_lines(p, init, f)</code> —</p>
-<p>peak memory is O(longest line), not O(file). <code>read_bytes(p) -&gt; Result(bytes, io.IoErr)</code></p>
-<p>reads a whole file as raw <code>bytes</code> (binary-safe); an <strong>empty file is <code>Ok</code></strong> with zero</p>
-<p>bytes, a missing path is <code>Err(NotFound)</code> and a directory is <code>Err(IsDir)</code> — three</p>
-<p>outcomes a single empty <code>bytes</code> would collapse. The variants are payload-free, so <code>==</code></p>
-<p>and a nested <code>Err(io.IsDir)</code> arm both work. Three helpers resolve <code>list</code>'s</p>
-<p>empty-directory ambiguity: <code>is_dir(p) -&gt; Result(bool, io.IoErr)</code>, and <code>make_dir(p)</code> /</p>
-<p><code>remove(p)</code> — <strong>one entry each, never recursive</strong> — answering <code>Ok(true)</code> for "changed</p>
-<p>it" and <code>Ok(false)</code> for "already how you asked" (<code>EEXIST</code> on a directory is <code>Ok(false)</code>,</p>
-<p>on anything else <code>Err(Exists)</code>; <code>remove</code> refuses a <strong>non-empty directory</strong> with</p>
-<p><code>Err(Failed)</code>). <code>make_dir_all(p)</code> is the recursive form under a **separate name on</p>
-<p>purpose<strong>: no corelib name is secretly recursive. There is deliberately </strong>no</p>
-<p><code>remove_all</code>**: a recursive delete is the one where a wrong path costs unrecoverable</p>
-<p>data. Three more answer what an HTTP server needs: <code>mtime(p) -&gt; Result(int, io.IoErr)</code></p>
-<p>(whole seconds; a <strong>directory is <code>Ok</code></strong>), <code>size(p) -&gt; Result(int, io.IoErr)</code> (a length</p>
-<p>without reading; a <strong>directory is <code>Err(IsDir)</code></strong>), and `read_at(p, off, n) -&gt;</p>
-<p>Result(bytes, io.IoErr)<code> (allocates only what the file holds past </code>off`, so a length off</p>
-<p>the wire cannot over-allocate; past EOF is <code>Ok</code> with zero bytes). The **writers that can</p>
-<p>only succeed or fail** — <code>write_bytes(p, b)</code>, <code>write_at(p, off, b)</code>, <code>set_mtime(p, secs)</code>,</p>
-<p><code>rename(src, dst)</code> and <code>sync(p)</code> — return <code>Result(void, io.IoErr)</code>, so</p>
-<p><code>io.write_bytes(p, b) or_return</code> is a statement and a <code>match</code> arm is <code>Ok():</code>.</p>
-<p>Nothing aborts.</p>
-<ul>
-<li><strong><code>os</code></strong> — <code>is_windows()</code> reports the host family at runtime — run external commands via</li>
-</ul>
-<p>a <strong>libc-only FFI shim</strong> (no <code>deps</code>, nothing to install). <code>os.system(cmd)</code> runs <code>cmd</code></p>
-<p>through the shell with stdout/stderr inherited, returning its exit code (0..255,</p>
-<p><code>128+signal</code> if killed, <code>-1</code> if the shell won't start); <code>os.run(cmd)</code> additionally</p>
-<p>captures stdout into <code>Output{code, out}</code>. <code>cmd</code> is a <code>/bin/sh -c</code> line — shell</p>
-<p>metacharacters are active, so quote untrusted input yourself.</p>
-<p><strong><code>os.exec(argv)</code> / <code>os.exec_out(argv)</code></strong> are the array-argv pair and take a</p>
-<p><code>[string]</code>: no shell is started at all, so an argument of <code>"; rm -rf /"</code> is one</p>
-<p>ordinary argument rather than a second command — prefer them whenever the arguments</p>
-<p>are not compile-time constants. Neither replaces the calling process despite the</p>
-<p>name — both spawn, wait, and return. Same exit-code contract; <code>exec_out</code> captures</p>
-<p>stdout. They <strong>fail closed</strong> with <code>-1</code> on an empty argv, more than 4096 entries, an</p>
-<p>allocation failure mid-build, or a program that cannot be spawned — never a silent</p>
-<p>fallback to the shell. Implemented on both platforms — POSIX <code>posix_spawnp</code>, Windows</p>
-<p><code>CreateProcess</code> (never <code>cmd.exe</code>) — but a program that parses its own command line by</p>
-<p>other rules (a <code>.bat</code>/<code>.cmd</code> file) can still read it differently, so don't hand a batch</p>
-<p>file untrusted argv.</p>
-<ul>
-<li><strong><code>net</code></strong> — TCP/UDP sockets over a <strong>libc-only FFI shim</strong> (POSIX sockets; no <code>deps</code>,</li>
-</ul>
-<p>nothing to install). <strong>The transfer calls block; readiness does not.</strong></p>
-<p><code>read</code>/<code>write</code>/<code>connect</code> block, so a worker-per-connection server still has its</p>
-<p>worker count as a ceiling on concurrent connections — size the pool for the concurrency</p>
-<p>needed and put a timeout on the socket. But two calls take a deadline and do</p>
-<p>not block on the peer: <code>wait_readable(fds, ms) -&gt; Result([int], NetErr)</code> names</p>
-<p>exactly the descriptors that are ready (or an empty list when <code>ms</code> elapses), and</p>
-<p><code>accept_wait(fd, ms) -&gt; Result(int, NetErr)</code> waits for one inbound connection</p>
-<p>with a timeout.</p>
-<p><code>close_fd(fd)</code> releases a descriptor obtained this way. Every fallible TCP call returns</p>
-<p><strong><code>Result(T, net.NetErr)</code></strong>: <code>listen</code>/<code>accept</code>/<code>connect</code>/<code>port_of</code> give <code>Result(int, …)</code>,</p>
-<p><code>peer_addr(fd)</code> gives <code>Result(string, …)</code> — the connected peer's address as text,</p>
-<p>the field a real access log leads with.</p>
-<p><code>write</code> gives <code>Result(int, …)</code> (bytes sent), <code>read</code> gives <code>Result(bytes, …)</code>. Payloads</p>
-<p>are binary-safe <code>bytes</code>. <code>NetErr</code> is <code>Eof</code> / <code>Timeout</code> / <code>Failed</code>, all payload-free so</p>
-<p>a single cause can be tested with <code>==</code> without opening a <code>match</code> at all — or, inside</p>
-<p>one, with a nested <code>Err(net.Timeout)</code> arm (§14.3.1).</p>
-<p><code>read</code> <strong>distinguishes</strong> a clean hangup (<code>Err(Eof)</code>) from an expired receive deadline</p>
-<p>(<code>Err(Timeout)</code>) from a hard error (<code>Err(Failed)</code>) — three answers a bare empty <code>bytes</code></p>
-<p>would collapse into one. <code>set_read_timeout_ms(fd, ms)</code> arms a receive deadline and stays</p>
-<p>a plain <code>bool</code> — one failure, one cause; <code>ms &lt;= 0</code> restores the blocking default and</p>
-<p><code>false</code> means the option could not be set (the socket keeps blocking). The <strong>UDP</strong> calls</p>
-<p>(<code>udp_bind</code>/<code>udp_send</code>/<code>udp_read</code>) are still sentinel-based on purpose: a zero-length</p>
-<p>datagram is legal, so <code>udp_read</code>'s empty result is a real success value.</p>
-<ul>
-<li><strong><code>httpd</code></strong> — a minimal HTTP/1.1 <strong>server</strong> toolkit over <code>core:net</code> (no external</li>
-</ul>
-<p>dependency — net is libc-only). The request/response plumbing is pure Tycho; the accept</p>
-<p>loop is the caller's. <code>parse_request(raw) -&gt; Result(Request, httpd.ReqErr)</code></p>
-<p>(method/path/version, case-insensitive <code>header(r, name)</code>, <code>has_header(r, name)</code></p>
-<p>distinguishes an absent field from a present-but-empty one, honors Content-Length;</p>
-<p><code>Err(Malformed)</code> on a malformed request line);</p>
-<p><code>response(status, body: bytes)</code> (standard reason phrase) /</p>
-<p><code>response_reason(status, reason, body: bytes)</code> (a custom phrase for a status the table</p>
-<p>does not carry) / <code>text_response(status, body: string)</code> /</p>
-<p><code>with_header(r, k, v)</code> / <code>with_body(r, b)</code> / <code>render_head(r) -&gt; string</code> /</p>
-<p><code>render(r) -&gt; bytes</code> (Content-Length and a default <code>text/plain</code> Content-Type are added</p>
-<p>automatically); and the socket glue <code>read_request(fd) -&gt; Result(Request, httpd.ReqErr)</code></p>
-<p>(reads until the header terminator, then exactly Content-Length body bytes, bounded so a</p>
-<p>hostile peer can't spin) — its <code>Err</code> says <strong>which</strong> failure, <code>Malformed</code> / <code>Closed</code> /</p>
-<p><code>Timeout</code> / <code>Failed</code> / <code>TooLarge</code>, so a server can answer <code>400</code> to garbage while hanging</p>
-<p>up silently on a disconnect /</p>
-<p><code>read_request_capped(fd, cap) -&gt; (Result(Request, httpd.ReqErr), string)</code> (the same read</p>
-<p>with a caller byte budget — reaching it with no header terminator is <code>Err(TooLarge)</code> —</p>
-<p>plus every byte read as the second tuple element, so an access log can name a request</p>
-<p>that would not parse; <code>read_request</code> is this with <code>cap = MAX_REQUEST</code>) /</p>
-<p><code>read_request_deadline(fd, cap, deadline_ms)</code> (the same again, with a deadline on the</p>
-<p><strong>whole</strong> head-and-body rather than on one <code>read</code>) /</p>
-<p><code>read_request_resume(fd, cap, deadline_ms, have)</code> (the same again, resumed: <code>have</code> is the</p>
-<p>buffer a previous call returned beside <code>Err(Timeout)</code> on <strong>this same fd</strong>, so an event</p>
-<p>loop can give a slow head a short slice per visit. Hand the buffer back only after</p>
-<p><code>Err(Timeout)</code> and drop it on every other outcome — carrying it past a completed request</p>
-<p>would splice two heads together; <code>cap</code> bounds <code>have</code> plus everything read after it) /</p>
-<p><code>write_response(fd, r) -&gt; Result(int, net.NetErr)</code> (Ok = total bytes written;</p>
-<p>the same error type <code>net.write</code> returns, so <code>or_return</code> propagates a failed send).</p>
-<p><strong>Binary-safe bodies</strong> — <code>Request.body</code> and <code>Response.body</code> are <code>bytes</code>, so a PNG or a</p>
-<p>font round-trips byte for byte; headers stay <code>string</code> (ASCII by spec).</p>
-<p><code>content_type(path)</code> maps a file extension to a MIME type — `.html .htm .css .js .mjs</p>
-<p>.json .txt .xml .svg .png .jpg .jpeg .gif .webp .ico .woff .woff2 .pdf .wasm` — and an</p>
-<p><strong>unknown extension yields <code>application/octet-stream</code>, never <code>text/plain</code></strong>.</p>
-<p>Keep-alive: <code>connection_close(req)</code> (HTTP/1.1 defaults open, 1.0 defaults closed, an</p>
-<p>empty <code>bad_request()</code> always closes) and <code>with_connection(r, alive)</code>; pair it with</p>
-<p><code>net.set_read_timeout_ms</code> so an idle peer cannot pin a worker. CRLF is built with</p>
-<p><code>chr(13)</code> (tycho strings have no <code>\r</code> escape).</p>
-<p><strong>Framing is refused, never guessed</strong>, by all three read entry points: any</p>
-<p><code>Transfer-Encoding</code> field and an empty/invalid <code>Content-Length</code> are refused —</p>
-<p><strong>chunked bodies are not decoded</strong> — a <code>Content-Length</code> that is not a plain decimal,</p>
-<p>two <code>Content-Length</code> headers that disagree, or <code>Content-Length</code> together with</p>
-<p><code>Transfer-Encoding</code>, are each <code>Err(Malformed)</code>, and the connection must not be reused.</p>
-<p>A framed size past <code>cap</code> is <code>Err(TooLarge)</code> *before* the body is read; a body shorter</p>
-<p>than its own <code>Content-Length</code> is <code>Err(Closed)</code>.</p>
-<p><strong>Pipelining is not supported.</strong> Exactly the bytes this request framed are parsed;</p>
-<p>anything the peer sent past them is discarded with the buffer, so a client that</p>
-<p>pipelines loses every request after the first. What matters is that the leftover is</p>
-<p>never glued onto this request's body.</p>
-<p>The request-shaping helpers the server layer calls are public too: <code>reason_phrase(status)</code>,</p>
-<p><code>bodyless(status)</code> (whether a status may carry a body at all — 204/304 and the 1xx range),</p>
-<p><code>content_length_conflict(r)</code> (a request carrying both <code>Content-Length</code> and</p>
-<p><code>Transfer-Encoding</code>), <code>parse_len(s) -&gt; (int, bool)</code> (a length header with its validity</p>
-<p>flag), <code>has_ext(path, ext)</code>, and <code>crlf()</code>.</p>
-<ul>
-<li><strong><code>cli</code></strong> — command-line argument parsing, pure string math. <code>parse(argv) -&gt; Cli</code> sorts the</li>
-</ul>
-<p>vector into three buckets: <code>--key=value</code> <strong>options</strong>, boolean <strong>flags</strong> (<code>--flag</code>, and short</p>
-<p>clusters <code>-abc</code> → <code>a</code>/<code>b</code>/<code>c</code>), and <strong>positionals</strong> (everything else, plus everything after</p>
-<p>a bare <code>--</code>). Values always attach with <code>=</code>, so <code>parse</code> needs <strong>no schema</strong> of which options</p>
-<p>take a value — <code>--verbose</code> is unambiguously a flag and <code>--out=x</code> unambiguously an option.</p>
-<p><code>argv()</code> is the builtin <code>args()</code> with <code>args()[0]</code> (the program path) dropped, which is what</p>
-<p><code>parse</code> wants, so a program's whole front door is <code>c := cli.parse(cli.argv())</code>. Pass a</p>
-<p>vector to <code>parse</code> yourself and it is used as given; the skip lives in <code>argv()</code>, not in</p>
-<p><code>parse</code>. <code>parse_spec(argv, valued, boolean) -&gt; Cli</code> is the <strong>schema-carrying</strong> form, and it</p>
-<p>is what buys the space-separated Unix spelling <code>--root DIR</code>: <code>valued</code> and <code>boolean</code> list</p>
-<p>long option names and short flag letters <strong>without dashes</strong>, the same spelling</p>
-<p><code>get</code>/<code>flag</code> take. It is an addition, not a migration — <code>parse</code> is unchanged and every</p>
-<p><code>=</code>-attached spelling means the same thing in both. Its rules: a <code>valued</code> name consumes</p>
-<p>the next argument <strong>as-is</strong> (so <code>--root --port</code> sets root to <code>--port</code>) or lands in</p>
-<p><code>missing(c)</code> if there is nothing after it; a <code>boolean</code> name spelled <code>--flag=v</code> sets the</p>
-<p>flag and <strong>drops</strong> <code>v</code>; a name in neither list, and a short cluster containing a letter in</p>
-<p>neither, land in <code>unknown(c)</code> as written. `parse_checked(argv, valued, boolean) -&gt;</p>
-<p>Result(Cli, CliErr)<code> is </code>parse_spec<code> that refuses instead of sorting: </code>Err(Unknown(tok))`</p>
-<p>or <code>Err(NoValue(name))</code> on the first offending token, so a program cannot forget to look</p>
-<p>at <code>unknown</code>/<code>missing</code>. No short option takes a value (<code>-p 80</code> is not a spelling this</p>
-<p>package has — it would make <code>-abc</code> ambiguous); use <code>--port 80</code>. Accessors:</p>
-<p><code>get(c, key, default)</code>, <code>has(c, key)</code>, <code>flag(c, name)</code> (long or short), <code>positionals(c)</code>,</p>
-<p><code>count(c)</code>, <code>missing(c)</code>, <code>unknown(c)</code>. Uses parallel arrays, not maps.</p>
-<ul>
-<li><strong><code>raster</code></strong> — pure-Tycho raster image codecs, <strong>BMP</strong> and <strong>QOI</strong>, with no external</li>
-</ul>
-<p>dependency (unlike <code>core:image</code>'s libpng-backed PNG). An <code>Image</code> is 8-bit RGBA (4</p>
-<p>bytes/pixel, row-major, top-to-bottom); pixel data is <code>bytes</code>. <code>encode_bmp</code>/<code>decode_bmp</code></p>
-<p>(writes 32-bit BGRA, bottom-up, uncompressed; reads 24- or 32-bpp <code>BI_RGB</code>) and</p>
-<p><code>encode_qoi</code>/<code>decode_qoi</code> (all six QOI chunk types). Both <strong>round-trip losslessly</strong>; the</p>
-<p>decoders <strong>fail closed</strong> to a 0×0 Image on a malformed / truncated / wrong-format input</p>
-<p>(check <code>width &gt; 0</code>). <code>too_big(w, h)</code> is the decode guard in front of every codec here:</p>
-<p>it answers whether a declared width and height would allocate past the ceiling.</p>
-<ul>
-<li><strong><code>signal</code></strong> — <strong>clean shutdown on SIGTERM/SIGINT, and nothing else</strong>: a libc-only shim</li>
-</ul>
-<p>with nothing to install and nothing to link.</p>
-<p><code>on_shutdown(fd) -&gt; bool</code> installs one handler for both signals whose <strong>only</strong> action is</p>
-<p>to shut down the listening socket, so every thread blocked in <code>net.accept(fd)</code> is</p>
-<p>released with <code>Err(Failed)</code> and the program winds down through the path it already has.</p>
-<p>It <strong>fails closed</strong>: <code>false</code> means the handler was not installed and the default</p>
-<p>disposition (die on SIGTERM) still stands.</p>
-<p><code>shutdown_requested() -&gt; bool</code> reads the flag the handler set, for a loop that wants to</p>
-<p>stop for a reason other than a failed accept. <strong>Order matters</strong> — call <code>on_shutdown</code></p>
-<p>*after* <code>net.listen</code>, with the listening fd, and *before* the accept loops start.</p>
-<p>There is deliberately no <code>signal.on(sig, handler)</code>: no Tycho code runs in handler</p>
-<p>context, so a general handler API would need answers about allocation, tasks, and</p>
-<p>signal delivery that do not exist here. Waking a blocked <code>accept()</code> this way is a</p>
-<p>Linux behavior rather than a portable guarantee, and connections still in the backlog</p>
-<p>are dropped rather than drained.</p>
-<p>For a server that must report which connections it dropped, <code>register_conn(slot, fd)</code></p>
-<p>records a live descriptor against a slot and <code>retire_conn(slot)</code> clears it.</p>
 <h2 id="c-shim-ffi-backed-modules">C-shim (FFI-backed) modules</h2>
-<p>A core module can wrap a C library via FFI. Drop a <code>&lt;module&gt;/&lt;module&gt;_shim.c</code> next to</p>
-<p>the <code>.ty</code>; the transpiler auto-compiles and links it on <code>import "core:&lt;module&gt;"</code> (no</p>
-<p><code>--shim</code> needed). The <code>.ty</code> declares the shim's functions with <code>extern fn</code> (and</p>
-<p><code>extern "Lib" fn</code> auto-adds <code>-lLib</code> for an external library; <code>core:regex</code> needs none —</p>
-<p>POSIX regex is in libc). Opaque handles cross as <code>ptr</code> (carried by value, never</p>
-<p>dereferenced or caller-managed — <code>null</code> / <code>is_null</code>). <code>tychoc</code> links a module's shim</p>
-<p>automatically — no <code>--shim</code> needed for a corelib package.</p>
+<p>A core module can wrap a C library via FFI. Drop a <code>&lt;module&gt;/&lt;module&gt;_shim.c</code> next to the <code>.ty</code>; the transpiler auto-compiles and links it on <code>import "core:&lt;module&gt;"</code> (no <code>--shim</code> needed). The <code>.ty</code> declares the shim's functions with <code>extern fn</code> (and <code>extern "Lib" fn</code> auto-adds <code>-lLib</code> for an external library; <code>core:regex</code> needs none — POSIX regex is in libc). Opaque handles cross as <code>ptr</code> (carried by value, never dereferenced or caller-managed — <code>null</code> / <code>is_null</code>). <code>tychoc</code> links a module's shim automatically — no <code>--shim</code> needed for a corelib package.</p>
 <h3 id="freeing-a-shim-handle">Freeing a shim handle</h3>
-<p>A <code>ptr</code> handle is not affine, so nothing in the type system stops a caller freeing one</p>
-<p>twice or reading one after free. <code>core:crypto</code>, <code>core:tls</code>, <code>core:http</code> and <code>core:image</code></p>
-<p>guard that at run time instead: the payload is released on free while the handle's own</p>
-<p>header is kept, so a second free or a later use aborts by name (for example `tycho:</p>
-<p>double free of crypto key handle`) rather than reading freed memory. The kept header is</p>
-<p>never reused for a new handle, so a stale handle can never alias a later one; it is also</p>
-<p>never freed, so each freed handle keeps a small header for the life of the process —</p>
-<p>nothing measurable for a one-shot program, and the figure for a long-lived one to check</p>
-<p>is in the design note.</p>
+<p>A <code>ptr</code> handle is not affine, so nothing in the type system stops a caller freeing one twice or reading one after free. <code>core:crypto</code>, <code>core:tls</code>, <code>core:http</code> and <code>core:image</code> guard that at run time instead: the payload is released on free while the handle's own header is kept, so a second free or a later use aborts by name (for example <code>tycho: double free of crypto key handle</code>) rather than reading freed memory. The kept header is never reused for a new handle, so a stale handle can never alias a later one; it is also never freed, so each freed handle keeps a small header for the life of the process — nothing measurable for a one-shot program, and the figure for a long-lived one to check is in the design note.</p>
 <h3 id="external-dependencies-c-shim-deps">External dependencies (C-shim <code>deps</code>)</h3>
-<p>A shim that needs a system library beyond libc — one with headers to find and a link</p>
-<p>flag that <strong>varies by platform</strong> — declares it in a <code>corelib/&lt;module&gt;/deps</code> manifest:</p>
-<p>pkg-config package names, one per line (<code>#</code> comments and blank lines ignored). For</p>
-<p>example <code>corelib/http/deps</code> is just <code>libcurl</code>.</p>
-<p>The <code>deps</code>-backed modules are <code>http</code> (libcurl) and <code>crypto</code> (libcrypto), documented above,</p>
-<p>plus three more:</p>
+<p>A shim that needs a system library beyond libc — one with headers to find and a link flag that <strong>varies by platform</strong> — declares it in a <code>corelib/&lt;module&gt;/deps</code> manifest: pkg-config package names, one per line (<code>#</code> comments and blank lines ignored). For example <code>corelib/http/deps</code> is just <code>libcurl</code>.</p>
+<p>The <code>deps</code>-backed modules are <code>http</code> (libcurl) and <code>crypto</code> (libcrypto), documented above, plus three more:</p>
 <ul>
-<li><strong><code>compress</code></strong> — gzip (RFC 1952) compress/decompress over <strong>zlib</strong> (<code>deps: zlib</code>).</li>
+<li><strong><code>compress</code></strong> — gzip (RFC 1952) compress/decompress over <strong>zlib</strong> (<code>deps: zlib</code>). <code>compress(bytes) -&gt; bytes</code>; <code>decompress(bytes) -&gt; Result(bytes, ZErr)</code> and <code>raw_decompress</code> likewise, where <code>ZErr</code> is <code>Corrupt</code> / <code>Truncated</code> / <code>Failed</code> / <code>TooBig</code> (decompressed output exceeds its limit). <strong><code>Ok</code> with length 0 is a real empty payload</strong>, distinct from every failure. On a RAW deflate stream <code>Truncated</code> also covers "not a deflate stream": there is no wrapper or checksum to tell those apart. <strong><code>compress</code> is byte-deterministic</strong> and callers may rely on it: for one zlib build it is a pure function of its input — same bytes in, byte-identical bytes out. The compressed *length* is a zlib tuning detail — it is not stable across zlib versions. <code>raw_compress(data)</code> is the same deflate without the gzip framing, for callers that supply their own container. Each decompression is capped at 1 GiB (or the zlib <code>uInt</code> limit when lower).</li>
+<li><strong><code>image</code></strong> — PNG decode/encode over <strong>libpng</strong> (<code>deps: libpng</code>): <code>decode(bytes) -&gt; Result(Image{width, height, pixels}, ImgErr)</code> (8-bit RGBA) and <code>encode(Image) -&gt; Result(bytes, ImgErr)</code>. <code>ImgErr</code> names which failure: <code>Empty</code>, <code>NotPng</code>, <code>Corrupt</code> on the decode side, <code>BadDims</code>, <code>ShortPixels</code> on the encode side, <code>Failed</code> for an allocation or a libpng failure. PNG has no 0-dimension image, so an <code>Ok</code> always carries <code>width &gt;= 1</code>. JPEG is a demand-gated follow-up.</li>
+<li><strong><code>tls</code></strong> — a TLS 1.2/1.3 client over <strong>OpenSSL</strong> (<code>deps: openssl</code>). Secure by default: <code>connect(host, port)</code> verifies the certificate against the system CA store, checks the hostname, and sends SNI; failure returns a null handle (never a silent insecure connection). <code>connect_timeout(host, port, ms)</code> bounds TCP connect and handshake, and <code>set_timeout_ms(conn, ms)</code> bounds later reads/writes; timeout values outside 0..2,147,483,647 fail closed. <code>write</code>/<code>read</code>/<code>close_conn</code> use the encrypted stream.</li>
 </ul>
-<p><code>compress(bytes) -&gt; bytes</code>; <code>decompress(bytes) -&gt; Result(bytes, ZErr)</code> and</p>
-<p><code>raw_decompress</code> likewise, where <code>ZErr</code> is <code>Corrupt</code> / <code>Truncated</code> / <code>Failed</code> /</p>
-<p><code>TooBig</code> (decompressed output exceeds its limit).</p>
-<p><strong><code>Ok</code> with length 0 is a real empty payload</strong>, distinct from every failure. On a RAW</p>
-<p>deflate stream <code>Truncated</code> also covers "not a deflate stream": there is no wrapper or</p>
-<p>checksum to tell those apart.</p>
-<p><strong><code>compress</code> is byte-deterministic</strong> and callers may rely on it: for one zlib build</p>
-<p>it is a pure function of its input — same bytes in, byte-identical bytes out. The</p>
-<p>compressed *length* is a zlib tuning detail — it is not stable across zlib versions.</p>
-<p><code>raw_compress(data)</code> is the same deflate without the gzip framing, for callers that</p>
-<p>supply their own container. Each decompression is capped at 1 GiB (or the zlib <code>uInt</code></p>
-<p>limit when lower).</p>
-<ul>
-<li><strong><code>image</code></strong> — PNG decode/encode over <strong>libpng</strong> (<code>deps: libpng</code>): `decode(bytes) -&gt;</li>
-</ul>
-<p>Result(Image{width, height, pixels}, ImgErr)<code> (8-bit RGBA) and </code>encode(Image) -&gt;</p>
-<p>Result(bytes, ImgErr)<code>. </code>ImgErr<code> names which failure: </code>Empty<code>, </code>NotPng<code>, </code>Corrupt` on the</p>
-<p>decode side, <code>BadDims</code>, <code>ShortPixels</code> on the encode side, <code>Failed</code> for an allocation or</p>
-<p>a libpng failure. PNG has no 0-dimension image, so an <code>Ok</code> always carries <code>width &gt;= 1</code>.</p>
-<p>JPEG is a demand-gated follow-up.</p>
-<ul>
-<li><strong><code>tls</code></strong> — a TLS 1.2/1.3 client over <strong>OpenSSL</strong> (<code>deps: openssl</code>). Secure by default:</li>
-</ul>
-<p><code>connect(host, port)</code> verifies the certificate against the system CA store, checks the</p>
-<p>hostname, and sends SNI; failure returns a null handle (never a silent insecure</p>
-<p>connection). <code>connect_timeout(host, port, ms)</code> bounds TCP connect and handshake,</p>
-<p>and <code>set_timeout_ms(conn, ms)</code> bounds later reads/writes; timeout values outside</p>
-<p>0..2,147,483,647 fail closed. <code>write</code>/<code>read</code>/<code>close_conn</code> use the encrypted stream.</p>
-<p>A libc-only shim needs no <code>deps</code> — <code>core:regex</code>, <code>core:os</code>, <code>core:net</code> and <code>core:signal</code></p>
-<p>among them; a library with no <code>.pc</code> file can still use <code>extern "Lib" fn</code> for a bare <code>-lLib</code>.</p>
+<p>A libc-only shim needs no <code>deps</code> — <code>core:regex</code>, <code>core:os</code>, <code>core:net</code> and <code>core:signal</code> among them; a library with no <code>.pc</code> file can still use <code>extern "Lib" fn</code> for a bare <code>-lLib</code>.</p>
 <h2 id="testing">Testing</h2>
-<p><code>make corelib</code> (→ <code>corelib/run.sh</code>): every <code>corelib/test/&lt;name&gt;/main.ty</code> is built and</p>
-<p>run, and must produce the golden <code>corelib/test/&lt;name&gt;.out</code>. Re-record goldens with <code>RECORD=1 sh corelib/run.sh</code>. Part of</p>
-<p><code>make ci</code>.</p>
+<p><code>make corelib</code> (→ <code>corelib/run.sh</code>): every <code>corelib/test/&lt;name&gt;/main.ty</code> is built and run, and must produce the golden <code>corelib/test/&lt;name&gt;.out</code>. Re-record goldens with <code>RECORD=1 sh corelib/run.sh</code>. Part of <code>make ci</code>.</p>
 <h2 id="examples">Examples</h2>
-<p>Every module also has a small, readable <strong>usage example</strong> at</p>
-<p><code>examples/corelib/&lt;name&gt;/main.ty</code> — idiomatic calls with human-friendly output, as</p>
-<p>opposed to the assertion-style tests above. <code>make corelib-examples</code></p>
-<p>(→ <code>examples/corelib/run.sh</code>) validates them the same way against</p>
-<p><code>examples/corelib/&lt;name&gt;.out</code>, with the same dependency skip, and is part of <code>make ci</code>.</p>
+<p>Every module also has a small, readable <strong>usage example</strong> at <code>examples/corelib/&lt;name&gt;/main.ty</code> — idiomatic calls with human-friendly output, as opposed to the assertion-style tests above. <code>make corelib-examples</code> (→ <code>examples/corelib/run.sh</code>) validates them the same way against <code>examples/corelib/&lt;name&gt;.out</code>, with the same dependency skip, and is part of <code>make ci</code>.</p>
 <h2 id="the-corelib-surface-pre-10--not-frozen">The corelib surface (pre-1.0 — NOT frozen)</h2>
-<p><strong>The corelib API is not frozen.</strong> The packages above are locked by <code>make corelib</code> and</p>
-<p><code>make corelib-examples</code>, which is what makes the surface worth relying on in practice.</p>
-<p>What follows is the promise:</p>
+<p><strong>The corelib API is not frozen.</strong> The packages above are locked by <code>make corelib</code> and <code>make corelib-examples</code>, which is what makes the surface worth relying on in practice. What follows is the promise:</p>
 <ul>
-<li><strong>Not frozen.</strong> A public function may change name, signature, or semantics</li>
+<li><strong>Not frozen.</strong> A public function may change name, signature, or semantics before 1.0, with a <code>CHANGELOG.md</code> entry and no deprecation window. In practice changes are additive, but "in practice" is not a contract.</li>
+<li><strong>Still a regression, not a licence.</strong> A bug in a package's documented behavior is a bug to fix, not an excuse to redesign the API around it.</li>
+<li><strong>Caveats inside the surface stay:</strong> <code>core:hash</code> is non-cryptographic and <code>core:md5</code> is broken for security (use <code>core:sha256</code>), and the FFI-backed packages (<code>core:http</code>, <code>core:tls</code>, <code>core:crypto</code>, <code>core:image</code>, <code>core:sqlite</code>, <code>core:compress</code>) need their external library present at build time (the skip-if-absent convention above).</li>
+<li><strong>New packages still arrive only through the demand gate</strong> — a real program that needs them — and they join the surface the day they ship, with their test + golden + this guide entry.</li>
+<li><strong>The surface is the same on native Windows (MSYS2/mingw)</strong>, and so is every signature. Three packages *behave* differently there — <code>core:signal</code>, <code>core:datetime</code>'s POSIX-<code>TZ</code> offsets, and <code>core:os</code>'s shell-out; each difference is spelled out in <a href="https://github.com/StefanVonRanda/tycho/blob/main/SECURITY.md">SECURITY.md</a>.</li>
 </ul>
-<p>before 1.0, with a <code>CHANGELOG.md</code> entry and no deprecation window. In practice</p>
-<p>changes are additive, but "in practice" is not a contract.</p>
-<ul>
-<li><strong>Still a regression, not a licence.</strong> A bug in a package's documented</li>
-</ul>
-<p>behavior is a bug to fix, not an excuse to redesign the API around it.</p>
-<ul>
-<li><strong>Caveats inside the surface stay:</strong> <code>core:hash</code> is non-cryptographic and</li>
-</ul>
-<p><code>core:md5</code> is broken for security (use <code>core:sha256</code>), and the FFI-backed packages</p>
-<p>(<code>core:http</code>, <code>core:tls</code>, <code>core:crypto</code>, <code>core:image</code>, <code>core:sqlite</code>, <code>core:compress</code>)</p>
-<p>need their external library present at build time (the skip-if-absent convention above).</p>
-<ul>
-<li><strong>New packages still arrive only through the demand gate</strong> — a real program</li>
-</ul>
-<p>that needs them — and they join the surface the day they ship, with their</p>
-<p>test + golden + this guide entry.</p>
-<ul>
-<li><strong>The surface is the same on native Windows (MSYS2/mingw)</strong>, and so is every</li>
-</ul>
-<p>signature. Three packages *behave* differently there — <code>core:signal</code>,</p>
-<p><code>core:datetime</code>'s POSIX-<code>TZ</code> offsets, and <code>core:os</code>'s shell-out; each difference is</p>
-<p>spelled out in <a href="../../SECURITY.html">SECURITY.md</a>.</p>
-<p><strong>Deprecation path.</strong> A package or function is deprecated by (1) a <code>deprecated:</code></p>
-<p>notice in its doc comment, (2) an entry in <code>CHANGELOG.md</code> naming the</p>
-<p>replacement, and (3) a <code>warning:</code> on use emitted by the compiler.</p>
-<p>Step (3) is mechanical: a <code># deprecated: &lt;text&gt;</code> comment line **directly</p>
-<p>above** a <code>fn</code> marks it, and every call site warns with <code>&lt;text&gt;</code>. Deprecated</p>
-<p>members keep working for the current major version. <strong>Removal is a breaking change</strong>:</p>
-<p>it happens only in a major version bump, is recorded in <code>CHANGELOG.md</code> and</p>
-<p><code>RELEASE_NOTES.md</code>, and ships with the migration spelled out.</p>
-<p>Before 1.0 none of that binds: a removal needs the changelog entry and nothing</p>
-<p>else. Which packages are in the frozen surface is a decision 1.0 has to make,</p>
-<p>not one inherited from this list — see</p>
-<p><a href="../../ROADMAP.html#what-10-requires">ROADMAP.md</a>.</p>
+<p><strong>Deprecation path.</strong> A package or function is deprecated by (1) a <code>deprecated:</code> notice in its doc comment, (2) an entry in <code>CHANGELOG.md</code> naming the replacement, and (3) a <code>warning:</code> on use emitted by the compiler.</p>
+<p>Step (3) is mechanical: a <code># deprecated: &lt;text&gt;</code> comment line <strong>directly above</strong> a <code>fn</code> marks it, and every call site warns with <code>&lt;text&gt;</code>. Deprecated members keep working for the current major version. <strong>Removal is a breaking change</strong>: it happens only in a major version bump, is recorded in <code>CHANGELOG.md</code> and <code>RELEASE_NOTES.md</code>, and ships with the migration spelled out.</p>
+<p>Before 1.0 none of that binds: a removal needs the changelog entry and nothing else. Which packages are in the frozen surface is a decision 1.0 has to make, not one inherited from this list — see <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#what-10-requires">ROADMAP.md</a>.</p>
 <hr/>
-<p>Why corelib is shaped this way — the handle guards, the path-check layering,</p>
-<p>and the shim conventions — is in <a href="../internals/design-corelib.html">design-corelib</a>,</p>
-<p>for maintainers.</p>
+<p>Why corelib is shaped this way — the handle guards, the path-check layering, and the shim conventions — is in <a href="../internals/design-corelib.html">design-corelib</a>, for maintainers.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

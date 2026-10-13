@@ -4,20 +4,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Design: `match` on scalar values — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/design-scalar-match.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html" aria-current="page">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#the-demand-measured">The demand, measured</a>
+<a href="#how-match-works-today">How match works today</a>
+<a href="#decisions">Decisions</a>
+<a class="sub" href="#d1--which-types-int-now-char-and-bool-fall-out-free-stringbytes-deferred-float-refused">D1 — Which types. int now; char and bool fall out free; string/bytes deferred; float refused</a>
+<a class="sub" href="#d2----and-exhaustiveness---is-required-for-intchar-optional-for-bool">D2 — _ and exhaustiveness. _ is REQUIRED for int/char; optional for bool</a>
+<a class="sub" href="#d3--duplicate-arms-are-an-error-and-the-rule-extends-to-overlap">D3 — Duplicate arms are an error, and the rule extends to overlap</a>
+<a class="sub" href="#d4--no-fall-through">D4 — No fall-through</a>
+<a class="sub" href="#d5--ranges-and-sets-both-19-inclusive-and-1--3--5">D5 — Ranges and sets. Both: 1..9 (inclusive) and 1 | 3 | 5</a>
+<a class="sub" href="#d6--codegen-emit-a-c-switch-for-intchar-arms-when-narms--4-a-chain-otherwise-unrolled-ranges">D6 — Codegen. Emit a C switch for int/char arms when narms &gt;= 4; a chain otherwise; unrolled ranges</a>
+<a href="#what-it-would-buy--the-arithmetic">What it would buy — the arithmetic</a>
+<a href="#what-phase-2-touches">What Phase 2 touches</a>
+<a href="#done-when-phase-2s-gate">Done-when (Phase 2's gate)</a>
+<a href="#edge-cases-settled">Edge cases, settled</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/design-scalar-match.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="design-match-on-scalar-values">Design: <code>match</code> on scalar values</h1>
 <blockquote>
 <p>Status: decided 2026-08-03 — scalar <code>match</code> on <code>int</code>/<code>char</code>/<code>bool</code>, with inclusive ranges, sets, and <code>_</code>. An ergonomics feature, not a speed feature; Phase 2 measured −1.8% / −2.4% vs the <code>if</code> chain.</p>
 </blockquote>
 <h2 id="the-demand-measured">The demand, measured</h2>
-<p><code>match</code> is enum-only, so every dispatch table in the tree is an <code>if</code>/<code>elif</code></p>
-<p>ladder. Six files carry a ladder of 4+ arms over a scalar:</p>
+<p><code>match</code> is enum-only, so every dispatch table in the tree is an <code>if</code>/<code>elif</code> ladder. Six files carry a ladder of 4+ arms over a scalar:</p>
 <table>
 <tr><th>file</th><th>arms</th><th>subject</th></tr>
 <tr><td><code>tools/lsp.ty</code></td><td>55</td><td>byte values from string indexing</td></tr>
@@ -29,218 +59,90 @@
 </table>
 <p>Two shapes the arms actually need, both already written as <code>if</code>:</p>
 <ul>
-<li>The VM's dispatch groups seven arithmetic ops behind one range test —</li>
+<li>The VM's dispatch groups seven arithmetic ops behind one range test — <code>elif op &gt;= OP_ADD and op &lt;= OP_GE:</code> (<code>tools/tycho-vm/main.ty:536</code>) — and then re-dispatches inside. That is a range arm in disguise.</li>
+<li>json's number dispatch is a literal-or-range test — <code>c == 45 or (c &gt;= 48 and c &lt;= 57)</code> — the range is <strong>inclusive</strong> (<code>&lt;=</code>, not <code>&lt;</code>).</li>
 </ul>
-<p><code>elif op &gt;= OP_ADD and op &lt;= OP_GE:</code> (<code>tools/tycho-vm/main.ty:536</code>) — and</p>
-<p>then re-dispatches inside. That is a range arm in disguise.</p>
-<ul>
-<li>json's number dispatch is a literal-or-range test — `c == 45 or (c &gt;= 48</li>
-</ul>
-<p>and c &lt;= 57)<code> — the range is **inclusive** (</code>&lt;=<code>, not </code>&lt;`).</p>
-<p>Every ladder subject is <code>int</code>: string indexing returns the byte **value as an</p>
-<p>int** (<code>src/tychoc.c:7128@T_BYTES</code>), so the char-position ladders all compare ints.</p>
-<p><strong>No ladder in the tree dispatches on <code>string</code> or <code>bytes</code>.</strong></p>
+<p>Every ladder subject is <code>int</code>: string indexing returns the byte <strong>value as an int</strong> (<code>src/tychoc.c:7128@T_BYTES</code>), so the char-position ladders all compare ints. <strong>No ladder in the tree dispatches on <code>string</code> or <code>bytes</code>.</strong></p>
 <h2 id="how-match-works-today">How <code>match</code> works today</h2>
 <ul>
-<li><strong>Parse</strong> — <code>parse_match</code> (<code>src/tychoc.c@parse_match</code>) requires an IDENT per</li>
+<li><strong>Parse</strong> — <code>parse_match</code> (<code>src/tychoc.c@parse_match</code>) requires an IDENT per arm: "a match arm <code>Variant(bindings):</code> or <code>Variant:</code>". A scalar literal dies there with that message, which is why <code>match</code> on an int is currently a parse error.</li>
+<li><strong>Resolve</strong> — the <code>S_MATCH</code> case of <code>resolve_stmt</code> (<code>src/tychoc.c:9519@S_MATCH</code>) already enforces wildcard-last (<code>tests/reject/match_wildcard_not_last.ty</code>), duplicate arms (<code>tests/reject/match_dup_arm.ty</code>), and exhaustiveness (<code>tests/reject/match_non_exhaustive.ty</code>) — all enum machinery, all reusable.</li>
+<li><strong>Codegen</strong> — a match emits an <code>if</code>/<code>else if</code> chain on the variant tag with a fail-closed fallback (observed in emitted C: <code>fprintf(stderr, "tycho: non-exhaustive match\n"); exit(1)</code>).</li>
+<li><strong>Spec</strong> — §14.3 <code>docs/spec/10-statements.md:33-61</code>; grammar rule <code>docs/spec/appendix-a-grammar.md:138@match</code>.</li>
 </ul>
-<p>arm: "a match arm <code>Variant(bindings):</code> or <code>Variant:</code>". A scalar literal dies</p>
-<p>there with that message, which is why <code>match</code> on an int is currently a parse</p>
-<p>error.</p>
-<ul>
-<li><strong>Resolve</strong> — the <code>S_MATCH</code> case of <code>resolve_stmt</code> (<code>src/tychoc.c:9519@S_MATCH</code>) already enforces</li>
-</ul>
-<p>wildcard-last (<code>tests/reject/match_wildcard_not_last.ty</code>), duplicate arms</p>
-<p>(<code>tests/reject/match_dup_arm.ty</code>), and exhaustiveness</p>
-<p>(<code>tests/reject/match_non_exhaustive.ty</code>) — all enum machinery, all reusable.</p>
-<ul>
-<li><strong>Codegen</strong> — a match emits an <code>if</code>/<code>else if</code> chain on the variant tag with</li>
-</ul>
-<p>a fail-closed fallback (observed in emitted C:</p>
-<p><code>fprintf(stderr, "tycho: non-exhaustive match\n"); exit(1)</code>).</p>
-<ul>
-<li><strong>Spec</strong> — §14.3 <code>docs/spec/10-statements.md:33-61</code>; grammar rule</li>
-</ul>
-<p><code>docs/spec/appendix-a-grammar.md:138@match</code>.</p>
 <h2 id="decisions">Decisions</h2>
 <h3 id="d1--which-types-int-now-char-and-bool-fall-out-free-stringbytes-deferred-float-refused">D1 — Which types. <code>int</code> now; <code>char</code> and <code>bool</code> fall out free; <code>string</code>/<code>bytes</code> deferred; <code>float</code> refused</h3>
 <ul>
 <li><strong><code>int</code></strong> — the only type with customers (the table above). Primary.</li>
-<li><strong><code>char</code></strong> — the same machine type as <code>int</code> (both emit as <code>tycho_int</code>,</li>
-</ul>
-<p><code>src/tychoc.c:2081@T_CHAR</code>). Arm literals are <code>'a'</code>-spelled; the byte-value ladders</p>
-<p>use <code>int</code> and stay <code>int</code>. No customer for the distinct <code>char</code> type today,</p>
-<p>but the cost is zero once the int machinery exists.</p>
-<ul>
+<li><strong><code>char</code></strong> — the same machine type as <code>int</code> (both emit as <code>tycho_int</code>, <code>src/tychoc.c:2081@T_CHAR</code>). Arm literals are <code>'a'</code>-spelled; the byte-value ladders use <code>int</code> and stay <code>int</code>. No customer for the distinct <code>char</code> type today, but the cost is zero once the int machinery exists.</li>
 <li><strong><code>bool</code></strong> — a two-value domain, so exhaustiveness is provable (D2).</li>
-<li><strong><code>string</code> / <code>bytes</code></strong> — <strong>deferred, with the measurement as the reason.</strong></li>
+<li><strong><code>string</code> / <code>bytes</code></strong> — <strong>deferred, with the measurement as the reason.</strong> Zero ladders in the tree dispatch on either (counted above). A string arm needs string-comparison codegen (a string is a length-headered <code>char *</code>, not a scalar), and a feature whose only customer is the program written to want it is the demo problem this whole exercise exists to catch. Comes back if a second caller appears. A <code>match</code> on a <code>string</code>/<code>bytes</code> subject is a <strong>compile error at resolve</strong>, with the reason in the message.</li>
+<li><strong><code>float</code></strong> — <strong>refused.</strong> Equality on floats is the classic trap (arms on a continuous domain invite NaN and mid-computation surprises), no customer exists, and <code>if</code> with comparisons is the form to use. The refusal is stated, not silent.</li>
 </ul>
-<p>Zero ladders in the tree dispatch on either (counted above). A string arm</p>
-<p>needs string-comparison codegen (a string is a length-headered <code>char *</code>,</p>
-<p>not a scalar), and a feature whose only customer is the program written to</p>
-<p>want it is the demo problem this whole exercise exists to catch. Comes back</p>
-<p>if a second caller appears. A <code>match</code> on a <code>string</code>/<code>bytes</code> subject is a</p>
-<p><strong>compile error at resolve</strong>, with the reason in the message.</p>
-<ul>
-<li><strong><code>float</code></strong> — <strong>refused.</strong> Equality on floats is the classic trap (arms on</li>
-</ul>
-<p>a continuous domain invite NaN and mid-computation surprises), no customer</p>
-<p>exists, and <code>if</code> with comparisons is the form to use. The refusal is</p>
-<p>stated, not silent.</p>
 <h3 id="d2----and-exhaustiveness---is-required-for-intchar-optional-for-bool">D2 — <code>_</code> and exhaustiveness. <code>_</code> is REQUIRED for <code>int</code>/<code>char</code>; optional for <code>bool</code></h3>
-<p>An <code>int</code> match without <code>_</code> cannot be exhaustive and is a <strong>compile error</strong> —</p>
-<p>the same fail-closed stance the resolver already takes on enums</p>
-<p>(<code>tests/reject/match_non_exhaustive.ty</code>). The emitted runtime abort stays as</p>
-<p>the backstop (it becomes unreachable: the resolver proves coverage). For</p>
-<p><code>bool</code>, <code>true:</code> + <code>false:</code> covers the domain, so <code>_</code> is optional, exactly like</p>
-<p>the enum rule.</p>
-<p>Reason: enums are exhaustiveness-checkable by construction; ints are not. A</p>
-<p>non-exhaustive scalar match would be a new silent-fall-through failure mode —</p>
-<p>the thing the repo's reject suite exists to refuse (json's "cannot spin" is</p>
-<p>the same instinct).</p>
+<p>An <code>int</code> match without <code>_</code> cannot be exhaustive and is a <strong>compile error</strong> — the same fail-closed stance the resolver already takes on enums (<code>tests/reject/match_non_exhaustive.ty</code>). The emitted runtime abort stays as the backstop (it becomes unreachable: the resolver proves coverage). For <code>bool</code>, <code>true:</code> + <code>false:</code> covers the domain, so <code>_</code> is optional, exactly like the enum rule.</p>
+<p>Reason: enums are exhaustiveness-checkable by construction; ints are not. A non-exhaustive scalar match would be a new silent-fall-through failure mode — the thing the repo's reject suite exists to refuse (json's "cannot spin" is the same instinct).</p>
 <h3 id="d3--duplicate-arms-are-an-error-and-the-rule-extends-to-overlap">D3 — Duplicate arms are an error, and the rule extends to overlap</h3>
-<p>A repeated literal is an error, as a repeated variant already is. Two arms</p>
-<p>whose patterns <strong>overlap</strong> are also an error: <code>1..9</code> plus <code>5</code>, or <code>1 | 3</code></p>
-<p>plus <code>3</code>. Overlap detection is interval arithmetic over the arm patterns</p>
-<p>(merge sorted intervals; any collision fails, naming both arms).</p>
-<p>Reason: a duplicate makes an earlier arm dead and the match ordering-dependent</p>
-<p>— the bug a <code>match</code> exists to make unexpressible. Ranges make this subtle, so</p>
-<p>the resolver must check it rather than the writer.</p>
+<p>A repeated literal is an error, as a repeated variant already is. Two arms whose patterns <strong>overlap</strong> are also an error: <code>1..9</code> plus <code>5</code>, or <code>1 | 3</code> plus <code>3</code>. Overlap detection is interval arithmetic over the arm patterns (merge sorted intervals; any collision fails, naming both arms).</p>
+<p>Reason: a duplicate makes an earlier arm dead and the match ordering-dependent — the bug a <code>match</code> exists to make unexpressible. Ranges make this subtle, so the resolver must check it rather than the writer.</p>
 <h3 id="d4--no-fall-through">D4 — No fall-through</h3>
-<p>One arm runs; arms are blocks (statement form) or value expressions (value</p>
-<p>form, §13.5) — unchanged from enums. Fall-through is the classic source of</p>
-<p>the exact bugs <code>match</code> removes, and range arms make it unnecessary: the range</p>
-<p>IS the group (the VM's arithmetic group becomes one <code>OP_ADD..OP_GE</code> arm</p>
-<p>instead of seven labels with a shared body).</p>
+<p>One arm runs; arms are blocks (statement form) or value expressions (value form, §13.5) — unchanged from enums. Fall-through is the classic source of the exact bugs <code>match</code> removes, and range arms make it unnecessary: the range IS the group (the VM's arithmetic group becomes one <code>OP_ADD..OP_GE</code> arm instead of seven labels with a shared body).</p>
 <h3 id="d5--ranges-and-sets-both-19-inclusive-and-1--3--5">D5 — Ranges and sets. Both: <code>1..9</code> (inclusive) and <code>1 | 3 | 5</code></h3>
 <ul>
-<li><code>..</code> is <strong>inclusive</strong>, matching the code the customers write today</li>
+<li><code>..</code> is <strong>inclusive</strong>, matching the code the customers write today (<code>c &gt;= 48 and c &lt;= 57</code>).</li>
+<li><code>|</code> already lexes (bitwise-or), so a set is sugar for repeated literals — no token work, and the dup/overlap rule applies to the set as a unit.</li>
+<li><code>..</code> is <strong>not lexed today</strong> (verified: <code>1..9</code> is currently a parse error). The float hazard is smaller than it looks: a trailing-dot float does not exist (<code>1.</code> fails as "expected a field name or tuple index after '.'"), so the rule is simply — in <code>lex_num</code>, a dot not followed by a digit ends the number; two adjacent dots lex as <code>..</code>. <code>1.5</code> still lexes as a float, <code>1.5</code> never collides with <code>..</code>, and <code>1..9</code> becomes int <code>1</code>, <code>..</code>, int <code>9</code>.</li>
 </ul>
-<p>(<code>c &gt;= 48 and c &lt;= 57</code>).</p>
-<ul>
-<li><code>|</code> already lexes (bitwise-or), so a set is sugar for repeated literals —</li>
-</ul>
-<p>no token work, and the dup/overlap rule applies to the set as a unit.</p>
-<ul>
-<li><code>..</code> is <strong>not lexed today</strong> (verified: <code>1..9</code> is currently a parse error).</li>
-</ul>
-<p>The float hazard is smaller than it looks: a trailing-dot float does not</p>
-<p>exist (<code>1.</code> fails as "expected a field name or tuple index after '.'"), so</p>
-<p>the rule is simply — in <code>lex_num</code>, a dot not followed by a digit ends the</p>
-<p>number; two adjacent dots lex as <code>..</code>. <code>1.5</code> still lexes as a float, <code>1.5</code></p>
-<p>never collides with <code>..</code>, and <code>1..9</code> becomes int <code>1</code>, <code>..</code>, int <code>9</code>.</p>
 <h3 id="d6--codegen-emit-a-c-switch-for-intchar-arms-when-narms--4-a-chain-otherwise-unrolled-ranges">D6 — Codegen. Emit a C <code>switch</code> for <code>int</code>/<code>char</code> arms when <code>narms &gt;= 4</code>; a chain otherwise; unrolled ranges</h3>
 <ul>
-<li>The emitted C is <code>switch (subject) { case L: ... }</code> for int/char matches</li>
+<li>The emitted C is <code>switch (subject) { case L: ... }</code> for int/char matches with 4+ arms, with the subject cached in a local first (the "evaluated exactly once" rule of §14.3 carries over — the existing <code>_m0</code> caching pattern extends to a scalar temp).</li>
+<li>Ranges emit as <strong>consecutive case labels</strong> (<code>case 48: case 49: ... case 57:</code>). Unrolling, not GNU <code>case 48 ... 57:</code>: the ranges in the tree are all small (7–10 values), and unrolling is portable under any dialect. (The repo compiles with plain <code>cc</code>, no <code>-std</code> — <code>src/tychoc.c:16237@-fwrapv</code> — so GNU case ranges would work, but there is no reason to depend on them.)</li>
+<li>The table-vs-binary-search decision is <strong>cc's</strong>, not ours: at <code>-O2</code>, GCC and Clang lower a dense switch to a jump table and a sparse one to a binary search. Emitting a chain and hoping cc's if-to-switch conversion fires is fragile; emitting a <code>switch</code> is deterministic.</li>
+<li>The 4-arm threshold: an indirect jump plus bounds check costs about as much as 2–3 comparisons, so below 4 a chain wins and above it the switch does not lose. The exact crossover is cc's to decide; 4 is our floor.</li>
+<li>Enum <code>match</code> codegen is <strong>unchanged</strong> (chain on tag). Rewriting it to a switch is out of scope; it has no customers complaining.</li>
 </ul>
-<p>with 4+ arms, with the subject cached in a local first (the "evaluated</p>
-<p>exactly once" rule of §14.3 carries over — the existing <code>_m0</code> caching</p>
-<p>pattern extends to a scalar temp).</p>
-<ul>
-<li>Ranges emit as <strong>consecutive case labels</strong> (<code>case 48: case 49: ... case 57:</code>).</li>
-</ul>
-<p>Unrolling, not GNU <code>case 48 ... 57:</code>: the ranges in the tree are all small</p>
-<p>(7–10 values), and unrolling is portable under any dialect. (The repo</p>
-<p>compiles with plain <code>cc</code>, no <code>-std</code> — <code>src/tychoc.c:16237@-fwrapv</code> — so GNU case</p>
-<p>ranges would work, but there is no reason to depend on them.)</p>
-<ul>
-<li>The table-vs-binary-search decision is <strong>cc's</strong>, not ours: at <code>-O2</code>, GCC and</li>
-</ul>
-<p>Clang lower a dense switch to a jump table and a sparse one to a binary</p>
-<p>search. Emitting a chain and hoping cc's if-to-switch conversion fires is</p>
-<p>fragile; emitting a <code>switch</code> is deterministic.</p>
-<ul>
-<li>The 4-arm threshold: an indirect jump plus bounds check costs about as much</li>
-</ul>
-<p>as 2–3 comparisons, so below 4 a chain wins and above it the switch does</p>
-<p>not lose. The exact crossover is cc's to decide; 4 is our floor.</p>
-<ul>
-<li>Enum <code>match</code> codegen is <strong>unchanged</strong> (chain on tag). Rewriting it to a</li>
-</ul>
-<p>switch is out of scope; it has no customers complaining.</p>
 <h2 id="what-it-would-buy--the-arithmetic">What it would buy — the arithmetic</h2>
-<p>From the plan's own measurements (<code>docs/internals/plan-tycho-vm-DONE.md:36-38</code>): VM throughput is 1.39 M</p>
-<p>instructions/sec — about <strong>720 ns per instruction</strong> — and the dispatch is</p>
-<p>~12 int comparisons per instruction (<code>docs/internals/plan-tycho-vm-DONE.md:54</code>). An int compare plus</p>
-<p>branch is ~2 cycles, ~0.7 ns at ~3 GHz, so the whole dispatch chain is</p>
-<p><strong>~8 ns ≈ 1% of the per-instruction budget</strong>. A jump table replaces it with a</p>
-<p>bounds check plus an indirect jump, ~2–3 ns — a saving of **~0.5–1% of VM</p>
-<p>time, inside measurement noise**.</p>
-<p>The dominant cost is elsewhere: a struct-with-a-string copy is <strong>815 ns</strong></p>
-<p>against <strong>110 ns</strong> for a bare <code>JMP</code> (<code>docs/internals/plan-tycho-vm-DONE.md:36</code>) — 7×. Copies and arena</p>
-<p>traffic, not comparisons, are what the VM spends its 720 ns on.</p>
-<p><strong>Conclusion, stated plainly:</strong> scalar <code>match</code> is an <strong>ergonomics</strong> feature</p>
-<p>with fail-closed semantics, not a speed feature. It turns 12-comparison</p>
-<p>ladders into readable, dup-checked, exhaustiveness-checked arms. Phase 2 must</p>
-<p>measure the VM's instructions/sec before and after and report both; the</p>
-<p>prediction is <strong>flat within noise</strong>, and a change of more than ~2% would</p>
-<p>itself be a surprise worth explaining.</p>
-<p><strong>Measured at Phase 2 (2026-08-03).</strong> The old if/elif dispatch (built from</p>
-<p>git HEAD) vs the scalar match, same compiler, same workload: 300 fib runs,</p>
-<p>best of 3 — 2.354 s → 2.311 s (<strong>-1.8%</strong>); 500 sort runs, best of 5 —</p>
-<p>0.616 s → 0.601 s (<strong>-2.4%</strong>). Marginally faster than the chain, consistent</p>
-<p>with the switch lowering; the estimate's ~1% dispatch slice was a little low</p>
-<p>because a 24-way comparison chain mispredicts more than the naive 2-cycles-</p>
-<p>per-compare figure assumed. Neither number is a reason to build for speed.</p>
+<p>From the plan's own measurements (<code>docs/internals/plan-tycho-vm-DONE.md:36-38</code>): VM throughput is 1.39 M instructions/sec — about <strong>720 ns per instruction</strong> — and the dispatch is ~12 int comparisons per instruction (<code>docs/internals/plan-tycho-vm-DONE.md:54</code>). An int compare plus branch is ~2 cycles, ~0.7 ns at ~3 GHz, so the whole dispatch chain is <strong>~8 ns ≈ 1% of the per-instruction budget</strong>. A jump table replaces it with a bounds check plus an indirect jump, ~2–3 ns — a saving of <strong>~0.5–1% of VM time, inside measurement noise</strong>.</p>
+<p>The dominant cost is elsewhere: a struct-with-a-string copy is <strong>815 ns</strong> against <strong>110 ns</strong> for a bare <code>JMP</code> (<code>docs/internals/plan-tycho-vm-DONE.md:36</code>) — 7×. Copies and arena traffic, not comparisons, are what the VM spends its 720 ns on.</p>
+<p><strong>Conclusion, stated plainly:</strong> scalar <code>match</code> is an <strong>ergonomics</strong> feature with fail-closed semantics, not a speed feature. It turns 12-comparison ladders into readable, dup-checked, exhaustiveness-checked arms. Phase 2 must measure the VM's instructions/sec before and after and report both; the prediction is <strong>flat within noise</strong>, and a change of more than ~2% would itself be a surprise worth explaining.</p>
+<p><strong>Measured at Phase 2 (2026-08-03).</strong> The old if/elif dispatch (built from git HEAD) vs the scalar match, same compiler, same workload: 300 fib runs, best of 3 — 2.354 s → 2.311 s (<strong>-1.8%</strong>); 500 sort runs, best of 5 — 0.616 s → 0.601 s (<strong>-2.4%</strong>). Marginally faster than the chain, consistent with the switch lowering; the estimate's ~1% dispatch slice was a little low because a 24-way comparison chain mispredicts more than the naive 2-cycles- per-compare figure assumed. Neither number is a reason to build for speed.</p>
 <h2 id="what-phase-2-touches">What Phase 2 touches</h2>
 <ul>
 <li><strong>Lexer</strong> — the <code>..</code> token and the dot-not-followed-by-digit rule (D5).</li>
-<li><strong><code>parse_match</code></strong> (<code>src/tychoc.c@parse_match</code>) — the arm grammar accepts,</li>
+<li><strong><code>parse_match</code></strong> (<code>src/tychoc.c@parse_match</code>) — the arm grammar accepts, beside variant names and <code>_</code>: an int/char/bool literal, a set (<code>lit | lit | ...</code>), and a range (<code>lit..lit</code>). The diagnostic widens from "a match arm <code>Variant(bindings):</code> or <code>Variant:</code>" to name the new forms. String and float literals stay rejected at parse.</li>
+<li><strong>Resolve</strong> (<code>src/tychoc.c:9519@S_MATCH</code>) — a scalar subject path: subject is <code>int</code>/<code>char</code>/<code>bool</code>; arm literals typed against the subject exactly as assignment would type them (newtype rules unchanged — a newtype over int is its own type and takes its own spellings); literal arms on an enum subject and variant arms on a scalar subject are distinct errors; the dup/overlap check (D3); the <code>_</code> rule (D2); string/bytes/float subjects refused with the demand-gated reason (D1).</li>
+<li><strong>Codegen</strong> (<code>src/tychoc.c:13562@S_MATCH</code>) — the switch emission (D6). The <code>S_MATCH</code> statement and value forms both flow through it, so the value form (<code>x := match c: ...</code>) works without separate work.</li>
+<li><strong>Spec</strong> — §14.3 (<code>docs/spec/10-statements.md:33-61</code>), the statements section that names the arm forms, and the grammar (<code>docs/spec/appendix-a-grammar.md:138@match</code>).</li>
+<li><strong>Fixtures</strong> — ordinary <code>tests/</code> fixtures (the freeze lanes are retired; new syntax gets a plain fixture again): accepted forms, the value form, and rejects — dup, overlap, missing <code>_</code> on int, literal arm on enum, variant arm on int, <code>match</code> on string, <code>match</code> on float.</li>
 </ul>
-<p>beside variant names and <code>_</code>: an int/char/bool literal, a set</p>
-<p>(<code>lit | lit | ...</code>), and a range (<code>lit..lit</code>). The diagnostic widens from</p>
-<p>"a match arm <code>Variant(bindings):</code> or <code>Variant:</code>" to name the new forms.</p>
-<p>String and float literals stay rejected at parse.</p>
-<ul>
-<li><strong>Resolve</strong> (<code>src/tychoc.c:9519@S_MATCH</code>) — a scalar subject path: subject is</li>
-</ul>
-<p><code>int</code>/<code>char</code>/<code>bool</code>; arm literals typed against the subject exactly as</p>
-<p>assignment would type them (newtype rules unchanged — a newtype over int</p>
-<p>is its own type and takes its own spellings); literal arms on an enum</p>
-<p>subject and variant arms on a scalar subject are distinct errors; the</p>
-<p>dup/overlap check (D3); the <code>_</code> rule (D2); string/bytes/float subjects</p>
-<p>refused with the demand-gated reason (D1).</p>
-<ul>
-<li><strong>Codegen</strong> (<code>src/tychoc.c:13562@S_MATCH</code>) — the switch emission (D6). The</li>
-</ul>
-<p><code>S_MATCH</code> statement and value forms both flow through it, so the value</p>
-<p>form (<code>x := match c: ...</code>) works without separate work.</p>
-<ul>
-<li><strong>Spec</strong> — §14.3 (<code>docs/spec/10-statements.md:33-61</code>), the statements</li>
-</ul>
-<p>section that names the arm forms, and the grammar</p>
-<p>(<code>docs/spec/appendix-a-grammar.md:138@match</code>).</p>
-<ul>
-<li><strong>Fixtures</strong> — ordinary <code>tests/</code> fixtures (the freeze lanes are retired;</li>
-</ul>
-<p>new syntax gets a plain fixture again): accepted forms, the value form,</p>
-<p>and rejects — dup, overlap, missing <code>_</code> on int, literal arm on enum,</p>
-<p>variant arm on int, <code>match</code> on string, <code>match</code> on float.</p>
 <h2 id="done-when-phase-2s-gate">Done-when (Phase 2's gate)</h2>
-<p>1. <code>tools/tycho-vm/main.ty:524</code>'s dispatch is written as a scalar <code>match</code>,</p>
-<p>with the grouped arithmetic arm spelled <code>OP_ADD..OP_GE</code>.</p>
-<p>2. <code>corelib/json/json.ty@parse_value</code>'s byte dispatch is written as a scalar</p>
-<p><code>match</code>.</p>
-<p>3. Both still pass their gates (<code>make test</code>, <code>make corelib</code>, <code>make vm-check</code>),</p>
-<p>and the VM's instructions/sec is measured before and after and reported.</p>
+<ol>
+<li><code>tools/tycho-vm/main.ty:524</code>'s dispatch is written as a scalar <code>match</code>, with the grouped arithmetic arm spelled <code>OP_ADD..OP_GE</code>.</li>
+<li><code>corelib/json/json.ty@parse_value</code>'s byte dispatch is written as a scalar <code>match</code>.</li>
+<li>Both still pass their gates (<code>make test</code>, <code>make corelib</code>, <code>make vm-check</code>), and the VM's instructions/sec is measured before and after and reported.</li>
+</ol>
 <h2 id="edge-cases-settled">Edge cases, settled</h2>
 <ul>
-<li><strong>Subject evaluated exactly once</strong> even when arms have side effects — the</li>
-</ul>
-<p>scalar temp is assigned once before the switch.</p>
-<ul>
+<li><strong>Subject evaluated exactly once</strong> even when arms have side effects — the scalar temp is assigned once before the switch.</li>
 <li><strong>Empty <code>_</code>-only matches</strong> — legal (<code>match c: _: ...</code>), a pass-through.</li>
-<li><strong>A set containing a range</strong> (<code>1 | 3..5</code>) — legal; the pieces merge into</li>
-</ul>
-<p>one interval set for overlap checking.</p>
-<ul>
-<li><strong>Nested patterns on scalar arms</strong> — none: a scalar arm has no payload.</li>
-</ul>
-<p>Option/Result nesting is unchanged.</p>
-<ul>
+<li><strong>A set containing a range</strong> (<code>1 | 3..5</code>) — legal; the pieces merge into one interval set for overlap checking.</li>
+<li><strong>Nested patterns on scalar arms</strong> — none: a scalar arm has no payload. Option/Result nesting is unchanged.</li>
 <li><strong>No <code>default</code> keyword</strong> — <code>_</code> is the spelling; one spelling, one rule.</li>
 </ul>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

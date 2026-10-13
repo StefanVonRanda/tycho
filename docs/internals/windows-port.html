@@ -4,827 +4,212 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Native Windows support — plan (separate track from plan.md) — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/windows-port.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html" aria-current="page">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#why-it-is-feasible-at-all--the-assessment-in-one-screen">Why it is feasible at all — the assessment in one screen</a>
+<a href="#phases">Phases</a>
+<a class="sub" href="#phase-1--toolchain-spike-does-the-compiler-build-under-mingw">Phase 1 — Toolchain spike: does the compiler build under mingw?</a>
+<a class="sub" href="#phase-2--runtime-port-the-hard-piece">Phase 2 — Runtime port (the hard piece)</a>
+<a class="sub" href="#phase-3--compiler--emitted-c-toolchain-verification">Phase 3 — Compiler + emitted-C toolchain verification</a>
+<a class="sub" href="#phase-4--corelib-shims">Phase 4 — Corelib shims</a>
+<a class="sub" href="#phase-5--tools">Phase 5 — Tools</a>
+<a class="sub" href="#phase-6--harness-and-golden-audit-under-msys2">Phase 6 — Harness and golden audit under MSYS2</a>
+<a class="sub" href="#phase-7--close-full-sweep-release-and-documentation">Phase 7 — Close: full sweep, release, and documentation</a>
+<a href="#risks-and-cost">Risks and cost</a>
+<a href="#out-of-scope-unchanged-from-planmd">Out of scope (unchanged from plan.md)</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/windows-port.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="native-windows-support--plan-separate-track-from-planmd">Native Windows support — plan (separate track from plan.md)</h1>
 <blockquote>
-<p>Assessed 2026-08-05, <strong>executed and closed 2026-08-07</strong>. The port happened:</p>
-<p><code>main</code> carries 71 <code>_WIN32</code> guards across the C sources, and <code>ROADMAP.md</code></p>
-<p>condition 5 was closed on 2026-08-10 with <code>make ci</code> green under MSYS2 — the</p>
-<p>one measured behavioural difference (a thread parked in <code>recv</code> winds down</p>
-<p>within its idle timeout rather than within a millisecond) is a documented</p>
-<p>platform limit, not an open item.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p><strong>This file is kept as the record of the port's design, not as live work.</strong></p>
-<p>It is load-bearing: <code>tests/run.sh</code>, <code>tests/conc/run.sh</code>, <code>tests/ffi/run.sh</code>,</p>
-<p><code>scripts/ci.sh</code>, <code>scripts/release.sh</code>, the four <code>scripts/wine_*.sh</code> and six</p>
-<p><code>examples/*/run.sh</code> all cite "windows-port.md phase N" as the stated reason</p>
-<p>they skip a sanitizer leg on Windows. Those phase numbers must keep resolving</p>
-<p>to the sections below, so do not renumber or delete them.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>The assessment below was written by reading the source on a Linux box, before</p>
-<p>anything ran under Windows; its <code>path:line</code> claims are from that date and have</p>
-<p>not been re-verified since. Read it as the plan that was followed, not as a</p>
-<p>current description of the tree.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>SCOPE. In: a native Windows build of the compiler + runtime + corelib +</p>
-<p>tools + harness, targeting <strong>MSYS2/mingw-w64 gcc</strong> as the C environment (the</p>
-<p>same <code>cc</code> the transpiler already invokes). Out: MSVC as the C target</p>
-<p>(the emitted-C cc line <code>-pthread -fwrapv -O3 -lm</code>, <code>__thread</code>, the runtime's</p>
-<p>POSIX surface, no winpthreads/dirent/getline/pread, no pkg-config, and all</p>
-<p>65 shell runners would each need real work — 3-4x the cost for no</p>
-<p>distribution win), and any change to the language surface.</p>
+<p>Assessed 2026-08-05, <strong>executed and closed 2026-08-07</strong>. The port happened: <code>main</code> carries 71 <code>_WIN32</code> guards across the C sources, and <code>ROADMAP.md</code> condition 5 was closed on 2026-08-10 with <code>make ci</code> green under MSYS2 — the one measured behavioural difference (a thread parked in <code>recv</code> winds down within its idle timeout rather than within a millisecond) is a documented platform limit, not an open item.</p>
+<p><strong>This file is kept as the record of the port's design, not as live work.</strong> It is load-bearing: <code>tests/run.sh</code>, <code>tests/conc/run.sh</code>, <code>tests/ffi/run.sh</code>, <code>scripts/ci.sh</code>, <code>scripts/release.sh</code>, the four <code>scripts/wine_*.sh</code> and six <code>examples/*/run.sh</code> all cite "windows-port.md phase N" as the stated reason they skip a sanitizer leg on Windows. Those phase numbers must keep resolving to the sections below, so do not renumber or delete them.</p>
+<p>The assessment below was written by reading the source on a Linux box, before anything ran under Windows; its <code>path:line</code> claims are from that date and have not been re-verified since. Read it as the plan that was followed, not as a current description of the tree.</p>
+<p>SCOPE. In: a native Windows build of the compiler + runtime + corelib + tools + harness, targeting <strong>MSYS2/mingw-w64 gcc</strong> as the C environment (the same <code>cc</code> the transpiler already invokes). Out: MSVC as the C target (the emitted-C cc line <code>-pthread -fwrapv -O3 -lm</code>, <code>__thread</code>, the runtime's POSIX surface, no winpthreads/dirent/getline/pread, no pkg-config, and all 65 shell runners would each need real work — 3-4x the cost for no distribution win), and any change to the language surface.</p>
 </blockquote>
 <h2 id="why-it-is-feasible-at-all--the-assessment-in-one-screen">Why it is feasible at all — the assessment in one screen</h2>
 <ul>
-<li>The <strong>compiler</strong> (<code>src/tychoc.c</code>) is mostly portable C. Its POSIX surface is</li>
+<li>The <strong>compiler</strong> (<code>src/tychoc.c</code>) is mostly portable C. Its POSIX surface is <code>dirent</code> (opendir/readdir/closedir, <code>src/tychoc.c:5651@opendir</code>), <code>popen</code> (<code>src/tychoc.c:15867@popen</code>), <code>realpath</code>, <code>access</code>, <code>vasprintf</code> (<code>src/tychoc.c:301@vasprintf</code>), and <code>newlocale/uselocale</code> (<code>src/tychoc.c:373@uselocale</code>). mingw-w64 provides no POSIX <code>newlocale</code>/<code>uselocale</code>/<code>locale_t</code> at any version (checked against upstream master 2026-08-05: only the MSVC-style <code>_locale_t</code> API) -- the compiler and runtime already have localeconv-based fallback legs, so this costs a guard, not a shim. <code>vasprintf</code> is present in mingw 15.2; a 10-line fallback if ever absent. Estimate: ~1 day.</li>
+<li>The <strong>runtime</strong> (<code>runtime/tycho_rt.c</code>, embedded verbatim into every emitted program) needs: winpthreads for the whole concurrency model (<code>runtime/tycho_rt.c:1020@pthread_create</code> — free under <code>-pthread</code>), <code>clock_gettime</code>/<code>nanosleep</code>/<code>sched_yield</code>/<code>sysconf</code> (<code>runtime/tycho_rt.c:72@sysconf</code> — mingw shims, a few lines), and <strong>the one hard piece</strong>: the deep-recursion stack-overflow guard built on <code>sigaltstack</code>/<code>sigaction</code>/<code>ucontext</code> (<code>runtime/tycho_rt.c:64-69</code>, <code>:224@sigaltstack</code>). The per-platform pattern already exists (<code>runtime/tycho_rt.c:185@__APPLE__</code>); Windows gets a third branch via <code>GetCurrentThreadStackLimits</code> + <code>AddVectoredExceptionHandler</code> catching <code>EXCEPTION_STACK_OVERFLOW</code> (~60-100 lines). Estimate: 2-3 days.</li>
+<li>Two corelib shims are <strong>already ported</strong>: <code>core:os</code> has <code>_popen</code>/<code>_pclose</code> (<code>corelib/os/os_shim.c:24-27</code>), <code>core:net</code> has a real Winsock2 path (<code>corelib/net/net_shim.c:16-25</code>). The rest split into small ports (<code>core:io</code> — <code>getline</code> at <code>corelib/io/io_shim.c:63</code>, <code>pread</code> at <code>:205</code>), one big port (<code>core:regex</code> — POSIX <code>regcomp</code>/<code>regexec</code> at <code>corelib/regex/regex_shim.c:20, corelib/regex/regex_shim.c:26</code> don't exist on Windows; PCRE2 behind the same API, or a documented gap), one redesign (<code>core:signal</code> — the <code>sigaction</code>-based socket-shutdown design ports to <code>SetConsoleCtrlHandler</code> + <code>closesocket</code>), and the external-dep packages (<code>tls</code>/<code>http</code>/<code>compress</code>/<code>image</code>/<code>crypto</code>/<code>sqlite</code>) that just need their MSYS2 dev libraries present (the existing skip-if-absent convention covers absence).</li>
+<li>The <strong>harness</strong> (65 shell scripts + <code>make</code> + <code>ci.sh</code>) runs under MSYS2's <code>sh</code>/<code>make</code> <strong>unmodified</strong> — that is what MSYS2 is. The Linux-only lanes skip (locale-check's <code>LD_PRELOAD</code>, asan-self, ilp32). The risk is not the porting; it is the <strong>long tail</strong>: byte-compared goldens that embed path separators or <code>\r\n</code>, mingw-gdb transcript drift in the debug lane, and a <code>deps</code> pkg-config name resolving differently.</li>
+<li><code>tycho-debug</code> needs a real Windows interrupt story: <code>setpgid</code> + SIGINT-to- the-inferior (<code>tools/tycho-debug/debug_shim.c:11-17</code>) → <code>GenerateConsoleCtrlEvent</code> / <code>TerminateProcess</code> and no <code>setpgid</code>. mingw gdb exists, so the rest of the adapter ports.</li>
 </ul>
-<p><code>dirent</code> (opendir/readdir/closedir, <code>src/tychoc.c:5651@opendir</code>), <code>popen</code></p>
-<p>(<code>src/tychoc.c:15867@popen</code>), <code>realpath</code>, <code>access</code>, <code>vasprintf</code></p>
-<p>(<code>src/tychoc.c:301@vasprintf</code>), and <code>newlocale/uselocale</code></p>
-<p>(<code>src/tychoc.c:373@uselocale</code>). mingw-w64 provides no POSIX</p>
-<p><code>newlocale</code>/<code>uselocale</code>/<code>locale_t</code> at any version (checked against upstream</p>
-<p>master 2026-08-05: only the MSVC-style <code>_locale_t</code> API) -- the compiler and</p>
-<p>runtime already have localeconv-based fallback legs, so this costs a guard,</p>
-<p>not a shim. <code>vasprintf</code> is present in mingw 15.2; a 10-line fallback if ever</p>
-<p>absent.</p>
-<p>Estimate: ~1 day.</p>
-<ul>
-<li>The <strong>runtime</strong> (<code>runtime/tycho_rt.c</code>, embedded verbatim into every emitted</li>
-</ul>
-<p>program) needs: winpthreads for the whole concurrency model</p>
-<p>(<code>runtime/tycho_rt.c:1020@pthread_create</code> — free under <code>-pthread</code>),</p>
-<p><code>clock_gettime</code>/<code>nanosleep</code>/<code>sched_yield</code>/<code>sysconf</code></p>
-<p>(<code>runtime/tycho_rt.c:72@sysconf</code> — mingw shims, a few lines), and **the one</p>
-<p>hard piece**: the deep-recursion stack-overflow guard built on</p>
-<p><code>sigaltstack</code>/<code>sigaction</code>/<code>ucontext</code> (<code>runtime/tycho_rt.c:64-69</code>,</p>
-<p><code>:224@sigaltstack</code>). The per-platform pattern already exists</p>
-<p>(<code>runtime/tycho_rt.c:185@__APPLE__</code>); Windows gets a third branch via</p>
-<p><code>GetCurrentThreadStackLimits</code> + <code>AddVectoredExceptionHandler</code> catching</p>
-<p><code>EXCEPTION_STACK_OVERFLOW</code> (~60-100 lines). Estimate: 2-3 days.</p>
-<ul>
-<li>Two corelib shims are <strong>already ported</strong>: <code>core:os</code> has <code>_popen</code>/<code>_pclose</code></li>
-</ul>
-<p>(<code>corelib/os/os_shim.c:24-27</code>), <code>core:net</code> has a real Winsock2 path</p>
-<p>(<code>corelib/net/net_shim.c:16-25</code>). The rest split into small ports (<code>core:io</code></p>
-<p>— <code>getline</code> at <code>corelib/io/io_shim.c:63</code>, <code>pread</code> at <code>:205</code>), one big port</p>
-<p>(<code>core:regex</code> — POSIX <code>regcomp</code>/<code>regexec</code> at <code>corelib/regex/regex_shim.c:20, corelib/regex/regex_shim.c:26</code></p>
-<p>don't exist on Windows; PCRE2 behind the same API, or a documented gap),</p>
-<p>one redesign (<code>core:signal</code> — the <code>sigaction</code>-based socket-shutdown design</p>
-<p>ports to <code>SetConsoleCtrlHandler</code> + <code>closesocket</code>), and the external-dep</p>
-<p>packages (<code>tls</code>/<code>http</code>/<code>compress</code>/<code>image</code>/<code>crypto</code>/<code>sqlite</code>) that just need</p>
-<p>their MSYS2 dev libraries present (the existing skip-if-absent convention</p>
-<p>covers absence).</p>
-<ul>
-<li>The <strong>harness</strong> (65 shell scripts + <code>make</code> + <code>ci.sh</code>) runs under MSYS2's</li>
-</ul>
-<p><code>sh</code>/<code>make</code> <strong>unmodified</strong> — that is what MSYS2 is. The Linux-only lanes</p>
-<p>skip (locale-check's <code>LD_PRELOAD</code>, asan-self, ilp32). The risk is not the</p>
-<p>porting; it is the <strong>long tail</strong>: byte-compared goldens that embed path</p>
-<p>separators or <code>\r\n</code>, mingw-gdb transcript drift in the debug lane, and a</p>
-<p><code>deps</code> pkg-config name resolving differently.</p>
-<ul>
-<li><code>tycho-debug</code> needs a real Windows interrupt story: <code>setpgid</code> + SIGINT-to-</li>
-</ul>
-<p>the-inferior (<code>tools/tycho-debug/debug_shim.c:11-17</code>) → <code>GenerateConsoleCtrlEvent</code></p>
-<p>/ <code>TerminateProcess</code> and no <code>setpgid</code>. mingw gdb exists, so the rest of the</p>
-<p>adapter ports.</p>
 <h2 id="phases">Phases</h2>
-<p>Each phase verified and committed on its own. Every phase's gate list names</p>
-<p>only the lanes that can actually redden; the closing phase runs the full sweep.</p>
+<p>Each phase verified and committed on its own. Every phase's gate list names only the lanes that can actually redden; the closing phase runs the full sweep.</p>
 <h3 id="phase-1--toolchain-spike-does-the-compiler-build-under-mingw">Phase 1 — Toolchain spike: does the compiler build under mingw?</h3>
-<p>The assessment's foundation is unverified: nothing has been compiled under</p>
-<p>Windows. This phase is the one-day spike that confirms or kills the estimate.</p>
+<p>The assessment's foundation is unverified: nothing has been compiled under Windows. This phase is the one-day spike that confirms or kills the estimate.</p>
 <ul>
 <li>Install MSYS2 + mingw-w64 gcc + winpthreads + pkg-config + make + sh + tar</li>
+<li>the dev libraries (openssl, libcurl, zlib, libpng, sqlite3).</li>
+<li><code>make</code> the compiler (<code>src/tychoc.c</code> + the runtime embed) under mingw gcc. Fix what reddens: <code>newlocale</code>/<code>uselocale</code> (absent from mingw-w64 at every version -- route to the existing localeconv fallback legs), <code>dirent</code>/<code>realpath</code>/<code>access</code> details.</li>
+<li>Compile and run <code>examples/hello.ty</code> end to end: the transpiler's cc line (<code>cc -O3 -fwrapv -pthread ... -lm</code>) must work on mingw gcc unchanged; fix or parameterize it here if not.</li>
+<li>Record the compiler's Windows build in <code>scripts/release.sh</code> (a <code>dist/tycho-&lt;v&gt;-mingw-&lt;arch&gt;</code> tarball leg).</li>
 </ul>
-<p>+ the dev libraries (openssl, libcurl, zlib, libpng, sqlite3).</p>
-<ul>
-<li><code>make</code> the compiler (<code>src/tychoc.c</code> + the runtime embed) under mingw gcc.</li>
-</ul>
-<p>Fix what reddens: <code>newlocale</code>/<code>uselocale</code> (absent from mingw-w64 at</p>
-<p>every version -- route to the existing localeconv fallback legs),</p>
-<p><code>dirent</code>/<code>realpath</code>/<code>access</code> details.</p>
-<ul>
-<li>Compile and run <code>examples/hello.ty</code> end to end: the transpiler's cc line</li>
-</ul>
-<p>(<code>cc -O3 -fwrapv -pthread ... -lm</code>) must work on mingw gcc unchanged; fix</p>
-<p>or parameterize it here if not.</p>
-<ul>
-<li>Record the compiler's Windows build in <code>scripts/release.sh</code> (a</li>
-</ul>
-<p><code>dist/tycho-&lt;v&gt;-mingw-&lt;arch&gt;</code> tarball leg).</p>
-<p>Gate: the compiler builds and runs hello on the Windows box; the Linux tree</p>
-<p>is untouched (no source change lands from this phase without its own gate).</p>
-<p>Expected: the first phase commits are the small portability shims above.</p>
+<p>Gate: the compiler builds and runs hello on the Windows box; the Linux tree is untouched (no source change lands from this phase without its own gate). Expected: the first phase commits are the small portability shims above.</p>
 <h3 id="phase-2--runtime-port-the-hard-piece">Phase 2 — Runtime port (the hard piece)</h3>
 <ul>
-<li>winpthreads threading: verify <code>pthread_create</code>/<code>mutex</code>/<code>cond</code>/<code>once</code>/<code>self</code></li>
-</ul>
-<p>under <code>-pthread</code> — the whole <code>core:conc</code> model (spawn, channels, parallel</p>
-<p>for) must work as-is. (Phase 1 already proved this COMPILES and LINKS;</p>
-<p>phase 2 proves it RUNS.)</p>
-<ul>
-<li>Clock/timer/park: <code>clock_gettime</code>, <code>nanosleep</code>, <code>sched_yield</code>, <code>getpid</code></li>
-</ul>
-<p>are all provided by winpthreads — verified in the installed headers, so</p>
-<p>the "shims" bullet is a verification task, not a writing task. Only</p>
-<p><code>sysconf</code> needed a branch (done in phase 1: <code>GetActiveProcessorCount</code>).</p>
-<ul>
-<li><strong>The stack-overflow guard</strong>: the Windows branch does NOT need stack-bounds</li>
-</ul>
-<p>recording or an SP comparison — <code>EXCEPTION_STACK_OVERFLOW</code> is a distinct</p>
-<p>exception code, so a vectored handler (<code>AddVectoredExceptionHandler</code>)</p>
-<p>catches that code alone, prints the same one-line message, and exits;</p>
-<p>everything else returns <code>EXCEPTION_CONTINUE_SEARCH</code> and crashes normally.</p>
-<p>Deep recursion must keep failing closed with the clean one-line error,</p>
-<p>never a silent crash.</p>
-<ul>
-<li><strong>Binary stdout/stderr on Windows</strong> (discovered in phase 2's conc</li>
-</ul>
-<p>verification): the CRT's text mode translates <code>\n</code> to <code>\r\n</code>, so every</p>
-<p>golden would mismatch. The runtime sets stdout/stderr to <code>_O_BINARY</code> at</p>
-<p>startup (<code>_setmode</code>); stdin stays text mode so a CRLF input reads as LF,</p>
-<p>matching POSIX.</p>
-<ul>
-<li>The float-to-string locale guard (the localeconv fallback legs — Windows</li>
-</ul>
-<p>has no <code>newlocale</code> at any version, phase 1) and <code>__thread</code> (mingw gcc</p>
-<p>supports it).</p>
-<ul>
+<li>winpthreads threading: verify <code>pthread_create</code>/<code>mutex</code>/<code>cond</code>/<code>once</code>/<code>self</code> under <code>-pthread</code> — the whole <code>core:conc</code> model (spawn, channels, parallel for) must work as-is. (Phase 1 already proved this COMPILES and LINKS; phase 2 proves it RUNS.)</li>
+<li>Clock/timer/park: <code>clock_gettime</code>, <code>nanosleep</code>, <code>sched_yield</code>, <code>getpid</code> are all provided by winpthreads — verified in the installed headers, so the "shims" bullet is a verification task, not a writing task. Only <code>sysconf</code> needed a branch (done in phase 1: <code>GetActiveProcessorCount</code>).</li>
+<li><strong>The stack-overflow guard</strong>: the Windows branch does NOT need stack-bounds recording or an SP comparison — <code>EXCEPTION_STACK_OVERFLOW</code> is a distinct exception code, so a vectored handler (<code>AddVectoredExceptionHandler</code>) catches that code alone, prints the same one-line message, and exits; everything else returns <code>EXCEPTION_CONTINUE_SEARCH</code> and crashes normally. Deep recursion must keep failing closed with the clean one-line error, never a silent crash.</li>
+<li><strong>Binary stdout/stderr on Windows</strong> (discovered in phase 2's conc verification): the CRT's text mode translates <code>\n</code> to <code>\r\n</code>, so every golden would mismatch. The runtime sets stdout/stderr to <code>_O_BINARY</code> at startup (<code>_setmode</code>); stdin stays text mode so a CRLF input reads as LF, matching POSIX.</li>
+<li>The float-to-string locale guard (the localeconv fallback legs — Windows has no <code>newlocale</code> at any version, phase 1) and <code>__thread</code> (mingw gcc supports it).</li>
 <li><code>list_dir</code> (mingw's <code>dirent</code>).</li>
 </ul>
-<p>Gate (this phase, on the Linux box): <code>sh scripts/wine_smoke.sh</code> — the</p>
-<p>cross-compiled fixtures must be byte-identical to the Linux goldens under</p>
-<p>Wine (conc suite, clock, floats, iobuiltins) and the deep-recursion fixtures</p>
-<p>must fail closed on the main thread AND in a spawned task — plus the Linux</p>
-<p>tree stays green (<code>make conc</code>, <code>make recursion</code>, <code>make test</code>). The ASan/TSan</p>
-<p>conc legs: TSan has no Windows-target support in gcc and mingw ASan is</p>
-<p>experimental — both are SKIPS on the Windows side. Expected: conc green under</p>
-<p>winpthreads; recursion green via the vectored handler.</p>
-<p>DEFERRED by owner decision (2026-08-05, "we'll rerun it later under proper</p>
-<p>windows"): the definitive pass — these exact fixtures on a real Windows</p>
-<p>scheduler — lands on the windows-latest CI leg in phase 6/7. Wine smoke is</p>
-<p>evidence of the port, never a Windows verdict.</p>
+<p>Gate (this phase, on the Linux box): <code>sh scripts/wine_smoke.sh</code> — the cross-compiled fixtures must be byte-identical to the Linux goldens under Wine (conc suite, clock, floats, iobuiltins) and the deep-recursion fixtures must fail closed on the main thread AND in a spawned task — plus the Linux tree stays green (<code>make conc</code>, <code>make recursion</code>, <code>make test</code>). The ASan/TSan conc legs: TSan has no Windows-target support in gcc and mingw ASan is experimental — both are SKIPS on the Windows side. Expected: conc green under winpthreads; recursion green via the vectored handler.</p>
+<p>DEFERRED by owner decision (2026-08-05, "we'll rerun it later under proper windows"): the definitive pass — these exact fixtures on a real Windows scheduler — lands on the windows-latest CI leg in phase 6/7. Wine smoke is evidence of the port, never a Windows verdict.</p>
 <h3 id="phase-3--compiler--emitted-c-toolchain-verification">Phase 3 — Compiler + emitted-C toolchain verification</h3>
 <ul>
-<li>The transpiler's cc invocation and link line on Windows: flags, the <code>-o</code></li>
-</ul>
-<p>binary naming, shim discovery (<code>--print-shims</code>), pkg-config <code>deps</code> flags.</p>
-<ul>
+<li>The transpiler's cc invocation and link line on Windows: flags, the <code>-o</code> binary naming, shim discovery (<code>--print-shims</code>), pkg-config <code>deps</code> flags.</li>
 <li><code>-g</code>/<code>#line</code> under mingw gdb (DWARF is supported; verify stepping).</li>
 <li>The <code>--version</code>/usage output (no change expected).</li>
-<li><strong>The compiler's own binary stdio</strong> (found this phase): <code>src/tychoc.c</code> needs</li>
+<li><strong>The compiler's own binary stdio</strong> (found this phase): <code>src/tychoc.c</code> needs the same <code>_setmode</code> binary-mode fix as the runtime — the CRT's text mode would CRLF the diagnostics goldens and the <code>--print-shims</code> output that shells splice onto cc lines.</li>
 </ul>
-<p>the same <code>_setmode</code> binary-mode fix as the runtime — the CRT's text mode</p>
-<p>would CRLF the diagnostics goldens and the <code>--print-shims</code> output that</p>
-<p>shells splice onto cc lines.</p>
-<p>Gate (on the Linux box): <code>sh scripts/wine_test.sh</code> — the whole plain corpus</p>
-<p>(examples + tests + pkg packages + abort + diag) cross-compiled and run under</p>
-<p>Wine against the Linux goldens, byte-for-byte — plus <code>--print-shims</code>/</p>
-<p><code>--print-deps</code> parity and the <code>-g</code>/DWARF line-table check, and the Linux tree</p>
-<p>stays green (<code>make test</code>, <code>make tools-check</code>). Expected: the corpus passes</p>
-<p>under mingw; any fixture that reddens only for Windows-environment reasons</p>
-<p>(paths, shell-out, POSIX-only assertions) is PARKED for phase 6's golden</p>
-<p>audit rather than patched ad hoc.</p>
+<p>Gate (on the Linux box): <code>sh scripts/wine_test.sh</code> — the whole plain corpus (examples + tests + pkg packages + abort + diag) cross-compiled and run under Wine against the Linux goldens, byte-for-byte — plus <code>--print-shims</code>/ <code>--print-deps</code> parity and the <code>-g</code>/DWARF line-table check, and the Linux tree stays green (<code>make test</code>, <code>make tools-check</code>). Expected: the corpus passes under mingw; any fixture that reddens only for Windows-environment reasons (paths, shell-out, POSIX-only assertions) is PARKED for phase 6's golden audit rather than patched ad hoc.</p>
 <h3 id="phase-4--corelib-shims">Phase 4 — Corelib shims</h3>
 <ul>
-<li><code>core:io</code>: <code>getline</code> (15-line replacement) and <code>pread</code> (→</li>
-</ul>
-<p><code>_lseeki64</code>+read or <code>ReadFile</code> with an offset, keeping <code>read_at</code>'s</p>
-<p>contract).</p>
-<ul>
+<li><code>core:io</code>: <code>getline</code> (15-line replacement) and <code>pread</code> (→ <code>_lseeki64</code>+read or <code>ReadFile</code> with an offset, keeping <code>read_at</code>'s contract).</li>
 <li><code>core:strings</code>: <code>strtod_l</code>/locale handling against mingw's <code>_strtod_l</code>.</li>
-<li><code>core:regex</code>: the decision phase — PCRE2 behind the same <code>regcomp</code>/<code>regexec</code></li>
+<li><code>core:regex</code>: the decision phase — PCRE2 behind the same <code>regcomp</code>/<code>regexec</code> API, or a documented Windows gap for the package (it is in the 1.0 surface, so a gap is a contract change; prefer the port).</li>
+<li><code>core:signal</code>: <code>SetConsoleCtrlHandler</code> for SIGINT/SIGTERM-equivalent, the <code>shutdown_requested</code> flag survives, the socket shutdown maps to <code>closesocket</code>.</li>
+<li>Verify the external-dep packages (<code>tls</code>/<code>http</code>/<code>compress</code>/<code>image</code>/ <code>crypto</code>/<code>sqlite</code>) against their MSYS2 libraries; the skip-if-absent convention covers a missing one.</li>
 </ul>
-<p>API, or a documented Windows gap for the package (it is in the 1.0 surface,</p>
-<p>so a gap is a contract change; prefer the port).</p>
-<ul>
-<li><code>core:signal</code>: <code>SetConsoleCtrlHandler</code> for SIGINT/SIGTERM-equivalent, the</li>
-</ul>
-<p><code>shutdown_requested</code> flag survives, the socket shutdown maps to</p>
-<p><code>closesocket</code>.</p>
-<ul>
-<li>Verify the external-dep packages (<code>tls</code>/<code>http</code>/<code>compress</code>/<code>image</code>/</li>
-</ul>
-<p><code>crypto</code>/<code>sqlite</code>) against their MSYS2 libraries; the skip-if-absent</p>
-<p>convention covers a missing one.</p>
-<p>Gate (on the Linux box): <code>sh scripts/wine_corelib.sh</code> — every corelib test</p>
-<p>that can link here, cross-compiled under mingw and run under Wine against the</p>
-<p>Linux goldens (pass or skip-with-reason; nothing fails) — plus the Linux tree</p>
-<p>stays green (<code>make corelib</code>, <code>make shim-check</code>, <code>make test</code>). A compiler</p>
-<p>addition lands in this phase: the deps mechanism gains <code>_WIN32:</code> sections —</p>
-<p>raw link flags for the Windows build, inert and invisible to <code>--print-deps</code></p>
-<p>elsewhere — which is what lets core:net (<code>-lws2_32</code>) and core:regex</p>
-<p>(<code>-lpcre2-posix</code>) link on Windows at all. Expected: all packages green or</p>
-<p>loudly skipped; the regex/signal ports land compile-verified, with their</p>
-<p>Windows tests (which need Windows-native mechanisms) parked for phase 6.</p>
+<p>Gate (on the Linux box): <code>sh scripts/wine_corelib.sh</code> — every corelib test that can link here, cross-compiled under mingw and run under Wine against the Linux goldens (pass or skip-with-reason; nothing fails) — plus the Linux tree stays green (<code>make corelib</code>, <code>make shim-check</code>, <code>make test</code>). A compiler addition lands in this phase: the deps mechanism gains <code>_WIN32:</code> sections — raw link flags for the Windows build, inert and invisible to <code>--print-deps</code> elsewhere — which is what lets core:net (<code>-lws2_32</code>) and core:regex (<code>-lpcre2-posix</code>) link on Windows at all. Expected: all packages green or loudly skipped; the regex/signal ports land compile-verified, with their Windows tests (which need Windows-native mechanisms) parked for phase 6.</p>
 <h3 id="phase-5--tools">Phase 5 — Tools</h3>
 <ul>
-<li>The pure-Tycho tools (<code>tychofmt</code>, <code>tycho-lsp</code>, <code>tycho-ar</code>, <code>tycho-q</code>,</li>
+<li>The pure-Tycho tools (<code>tychofmt</code>, <code>tycho-lsp</code>, <code>tycho-ar</code>, <code>tycho-q</code>, <code>tycho-vm</code>, <code>tycho-scheme</code>, <code>tycho-fetch</code>, <code>tycho-build</code>, <code>tycho-kv</code>, <code>tycho-chess</code>, <code>tycho-sat</code>, <code>tycho-kvsrv</code>, <code>tycho-scheme</code>) compile once runtime+corelib do; the ones that shell out (<code>tar</code>, build recipes) need MSYS2's tools, which are present.</li>
+<li><code>tycho-debug</code>: the Windows interrupt story — replace <code>setpgid</code>/SIGINT-to- inferior with <code>GenerateConsoleCtrlEvent</code>/<code>TerminateProcess</code> (or a documented gap: no Ctrl-C interrupt on Windows, <code>q</code> only). mingw gdb as the backend; the debug-check lane runs under it or skips.</li>
 </ul>
-<p><code>tycho-vm</code>, <code>tycho-scheme</code>, <code>tycho-fetch</code>, <code>tycho-build</code>, <code>tycho-kv</code>,</p>
-<p><code>tycho-chess</code>, <code>tycho-sat</code>, <code>tycho-kvsrv</code>, <code>tycho-scheme</code>)</p>
-<p>compile once runtime+corelib do; the ones that shell out (<code>tar</code>, build</p>
-<p>recipes) need MSYS2's tools, which are present.</p>
-<ul>
-<li><code>tycho-debug</code>: the Windows interrupt story — replace <code>setpgid</code>/SIGINT-to-</li>
-</ul>
-<p>inferior with <code>GenerateConsoleCtrlEvent</code>/<code>TerminateProcess</code> (or a</p>
-<p>documented gap: no Ctrl-C interrupt on Windows, <code>q</code> only). mingw gdb as the</p>
-<p>backend; the debug-check lane runs under it or skips.</p>
-<p>Gate (on the Linux box): <code>sh scripts/wine_tools.sh</code> — every tool</p>
-<p>cross-compiles under mingw (the Windows build proof) and the deterministic</p>
-<p>ones run correctly under Wine against their lane goldens where cheap — plus</p>
-<p>the Linux tree stays green (<code>make tools</code>, <code>make debug-check</code>). The full lane</p>
-<p>fixture suites and tycho-debug's live gdb session are the CI leg's job.</p>
-<p>Expected: the tools build and run; tycho-debug's Windows interrupt is a</p>
-<p>documented gap (no Ctrl-C while the inferior runs; <code>q</code> quits).</p>
+<p>Gate (on the Linux box): <code>sh scripts/wine_tools.sh</code> — every tool cross-compiles under mingw (the Windows build proof) and the deterministic ones run correctly under Wine against their lane goldens where cheap — plus the Linux tree stays green (<code>make tools</code>, <code>make debug-check</code>). The full lane fixture suites and tycho-debug's live gdb session are the CI leg's job. Expected: the tools build and run; tycho-debug's Windows interrupt is a documented gap (no Ctrl-C while the inferior runs; <code>q</code> quits).</p>
 <h3 id="phase-6--harness-and-golden-audit-under-msys2">Phase 6 — Harness and golden audit under MSYS2</h3>
 <ul>
-<li><code>make ci</code> under MSYS2's <code>sh</code>/<code>make</code>; the Linux-only lanes (locale-check's</li>
-</ul>
-<p><code>LD_PRELOAD</code>, asan-self, ilp32) skip loudly with their reasons.</p>
-<ul>
-<li>The long tail: audit every byte-compared golden for Windows-only drift —</li>
-</ul>
-<p><code>\r\n</code> line endings (the runners and goldens must agree), embedded path</p>
-<p>separators, and any tool that prints a platform string. Fix at the runner</p>
-<p>level (normalize before compare), not by re-recording goldens per platform.</p>
-<ul>
+<li><code>make ci</code> under MSYS2's <code>sh</code>/<code>make</code>; the Linux-only lanes (locale-check's <code>LD_PRELOAD</code>, asan-self, ilp32) skip loudly with their reasons.</li>
+<li>The long tail: audit every byte-compared golden for Windows-only drift — <code>\r\n</code> line endings (the runners and goldens must agree), embedded path separators, and any tool that prints a platform string. Fix at the runner level (normalize before compare), not by re-recording goldens per platform.</li>
 <li>The fuzz lanes (Python — portable) and the editors lanes.</li>
 </ul>
-<p>Gate (the Linux box, done): the golden drift AUDIT — every byte-compared</p>
-<p>golden scanned for Windows-hostile content (CRLF, absolute paths, platform</p>
-<p>strings), the Linux-only lanes enumerated to skip loudly, and the remaining</p>
-<p>runnable lane (ffi) added to the wine coverage. The VERDICT — <code>make ci</code></p>
-<p>(N=0) green under MSYS2 sh/make on a real Windows environment — is the CI</p>
-<p>leg's, by definition; the four wine lanes plus wine-ffi are its Linux</p>
-<p>approximation. Expected: the goldens are platform-identical; any that cannot</p>
-<p>be are re-recorded with the reason in the commit.</p>
+<p>Gate (the Linux box, done): the golden drift AUDIT — every byte-compared golden scanned for Windows-hostile content (CRLF, absolute paths, platform strings), the Linux-only lanes enumerated to skip loudly, and the remaining runnable lane (ffi) added to the wine coverage. The VERDICT — <code>make ci</code> (N=0) green under MSYS2 sh/make on a real Windows environment — is the CI leg's, by definition; the four wine lanes plus wine-ffi are its Linux approximation. Expected: the goldens are platform-identical; any that cannot be are re-recorded with the reason in the commit.</p>
 <h3 id="phase-7--close-full-sweep-release-and-documentation">Phase 7 — Close: full sweep, release, and documentation</h3>
 <ul>
-<li>The full <code>make ci</code> on Windows as the closing sweep (the phase-6 gate was</li>
+<li>The full <code>make ci</code> on Windows as the closing sweep (the phase-6 gate was the discovery loop; this is the confirmation).</li>
+<li><code>scripts/release.sh</code> produces a Windows tarball and its sha256; the version-vs-<code>--version</code> check applies unchanged.</li>
+<li>Documentation: the README status banner's "no Windows" note becomes the Windows support statement (MSYS2 required, WSL2 still supported); the sharp-edges list in <code>SECURITY.md</code> records the Windows gaps (if any survive: regex/signal/debugger interrupt); plan.md's "native Windows (deferred, WSL suffices)" deferral is retired or re-scoped.</li>
 </ul>
-<p>the discovery loop; this is the confirmation).</p>
-<ul>
-<li><code>scripts/release.sh</code> produces a Windows tarball and its sha256; the</li>
-</ul>
-<p>version-vs-<code>--version</code> check applies unchanged.</p>
-<ul>
-<li>Documentation: the README status banner's "no Windows" note becomes the</li>
-</ul>
-<p>Windows support statement (MSYS2 required, WSL2 still supported); the</p>
-<p>sharp-edges list in <code>SECURITY.md</code> records the Windows gaps (if any survive:</p>
-<p>regex/signal/debugger interrupt); plan.md's "native Windows (deferred,</p>
-<p>WSL suffices)" deferral is retired or re-scoped.</p>
-<p>Gate: the full <code>make ci</code> on Windows plus the doc gates</p>
-<p>(<code>check_citations.py</code>, <code>check_links.sh</code>). Expected: the README flips its</p>
-<p>Windows caveat; the two supported paths are WSL2 (zero setup) and native</p>
-<p>MSYS2.</p>
+<p>Gate: the full <code>make ci</code> on Windows plus the doc gates (<code>check_citations.py</code>, <code>check_links.sh</code>). Expected: the README flips its Windows caveat; the two supported paths are WSL2 (zero setup) and native MSYS2.</p>
 <h2 id="risks-and-cost">Risks and cost</h2>
 <ul>
-<li><strong>The port itself is ~1.5-2 weeks</strong> of focused work (compiler 1d, runtime</li>
+<li><strong>The port itself is ~1.5-2 weeks</strong> of focused work (compiler 1d, runtime 2-3d, corelib 2-3d, tools+debugger 2d, harness+skips 1-2d, golden long tail 2-3d). MSVC would multiply by 3-4x and is out of scope.</li>
+<li><strong>The long tail is the risk</strong>, not the porting: each <code>make ci</code> red on a Windows box is a discovery, and the byte-compared goldens are where they hide.</li>
+<li><strong><code>core:regex</code> and <code>core:signal</code> are contract decisions</strong>, not porting chores: if their Windows ports are deferred, the 1.0 surface statement in <code>docs/reference/corelib.md</code> must name the gap.</li>
+<li><strong>The stack-overflow guard must be ported, not skipped</strong>: <code>tests/recursion</code> would redden, and deep recursion failing with a clean error is a stated security posture (no stack-overflow DoS).</li>
+<li>Every claim above was verified by reading the source with the cited lines; none was executed under Windows. Phase 1 exists to test exactly that.</li>
 </ul>
-<p>2-3d, corelib 2-3d, tools+debugger 2d, harness+skips 1-2d, golden long</p>
-<p>tail 2-3d). MSVC would multiply by 3-4x and is out of scope.</p>
-<ul>
-<li><strong>The long tail is the risk</strong>, not the porting: each <code>make ci</code> red on a</li>
-</ul>
-<p>Windows box is a discovery, and the byte-compared goldens are where they</p>
-<p>hide.</p>
-<ul>
-<li><strong><code>core:regex</code> and <code>core:signal</code> are contract decisions</strong>, not porting</li>
-</ul>
-<p>chores: if their Windows ports are deferred, the 1.0 surface statement in</p>
-<p><code>docs/reference/corelib.md</code> must name the gap.</p>
-<ul>
-<li><strong>The stack-overflow guard must be ported, not skipped</strong>: <code>tests/recursion</code></li>
-</ul>
-<p>would redden, and deep recursion failing with a clean error is a stated</p>
-<p>security posture (no stack-overflow DoS).</p>
-<ul>
-<li>Every claim above was verified by reading the source with the cited lines;</li>
-</ul>
-<p>none was executed under Windows. Phase 1 exists to test exactly that.</p>
 <h2 id="out-of-scope-unchanged-from-planmd">Out of scope (unchanged from plan.md)</h2>
-<p>MSVC as a C target, a REPL, native terminal UI work, and any change to the</p>
-<p>language surface. WSL2 stays a first-class supported path.</p>
+<p>MSVC as a C target, a REPL, native terminal UI work, and any change to the language surface. WSL2 stays a first-class supported path.</p>
 <blockquote>
-<p>Phase 1 evidence — 2026-08-05 (the mingw toolchain spike, run on Linux with</p>
-<p>the mingw-w64 CROSS compiler + Wine — no Windows box; the definitive Windows</p>
-<p>pass stays the phases-6/7 CI leg, per the assessment's warning that green</p>
-<p>under Wine is not green on Windows).</p>
+<p>Phase 1 evidence — 2026-08-05 (the mingw toolchain spike, run on Linux with the mingw-w64 CROSS compiler + Wine — no Windows box; the definitive Windows pass stays the phases-6/7 CI leg, per the assessment's warning that green under Wine is not green on Windows).</p>
+<p>VERDICT: the assessment held, with two corrections. The compiler cross-built under mingw with three small guards, the emitted runtime needed four, and hello ran end to end under Wine: <code>what is your name: hello igzo</code>.</p>
+<p>WHAT REDDENED (each fixed with an #ifndef _WIN32 guard, zero Linux effect): src/tychoc.c — <code>newlocale</code>/<code>uselocale</code>/<code>locale_t</code> (167-215: the pre-existing localeconv fallback legs absorb it), <code>readlink("/proc/self/exe")</code> in exe_dir (argv0 fallback + both separator kinds), <code>realpath(dir, NULL)</code> in canon_dir (<code>_fullpath</code>). runtime/tycho_rt.c — <code>ucontext.h</code> missing: the whole stack-overflow guard is COMPILED OUT on Windows, marked <code>/* gap: */</code> (the SEH port is phase 2; until then Windows deep recursion dies with a plain access violation); <code>sysconf</code> in tycho_ncpu (GetActiveProcessorCount); <code>newlocale</code>/<code>uselocale</code> in the float-to-str guard AND tycho_test_float_roundtrip (the fix_decimal_point fallback absorbs it; the roundtrip test returns -1/untestable on Windows); <code>aligned_alloc</code> missing (a malloc+align+stash wrapper pair, because the channel free path uses plain free()).</p>
+<p>CORRECTIONS TO THE ASSESSMENT: (1) "mingw-w64 v8+ provides newlocale" is WRONG for mingw-w64 at ANY version (verified against upstream master's locale.h, 2026-08-05) — only the MSVC-style _locale_t exists; the fallback legs are what make the port small, and the locale-check LANE (LD_PRELOAD setlocale) is Linux-only either way. (2) winpthreads is a DYNAMIC dll (libwinpthread-1.dll) — present system-wide in MSYS2, but a bare Windows box without it fails to load the exe; the release tarball must note it (or static-link later). (3) The transpiler's system() inside Wine cannot reach a Linux-side cc — the spike used --emit-c + a Linux-side mingw compile; on a real Windows/MSYS2 host the normal build path works. The cc line <code>-O3 -fwrapv -pthread ... -lm</code> is accepted by mingw gcc unchanged.</p>
+<p>SHIPPED: scripts/release.sh gains <code>--mingw</code> — cross-builds dist/tycho-&lt;v&gt;-mingw64-&lt;arch&gt;.tar.gz (compiler + corelib + docs + hello; the tools join in phase 5), version-checked like the native leg, smoke-verified to contain tychoc.exe. windows-port.md itself is committed with this phase.</p>
+<p>GATES (Linux tree): make test 591/591 (env -u LD_PRELOAD), tools-check ok, goldens-check ok, doc gates ok. The compiler/runtime line shifts re-anchored 112 citations (diff-hunk-mapped, token-verified, gate re-run to zero).</p>
+<p>HOW TO REPRODUCE: <code>sudo apt install gcc-mingw-w64-x86-64-posix wine64</code>; <code>make -s build/tycho_rt_embed.h</code>; <code>x86_64-w64-mingw32-gcc -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o build/tychoc-mingw.exe</code>; <code>wine64 ./build/tychoc-mingw.exe examples/hello.ty --emit-c -o build/hello-mingw</code>; <code>x86_64-w64-mingw32-gcc -O3 -fwrapv -pthread -o build/hello-mingw.exe build/hello-mingw.c -lm</code>; <code>WINEPATH='Z:\usr\x86_64-w64-mingw32\lib' wine64 ./build/hello-mingw.exe</code>.</p>
 </blockquote>
-<p>&gt;</p>
 <blockquote>
-<p>VERDICT: the assessment held, with two corrections. The compiler cross-built</p>
-<p>under mingw with three small guards, the emitted runtime needed four, and</p>
-<p>hello ran end to end under Wine: <code>what is your name: hello igzo</code>.</p>
+<p>Phase 2 evidence — 2026-08-05 (the runtime port, verified by <code>sh scripts/wine_smoke.sh</code> on the Linux box; definitive pass deferred to the windows CI leg per the owner's decision).</p>
+<p>THE CODE: the runtime's guard section now has two platform branches. POSIX unchanged (sigaltstack + SIGSEGV + SP-vs-bounds). Windows: a vectored exception handler (<code>AddVectoredExceptionHandler</code>) catches the distinct <code>EXCEPTION_STACK_OVERFLOW</code> code — no bounds recording, no SP comparison, which is SIMPLER than the POSIX heuristic — prints the same one-line message via WriteFile and ExitProcess(1) (nothing that needs real stack; the handler runs on the just-committed guard page); anything else returns EXCEPTION_CONTINUE_SEARCH and crashes as a real crash. Plus the binary- stdio fix discovered this phase: <code>_setmode(_fileno(stdout/stderr), _O_BINARY)</code> in the same constructor — without it the CRT's text mode turns every <code>\n</code> into <code>\r\n</code> and NO golden matches (first observed in the phase-1 workers test; fixed and re-verified). No per-thread state is needed on Windows, so the task trampoline's init/fini calls are no-ops.</p>
+<p>VERIFIED UNDER WINE (scripts/wine_smoke.sh, 16 checks, all green): byte-identical to the Linux goldens: the whole conc positive suite (basic, chan, chancap1, workers, parfor, select, select_parfor, implicit — spawn/wait, channels, backpressure, parallel-for reductions, select), plus clock (winpthreads timers + the park ladder), floats (the localeconv fallback + Windows CRT %.15g), and iobuiltins (list_dir via mingw dirent). the stack guard: 2M-deep recursion fails closed on the main thread AND in a spawned task — exit 1, empty stdout, "tycho: stack overflow -- recursion too deep" on stderr, identical to POSIX — and the modestly nested controls run (f(1000) -&gt; 500501, spawned deep(1000) -&gt; 0), so the guard is not trigger-happy. hello runs interactively with bare-LF output.</p>
+<p>NOT VERIFIED (the CI leg's job): the guard under a real Windows kernel (Wine's stack/exception semantics are an approximation), and the conc goldens under the real Windows scheduler. TSan has no Windows-target support in gcc and mingw ASan is experimental — those conc legs are skips on the Windows side.</p>
+<p>GATES (Linux tree): make conc 38/38, make recursion all green (both the compiler-input gate and the generated-code guard leg), make test 591/591 (env -u LD_PRELOAD), goldens-check, doc gates. The runtime line shifts re-anchored 14 citations (diff-hunk-mapped, token-verified, gate re-run to zero). <code>make wine-smoke</code> is a manual target, not a gate and not in make ci.</p>
 </blockquote>
-<p>&gt;</p>
 <blockquote>
-<p>WHAT REDDENED (each fixed with an #ifndef _WIN32 guard, zero Linux effect):</p>
-<p>src/tychoc.c — <code>newlocale</code>/<code>uselocale</code>/<code>locale_t</code> (167-215: the pre-existing</p>
-<p>localeconv fallback legs absorb it), <code>readlink("/proc/self/exe")</code> in exe_dir</p>
-<p>(argv0 fallback + both separator kinds), <code>realpath(dir, NULL)</code> in canon_dir</p>
-<p>(<code>_fullpath</code>).</p>
-<p>runtime/tycho_rt.c — <code>ucontext.h</code> missing: the whole stack-overflow guard is</p>
-<p>COMPILED OUT on Windows, marked <code>/* gap: */</code> (the SEH port is phase 2; until</p>
-<p>then Windows deep recursion dies with a plain access violation); <code>sysconf</code></p>
-<p>in tycho_ncpu (GetActiveProcessorCount); <code>newlocale</code>/<code>uselocale</code> in the</p>
-<p>float-to-str guard AND tycho_test_float_roundtrip (the fix_decimal_point</p>
-<p>fallback absorbs it; the roundtrip test returns -1/untestable on Windows);</p>
-<p><code>aligned_alloc</code> missing (a malloc+align+stash wrapper pair, because the</p>
-<p>channel free path uses plain free()).</p>
+<p>Phase 3 evidence — 2026-08-05 (toolchain verification on the Linux box via scripts/wine_test.sh; the definitive make-test-on-Windows pass stays the windows CI leg).</p>
+<p>CORPUS UNDER WINE: 318 fixtures (plain corpus + examples, 15 package programs, 17 runtime aborts, 23 diagnostics goldens) — <strong>317 byte-identical to the Linux goldens, 1 park item</strong>. The abort fixtures all die cleanly with a 'tycho:' message; the 23 diagnostics goldens match the MINGW compiler's stderr byte-for-byte (which is what the compiler binary-stdio fix this phase was FOR).</p>
+<p>THE ONE PARK ITEM: tests/float_str_locale — its <code>rt=</code> column asserts <code>rt=1</code> from the runtime roundtrip test hook, which returns -1 on Windows BY DESIGN (the hook needs newlocale, absent from mingw-w64 at every version — phase 1/2). The float formatting itself (1.5 = 1.5) is correct under Wine; only the POSIX-only assertion differs. Phase 6: split the fixture or give it a Windows-aware golden.</p>
+<p>TOOLCHAIN: <code>--print-shims</code> and <code>--print-deps</code> output is IDENTICAL between the Linux and mingw compilers (transitive shim closure + pkg-config names are pure compiler-side). The pkg-config RESOLUTION cannot run under Wine (the Linux-side pkg-config binary is unreachable from cmd.exe) — the same environment class as the cc invocation; on a real MSYS2 host pkg-config exists. <code>-g</code>: the emitted C's <code>#line</code> directives map into the DWARF line table — Debian's gdb-mingw-w64 (a NATIVE Linux cross-gdb) resolves <code>info line prog.ty:13</code> to the right address and accepts a <code>prog.ty:13</code> breakpoint. Live STEPPING under gdb cannot be driven from the Linux side (the cross-gdb cannot exec a PE; the wine exec dance is unreliable) — that half is the CI leg's job on real Windows.</p>
+<p>COMPILER FIX (this phase): src/tychoc.c gains the same _WIN32 binary stdout/stderr <code>_setmode</code> as the runtime — without it the diagnostics goldens and <code>--print-shims</code>/<code>-deps</code> output would carry CRLF on Windows.</p>
+<p>SHELL-OUT FINDING (recorded for phases 4/5): os.system on Windows runs cmd.exe, not sh — <code>rm -f</code>, <code>&gt; /dev/null</code>, tar pipelines and the build tool's recipes need the MSYS2 sh or cmd-compatible forms. None of the plain corpus fixtures shell out, so nothing reddened for it here.</p>
+<p>GATES (Linux tree): make test 591/591, tools-check ok, goldens-check ok, doc gates ok (117 citations re-anchored, diff-hunk-mapped and token-verified). make wine-test is a manual target, not a gate.</p>
 </blockquote>
-<p>&gt;</p>
 <blockquote>
-<p>CORRECTIONS TO THE ASSESSMENT: (1) "mingw-w64 v8+ provides newlocale" is</p>
-<p>WRONG for mingw-w64 at ANY version (verified against upstream master's</p>
-<p>locale.h, 2026-08-05) — only the MSVC-style _locale_t exists;</p>
-<p>the fallback legs are what make the port small, and the locale-check LANE</p>
-<p>(LD_PRELOAD setlocale) is Linux-only either way. (2) winpthreads is a</p>
-<p>DYNAMIC dll (libwinpthread-1.dll) — present system-wide in MSYS2, but a</p>
-<p>bare Windows box without it fails to load the exe; the release tarball must</p>
-<p>note it (or static-link later). (3) The transpiler's system() inside Wine</p>
-<p>cannot reach a Linux-side cc — the spike used --emit-c + a Linux-side mingw</p>
-<p>compile; on a real Windows/MSYS2 host the normal build path works. The cc</p>
-<p>line <code>-O3 -fwrapv -pthread ... -lm</code> is accepted by mingw gcc unchanged.</p>
+<p>Phase 4 evidence — 2026-08-05 (corelib shims, verified by <code>sh scripts/wine_corelib.sh</code> on the Linux box: 37 pass / 9 skip-with-reason / 0 fail; definitive pass deferred to the windows CI leg).</p>
+<p>THE CODE: Compiler — the deps mechanism gains <code>_WIN32:</code> sections (src/tychoc.c add_pkg_deps): raw linker flags for Windows builds, appended to the cc line verbatim, never pkg-config'd, never listed by --print-deps; a non-Windows compiler skips the section entirely. This is what makes core:net (-lws2_32) and core:regex (-lpcre2-posix) LINK on Windows at all. core:io — getline/pread/pwrite (one-arg _mkdir) _WIN32 shims; plus the directory-classification fix: Windows fopen/open of a DIRECTORY fails with EACCES, not POSIX's EISDIR, so ty_rf_errno now re-classifies EACCES by stat, and iox_remove dispatches _rmdir for directories (Windows remove() is unlink-only). Before this, every io directory path answered Err(Failed) instead of Err(IsDir). core:strings — the newlocale handle is now guarded by TY_HAVE_STRTOD_L, which already excludes mingw; the localeconv fallback (already correct under any locale) is the Windows path. core:signal — the fail-closed stub is replaced by the real Windows branch: SetConsoleCtrlHandler + shutdown/closesocket on the listener and the registry (shared, platform-neutral array). The accept-wake behaviour is Windows-version dependent; the flag is set either way (CI leg verifies). core:datetime — localtime_r/gmtime_r (via localtime_s/gmtime_s), setenv/unsetenv (via _putenv), and tm_gmtoff (glibc-only member) replaced by the portable mktime-difference. core:regex — <code>#ifdef _WIN32</code> includes &lt;pcre2posix.h&gt; (POSIX-signature drop-in: regcomp/regexec/regfree unchanged), verified to compile against pcre2posix.h; the -lpcre2-posix link comes from the deps _WIN32 section.</p>
+<p>VERIFIED UNDER WINE (wine-corelib): 37 packages byte-identical to their goldens, including io, strings, datetime (non-TZ paths), compress + zip (against libz-mingw-w64), net and httpd (against ws2_32). 9 skips with reasons: 6 are MSYS2-only library links (crypto/http/image/sqlite/tls — OpenSSL/curl/png/sqlite3 mingw builds; regex — pcre2-posix) whose shim code is portable and compile-verified; 3 are TEST-side POSIX mechanisms, not shim bugs: os — the test drives <code>true</code>/<code>false</code>/<code>printf</code> which cmd.exe lacks (exit code 9009); the PACKAGE works (cmd runs, exit codes map, <code>exit 7</code> passes). datetime — offset_at's signed POSIX TZ strings come out sign-inverted (Windows _tzset uses the opposite convention); <code>utc0</code> matches. signal — the test kills itself via <code>kill -TERM $PPID</code> from a POSIX shell; cmd has no kill, so the handler never fires and the accept blocks (this one HUNG the lane until it was classified as a skip). All three need Windows-native test variants in phase 6.</p>
+<p>GATES (Linux tree): make corelib all green (46 packages — the _WIN32 branches are inert), shim-check 9 ok / 4 skipped / 0 failed, make test 591/591 (env -u LD_PRELOAD), doc gates; 53 citations re-anchored (diff-hunk-mapped with the whole-span range fix, token-verified). make wine-corelib is a manual target, not a gate.</p>
 </blockquote>
-<p>&gt;</p>
 <blockquote>
-<p>SHIPPED: scripts/release.sh gains <code>--mingw</code> — cross-builds</p>
-<p>dist/tycho-&lt;v&gt;-mingw64-&lt;arch&gt;.tar.gz (compiler + corelib + docs + hello; the</p>
-<p>tools join in phase 5), version-checked like the native leg, smoke-verified</p>
-<p>to contain tychoc.exe. windows-port.md itself is committed with this phase.</p>
+<p>Phase 5 evidence — 2026-08-05 (tools, verified by <code>sh scripts/wine_tools.sh</code>: 14 tools cross-built for Windows + 3 run checks green, 0 fail, 1 skip).</p>
+<p>THE BUILD PROOF: every tools/ entry cross-compiles and links under mingw — tycho-ar (-lz), tycho-kvsrv (-lws2_32), tycho-debug (its shim), the dispatcher, tychofmt, lsp, and the eight pure tools (q/vm/scheme/kv/chess/ rsa/sat/build). tycho-fetch is the one skip: its core:http shim needs mingw libcurl, which lives in MSYS2.</p>
+<p>RUN CHECKS under Wine (vs the lane goldens' shape): tycho-q answered a query with the full CSV table; tycho-scheme ran fib; tycho-ar created and listed a deterministic archive (names + sizes + sha256s). The tools are not just buildable — they WORK.</p>
+<p>THE DEBUG_SHIM WINDOWS BRANCH (the phase's coding piece): CreateProcess with pipes and CREATE_NEW_CONSOLE (the console isolation that replaces setpgid — a terminal Ctrl-C in the tool's console never reaches gdb), the child ends inherited, the parent ends _open_osfhandle'd onto the SAME fd Line reader dbgx_write/readline already use, SetConsoleCtrlHandler setting the same interrupt flag, _fullpath/_getpid, and WaitForSingleObject for waitpid. Compile-verified under BOTH mingw and Linux (the POSIX branch is untouched — make debug-check still green, 6 legs).</p>
+<p>TWO DOCUMENTED GAPS on Windows (both the CI leg's job): (1) no Ctrl-C interrupt while the inferior runs — a Windows console handler runs on a new thread and a blocked pipe read has no EINTR to wake, so the flag is set but unread until the next command; a clean stop-at-line needs GenerateConsoleCtrlEvent + overlapped reads. <code>q</code> still quits. (2) the tool's gdb command line is POSIX-shell-quoted (main.ty's shq); under cmd.exe those quotes are literal, so a path with spaces breaks the gdb invocation.</p>
+<p>FINDINGS RECORDED (not this phase's work): the DISPATCHER cross-builds but its shell lines (rm -f, &gt; /dev/null) are cmd-incompatible — it needs cmd-compatible forms or MSYS2 sh on PATH (the harness phase). tycho-build cross-builds but its LANE's recipes (cat/cp/touch) are POSIX — same test-side park class as core:os's (phase 4).</p>
+<p>GATES (Linux tree): make debug-check 6 legs green (the POSIX debugger is unchanged), make tools builds, doc gates green (0 citations shifted — the shim's cited lines are bare ranges). make wine-tools is a manual target.</p>
 </blockquote>
-<p>&gt;</p>
 <blockquote>
-<p>GATES (Linux tree): make test 591/591 (env -u LD_PRELOAD), tools-check ok,</p>
-<p>goldens-check ok, doc gates ok. The compiler/runtime line shifts re-anchored</p>
-<p>112 citations (diff-hunk-mapped, token-verified, gate re-run to zero).</p>
+<p><strong>Phase 6 re-measured 2026-08-13 at <code>7ddfcef8</code>, and the lanes were the problem more than the port.</strong> All five wine lanes rebuilt <code>tychoc-mingw.exe</code> only <code>if [ ! -x ]</code>, so this box had been testing an <strong>Aug 5 compiler</strong>: 25 of wine-test's 28 failures were features that postdated it. With that fixed, plus the lane learning to link <code>&lt;pkg&gt;_shim.c</code> and to honour a sibling <code>.err</code> the way <code>tests/run.sh:354</code> does, and one real port fix (<code>iox_set_mtime</code> could not touch a DIRECTORY on Windows — <code>_utime</code> fails EACCES, so the directory case now uses <code>FILE_FLAG_BACKUP_SEMANTICS</code> + <code>SetFileTime</code>):</p>
+<p>| lane | 2026-08-13 | |---|---| | wine-smoke | all green | | wine-test | <strong>passed 347, failed 2</strong> — both float park candidates (<code>c_float_roundtrip</code>, <code>c_float_str_locale</code>), down from 28 | | wine-corelib | 36 ok, 9 skipped, 1 park (<code>io</code>: <code>sync_dir=Unsupported</code>, which <code>iox_sync</code> returns deliberately) | | wine-ffi | 10 passed, 0 failed | | wine-tools | built+ran 17, failed 0, skipped 1 (tycho-fetch/libcurl) |</p>
+<p>The park list is therefore SHORTER than this plan recorded: float text under mingw, <code>sync</code> on a directory, and the os/datetime/signal test mechanisms. The phase-7 gate is unchanged and still needs the box — <code>make ci</code> under MSYS2.</p>
+<p>Phase 6 evidence (the Linux half) — 2026-08-05: the golden audit is DONE, the ffi lane gained wine coverage, and the verdict itself is the CI leg's.</p>
+<p>THE GOLDEN DRIFT AUDIT (scanned every tests/*.out, tests/conc/*.out, tests/pkg/*.out, corelib/test/*.out, examples/*/expected.out, tools/*/expected.out): the goldens are byte-clean for Windows — no CRLF drift (the binary-stdio fix of phase 2 made emitted output LF; the one golden containing \\r is corelib/test/httpd.out's intentional HTTP \\r\\n in raw response lines, and httpd passes byte-identical under Wine anyway), no absolute /tmp paths, no platform strings (linux/x86_64/uname), no drive letters. The only path-looking golden (corelib/test/path.out) is pure string-math output (forward-slash normalization) — platform-stable. The phase-6 expectation "goldens platform-identical" is essentially ALREADY MET, verified two ways: the wine lanes and this scan.</p>
+<p>THE ONE REAL FIND: the FFI fixture's boundary used C <code>long</code>, which is 32-bit on Windows but 64-bit on Linux — so <code>ffi_read(null)</code> returned 4294967295 (0xFFFFFFFF, upper bits unspecified) instead of -1 under Wine. Fixed: tests/ffi/demo.c's extern-facing <code>long</code> -&gt; <code>int64_t</code> (tycho_int's width). Linux-identical (long == int64_t there; make ffi still green, ASan-clean under env -u LD_PRELOAD) and Windows-correct (the wine-ffi golden is byte-identical).</p>
+<p>THE FFI LANE UNDER WINE (scripts/wine_ffi.sh, 10/10): the golden over a mingw-built libffidemo.a (byte-identical), the --shim leg (triple=42), the package-scoped extern (tri6=42), the sized-int ABI values (5032704 8589934592 -5), and the compiler-side REJECTIONS through the MINGW compiler (the four affine handle bans, the shell-injection refusals -- driven with -o, because the guard lives at link-line construction which --emit-c skips -- and the inout-string out-param ban). The one leg that cannot run here is the ASan/UBSan recompile: mingw ASan is experimental -- the CI's job.</p>
+<p>THE LINUX-ONLY LANES (skip loudly on Windows, with reasons): locale-check (its LD_PRELOAD setlocale constructor is Linux-only), asan-self, ilp32, conc's ASan/TSan legs (TSan has no Windows-target support in gcc at all), and the ffi lane's ASan leg (above). The editors lanes are node/tree-sitter based -- portable, not Linux-only.</p>
+<p>THE PARK LIST, consolidated (the phase-6 golden-audit inputs, all recorded with their reasons in the phase-4/5 evidence): os/datetime/signal corelib tests (POSIX-shell mechanisms and POSIX-TZ sign), tycho-build's lane recipes (cat/cp/touch), the dispatcher's cmd-incompatible shell lines (rm -f, &gt; /dev/null), and tycho-fetch (mingw curl). Each needs a Windows-native test variant in the CI leg.</p>
 </blockquote>
-<p>&gt;</p>
 <blockquote>
-<p>HOW TO REPRODUCE: <code>sudo apt install gcc-mingw-w64-x86-64-posix wine64</code>;</p>
-<p><code>make -s build/tycho_rt_embed.h</code>; `x86_64-w64-mingw32-gcc -O2 -fwrapv -std=c11</p>
-<p>-Ibuild src/tychoc.c -o build/tychoc-mingw.exe<code>; </code>wine64 ./build/tychoc-mingw.exe</p>
-<p>examples/hello.ty --emit-c -o build/hello-mingw<code>; </code>x86_64-w64-mingw32-gcc -O3</p>
-<p>-fwrapv -pthread -o build/hello-mingw.exe build/hello-mingw.c -lm`;</p>
-<p><code>WINEPATH='Z:\usr\x86_64-w64-mingw32\lib' wine64 ./build/hello-mingw.exe</code>.</p>
-<p>Phase 2 evidence — 2026-08-05 (the runtime port, verified by</p>
-<p><code>sh scripts/wine_smoke.sh</code> on the Linux box; definitive pass deferred to</p>
-<p>the windows CI leg per the owner's decision).</p>
+<p>Phase 6/7 harness evidence — 2026-08-07 (commit 1ca7e80, recorded here after the fact; the run itself was on a real Windows VM: ARM64 Windows 11 running the x86-64 MSYS2/mingw toolchain under <strong>Prism emulation</strong>).</p>
+<p>THE HARNESS GAPS the plan predicted, all landed as LOUD skips naming their reason: ci.sh skips ilp32/asan-self/fuzz; tests/run.sh sets TYCHO_NO_ASAN=1 on Windows, names binaries <code>.exe</code>, gives each fixture its own temp dir, retries with backoff, chunks <code>--one</code>, and selects a <code>&lt;golden&gt;.win</code> when one exists (<code>float_str_locale.out.win</code> carries rt=-1, the newlocale-less rendering phase 3 parked); tests/conc + tests/ffi skip their asan/tsan legs; tests/recursion probes for GNU timeout (cmd.exe's is a different program); corelib/run.sh retries and skips the signal test. One real harness BUG, not a skip: check_goldens.py built patterns with <code>os.path</code>, so on Windows every resolved path had backslashes and matched none of git's forward-slash paths — every golden reported NOT tracked. Fixed with posixpath.</p>
+<p>THE RUN, recorded as measured rather than as a verdict: goldens-check / entrypoints / spec-check / docs-fences / check-links / shim-check green; <code>make test</code> 589/591; <code>make corelib</code> 43 ok / 2 fail (datetime's POSIX-TZ sign, time's timing bound) / 1 skip (signal); <code>make conc</code> 34/38. The 2 + 4 test/conc reds are ONE class — the emulator's startup heap-corruption race (0xC0000374 -&gt; bash 127), which is why the runner retries.</p>
+<p><strong>The phase-7 gate is therefore NOT met.</strong> Its wording is "the full <code>make ci</code> on Windows, green". What exists is a run with a short, classified residual list on an EMULATED Windows box. Nothing here has been run on non-emulated x86-64 Windows, so the emulator class is unseparated from a real port bug by measurement — it is separated only by its signature (a startup crash before main, at a rate that retries clear). That is the recorded state.</p>
 </blockquote>
-<p>&gt;</p>
 <blockquote>
-<p>THE CODE: the runtime's guard section now has two platform branches. POSIX</p>
-<p>unchanged (sigaltstack + SIGSEGV + SP-vs-bounds). Windows: a vectored</p>
-<p>exception handler (<code>AddVectoredExceptionHandler</code>) catches the distinct</p>
-<p><code>EXCEPTION_STACK_OVERFLOW</code> code — no bounds recording, no SP comparison,</p>
-<p>which is SIMPLER than the POSIX heuristic — prints the same one-line</p>
-<p>message via WriteFile and ExitProcess(1) (nothing that needs real stack;</p>
-<p>the handler runs on the just-committed guard page); anything else returns</p>
-<p>EXCEPTION_CONTINUE_SEARCH and crashes as a real crash. Plus the binary-</p>
-<p>stdio fix discovered this phase: `_setmode(_fileno(stdout/stderr),</p>
-<p>_O_BINARY)` in the same constructor — without it the CRT's text mode</p>
-<p>turns every <code>\n</code> into <code>\r\n</code> and NO golden matches (first observed in the</p>
-<p>phase-1 workers test; fixed and re-verified). No per-thread state is</p>
-<p>needed on Windows, so the task trampoline's init/fini calls are no-ops.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>VERIFIED UNDER WINE (scripts/wine_smoke.sh, 16 checks, all green):</p>
-<p>byte-identical to the Linux goldens: the whole conc positive suite</p>
-<p>(basic, chan, chancap1, workers, parfor, select, select_parfor,</p>
-<p>implicit — spawn/wait, channels, backpressure, parallel-for reductions,</p>
-<p>select), plus clock (winpthreads timers + the park ladder), floats (the</p>
-<p>localeconv fallback + Windows CRT %.15g), and iobuiltins (list_dir via</p>
-<p>mingw dirent).</p>
-<p>the stack guard: 2M-deep recursion fails closed on the main thread AND</p>
-<p>in a spawned task — exit 1, empty stdout, "tycho: stack overflow --</p>
-<p>recursion too deep" on stderr, identical to POSIX — and the modestly</p>
-<p>nested controls run (f(1000) -&gt; 500501, spawned deep(1000) -&gt; 0), so the</p>
-<p>guard is not trigger-happy.</p>
-<p>hello runs interactively with bare-LF output.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>NOT VERIFIED (the CI leg's job): the guard under a real Windows kernel</p>
-<p>(Wine's stack/exception semantics are an approximation), and the conc</p>
-<p>goldens under the real Windows scheduler. TSan has no Windows-target</p>
-<p>support in gcc and mingw ASan is experimental — those conc legs are skips</p>
-<p>on the Windows side.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>GATES (Linux tree): make conc 38/38, make recursion all green (both the</p>
-<p>compiler-input gate and the generated-code guard leg), make test 591/591</p>
-<p>(env -u LD_PRELOAD), goldens-check, doc gates. The runtime line shifts</p>
-<p>re-anchored 14 citations (diff-hunk-mapped, token-verified, gate re-run</p>
-<p>to zero). <code>make wine-smoke</code> is a manual target, not a gate and not in</p>
-<p>make ci.</p>
-<p>Phase 3 evidence — 2026-08-05 (toolchain verification on the Linux box via</p>
-<p>scripts/wine_test.sh; the definitive make-test-on-Windows pass stays the</p>
-<p>windows CI leg).</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>CORPUS UNDER WINE: 318 fixtures (plain corpus + examples, 15 package</p>
-<p>programs, 17 runtime aborts, 23 diagnostics goldens) — **317 byte-identical</p>
-<p>to the Linux goldens, 1 park item**. The abort fixtures all die cleanly</p>
-<p>with a 'tycho:' message; the 23 diagnostics goldens match the MINGW</p>
-<p>compiler's stderr byte-for-byte (which is what the compiler binary-stdio</p>
-<p>fix this phase was FOR).</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE ONE PARK ITEM: tests/float_str_locale — its <code>rt=</code> column asserts</p>
-<p><code>rt=1</code> from the runtime roundtrip test hook, which returns -1 on Windows</p>
-<p>BY DESIGN (the hook needs newlocale, absent from mingw-w64 at every</p>
-<p>version — phase 1/2). The float formatting itself (1.5 = 1.5) is correct</p>
-<p>under Wine; only the POSIX-only assertion differs. Phase 6: split the</p>
-<p>fixture or give it a Windows-aware golden.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>TOOLCHAIN: <code>--print-shims</code> and <code>--print-deps</code> output is IDENTICAL between</p>
-<p>the Linux and mingw compilers (transitive shim closure + pkg-config names</p>
-<p>are pure compiler-side). The pkg-config RESOLUTION cannot run under Wine</p>
-<p>(the Linux-side pkg-config binary is unreachable from cmd.exe) — the same</p>
-<p>environment class as the cc invocation; on a real MSYS2 host pkg-config</p>
-<p>exists. <code>-g</code>: the emitted C's <code>#line</code> directives map into the DWARF line</p>
-<p>table — Debian's gdb-mingw-w64 (a NATIVE Linux cross-gdb) resolves</p>
-<p><code>info line prog.ty:13</code> to the right address and accepts a <code>prog.ty:13</code></p>
-<p>breakpoint. Live STEPPING under gdb cannot be driven from the Linux side</p>
-<p>(the cross-gdb cannot exec a PE; the wine exec dance is unreliable) — that</p>
-<p>half is the CI leg's job on real Windows.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>COMPILER FIX (this phase): src/tychoc.c gains the same _WIN32 binary</p>
-<p>stdout/stderr <code>_setmode</code> as the runtime — without it the diagnostics</p>
-<p>goldens and <code>--print-shims</code>/<code>-deps</code> output would carry CRLF on Windows.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>SHELL-OUT FINDING (recorded for phases 4/5): os.system on Windows runs</p>
-<p>cmd.exe, not sh — <code>rm -f</code>, <code>&gt; /dev/null</code>, tar pipelines and the build</p>
-<p>tool's recipes need the MSYS2 sh or cmd-compatible forms. None of the</p>
-<p>plain corpus fixtures shell out, so nothing reddened for it here.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>GATES (Linux tree): make test 591/591, tools-check ok, goldens-check ok,</p>
-<p>doc gates ok (117 citations re-anchored, diff-hunk-mapped and</p>
-<p>token-verified). make wine-test is a manual target, not a gate.</p>
-<p>Phase 4 evidence — 2026-08-05 (corelib shims, verified by</p>
-<p><code>sh scripts/wine_corelib.sh</code> on the Linux box: 37 pass / 9 skip-with-reason /</p>
-<p>0 fail; definitive pass deferred to the windows CI leg).</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE CODE:</p>
-<p>Compiler — the deps mechanism gains <code>_WIN32:</code> sections (src/tychoc.c</p>
-<p>add_pkg_deps): raw linker flags for Windows builds, appended to the cc</p>
-<p>line verbatim, never pkg-config'd, never listed by --print-deps; a</p>
-<p>non-Windows compiler skips the section entirely. This is what makes</p>
-<p>core:net (-lws2_32) and core:regex (-lpcre2-posix) LINK on Windows at all.</p>
-<p>core:io — getline/pread/pwrite (one-arg _mkdir) _WIN32 shims; plus the</p>
-<p>directory-classification fix: Windows fopen/open of a DIRECTORY fails with</p>
-<p>EACCES, not POSIX's EISDIR, so ty_rf_errno now re-classifies EACCES by</p>
-<p>stat, and iox_remove dispatches _rmdir for directories (Windows remove()</p>
-<p>is unlink-only). Before this, every io directory path answered Err(Failed)</p>
-<p>instead of Err(IsDir).</p>
-<p>core:strings — the newlocale handle is now guarded by TY_HAVE_STRTOD_L,</p>
-<p>which already excludes mingw; the localeconv fallback (already correct</p>
-<p>under any locale) is the Windows path.</p>
-<p>core:signal — the fail-closed stub is replaced by the real Windows branch:</p>
-<p>SetConsoleCtrlHandler + shutdown/closesocket on the listener and the</p>
-<p>registry (shared, platform-neutral array). The accept-wake behaviour is</p>
-<p>Windows-version dependent; the flag is set either way (CI leg verifies).</p>
-<p>core:datetime — localtime_r/gmtime_r (via localtime_s/gmtime_s),</p>
-<p>setenv/unsetenv (via _putenv), and tm_gmtoff (glibc-only member) replaced</p>
-<p>by the portable mktime-difference.</p>
-<p>core:regex — <code>#ifdef _WIN32</code> includes &lt;pcre2posix.h&gt; (POSIX-signature</p>
-<p>drop-in: regcomp/regexec/regfree unchanged), verified to compile against</p>
-<p>pcre2posix.h; the -lpcre2-posix link comes from the deps _WIN32 section.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>VERIFIED UNDER WINE (wine-corelib): 37 packages byte-identical to their</p>
-<p>goldens, including io, strings, datetime (non-TZ paths), compress + zip</p>
-<p>(against libz-mingw-w64), net and httpd (against ws2_32). 9 skips with</p>
-<p>reasons: 6 are MSYS2-only library links (crypto/http/image/sqlite/tls —</p>
-<p>OpenSSL/curl/png/sqlite3 mingw builds; regex — pcre2-posix) whose shim code</p>
-<p>is portable and compile-verified; 3 are TEST-side POSIX mechanisms, not</p>
-<p>shim bugs:</p>
-<p>os — the test drives <code>true</code>/<code>false</code>/<code>printf</code> which cmd.exe lacks (exit</p>
-<p>code 9009); the PACKAGE works (cmd runs, exit codes map, <code>exit 7</code> passes).</p>
-<p>datetime — offset_at's signed POSIX TZ strings come out sign-inverted</p>
-<p>(Windows _tzset uses the opposite convention); <code>utc0</code> matches.</p>
-<p>signal — the test kills itself via <code>kill -TERM $PPID</code> from a POSIX shell;</p>
-<p>cmd has no kill, so the handler never fires and the accept blocks (this</p>
-<p>one HUNG the lane until it was classified as a skip).</p>
-<p>All three need Windows-native test variants in phase 6.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>GATES (Linux tree): make corelib all green (46 packages — the _WIN32</p>
-<p>branches are inert), shim-check 9 ok / 4 skipped / 0 failed, make test</p>
-<p>591/591 (env -u LD_PRELOAD), doc gates; 53 citations re-anchored</p>
-<p>(diff-hunk-mapped with the whole-span range fix, token-verified). make</p>
-<p>wine-corelib is a manual target, not a gate.</p>
-<p>Phase 5 evidence — 2026-08-05 (tools, verified by <code>sh scripts/wine_tools.sh</code>:</p>
-<p>14 tools cross-built for Windows + 3 run checks green, 0 fail, 1 skip).</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE BUILD PROOF: every tools/ entry cross-compiles and links under mingw —</p>
-<p>tycho-ar (-lz), tycho-kvsrv (-lws2_32), tycho-debug (its shim), the</p>
-<p>dispatcher, tychofmt, lsp, and the eight pure tools (q/vm/scheme/kv/chess/</p>
-<p>rsa/sat/build). tycho-fetch is the one skip: its core:http shim needs mingw</p>
-<p>libcurl, which lives in MSYS2.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>RUN CHECKS under Wine (vs the lane goldens' shape): tycho-q answered a</p>
-<p>query with the full CSV table; tycho-scheme ran fib; tycho-ar created and</p>
-<p>listed a deterministic archive (names + sizes + sha256s). The tools are not</p>
-<p>just buildable — they WORK.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE DEBUG_SHIM WINDOWS BRANCH (the phase's coding piece): CreateProcess</p>
-<p>with pipes and CREATE_NEW_CONSOLE (the console isolation that replaces</p>
-<p>setpgid — a terminal Ctrl-C in the tool's console never reaches gdb), the</p>
-<p>child ends inherited, the parent ends _open_osfhandle'd onto the SAME fd</p>
-<p>Line reader dbgx_write/readline already use, SetConsoleCtrlHandler setting</p>
-<p>the same interrupt flag, _fullpath/_getpid, and WaitForSingleObject for</p>
-<p>waitpid. Compile-verified under BOTH mingw and Linux (the POSIX branch is</p>
-<p>untouched — make debug-check still green, 6 legs).</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>TWO DOCUMENTED GAPS on Windows (both the CI leg's job): (1) no Ctrl-C</p>
-<p>interrupt while the inferior runs — a Windows console handler runs on a new</p>
-<p>thread and a blocked pipe read has no EINTR to wake, so the flag is set but</p>
-<p>unread until the next command; a clean stop-at-line needs</p>
-<p>GenerateConsoleCtrlEvent + overlapped reads. <code>q</code> still quits. (2) the</p>
-<p>tool's gdb command line is POSIX-shell-quoted (main.ty's shq); under</p>
-<p>cmd.exe those quotes are literal, so a path with spaces breaks the gdb</p>
-<p>invocation.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>FINDINGS RECORDED (not this phase's work): the DISPATCHER cross-builds but</p>
-<p>its shell lines (rm -f, &gt; /dev/null) are cmd-incompatible — it needs</p>
-<p>cmd-compatible forms or MSYS2 sh on PATH (the harness phase). tycho-build</p>
-<p>cross-builds but its LANE's recipes (cat/cp/touch) are POSIX — same</p>
-<p>test-side park class as core:os's (phase 4).</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>GATES (Linux tree): make debug-check 6 legs green (the POSIX debugger is</p>
-<p>unchanged), make tools builds, doc gates green (0 citations shifted — the</p>
-<p>shim's cited lines are bare ranges). make wine-tools is a manual target.</p>
-<p>**Phase 6 re-measured 2026-08-13 at <code>7ddfcef8</code>, and the lanes were the</p>
-<p>problem more than the port.** All five wine lanes rebuilt <code>tychoc-mingw.exe</code></p>
-<p>only <code>if [ ! -x ]</code>, so this box had been testing an <strong>Aug 5 compiler</strong>: 25 of</p>
-<p>wine-test's 28 failures were features that postdated it. With that fixed, plus</p>
-<p>the lane learning to link <code>&lt;pkg&gt;_shim.c</code> and to honour a sibling <code>.err</code> the way</p>
-<p><code>tests/run.sh:354</code> does, and one real port fix (<code>iox_set_mtime</code> could not touch</p>
-<p>a DIRECTORY on Windows — <code>_utime</code> fails EACCES, so the directory case now uses</p>
-<p><code>FILE_FLAG_BACKUP_SEMANTICS</code> + <code>SetFileTime</code>):</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>| lane | 2026-08-13 |</p>
-<p>|---|---|</p>
-<p>| wine-smoke | all green |</p>
-<p>| wine-test | <strong>passed 347, failed 2</strong> — both float park candidates (<code>c_float_roundtrip</code>, <code>c_float_str_locale</code>), down from 28 |</p>
-<p>| wine-corelib | 36 ok, 9 skipped, 1 park (<code>io</code>: <code>sync_dir=Unsupported</code>, which <code>iox_sync</code> returns deliberately) |</p>
-<p>| wine-ffi | 10 passed, 0 failed |</p>
-<p>| wine-tools | built+ran 17, failed 0, skipped 1 (tycho-fetch/libcurl) |</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>The park list is therefore SHORTER than this plan recorded: float text under</p>
-<p>mingw, <code>sync</code> on a directory, and the os/datetime/signal test mechanisms. The</p>
-<p>phase-7 gate is unchanged and still needs the box — <code>make ci</code> under MSYS2.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>Phase 6 evidence (the Linux half) — 2026-08-05: the golden audit is DONE,</p>
-<p>the ffi lane gained wine coverage, and the verdict itself is the CI leg's.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE GOLDEN DRIFT AUDIT (scanned every tests/*.out, tests/conc/*.out,</p>
-<p>tests/pkg/*.out, corelib/test/*.out, examples/*/expected.out,</p>
-<p>tools/*/expected.out): the goldens are byte-clean for Windows — no CRLF</p>
-<p>drift (the binary-stdio fix of phase 2 made emitted output LF; the one</p>
-<p>golden containing \\r is corelib/test/httpd.out's intentional HTTP \\r\\n in</p>
-<p>raw response lines, and httpd passes byte-identical under Wine anyway), no</p>
-<p>absolute /tmp paths, no platform strings (linux/x86_64/uname), no drive</p>
-<p>letters. The only path-looking golden (corelib/test/path.out) is pure</p>
-<p>string-math output (forward-slash normalization) — platform-stable. The</p>
-<p>phase-6 expectation "goldens platform-identical" is essentially ALREADY</p>
-<p>MET, verified two ways: the wine lanes and this scan.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE ONE REAL FIND: the FFI fixture's boundary used C <code>long</code>, which is</p>
-<p>32-bit on Windows but 64-bit on Linux — so <code>ffi_read(null)</code> returned</p>
-<p>4294967295 (0xFFFFFFFF, upper bits unspecified) instead of -1 under Wine.</p>
-<p>Fixed: tests/ffi/demo.c's extern-facing <code>long</code> -&gt; <code>int64_t</code> (tycho_int's</p>
-<p>width). Linux-identical (long == int64_t there; make ffi still green,</p>
-<p>ASan-clean under env -u LD_PRELOAD) and Windows-correct (the wine-ffi</p>
-<p>golden is byte-identical).</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE FFI LANE UNDER WINE (scripts/wine_ffi.sh, 10/10): the golden over a</p>
-<p>mingw-built libffidemo.a (byte-identical), the --shim leg (triple=42), the</p>
-<p>package-scoped extern (tri6=42), the sized-int ABI values (5032704</p>
-<p>8589934592 -5), and the compiler-side REJECTIONS through the MINGW compiler</p>
-<p>(the four affine handle bans, the shell-injection refusals -- driven with</p>
-<p>-o, because the guard lives at link-line construction which --emit-c skips</p>
-<p>-- and the inout-string out-param ban). The one leg that cannot run here is</p>
-<p>the ASan/UBSan recompile: mingw ASan is experimental -- the CI's job.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE LINUX-ONLY LANES (skip loudly on Windows, with reasons): locale-check</p>
-<p>(its LD_PRELOAD setlocale constructor is Linux-only), asan-self, ilp32,</p>
-<p>conc's ASan/TSan legs (TSan has no Windows-target support in gcc at all),</p>
-<p>and the ffi lane's ASan leg (above). The editors lanes are node/tree-sitter</p>
-<p>based -- portable, not Linux-only.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE PARK LIST, consolidated (the phase-6 golden-audit inputs, all recorded</p>
-<p>with their reasons in the phase-4/5 evidence): os/datetime/signal corelib</p>
-<p>tests (POSIX-shell mechanisms and POSIX-TZ sign), tycho-build's lane recipes</p>
-<p>(cat/cp/touch), the dispatcher's cmd-incompatible shell lines (rm -f, &gt;</p>
-<p>/dev/null), and tycho-fetch (mingw curl). Each needs a Windows-native test</p>
-<p>variant in the CI leg.</p>
-<p>Phase 6/7 harness evidence — 2026-08-07 (commit 1ca7e80, recorded here after</p>
-<p>the fact; the run itself was on a real Windows VM: ARM64 Windows 11 running</p>
-<p>the x86-64 MSYS2/mingw toolchain under <strong>Prism emulation</strong>).</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE HARNESS GAPS the plan predicted, all landed as LOUD skips naming their</p>
-<p>reason: ci.sh skips ilp32/asan-self/fuzz; tests/run.sh sets TYCHO_NO_ASAN=1</p>
-<p>on Windows, names binaries <code>.exe</code>, gives each fixture its own temp dir,</p>
-<p>retries with backoff, chunks <code>--one</code>, and selects a <code>&lt;golden&gt;.win</code> when one</p>
-<p>exists (<code>float_str_locale.out.win</code> carries rt=-1, the newlocale-less</p>
-<p>rendering phase 3 parked); tests/conc + tests/ffi skip their asan/tsan legs;</p>
-<p>tests/recursion probes for GNU timeout (cmd.exe's is a different program);</p>
-<p>corelib/run.sh retries and skips the signal test. One real harness BUG, not</p>
-<p>a skip: check_goldens.py built patterns with <code>os.path</code>, so on Windows every</p>
-<p>resolved path had backslashes and matched none of git's forward-slash paths</p>
-<p>— every golden reported NOT tracked. Fixed with posixpath.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>THE RUN, recorded as measured rather than as a verdict: goldens-check / entrypoints /</p>
-<p>spec-check / docs-fences / check-links / shim-check green; <code>make test</code></p>
-<p>589/591; <code>make corelib</code> 43 ok / 2 fail (datetime's POSIX-TZ sign, time's</p>
-<p>timing bound) / 1 skip (signal); <code>make conc</code> 34/38. The 2 + 4 test/conc reds</p>
-<p>are ONE class — the emulator's startup heap-corruption race (0xC0000374 -&gt;</p>
-<p>bash 127), which is why the runner retries.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p><strong>The phase-7 gate is therefore NOT met.</strong> Its wording is "the full <code>make ci</code></p>
-<p>on Windows, green". What exists is a run with a short, classified residual</p>
-<p>list on an EMULATED Windows box. Nothing here has been run on non-emulated</p>
-<p>x86-64 Windows, so the emulator class is unseparated from a real port bug by</p>
-<p>measurement — it is separated only by its signature (a startup crash before</p>
-<p>main, at a rate that retries clear). That is the recorded state.</p>
 <p>Phase 7 close (the Linux half) — 2026-08-07.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>RELEASE. <code>scripts/release.sh --mingw</code> shipped the compiler and corelib only,</p>
-<p>with a comment deferring the tools to "when they cross-compile" — phase 5</p>
-<p>proved they do. It now cross-builds <code>tychofmt.exe</code>, <code>tycho-lsp.exe</code> and</p>
-<p><code>tycho-debug.exe</code> too (parity with the native leg, which ships the same three</p>
-<p>beside tychoc and no dispatcher). Method: the NATIVE compiler emits the C</p>
-<p>(target-neutral, its <code>_WIN32</code> branches are compile-time) and mingw links it,</p>
-<p>with <code>--print-shims</code> supplying the corelib shims and the explicit <code>--shim</code></p>
-<p>file appended by hand — it is not in that list, the same trap wine_tools.sh</p>
-<p>documents. Then a Wine smoke test of the STAGED layout: the packaged</p>
-<p>tychoc.exe must find <code>corelib/</code> beside itself with no TYCHO_CORELIB and emit</p>
-<p>C (it stops at --emit-c because there is no Windows <code>cc</code> under Wine); it</p>
-<p>skips loudly, saying the tarball is unrun, when wine64 is absent.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>RAN, both legs, on this Linux box: <code>sh scripts/release.sh v1.0.0 --mingw</code> -&gt;</p>
-<p>compiler + 3 tools built, Wine smoke test ok, tarball + sha256 written; and</p>
-<p><code>sh scripts/release.sh v1.0.0</code> (the native leg, to prove it was not</p>
-<p>disturbed) -&gt; its own smoke test ok. NOT run: the tools' Windows *behaviour*</p>
-<p>— they are built and packaged, and only tychoc.exe was executed.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>DOCS. README's platform note flips from "No native Windows, but WSL is fine"</p>
-<p>to the two supported paths (WSL2 zero-setup, native MSYS2 + mingw-w64, MSVC</p>
-<p>out of scope) with the loud-skip lane list and pointers to CHANGELOG (the</p>
-<p>run) and SECURITY.md (the gaps). SECURITY.md's sharp-edge list gains the</p>
-<p>surviving Windows behavioural gaps: signal's version-dependent accept-wake,</p>
-<p>datetime's mirrored POSIX-TZ sign, the newlocale-less float(str) path,</p>
-<p>core:os through cmd.exe, tycho-debug's Ctrl-C. corelib.md's 1.0 API surface</p>
-<p>says the surface and every signature are identical on Windows and names the</p>
-<p>three packages whose BEHAVIOUR differs. plan.md's "native Windows (deferred,</p>
-<p>WSL suffices)" is struck in both places it appears, dated. CHANGELOG gains an</p>
-<p>[Unreleased] section carrying the port, the recorded run with its residuals,</p>
-<p>the release change, and the two post-1.0 compiler commits (the pattern-discard</p>
-<p>fix and the branch-type diagnostic), which had never been recorded.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>NOT DONE, and it is the phase's own gate: the full <code>make ci</code> on Windows,</p>
-<p>green. It needs the box, not this one. The park list above is unchanged —</p>
-<p>os/datetime/signal test variants, tycho-build's lane recipes, the</p>
-<p>dispatcher's cmd-incompatible shell lines, tycho-fetch's mingw curl.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p><strong>Status 2026-08-15.</strong> Still not done and still hardware-bound — it needs a</p>
-<p>Windows box, which is the same class of blocker as ROADMAP §1 and §7 needing</p>
-<p>people, not a task anyone can pick up here. What HAS been built since that line</p>
-<p>was written is a wine substitute deep enough to be worth naming, because "no</p>
-<p>native CI" now understates the coverage badly:</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>| lane | what it runs under wine |</p>
-<p>|---|---|</p>
-<p>| <code>scripts/wine_test.sh</code> | the plain fixture corpus, cross-compiled (phase 3) |</p>
-<p>| <code>scripts/wine_corelib.sh</code> | every corelib test that links on this box (phase 4) |</p>
-<p>| <code>scripts/wine_tools.sh</code> | every <code>tools/</code> tool cross-compiled (phase 5) |</p>
-<p>| <code>scripts/wine_ffi.sh</code> | the FFI lane's runnable legs (phase 6) |</p>
-<p>| <code>scripts/wine_smoke.sh</code> | the cross-compiled smoke |</p>
-<p>| <code>make wine-ubsan</code> | the same corpus with UB TRAPPING — 361 fixtures, 0 failures |</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p><strong>What was re-run on 2026-08-15, and what was not.</strong> <code>wine_smoke.sh</code> is green</p>
-<p>here today (cross-compiled programs run under wine, <code>prog_ok_big</code> printed</p>
-<p><strong>all six were re-run and all six are green</strong>, so the table above is a</p>
-<p>statement about today rather than about the day each landed:</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>| lane | 2026-08-15 |</p>
-<p>|---|---|</p>
-<p>| <code>wine_smoke.sh</code> | green (<code>prog_ok_big</code> printed 500501) |</p>
-<p>| <code>wine_test.sh</code> | passed 361, failed 0 |</p>
-<p>| <code>wine_corelib.sh</code> | passed 37, failed 0, skipped 9 |</p>
-<p>| <code>wine_tools.sh</code> | built+ran 17, failed 0, skipped 1 |</p>
-<p>| <code>wine_ffi.sh</code> | passed 12, failed 0 |</p>
-<p>| <code>make wine-ubsan</code> | green over the fixture corpus AND every corelib package that ports, with its control firing: the same source exits 0 plain and <strong>29</strong> with the trap flags |</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>The skips are the parked list, not failures: 9 corelib packages and 1 tool whose</p>
-<p>dependencies do not cross to mingw. <code>wine-ubsan</code>'s control is the leg that</p>
-<p>matters most — without it, "0 failures" is also what a sweep reports when the</p>
-<p>trap never arms.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>And 0.7.0 ships a mingw tarball that was verified under wine before publishing:</p>
-<p><code>tychoc.exe</code> reports its version and refuses all 51 <code>affine_*</code>/<code>generic_*</code></p>
-<p>reject fixtures. What wine still cannot give is a native <code>make ci</code> and anything</p>
-<p>only ASan would catch — mingw-w64 here ships neither libasan nor libubsan, so</p>
-<p>use-after-free on Windows stays invisible. That limit is recorded in</p>
-<p><code>docs/internals/audit-brief.md</code> §3 as well.</p>
-</blockquote>
-<p>&gt;</p>
-<blockquote>
-<p>GATES (this box): doc gates (check_citations.py, check_links.sh) green; both</p>
-<p>release legs ran. <code>make test</code> was NOT run and cannot redden — no compiler,</p>
-<p>runtime, corelib or fixture changed; the diff is Markdown plus the mingw</p>
-<p>branch of a release script that no gate calls.</p>
+<p>RELEASE. <code>scripts/release.sh --mingw</code> shipped the compiler and corelib only, with a comment deferring the tools to "when they cross-compile" — phase 5 proved they do. It now cross-builds <code>tychofmt.exe</code>, <code>tycho-lsp.exe</code> and <code>tycho-debug.exe</code> too (parity with the native leg, which ships the same three beside tychoc and no dispatcher). Method: the NATIVE compiler emits the C (target-neutral, its <code>_WIN32</code> branches are compile-time) and mingw links it, with <code>--print-shims</code> supplying the corelib shims and the explicit <code>--shim</code> file appended by hand — it is not in that list, the same trap wine_tools.sh documents. Then a Wine smoke test of the STAGED layout: the packaged tychoc.exe must find <code>corelib/</code> beside itself with no TYCHO_CORELIB and emit C (it stops at --emit-c because there is no Windows <code>cc</code> under Wine); it skips loudly, saying the tarball is unrun, when wine64 is absent.</p>
+<p>RAN, both legs, on this Linux box: <code>sh scripts/release.sh v1.0.0 --mingw</code> -&gt; compiler + 3 tools built, Wine smoke test ok, tarball + sha256 written; and <code>sh scripts/release.sh v1.0.0</code> (the native leg, to prove it was not disturbed) -&gt; its own smoke test ok. NOT run: the tools' Windows *behaviour* — they are built and packaged, and only tychoc.exe was executed.</p>
+<p>DOCS. README's platform note flips from "No native Windows, but WSL is fine" to the two supported paths (WSL2 zero-setup, native MSYS2 + mingw-w64, MSVC out of scope) with the loud-skip lane list and pointers to CHANGELOG (the run) and SECURITY.md (the gaps). SECURITY.md's sharp-edge list gains the surviving Windows behavioural gaps: signal's version-dependent accept-wake, datetime's mirrored POSIX-TZ sign, the newlocale-less float(str) path, core:os through cmd.exe, tycho-debug's Ctrl-C. corelib.md's 1.0 API surface says the surface and every signature are identical on Windows and names the three packages whose BEHAVIOUR differs. plan.md's "native Windows (deferred, WSL suffices)" is struck in both places it appears, dated. CHANGELOG gains an [Unreleased] section carrying the port, the recorded run with its residuals, the release change, and the two post-1.0 compiler commits (the pattern-discard fix and the branch-type diagnostic), which had never been recorded.</p>
+<p>NOT DONE, and it is the phase's own gate: the full <code>make ci</code> on Windows, green. It needs the box, not this one. The park list above is unchanged — os/datetime/signal test variants, tycho-build's lane recipes, the dispatcher's cmd-incompatible shell lines, tycho-fetch's mingw curl.</p>
+<p><strong>Status 2026-08-15.</strong> Still not done and still hardware-bound — it needs a Windows box, which is the same class of blocker as ROADMAP §1 and §7 needing people, not a task anyone can pick up here. What HAS been built since that line was written is a wine substitute deep enough to be worth naming, because "no native CI" now understates the coverage badly:</p>
+<p>| lane | what it runs under wine | |---|---| | <code>scripts/wine_test.sh</code> | the plain fixture corpus, cross-compiled (phase 3) | | <code>scripts/wine_corelib.sh</code> | every corelib test that links on this box (phase 4) | | <code>scripts/wine_tools.sh</code> | every <code>tools/</code> tool cross-compiled (phase 5) | | <code>scripts/wine_ffi.sh</code> | the FFI lane's runnable legs (phase 6) | | <code>scripts/wine_smoke.sh</code> | the cross-compiled smoke | | <code>make wine-ubsan</code> | the same corpus with UB TRAPPING — 361 fixtures, 0 failures |</p>
+<p><strong>What was re-run on 2026-08-15, and what was not.</strong> <code>wine_smoke.sh</code> is green here today (cross-compiled programs run under wine, <code>prog_ok_big</code> printed <strong>all six were re-run and all six are green</strong>, so the table above is a statement about today rather than about the day each landed:</p>
+<p>| lane | 2026-08-15 | |---|---| | <code>wine_smoke.sh</code> | green (<code>prog_ok_big</code> printed 500501) | | <code>wine_test.sh</code> | passed 361, failed 0 | | <code>wine_corelib.sh</code> | passed 37, failed 0, skipped 9 | | <code>wine_tools.sh</code> | built+ran 17, failed 0, skipped 1 | | <code>wine_ffi.sh</code> | passed 12, failed 0 | | <code>make wine-ubsan</code> | green over the fixture corpus AND every corelib package that ports, with its control firing: the same source exits 0 plain and <strong>29</strong> with the trap flags |</p>
+<p>The skips are the parked list, not failures: 9 corelib packages and 1 tool whose dependencies do not cross to mingw. <code>wine-ubsan</code>'s control is the leg that matters most — without it, "0 failures" is also what a sweep reports when the trap never arms.</p>
+<p>And 0.7.0 ships a mingw tarball that was verified under wine before publishing: <code>tychoc.exe</code> reports its version and refuses all 51 <code>affine_*</code>/<code>generic_*</code> reject fixtures. What wine still cannot give is a native <code>make ci</code> and anything only ASan would catch — mingw-w64 here ships neither libasan nor libubsan, so use-after-free on Windows stays invisible. That limit is recorded in <code>docs/internals/audit-brief.md</code> §3 as well.</p>
+<p>GATES (this box): doc gates (check_citations.py, check_links.sh) green; both release legs ran. <code>make test</code> was NOT run and cannot redden — no compiler, runtime, corelib or fixture changed; the diff is Markdown plus the mingw branch of a release script that no gate calls.</p>
 </blockquote>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

@@ -4,159 +4,70 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>13. Expressions — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/09-expressions.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html" aria-current="page">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#131-place-expressions">13.1 Place expressions</a>
+<a href="#132-operators">13.2 Operators</a>
+<a href="#133-unary-operators">13.3 Unary operators</a>
+<a href="#134-evaluation-order">13.4 Evaluation order</a>
+<a href="#135-expression-valued-if-and-match">13.5 Expression-valued if and match</a>
+<a href="#136-closures-and-function-values">13.6 Closures and function values</a>
+<a href="#137-other-expression-forms">13.7 Other expression forms</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/09-expressions.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="13-expressions">13. Expressions</h1>
-<p>An expression computes a value. Its grammar, precedence, and associativity are</p>
-<p>in <a href="02-grammar.html#44-expressions">§4.4–§4.5</a>; this chapter defines the meaning</p>
-<p>of each operator, the <strong>evaluation order</strong>, and the expression-valued control</p>
-<p>forms.</p>
+<p>An expression computes a value. Its grammar, precedence, and associativity are in <a href="02-grammar.html#44-expressions">§4.4–§4.5</a>; this chapter defines the meaning of each operator, the <strong>evaluation order</strong>, and the expression-valued control forms.</p>
 <h2 id="131-place-expressions">13.1 Place expressions</h2>
-<p>A <strong>place</strong> (lvalue) designates storage that can be read and assigned. The places</p>
-<p>are: a variable; an array or map index <code>a[i]</code> / <code>m[k]</code>; a struct field <code>p.f</code>; a</p>
-<p>tuple element <code>t.0</code>; and a user-defined subscript call (<a href="12-aggregates.html">§18</a>). A place is required as the target of an assignment, a compound</p>
-<p>assignment, and the operand of <code>&amp;</code> (<code>inout</code> argument). Reading a place yields a</p>
-<p>value (a deep copy where the value is heap-bearing and must be independent);</p>
-<p>writing a place stores into that storage.</p>
+<p>A <strong>place</strong> (lvalue) designates storage that can be read and assigned. The places are: a variable; an array or map index <code>a[i]</code> / <code>m[k]</code>; a struct field <code>p.f</code>; a tuple element <code>t.0</code>; and a user-defined subscript call (<a href="12-aggregates.html">§18</a>). A place is required as the target of an assignment, a compound assignment, and the operand of <code>&amp;</code> (<code>inout</code> argument). Reading a place yields a value (a deep copy where the value is heap-bearing and must be independent); writing a place stores into that storage.</p>
 <h2 id="132-operators">13.2 Operators</h2>
-<p><strong>Arithmetic</strong> (<code>+ - * / %</code>, unary <code>-</code>). Both operands MUST have the same type,</p>
-<p>which is <code>int</code>, <code>float</code>, a sized numeric (<code>u32</code>/<code>u64</code>/<code>f32</code>), <code>char</code> (for <code>+</code>/<code>-</code></p>
-<p>with the byte-domain rule below), or a newtype over an <code>int</code> or <code>float</code> base; the</p>
-<p>result keeps that type. <code>int</code>/<code>u32</code>/<code>u64</code> division or modulo by a zero *value*</p>
-<p>aborts (<a href="17-runtime.html">§30</a>). Division or modulo by an <strong>integer literal <code>0</code></strong> is</p>
-<p>a compile error regardless of operand type (so <code>x / 0</code> is rejected even when <code>x</code></p>
-<p>is <code>float</code>); <code>float</code>/<code>f32</code> division by a zero *value* or by the float literal</p>
-<p><code>0.0</code> never traps and follows IEEE-754 (<code>x/0.0</code> → <code>±inf</code>/<code>NaN</code>). Integer overflow wraps (two's-complement for <code>int</code>, modulo <code>2^32</code>/<code>2^64</code></p>
-<p>for <code>u32</code>/<code>u64</code>). <code>char ± int</code> has type <code>char</code> and <strong>wraps to a byte</strong> (<code>0..255</code>,</p>
-<p>like <code>u8</code>), so the value never escapes the type's range.</p>
-<p><strong>String concatenation.</strong> <code>+</code> on two <code>string</code>s concatenates them. As the one</p>
-<p>documented exception to the same-type rule, <code>string + char</code> appends the char's</p>
-<p>single byte to the string and yields a <code>string</code> (<code>"ab" + 'c'</code> → <code>"abc"</code>). It is</p>
-<p><strong>one-directional</strong>: <code>char + string</code> is a type error. For symmetric composition, convert</p>
-<p>explicitly with <code>str(c)</code>. An implementation MUST implement exactly this.</p>
-<p><strong><code>bytes</code> concatenation.</strong> <code>+</code> on two <code>bytes</code> concatenates them, and `bytes +</p>
-<p>char<code> appends the char's single byte — the same two forms </code>string` has, with the</p>
-<p>same one-directional rule, because <code>bytes</code> is the same length-counted buffer</p>
-<p>(<a href="03-types.html#526-bytes">§5.2.6</a>). There is <strong>no</strong> mixing with <code>string</code>: <code>b + "s"</code></p>
-<p>and <code>s + b</code> are type errors, and the boundary is crossed only by explicit</p>
-<p><code>to_bytes</code>/<code>to_str</code>. Any other arithmetic on a <code>bytes</code> operand is a compile error</p>
-<p>that names the three operators <code>bytes</code> does have (<code>+</code>, <code>b[i]</code>, <code>b[i:j]</code>) rather</p>
-<p>than suggesting a numeric conversion.</p>
-<p><strong>Element-wise arithmetic on arrays.</strong> The five arithmetic operators also apply</p>
-<p>to two arrays, and to an array against a scalar. <code>a OP b</code> on two arrays yields a</p>
-<p><strong>fresh</strong> array whose <code>i</code>-th element is <code>a[i] OP b[i]</code>; <code>a OP s</code> and <code>s OP a</code></p>
-<p>broadcast the scalar over every element and <strong>keep the operand order</strong>, so</p>
-<p><code>2 - [5, 1]</code> is <code>[-3, 1]</code> and never <code>[3, -1]</code>. Legality is exactly the scalar</p>
-<p>rule applied per element — <code>a OP b</code> is legal <strong>iff</strong> <code>a[i] OP b[i]</code> is legal — so</p>
-<p><code>int</code> and every sized integer get <code>+ - * / %</code>, <code>float</code>, <code>f32</code> and a numeric</p>
-<p>newtype get <code>+ - * /</code>, and <code>char</code> gets <code>+ -</code>. <code>&amp; | ^ &lt;&lt; &gt;&gt;</code> are <strong>not</strong> included:</p>
-<p>they are not arithmetic, so an array operand still reaches the bitwise and shift</p>
-<p>rules below and is refused there, unchanged. Both array kinds participate and</p>
-<p>their two length-mismatch rules differ; the whole rule — the kinds, the</p>
-<p>mismatches, and literal adaptation of a broadcast scalar — is</p>
-<p><a href="12-aggregates.html#168-element-wise-arithmetic">§16.8</a>.</p>
-<p><strong>Comparison</strong> (<code>== != &lt; &gt; &lt;= &gt;=</code>) and <code>in</code>. Both operands MUST share a type.</p>
-<p><code>==</code>/<code>!=</code> apply to any type except <code>void</code> and are structural except for function</p>
-<p>values; ordering applies only to the ordered set</p>
-<p>(<a href="03-types.html#55-equality-and-ordering">§5.5</a>). <code>x in m</code> tests map membership;</p>
-<p><code>x in xs</code> is not provided (membership on arrays is a corelib function).</p>
-<p><strong>Variant test</strong> (<code>is</code>). <code>v is V</code> yields <code>bool</code>: <code>true</code> iff the enum value <code>v</code></p>
-<p>currently holds variant <code>V</code>. The left operand MUST be an enum, an <code>Option</code> or a</p>
-<p><code>Result</code>; anything else is a</p>
-<p>compile error. The right operand is a <strong>variant name</strong>, never an expression, and</p>
-<p>is spelled exactly as a <code>match</code> arm spells it — bare <code>V</code> for an enum of the</p>
-<p>current package, qualified <code>pkg.V</code> for an imported one — with the same rejection</p>
-<p>if the name is not a variant of that enum. It applies uniformly to nullary and</p>
-<p>payload-carrying variants, and binds <strong>no</strong> payload; to read a payload, use</p>
-<p><code>match</code> (<a href="12-aggregates.html#194-statement-match-versus-value-match">§19.4</a>). <code>is</code> does <strong>not</strong> chain: `a is X</p>
-<p>is Y<code> is a compile error, because its result is a </code>bool<code> and no </code>bool` holds a</p>
-<p>variant. It binds tighter than a comparison and looser than every arithmetic</p>
-<p>operator, so <code>a is X and b is Y</code> groups as <code>(a is X) and (b is Y)</code>.</p>
-<p>For a <strong>nullary</strong> variant, <code>v == V</code> remains legal and equivalent — <code>==</code> is</p>
-<p>structural over the whole value and a nullary variant carries nothing to differ</p>
-<p>in (<a href="03-types.html#55-equality-and-ordering">§5.5</a>). The two spellings genuinely</p>
-<p>overlap there; <code>is</code> is the one that also works for a payload-carrying variant,</p>
-<p>where <code>V</code> is not a value and <code>v == V</code> is refused.</p>
-<p>For an <code>Option</code> the two names are <code>Some</code> and <code>None</code>; for a <code>Result</code>, <code>Ok</code> and</p>
-<p><code>Err</code> (<a href="12-aggregates.html#198-is--the-variant-test">§19.8</a>). They are never</p>
-<p>package-qualified, and a name from the other family is the same compile error as</p>
-<p>an unknown enum variant.</p>
-<p><strong>Logical</strong> (<code>and</code>, <code>or</code>, <code>not</code>) operate on <code>bool</code> and yield <code>bool</code>. <code>and</code> and</p>
-<p><code>or</code> <strong>short-circuit</strong>: the right operand is evaluated only if the result is not</p>
-<p>determined by the left (<code>a and b</code> evaluates <code>b</code> only when <code>a</code> is <code>true</code>; `a or</p>
-<p>b<code> evaluates </code>b<code> only when </code>a<code> is </code>false`). Precedence, tightest first among the</p>
-<p>logical group: <code>not</code>, then <code>and</code>, then <code>or</code>, all looser than any comparison.</p>
+<p><strong>Arithmetic</strong> (<code>+ - * / %</code>, unary <code>-</code>). Both operands MUST have the same type, which is <code>int</code>, <code>float</code>, a sized numeric (<code>u32</code>/<code>u64</code>/<code>f32</code>), <code>char</code> (for <code>+</code>/<code>-</code> with the byte-domain rule below), or a newtype over an <code>int</code> or <code>float</code> base; the result keeps that type. <code>int</code>/<code>u32</code>/<code>u64</code> division or modulo by a zero *value* aborts (<a href="17-runtime.html">§30</a>). Division or modulo by an <strong>integer literal <code>0</code></strong> is a compile error regardless of operand type (so <code>x / 0</code> is rejected even when <code>x</code> is <code>float</code>); <code>float</code>/<code>f32</code> division by a zero *value* or by the float literal <code>0.0</code> never traps and follows IEEE-754 (<code>x/0.0</code> → <code>±inf</code>/<code>NaN</code>). Integer overflow wraps (two's-complement for <code>int</code>, modulo <code>2^32</code>/<code>2^64</code> for <code>u32</code>/<code>u64</code>). <code>char ± int</code> has type <code>char</code> and <strong>wraps to a byte</strong> (<code>0..255</code>, like <code>u8</code>), so the value never escapes the type's range.</p>
+<p><strong>String concatenation.</strong> <code>+</code> on two <code>string</code>s concatenates them. As the one documented exception to the same-type rule, <code>string + char</code> appends the char's single byte to the string and yields a <code>string</code> (<code>"ab" + 'c'</code> → <code>"abc"</code>). It is <strong>one-directional</strong>: <code>char + string</code> is a type error. For symmetric composition, convert explicitly with <code>str(c)</code>. An implementation MUST implement exactly this.</p>
+<p><strong><code>bytes</code> concatenation.</strong> <code>+</code> on two <code>bytes</code> concatenates them, and <code>bytes + char</code> appends the char's single byte — the same two forms <code>string</code> has, with the same one-directional rule, because <code>bytes</code> is the same length-counted buffer (<a href="03-types.html#526-bytes">§5.2.6</a>). There is <strong>no</strong> mixing with <code>string</code>: <code>b + "s"</code> and <code>s + b</code> are type errors, and the boundary is crossed only by explicit <code>to_bytes</code>/<code>to_str</code>. Any other arithmetic on a <code>bytes</code> operand is a compile error that names the three operators <code>bytes</code> does have (<code>+</code>, <code>b[i]</code>, <code>b[i:j]</code>) rather than suggesting a numeric conversion.</p>
+<p><strong>Element-wise arithmetic on arrays.</strong> The five arithmetic operators also apply to two arrays, and to an array against a scalar. <code>a OP b</code> on two arrays yields a <strong>fresh</strong> array whose <code>i</code>-th element is <code>a[i] OP b[i]</code>; <code>a OP s</code> and <code>s OP a</code> broadcast the scalar over every element and <strong>keep the operand order</strong>, so <code>2 - [5, 1]</code> is <code>[-3, 1]</code> and never <code>[3, -1]</code>. Legality is exactly the scalar rule applied per element — <code>a OP b</code> is legal <strong>iff</strong> <code>a[i] OP b[i]</code> is legal — so <code>int</code> and every sized integer get <code>+ - * / %</code>, <code>float</code>, <code>f32</code> and a numeric newtype get <code>+ - * /</code>, and <code>char</code> gets <code>+ -</code>. <code>&amp; | ^ &lt;&lt; &gt;&gt;</code> are <strong>not</strong> included: they are not arithmetic, so an array operand still reaches the bitwise and shift rules below and is refused there, unchanged. Both array kinds participate and their two length-mismatch rules differ; the whole rule — the kinds, the mismatches, and literal adaptation of a broadcast scalar — is <a href="12-aggregates.html#168-element-wise-arithmetic">§16.8</a>.</p>
+<p><strong>Comparison</strong> (<code>== != &lt; &gt; &lt;= &gt;=</code>) and <code>in</code>. Both operands MUST share a type. <code>==</code>/<code>!=</code> apply to any type except <code>void</code> and are structural except for function values; ordering applies only to the ordered set (<a href="03-types.html#55-equality-and-ordering">§5.5</a>). <code>x in m</code> tests map membership; <code>x in xs</code> is not provided (membership on arrays is a corelib function).</p>
+<p><strong>Variant test</strong> (<code>is</code>). <code>v is V</code> yields <code>bool</code>: <code>true</code> iff the enum value <code>v</code> currently holds variant <code>V</code>. The left operand MUST be an enum, an <code>Option</code> or a <code>Result</code>; anything else is a compile error. The right operand is a <strong>variant name</strong>, never an expression, and is spelled exactly as a <code>match</code> arm spells it — bare <code>V</code> for an enum of the current package, qualified <code>pkg.V</code> for an imported one — with the same rejection if the name is not a variant of that enum. It applies uniformly to nullary and payload-carrying variants, and binds <strong>no</strong> payload; to read a payload, use <code>match</code> (<a href="12-aggregates.html#194-statement-match-versus-value-match">§19.4</a>). <code>is</code> does <strong>not</strong> chain: <code>a is X is Y</code> is a compile error, because its result is a <code>bool</code> and no <code>bool</code> holds a variant. It binds tighter than a comparison and looser than every arithmetic operator, so <code>a is X and b is Y</code> groups as <code>(a is X) and (b is Y)</code>.</p>
+<p>For a <strong>nullary</strong> variant, <code>v == V</code> remains legal and equivalent — <code>==</code> is structural over the whole value and a nullary variant carries nothing to differ in (<a href="03-types.html#55-equality-and-ordering">§5.5</a>). The two spellings genuinely overlap there; <code>is</code> is the one that also works for a payload-carrying variant, where <code>V</code> is not a value and <code>v == V</code> is refused.</p>
+<p>For an <code>Option</code> the two names are <code>Some</code> and <code>None</code>; for a <code>Result</code>, <code>Ok</code> and <code>Err</code> (<a href="12-aggregates.html#198-is--the-variant-test">§19.8</a>). They are never package-qualified, and a name from the other family is the same compile error as an unknown enum variant.</p>
+<p><strong>Logical</strong> (<code>and</code>, <code>or</code>, <code>not</code>) operate on <code>bool</code> and yield <code>bool</code>. <code>and</code> and <code>or</code> <strong>short-circuit</strong>: the right operand is evaluated only if the result is not determined by the left (<code>a and b</code> evaluates <code>b</code> only when <code>a</code> is <code>true</code>; <code>a or b</code> evaluates <code>b</code> only when <code>a</code> is <code>false</code>). Precedence, tightest first among the logical group: <code>not</code>, then <code>and</code>, then <code>or</code>, all looser than any comparison.</p>
 <p><strong>Bitwise</strong> (<code>&amp; | ^ ~</code>). Operands MUST be the same integer type.</p>
-<p><strong>Shift</strong> (<code>&lt;&lt; &gt;&gt;</code>). Both operands MUST be integers, but they **need not match in</p>
-<p>width<strong>: the shifted value and the shift </strong>count** are typed independently, and</p>
-<p>the result takes the <strong>left</strong> operand's type. So <code>x &lt;&lt; n</code> is well-typed for a</p>
-<p><code>u32</code> <code>x</code> and an <code>int</code> <code>n</code>, and yields <code>u32</code>. <code>&gt;&gt;</code> is an <strong>arithmetic</strong></p>
-<p>(sign-preserving) shift on signed <code>int</code> and a <strong>logical</strong> shift on <code>u32</code>/<code>u64</code>.</p>
-<p>Per the Go-style precedence (§4.5) <code>&amp; &lt;&lt; &gt;&gt;</code> bind at the</p>
-<p>multiplicative level and <code>| ^</code> at the additive level, so every bitwise operator</p>
-<p>binds tighter than a comparison: <code>a &amp; b == c</code> is <code>(a &amp; b) == c</code>. A shift <strong>count</strong></p>
-<p>outside <code>0.. width−1</code> is <strong>defined</strong>: a count **≥ the</p>
-<p>operand's bit width<strong> yields <code>0</code> (every bit is shifted out), and a </strong>negative<strong> count is a program error that </strong>aborts** at runtime</p>
-<p>(<code>tycho: negative shift count</code>), like division by zero. A negative *constant*</p>
-<p>count is rejected at compile time.</p>
+<p><strong>Shift</strong> (<code>&lt;&lt; &gt;&gt;</code>). Both operands MUST be integers, but they <strong>need not match in width</strong>: the shifted value and the shift <strong>count</strong> are typed independently, and the result takes the <strong>left</strong> operand's type. So <code>x &lt;&lt; n</code> is well-typed for a <code>u32</code> <code>x</code> and an <code>int</code> <code>n</code>, and yields <code>u32</code>. <code>&gt;&gt;</code> is an <strong>arithmetic</strong> (sign-preserving) shift on signed <code>int</code> and a <strong>logical</strong> shift on <code>u32</code>/<code>u64</code>.</p>
+<p>Per the Go-style precedence (§4.5) <code>&amp; &lt;&lt; &gt;&gt;</code> bind at the multiplicative level and <code>| ^</code> at the additive level, so every bitwise operator binds tighter than a comparison: <code>a &amp; b == c</code> is <code>(a &amp; b) == c</code>. A shift <strong>count</strong> outside <code>0.. width−1</code> is <strong>defined</strong>: a count <strong>≥ the operand's bit width</strong> yields <code>0</code> (every bit is shifted out), and a <strong>negative</strong> count is a program error that <strong>aborts</strong> at runtime (<code>tycho: negative shift count</code>), like division by zero. A negative *constant* count is rejected at compile time.</p>
 <h2 id="133-unary-operators">13.3 Unary operators</h2>
-<p><code>-e</code> negates; <code>~e</code> is bitwise NOT; <code>&amp;p</code> forms an <code>inout</code> argument from a place</p>
-<p>(§11). These prefix operators bind tighter than every binary operator (below only</p>
-<p>the postfix group). <code>not e</code> is boolean negation but is <strong>not</strong> part of this tight</p>
-<p>group: it sits at a much looser precedence level — looser than every comparison</p>
-<p>and arithmetic/bitwise operator (§13.2, §4.5).</p>
+<p><code>-e</code> negates; <code>~e</code> is bitwise NOT; <code>&amp;p</code> forms an <code>inout</code> argument from a place (§11). These prefix operators bind tighter than every binary operator (below only the postfix group). <code>not e</code> is boolean negation but is <strong>not</strong> part of this tight group: it sits at a much looser precedence level — looser than every comparison and arithmetic/bitwise operator (§13.2, §4.5).</p>
 <h2 id="134-evaluation-order">13.4 Evaluation order</h2>
-<p>The following are normative (those marked *probed* were confirmed identical on</p>
-<p>the compiler):</p>
+<p>The following are normative (those marked *probed* were confirmed identical on the compiler):</p>
 <ul>
 <li><strong>Short-circuit</strong> <code>and</code>/<code>or</code> as in §13.2.</li>
-<li><strong><code>match</code> subject — evaluated exactly once</strong> (*probed*), before any arm is</li>
-</ul>
-<p>tested.</p>
-<ul>
+<li><strong><code>match</code> subject — evaluated exactly once</strong> (*probed*), before any arm is tested.</li>
 <li><strong><code>for x in xs</code> — the collection is evaluated exactly once</strong>, before the loop.</li>
-<li><strong>Compound assignment</strong> — a **side-effecting call inside the place is evaluated</li>
+<li><strong>Compound assignment</strong> — a <strong>side-effecting call inside the place is evaluated once</strong> (*probed*); a pure index sub-expression may be evaluated twice.</li>
+<li><strong>A side-effecting index in an assignment place is sequenced left-to-right</strong> (*probed*): in <code>a[f()] = g()</code> the index <code>f()</code> is evaluated <strong>before</strong> the RHS <code>g()</code>, against the implementation.</li>
+<li><strong>The whole place is evaluated before the RHS, left-to-right</strong> (*probed*) — the general rule of which the single-index case above is an instance. A place is rooted at a <strong>variable</strong> (§13.1); a call is never a place <strong>receiver</strong>, so <code>p().x = e</code> and <code>p()[i] = e</code> MUST be rejected and the receiver leg carries no side effect to order. The side-effecting legs of a place are therefore its <strong>index</strong> and <strong>subscript-argument</strong> sub-expressions, and they are evaluated in <strong>source order</strong> (left to right, outermost index first), all of them before the RHS: in <code>g[f()][h()] = e()</code> and in <code>bs[f()].v[h()] = e()</code> the order is <code>f()</code>, <code>h()</code>, then <code>e()</code>. Compound assignment orders the same legs the same way.</li>
+<li><strong>An f-string's interpolations are sequenced left-to-right</strong>: in <code>f"{a()}{b()}{c()}"</code> the holes are evaluated in the order they are written and printed. An f-string (<a href="01-lexical.html#395-f-string-interpolated-literals">§3.9.5</a>) desugars to a <code>+</code> chain, but its holes are sequenced where the bare <code>+</code> operands below are not — a hole is never short-circuited against another hole, so the sequencing is cheap and sound, and the printed order is left-to-right.</li>
+<li><strong>Argument and operand evaluation order is *unspecified</strong>*. Tycho does not sequence the arguments of a call or the operands of a binary operator relative to one another; their order of side effects is inherited from the target and MUST NOT be relied on. A program that needs a particular order MUST introduce explicit intermediate bindings.</li>
 </ul>
-<p>once** (*probed*); a pure index sub-expression may be evaluated twice.</p>
-<ul>
-<li><strong>A side-effecting index in an assignment place is sequenced left-to-right</strong></li>
-</ul>
-<p>(*probed*): in <code>a[f()] = g()</code> the index <code>f()</code> is evaluated <strong>before</strong> the RHS</p>
-<p><code>g()</code>, against the implementation.</p>
-<ul>
-<li><strong>The whole place is evaluated before the RHS, left-to-right</strong> (*probed*) — the</li>
-</ul>
-<p>general rule of which the single-index case above is an instance. A place is</p>
-<p>rooted at a <strong>variable</strong> (§13.1); a call is never a place <strong>receiver</strong>, so</p>
-<p><code>p().x = e</code> and <code>p()[i] = e</code> MUST be rejected and the receiver leg carries no</p>
-<p>side effect to order. The side-effecting legs of a place are therefore its</p>
-<p><strong>index</strong> and <strong>subscript-argument</strong> sub-expressions, and they are evaluated in</p>
-<p><strong>source order</strong> (left to right, outermost index first), all of them before the</p>
-<p>RHS: in <code>g[f()][h()] = e()</code> and in <code>bs[f()].v[h()] = e()</code> the order is <code>f()</code>,</p>
-<p><code>h()</code>, then <code>e()</code>. Compound assignment orders the same legs the same way.</p>
-<ul>
-<li><strong>An f-string's interpolations are sequenced left-to-right</strong>: in</li>
-</ul>
-<p><code>f"{a()}{b()}{c()}"</code> the holes are evaluated in the order they are written and</p>
-<p>printed. An f-string (<a href="01-lexical.html#395-f-string-interpolated-literals">§3.9.5</a>)</p>
-<p>desugars to a <code>+</code> chain, but its holes are sequenced</p>
-<p>where the bare <code>+</code> operands below are not — a hole is never short-circuited</p>
-<p>against another hole, so the sequencing is cheap and sound, and the printed</p>
-<p>order is left-to-right.</p>
-<ul>
-<li><strong>Argument and operand evaluation order is *unspecified</strong>*. Tycho</li>
-</ul>
-<p>does not sequence the arguments of a call or the operands of a binary operator</p>
-<p>relative to one another; their order of side effects is inherited from the</p>
-<p>target and MUST NOT be relied on. A program that needs a particular order MUST</p>
-<p>introduce explicit intermediate bindings.</p>
-<p>What that last rule looks like when it bites — a side effect in an operand of</p>
-<p><code>+</code>, and the same side effect in a call argument:</p>
+<p>What that last rule looks like when it bites — a side effect in an operand of <code>+</code>, and the same side effect in a call argument:</p>
 <pre><code class="language-tycho">fn side(s: string) -&gt; string:
     println("call " + s)
     return s
@@ -168,98 +79,46 @@ fn main():
     println(side("A") + side("B"))
     println(join2(side("A"), side("B")))
 </code></pre>
-<p>Both lines print <code>AB</code>, and each is free to print <code>call B</code> before <code>call A</code> or</p>
-<p>after it. Both orders are conforming; an implementation may run either first. No <code>output</code> fence is paired with the</p>
-<p>example above, deliberately: recording either order would assert what this</p>
-<p>section refuses to guarantee, and a golden over it would be the same mistake a</p>
-<p>program makes when it relies on the order. The value is stable only because</p>
-<p>neither operand's result depends on the other's side effect. A program that</p>
-<p>needs <code>A</code> to run first says so, and then the order is a property of the</p>
-<p>statements rather than of the backend:</p>
+<p>Both lines print <code>AB</code>, and each is free to print <code>call B</code> before <code>call A</code> or after it. Both orders are conforming; an implementation may run either first. No <code>output</code> fence is paired with the example above, deliberately: recording either order would assert what this section refuses to guarantee, and a golden over it would be the same mistake a program makes when it relies on the order. The value is stable only because neither operand's result depends on the other's side effect. A program that needs <code>A</code> to run first says so, and then the order is a property of the statements rather than of the backend:</p>
 <pre><code class="language-tycho">    p := side("A")
     q := side("B")
     println(p + q)
 </code></pre>
-<p>The two sequenced exceptions above do not extend to this case. A place's index legs</p>
-<p>and an f-string's holes are sequences <strong>no short-circuit can cut across</strong>, so</p>
-<p>sequencing them costs one temporary each and cannot skip an evaluation the</p>
-<p>program expected to skip — whereas an argument may sit inside `f(x, cond and</p>
-<p>g())`, where lifting it would evaluate what the short-circuit exists to avoid.</p>
-<p>And each had an order that was already <strong>visibly</strong> contradicted: the place index</p>
-<p>was implementation-defined, and an f-string prints its holes left to</p>
-<p>right while firing them right to left, so its own output disagreed with its</p>
-<p>execution. A bare <code>+</code> chain shows the reader no order to contradict.</p>
+<p>The two sequenced exceptions above do not extend to this case. A place's index legs and an f-string's holes are sequences <strong>no short-circuit can cut across</strong>, so sequencing them costs one temporary each and cannot skip an evaluation the program expected to skip — whereas an argument may sit inside <code>f(x, cond and g())</code>, where lifting it would evaluate what the short-circuit exists to avoid. And each had an order that was already <strong>visibly</strong> contradicted: the place index was implementation-defined, and an f-string prints its holes left to right while firing them right to left, so its own output disagreed with its execution. A bare <code>+</code> chain shows the reader no order to contradict.</p>
 <h2 id="135-expression-valued-if-and-match">13.5 Expression-valued <code>if</code> and <code>match</code></h2>
-<p>An <code>if</code> or <code>match</code> may <strong>produce a value</strong> when it appears in tail position — as</p>
-<p>the whole right-hand side of a <code>:=</code>, a typed <code>x : T =</code>, an <code>x =</code> or</p>
-<p>place-assignment, or a <code>return</code>. In that position:</p>
+<p>An <code>if</code> or <code>match</code> may <strong>produce a value</strong> when it appears in tail position — as the whole right-hand side of a <code>:=</code>, a typed <code>x : T =</code>, an <code>x =</code> or place-assignment, or a <code>return</code>. In that position:</p>
 <ul>
-<li>each branch or arm is an indented block whose **final statement is a value</li>
-</ul>
-<p>expression**, and that final expression's value is the branch's result. The</p>
-<p>common case is a single value expression (a one-statement block); leading</p>
-<p>ordinary statements (binds, side effects) may precede it and execute before the</p>
-<p>value is produced. A block whose final statement is not a value expression is</p>
-<p>rejected;</p>
-<ul>
-<li>a value <code>if</code> MUST have an <code>else</code> (every path yields a value); <code>elif</code> chains are</li>
-</ul>
-<p>allowed;</p>
-<ul>
+<li>each branch or arm is an indented block whose <strong>final statement is a value expression</strong>, and that final expression's value is the branch's result. The common case is a single value expression (a one-statement block); leading ordinary statements (binds, side effects) may precede it and execute before the value is produced. A block whose final statement is not a value expression is rejected;</li>
+<li>a value <code>if</code> MUST have an <code>else</code> (every path yields a value); <code>elif</code> chains are allowed;</li>
 <li>a value <code>match</code> MUST be exhaustive;</li>
-<li>all branches MUST have the same type, which becomes the type of the whole</li>
+<li>all branches MUST have the same type, which becomes the type of the whole expression (<a href="04-inference.html#65-branch-unification-for-value-if--match">§6.5</a>). For the <code>:=</code> and typed <code>x : T =</code> forms this is <strong>strict</strong> type equality: the branches must already synthesize the identical concrete type, and a bare <code>None</code>/<code>Ok</code>/<code>Err</code> branch is rejected — its type is fixed only by a destination type, and neither the <code>:=</code> nor the typed form flows one into the branches. Numeric-literal adaptation and bare-sum-constructor fixing apply only in the <code>x =</code> / place-assignment / <code>return</code> tail positions, where a destination type flows in.</li>
 </ul>
-<p>expression (<a href="04-inference.html#65-branch-unification-for-value-if--match">§6.5</a>).</p>
-<p>For the <code>:=</code> and typed <code>x : T =</code> forms this is <strong>strict</strong> type equality: the</p>
-<p>branches must already synthesize the identical concrete type, and a bare</p>
-<p><code>None</code>/<code>Ok</code>/<code>Err</code> branch is rejected — its type is fixed only by a destination</p>
-<p>type, and neither the <code>:=</code> nor the typed form flows one into the branches.</p>
-<p>Numeric-literal adaptation and bare-sum-constructor fixing apply only in the</p>
-<p><code>x =</code> / place-assignment / <code>return</code> tail positions, where a destination type</p>
-<p>flows in.</p>
-<p>The value lands in the destination's storage exactly as a returned value does; it</p>
-<p>introduces no new aliasing. A branch that diverges (e.g. <code>return</code>s) instead of</p>
-<p>yielding, and use as a nested sub-expression (<code>1 + if …</code>), are not part of the</p>
-<p>value form; the statement forms (<a href="10-statements.html">§14</a>) cover those.</p>
+<p>The value lands in the destination's storage exactly as a returned value does; it introduces no new aliasing. A branch that diverges (e.g. <code>return</code>s) instead of yielding, and use as a nested sub-expression (<code>1 + if …</code>), are not part of the value form; the statement forms (<a href="10-statements.html">§14</a>) cover those.</p>
 <h2 id="136-closures-and-function-values">13.6 Closures and function values</h2>
-<p>A <code>fn(params) -&gt; R: expr</code> lambda and a named function both produce first-class</p>
-<p><strong>function values</strong>. A closure <strong>captures by deep copy at creation</strong>: the values</p>
-<p>of the free variables it references are copied into the closure's environment</p>
-<p>when the closure is formed, so later mutation of the originals is not observed by</p>
-<p>the closure (value semantics). A returned closure's captured environment is</p>
-<p>deep-copied into the caller's storage on return, like any escaping value. A</p>
-<p>function that has an <code>inout</code> parameter cannot be used as a first-class value</p>
-<p>(§15). Function values are <strong>not comparable</strong></p>
-<p>(<a href="03-types.html#55-equality-and-ordering">§5.5</a>).</p>
-<p>"A named function" includes a <strong>package-qualified</strong> one: <code>pkg.fn</code>, written</p>
-<p>without parentheses, is the function value for an imported package's exported</p>
-<p><code>fn</code>, exactly as a bare name is for a local one. Package privacy applies</p>
-<p>unchanged — a <code>_name</code> is not reachable this way either.</p>
-<p>A <strong>generic</strong> function is the one named form that has no function value. <code>$T</code> is</p>
-<p>fixed by a call's arguments, and a value form has no arguments, so there is no</p>
-<p>instantiation to take; <code>pkg.gen</code> and a bare <code>gen</code> are both refused. Fix the types</p>
-<p>in a lambda instead — <code>fn(a: int, b: int) -&gt; int: math.min(a, b)</code> is an ordinary</p>
-<p>call site, so <code>$T</code> binds there as usual.</p>
+<p>A <code>fn(params) -&gt; R: expr</code> lambda and a named function both produce first-class <strong>function values</strong>. A closure <strong>captures by deep copy at creation</strong>: the values of the free variables it references are copied into the closure's environment when the closure is formed, so later mutation of the originals is not observed by the closure (value semantics). A returned closure's captured environment is deep-copied into the caller's storage on return, like any escaping value. A function that has an <code>inout</code> parameter cannot be used as a first-class value (§15). Function values are <strong>not comparable</strong> (<a href="03-types.html#55-equality-and-ordering">§5.5</a>).</p>
+<p>"A named function" includes a <strong>package-qualified</strong> one: <code>pkg.fn</code>, written without parentheses, is the function value for an imported package's exported <code>fn</code>, exactly as a bare name is for a local one. Package privacy applies unchanged — a <code>_name</code> is not reachable this way either.</p>
+<p>A <strong>generic</strong> function is the one named form that has no function value. <code>$T</code> is fixed by a call's arguments, and a value form has no arguments, so there is no instantiation to take; <code>pkg.gen</code> and a bare <code>gen</code> are both refused. Fix the types in a lambda instead — <code>fn(a: int, b: int) -&gt; int: math.min(a, b)</code> is an ordinary call site, so <code>$T</code> binds there as usual.</p>
 <h2 id="137-other-expression-forms">13.7 Other expression forms</h2>
 <ul>
-<li><strong>f-strings</strong> desugar to <code>str</code>-concatenation</li>
+<li><strong>f-strings</strong> desugar to <code>str</code>-concatenation (<a href="01-lexical.html#395-f-string-interpolated-literals">§3.9.5</a>); a hole MUST have a type <code>str</code> accepts (<a href="06-conversions.html#82-explicit-conversion-builtins">§8.2</a>).</li>
+<li><strong><code>or_return</code></strong> is a postfix operator that unwraps an <code>Option</code>/<code>Result</code> or short-circuits out of the enclosing function (<a href="12-aggregates.html">§19</a>); it binds tighter than any binary operator.</li>
+<li><strong><code>or_else x: h</code></strong> is the same postfix unwrap, but on failure it returns <code>h</code> from the enclosing function, with the error bound to <code>x</code> (<a href="10-statements.html#1461-or_else">§14.6.1</a>).</li>
+<li><strong><code>spawn</code></strong>, <strong><code>channel(…)</code></strong>, and the concurrency operators are specified in <a href="13-concurrency.html">§20</a>; each has grammar restrictions noted in §4.4.</li>
 </ul>
-<p>(<a href="01-lexical.html#395-f-string-interpolated-literals">§3.9.5</a>); a hole MUST have</p>
-<p>a type <code>str</code> accepts (<a href="06-conversions.html#82-explicit-conversion-builtins">§8.2</a>).</p>
-<ul>
-<li><strong><code>or_return</code></strong> is a postfix operator that unwraps an <code>Option</code>/<code>Result</code> or</li>
-</ul>
-<p>short-circuits out of the enclosing function (<a href="12-aggregates.html">§19</a>); it binds tighter than any binary operator.</p>
-<ul>
-<li><strong><code>or_else x: h</code></strong> is the same postfix unwrap, but on failure it returns <code>h</code></li>
-</ul>
-<p>from the enclosing function, with the error bound to <code>x</code></p>
-<p>(<a href="10-statements.html#1461-or_else">§14.6.1</a>).</p>
-<ul>
-<li><strong><code>spawn</code></strong>, <strong><code>channel(…)</code></strong>, and the concurrency operators are specified in</li>
-</ul>
-<p><a href="13-concurrency.html">§20</a>; each has grammar restrictions noted in §4.4.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

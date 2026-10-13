@@ -4,118 +4,80 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>15. Functions — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/11-functions.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html" aria-current="page">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#151-declarations">15.1 Declarations</a>
+<a href="#152-parameter-passing-modes">15.2 Parameter passing modes</a>
+<a href="#153-variadic-parameters">15.3 Variadic parameters</a>
+<a href="#154-first-class-function-values">15.4 First-class function values</a>
+<a href="#155-methods-ufcs">15.5 Methods (UFCS)</a>
+<a href="#156-subscripts">15.6 Subscripts</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/11-functions.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="15-functions">15. Functions</h1>
-<p>The grammar of function declarations, parameters, and the <code>where</code> clause is in</p>
-<p><a href="02-grammar.html#411-functions">§4.1.1</a>. This chapter defines parameter passing,</p>
-<p>variadics, first-class function values, method-call syntax, and subscripts.</p>
+<p>The grammar of function declarations, parameters, and the <code>where</code> clause is in <a href="02-grammar.html#411-functions">§4.1.1</a>. This chapter defines parameter passing, variadics, first-class function values, method-call syntax, and subscripts.</p>
 <h2 id="151-declarations">15.1 Declarations</h2>
-<p>A function has a name, a parameter list, an optional <code>-&gt; R</code> return type (absent</p>
-<p>means <code>void</code>), an optional <code>where</code> clause (for a generic function,</p>
-<p><a href="05-generics.html#72-constraints-where">§7.2</a>), and a block body. A function that</p>
-<p>mentions a <code>$T</code> or <code>$N</code> in its signature is generic (§7). A function MUST NOT</p>
-<p>return a <code>handle</code> (<a href="14-ffi.html">§25</a>), and MUST NOT declare more than <strong>16</strong></p>
-<p>parameters (the same cap for an <code>extern fn</code>; a *function type*, which is a</p>
-<p>distinct construct, allows up to 8 — <a href="03-types.html#538-function-types">§5.3.8</a>).</p>
-<p>The 16-parameter cap applies to a <strong>generic template</strong> exactly as it does to a</p>
-<p>concrete function: being generic defers what the parameters *are*, never how</p>
-<p>many there may be.</p>
-<p>Exactly one function named <code>main</code>, with no parameters and <code>void</code> return, is the</p>
-<p>program entry point (<a href="15-program.html">§27</a>).</p>
+<p>A function has a name, a parameter list, an optional <code>-&gt; R</code> return type (absent means <code>void</code>), an optional <code>where</code> clause (for a generic function, <a href="05-generics.html#72-constraints-where">§7.2</a>), and a block body. A function that mentions a <code>$T</code> or <code>$N</code> in its signature is generic (§7). A function MUST NOT return a <code>handle</code> (<a href="14-ffi.html">§25</a>), and MUST NOT declare more than <strong>16</strong> parameters (the same cap for an <code>extern fn</code>; a *function type*, which is a distinct construct, allows up to 8 — <a href="03-types.html#538-function-types">§5.3.8</a>). The 16-parameter cap applies to a <strong>generic template</strong> exactly as it does to a concrete function: being generic defers what the parameters *are*, never how many there may be. Exactly one function named <code>main</code>, with no parameters and <code>void</code> return, is the program entry point (<a href="15-program.html">§27</a>).</p>
 <h2 id="152-parameter-passing-modes">15.2 Parameter passing modes</h2>
 <p>A parameter is passed in one of three modes:</p>
 <ul>
-<li><strong>Default (by value).</strong> For a scalar, the callee receives a copy. For a</li>
+<li><strong>Default (by value).</strong> For a scalar, the callee receives a copy. For a heap-bearing value (a <code>string</code>, an array, a map, a heap-bearing struct), the callee receives a <strong>read-only borrow</strong> — it may read but not mutate the value, and mutating a borrowed parameter is a compile error. Because the caller's value is unchanged, this is value semantics with a copy elided where the callee cannot observe the difference. A value produced or returned from the callee is copied into the appropriate storage as usual.</li>
+<li><strong><code>inout</code> (copy-in/copy-out borrow).</strong> Specified in <a href="07-memory-model.html#11-inout">§11</a>: an exclusive, call-scoped mutable borrow written <code>&amp;x</code> at the call site, equivalent to <code>x = f(x)</code>, with the exclusivity rule of §11.2.</li>
+<li><strong><code>sink</code> (owned, consuming).</strong> The callee <strong>owns and consumes</strong> the argument and may mutate it in place. <strong>On a heap-bearing type</strong> the caller's argument is consumed: after passing a variable to a <code>sink</code> parameter, the caller MUST NOT use that variable again (doing so is a compile error, not a silent copy).</li>
 </ul>
-<p>heap-bearing value (a <code>string</code>, an array, a map, a heap-bearing struct), the</p>
-<p>callee receives a <strong>read-only borrow</strong> — it may read but not mutate the value,</p>
-<p>and mutating a borrowed parameter is a compile error. Because the caller's</p>
-<p>value is unchanged, this is value semantics with a copy elided where the callee</p>
-<p>cannot observe the difference. A value produced or returned from the callee is</p>
-<p>copied into the appropriate storage as usual.</p>
-<ul>
-<li><strong><code>inout</code> (copy-in/copy-out borrow).</strong> Specified in <a href="07-memory-model.html#11-inout">§11</a>:</li>
-</ul>
-<p>an exclusive, call-scoped mutable borrow written <code>&amp;x</code> at the call site,</p>
-<p>equivalent to <code>x = f(x)</code>, with the exclusivity rule of §11.2.</p>
-<ul>
-<li><strong><code>sink</code> (owned, consuming).</strong> The callee <strong>owns and consumes</strong> the argument</li>
-</ul>
-<p>and may mutate it in place. <strong>On a heap-bearing type</strong> the caller's argument is</p>
-<p>consumed: after passing a variable to a <code>sink</code> parameter, the caller MUST NOT</p>
-<p>use that variable again (doing so is a compile error, not a silent copy).</p>
-<p><strong>The consume rule applies exactly to the heap-bearing types.</strong> A value</p>
-<p>with nothing on the heap has nothing to move; <code>sink</code> on it is accepted</p>
-<p>but not enforced.</p>
+<p><strong>The consume rule applies exactly to the heap-bearing types.</strong> A value with nothing on the heap has nothing to move; <code>sink</code> on it is accepted but not enforced.</p>
 <p>Rationale: moving a scalar would copy no heap storage, so there is nothing to protect.</p>
 <table>
 <tr><th>parameter type</th><th>consume rule</th></tr>
 <tr><td><code>string</code>, <code>[T]</code>, a struct with any heap field, a newtype over one</td><td>enforced</td></tr>
 <tr><td><code>int</code>, <code>float</code>, <code>bool</code>, a struct of scalars only, a newtype over a scalar</td><td><strong>not enforced</strong> — the variable stays usable</td></tr>
 </table>
-<p><code>sink</code> on a scalar is legal and means nothing. **The meaning of a signature</p>
-<p>can change when a type gains a field**: <code>fn take(p: sink Point)</code> over</p>
-<p><code>Point{int, int}</code> enforces nothing, and starts enforcing consumption on</p>
-<p>every caller if <code>Point</code> gains a <code>string</code> field. A fresh literal or a local on</p>
-<p>its last use is adopted with <strong>no copy</strong>; a copy is made only where value</p>
-<p>semantics require independence (the variable is read again after the call, or</p>
-<p>is captured by a closure). **Inside a loop a named variable is neither adopted</p>
-<p>nor silently copied — the call is REFUSED**, because a copy hidden in a loop is</p>
-<p>the one place the move-vs-copy cost is invisible and unbounded; pass a fresh</p>
-<p>value (a literal, or a call's result) or lift the call out. A value that then escapes</p>
-<p>(is returned or stored past the call) is still copied to the longer-lived</p>
-<p>storage.</p>
-<p><code>sink</code> and <code>inout</code> are mutually exclusive on one parameter, and neither may</p>
-<p>combine with a variadic parameter.</p>
+<p><code>sink</code> on a scalar is legal and means nothing. <strong>The meaning of a signature can change when a type gains a field</strong>: <code>fn take(p: sink Point)</code> over <code>Point{int, int}</code> enforces nothing, and starts enforcing consumption on every caller if <code>Point</code> gains a <code>string</code> field. A fresh literal or a local on its last use is adopted with <strong>no copy</strong>; a copy is made only where value semantics require independence (the variable is read again after the call, or is captured by a closure). <strong>Inside a loop a named variable is neither adopted nor silently copied — the call is REFUSED</strong>, because a copy hidden in a loop is the one place the move-vs-copy cost is invisible and unbounded; pass a fresh value (a literal, or a call's result) or lift the call out. A value that then escapes (is returned or stored past the call) is still copied to the longer-lived storage.</p>
+<p><code>sink</code> and <code>inout</code> are mutually exclusive on one parameter, and neither may combine with a variadic parameter.</p>
 <h2 id="153-variadic-parameters">15.3 Variadic parameters</h2>
-<p>A final parameter written <code>...T</code> has type <code>[T]</code>; a call packs its trailing</p>
-<p>positional arguments into that array. <code>f()</code> supplies an empty <code>[]T</code>; an existing</p>
-<p><code>[T]</code> is forwarded with the spread form <code>f(xs...)</code>. Fixed parameters may precede</p>
-<p>the variadic one, which MUST be last. The generic form <code>...$T</code> infers <code>T</code> from</p>
-<p>the arguments; an EMPTY call to one has nothing to infer from, so it is an error</p>
-<p>unless the type is named explicitly — <code>f$(int)()</code> supplies the empty <code>[]int</code> and</p>
-<p>is the cure the diagnostic points at (§7.5). A variadic parameter cannot be</p>
-<p><code>inout</code> or <code>sink</code>. Variadics are pure sugar: the call folds the trailing</p>
-<p>arguments into one array argument, after which it is an ordinary call.</p>
-<p>The packing is a property of the CALL, not of how the callee was named: a</p>
-<p>package-qualified call packs identically (<code>vp.sum(1, 2, 3)</code>), and so does one</p>
-<p>carrying explicit type arguments.</p>
+<p>A final parameter written <code>...T</code> has type <code>[T]</code>; a call packs its trailing positional arguments into that array. <code>f()</code> supplies an empty <code>[]T</code>; an existing <code>[T]</code> is forwarded with the spread form <code>f(xs...)</code>. Fixed parameters may precede the variadic one, which MUST be last. The generic form <code>...$T</code> infers <code>T</code> from the arguments; an EMPTY call to one has nothing to infer from, so it is an error unless the type is named explicitly — <code>f$(int)()</code> supplies the empty <code>[]int</code> and is the cure the diagnostic points at (§7.5). A variadic parameter cannot be <code>inout</code> or <code>sink</code>. Variadics are pure sugar: the call folds the trailing arguments into one array argument, after which it is an ordinary call.</p>
+<p>The packing is a property of the CALL, not of how the callee was named: a package-qualified call packs identically (<code>vp.sum(1, 2, 3)</code>), and so does one carrying explicit type arguments.</p>
 <h2 id="154-first-class-function-values">15.4 First-class function values</h2>
-<p>A function name and a lambda both denote a <strong>function value</strong> of a function type</p>
-<p>(<a href="03-types.html#538-function-types">§5.3.8</a>), which may be bound, passed, stored,</p>
-<p>and called. A lambda's body is a single expression. Closures capture their free</p>
-<p>variables by <strong>deep copy at creation</strong>, and an escaping closure's environment is</p>
-<p>re-homed into the caller's storage on return</p>
-<p>(<a href="09-expressions.html#136-closures-and-function-values">§13.6</a>). Two things cannot</p>
-<p>be taken as function values: a <strong>builtin</strong> name (<code>len</code>, <code>push</code>, <code>str</code>, …), and a</p>
-<p>function with an <strong><code>inout</code></strong> parameter (an <code>inout</code> borrow is call-scoped and</p>
-<p>cannot be deferred through an indirect call). Function values are **not</p>
-<p>comparable** (§5.5).</p>
+<p>A function name and a lambda both denote a <strong>function value</strong> of a function type (<a href="03-types.html#538-function-types">§5.3.8</a>), which may be bound, passed, stored, and called. A lambda's body is a single expression. Closures capture their free variables by <strong>deep copy at creation</strong>, and an escaping closure's environment is re-homed into the caller's storage on return (<a href="09-expressions.html#136-closures-and-function-values">§13.6</a>). Two things cannot be taken as function values: a <strong>builtin</strong> name (<code>len</code>, <code>push</code>, <code>str</code>, …), and a function with an <strong><code>inout</code></strong> parameter (an <code>inout</code> borrow is call-scoped and cannot be deferred through an indirect call). Function values are <strong>not comparable</strong> (§5.5).</p>
 <h2 id="155-methods-ufcs">15.5 Methods (UFCS)</h2>
-<p>Any free function may be called in <strong>method position</strong>: <code>x.f(a, b)</code> means</p>
-<p><code>f(x, a, b)</code> — <strong>unless</strong> the receiver's struct has a function-typed field named</p>
-<p><code>f</code>, in which case that stored function value is called instead (the field wins).</p>
-<p>Method-call syntax is uniform function-call syntax — Tycho has</p>
-<p>no separately-declared methods. For a generic function, the receiver is matched</p>
-<p>against the template's first-parameter pattern and the function is then</p>
-<p>instantiated (<a href="05-generics.html#76-ufcs-and-generic-method-style-calls">§7.6</a>).</p>
-<p>Method-call chaining (<code>x.f().g()</code>) follows from the left-associative postfix</p>
-<p>grammar.</p>
+<p>Any free function may be called in <strong>method position</strong>: <code>x.f(a, b)</code> means <code>f(x, a, b)</code> — <strong>unless</strong> the receiver's struct has a function-typed field named <code>f</code>, in which case that stored function value is called instead (the field wins). Method-call syntax is uniform function-call syntax — Tycho has no separately-declared methods. For a generic function, the receiver is matched against the template's first-parameter pattern and the function is then instantiated (<a href="05-generics.html#76-ufcs-and-generic-method-style-calls">§7.6</a>). Method-call chaining (<code>x.f().g()</code>) follows from the left-associative postfix grammar.</p>
 <h2 id="156-subscripts">15.6 Subscripts</h2>
-<p>A <code>subscript</code> (<a href="02-grammar.html#413-extern-functions-and-subscripts">§4.1.3</a>,</p>
-<p><a href="12-aggregates.html">§18</a>) declares a user-defined projection — a compile-time</p>
-<p>place-macro that yields a place rooted in one of its parameters, generalizing the</p>
-<p>built-in <code>&amp;m[k]</code>. It is called in method position, usable as a place or an</p>
-<p>rvalue, and introduces no run-time object and no new aliasing. Its rules (the</p>
-<p>yielded place rooted in a parameter, each parameter used at most once) are</p>
-<p>specified in §18.</p>
+<p>A <code>subscript</code> (<a href="02-grammar.html#413-extern-functions-and-subscripts">§4.1.3</a>, <a href="12-aggregates.html">§18</a>) declares a user-defined projection — a compile-time place-macro that yields a place rooted in one of its parameters, generalizing the built-in <code>&amp;m[k]</code>. It is called in method position, usable as a place or an rvalue, and introduces no run-time object and no new aliasing. Its rules (the yielded place rooted in a parameter, each parameter used at most once) are specified in §18.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

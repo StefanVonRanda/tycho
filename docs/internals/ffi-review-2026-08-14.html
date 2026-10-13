@@ -4,29 +4,55 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FFI boundary review, 2026-08-14 — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/ffi-review-2026-08-14.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html" aria-current="page">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#scope-and-method">Scope and method</a>
+<a href="#what-is-sound">What is sound</a>
+<a href="#findings">Findings</a>
+<a class="sub" href="#1-a-response-body-was-accumulated-with-no-cap-corelibhttphttp-shimccollect">1. A response body was accumulated with no cap (corelib/http/http_shim.c@collect)</a>
+<a class="sub" href="#2-the-same-accumulation-could-wrap-on-a-32-bit-target-same-function">2. The same accumulation could WRAP on a 32-bit target (same function)</a>
+<a class="sub" href="#3-redirects-were-followed-with-no-bound-and-no-scheme-pin-perform">3. Redirects were followed with no bound and no scheme pin (@perform)</a>
+<a class="sub" href="#4-decompression-had-no-ceiling--a-bomb-was-attempted-until-the-host-gave-out">4. Decompression had no ceiling — a bomb was attempted until the host gave out</a>
+<a class="sub" href="#5-tls-is-configured-correctly--the-notable-result-is-a-negative-one">5. TLS is configured correctly — the notable result is a negative one</a>
+<a class="sub" href="#6-coreregex-does-not-backtrack-catastrophically--measured-with-a-control">6. core:regex does NOT backtrack catastrophically — measured, with a control</a>
+<a class="sub" href="#7-the-png-decoder-allocates-exactly-what-libpng-will-write">7. The PNG decoder allocates exactly what libpng will write</a>
+<a class="sub" href="#8-the-emitted-c-bounds-checks-hold-and-no-user-data-reaches-a-format-string">8. The emitted C: bounds checks hold, and no user data reaches a format string</a>
+<a class="sub" href="#9-slowloris-the-per-read-idle-timeout-does-not-bound-a-request">9. Slowloris: the per-read idle timeout does not bound a request</a>
+<a href="#where-a-next-reviewer-should-start">Where a next reviewer should start</a>
+<a href="#follow-up-2026-08-15-key-handling-measured">Follow-up, 2026-08-15: key handling, measured</a>
+<a href="#addendum-2026-08-15-what-a-second-pass-found-and-what-it-says-about-the-first">Addendum, 2026-08-15: what a second pass found, and what it says about the first</a>
+<a href="#follow-up-2026-08-15-the-last-ungated-https-client">Follow-up, 2026-08-15: the last ungated HTTPS client</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/ffi-review-2026-08-14.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="ffi-boundary-review-2026-08-14">FFI boundary review, 2026-08-14</h1>
 <blockquote>
 <p>Status: executed 2026-08-14 — five findings fixed, three areas measured clean. Not a third-party audit; ROADMAP §7 stays open.</p>
 </blockquote>
-<p><code>ROADMAP.md</code> §7 asks for an external security review, naming the FFI boundary:</p>
-<p>"unsafe by design and nobody outside the project has looked at it."</p>
-<p><strong>This is not that review.</strong> It is a structured pass over the C shims by a</p>
-<p>reviewer who did not write them, which is a different and lesser thing than a</p>
-<p>third-party professional audit. §7 stays open. What this buys is that the obvious</p>
-<p>classes have now been looked for by someone, with the method written down so the</p>
-<p>next pass can start further along. Five findings fixed, three areas measured clean.</p>
+<p><code>ROADMAP.md</code> §7 asks for an external security review, naming the FFI boundary: "unsafe by design and nobody outside the project has looked at it."</p>
+<p><strong>This is not that review.</strong> It is a structured pass over the C shims by a reviewer who did not write them, which is a different and lesser thing than a third-party professional audit. §7 stays open. What this buys is that the obvious classes have now been looked for by someone, with the method written down so the next pass can start further along. Five findings fixed, three areas measured clean.</p>
 <h2 id="scope-and-method">Scope and method</h2>
-<p>3,714 lines across 13 <code>corelib/*/*_shim.c</code> files plus <code>runtime/tycho_rt.c</code>. Each</p>
-<p>class below was grepped for tree-wide **and the grep was proved able to match on</p>
-<p>a synthetic first** — a pattern that silently matches nothing is worse than not</p>
-<p>looking, because it produces a clean report.</p>
+<p>3,714 lines across 13 <code>corelib/*/*_shim.c</code> files plus <code>runtime/tycho_rt.c</code>. Each class below was grepped for tree-wide <strong>and the grep was proved able to match on a synthetic first</strong> — a pattern that silently matches nothing is worse than not looking, because it produces a clean report.</p>
 <table>
 <tr><th>class</th><th>result</th></tr>
 <tr><td><code>strcpy</code> / <code>strcat</code> / <code>sprintf</code> / <code>gets</code> / <code>alloca</code></td><td><strong>none anywhere</strong>, control matched 1/1 on a synthetic</td></tr>
@@ -37,68 +63,26 @@
 <tr><td>redirect / protocol handling</td><td>two findings (below)</td></tr>
 </table>
 <h2 id="what-is-sound">What is sound</h2>
-<p><strong><code>corelib/os/os_shim.c</code> is the part most likely to be wrong and is not.</strong> The</p>
-<p>argv path builds a NULL-terminated vector and hands it to <code>posix_spawnp</code> — no</p>
-<p>shell, so no quoting question and no injection surface. Its reasoning for</p>
-<p><code>posix_spawnp</code> over <code>fork</code>+<code>execvp</code> is correct and is the sort of thing that is</p>
-<p>usually got wrong: between <code>fork()</code> and <code>exec()</code> in a <strong>threaded</strong> process only</p>
-<p>async-signal-safe calls are legal, and a Tycho program is always threaded because</p>
-<p>the scheduler owns worker threads. <code>osx_system</code> still exists, but that is the</p>
-<p>documented shell API doing what it says.</p>
-<p><strong>No unbounded string operation exists in the whole shim surface.</strong> For 3.7k</p>
-<p>lines of hand-written boundary C that is a genuinely good result.</p>
+<p><strong><code>corelib/os/os_shim.c</code> is the part most likely to be wrong and is not.</strong> The argv path builds a NULL-terminated vector and hands it to <code>posix_spawnp</code> — no shell, so no quoting question and no injection surface. Its reasoning for <code>posix_spawnp</code> over <code>fork</code>+<code>execvp</code> is correct and is the sort of thing that is usually got wrong: between <code>fork()</code> and <code>exec()</code> in a <strong>threaded</strong> process only async-signal-safe calls are legal, and a Tycho program is always threaded because the scheduler owns worker threads. <code>osx_system</code> still exists, but that is the documented shell API doing what it says.</p>
+<p><strong>No unbounded string operation exists in the whole shim surface.</strong> For 3.7k lines of hand-written boundary C that is a genuinely good result.</p>
 <h2 id="findings">Findings</h2>
 <h3 id="1-a-response-body-was-accumulated-with-no-cap-corelibhttphttp-shimccollect">1. A response body was accumulated with no cap (<code>corelib/http/http_shim.c@collect</code>)</h3>
-<p>curl's write callback <code>realloc</code>d and appended for as long as the server sent</p>
-<p>bytes. There was no <code>CURLOPT_MAXFILESIZE</code> and no check in the callback, so a</p>
-<p>hostile or merely broken URL could drive the process into memory exhaustion,</p>
-<p>bounded only by <code>CURLOPT_TIMEOUT</code> (30s) times the link speed.</p>
-<p><code>CURLOPT_MAXFILESIZE</code> alone would not have fixed it: it acts on a</p>
-<p><code>Content-Length</code> curl was <strong>given</strong>, so a chunked response, or one that lies,</p>
-<p>walks straight past it. The callback is the only place that sees the bytes</p>
-<p>actually arrive, so the cap belongs there. Now 64 MiB — far above anything</p>
-<p>corelib fetches.</p>
+<p>curl's write callback <code>realloc</code>d and appended for as long as the server sent bytes. There was no <code>CURLOPT_MAXFILESIZE</code> and no check in the callback, so a hostile or merely broken URL could drive the process into memory exhaustion, bounded only by <code>CURLOPT_TIMEOUT</code> (30s) times the link speed.</p>
+<p><code>CURLOPT_MAXFILESIZE</code> alone would not have fixed it: it acts on a <code>Content-Length</code> curl was <strong>given</strong>, so a chunked response, or one that lies, walks straight past it. The callback is the only place that sees the bytes actually arrive, so the cap belongs there. Now 64 MiB — far above anything corelib fetches.</p>
 <h3 id="2-the-same-accumulation-could-wrap-on-a-32-bit-target-same-function">2. The same accumulation could WRAP on a 32-bit target (same function)</h3>
-<p><code>r-&gt;len + add + 1</code> is <code>size_t</code> arithmetic. On LP64 reaching 2^64 is not a</p>
-<p>concern. <strong>On ILP32 <code>size_t</code> is 32 bits and this wraps past 4 GiB</strong> — <code>realloc</code></p>
-<p>would then honour a small size and the following <code>memcpy</code> would run off the</p>
-<p>buffer. This is a supported target: the tree has an <code>ilp32</code> lane and runs the</p>
-<p>whole corpus under <code>gcc -m32</code>.</p>
-<p>The check is written to refuse <strong>before</strong> the arithmetic —</p>
-<p><code>if (add &gt; MAX || r-&gt;len &gt; MAX - add) return 0;</code> — because a check written after</p>
-<p>the sum would be testing an already-wrapped value.</p>
+<p><code>r-&gt;len + add + 1</code> is <code>size_t</code> arithmetic. On LP64 reaching 2^64 is not a concern. <strong>On ILP32 <code>size_t</code> is 32 bits and this wraps past 4 GiB</strong> — <code>realloc</code> would then honour a small size and the following <code>memcpy</code> would run off the buffer. This is a supported target: the tree has an <code>ilp32</code> lane and runs the whole corpus under <code>gcc -m32</code>.</p>
+<p>The check is written to refuse <strong>before</strong> the arithmetic — <code>if (add &gt; MAX || r-&gt;len &gt; MAX - add) return 0;</code> — because a check written after the sum would be testing an already-wrapped value.</p>
 <h3 id="3-redirects-were-followed-with-no-bound-and-no-scheme-pin-perform">3. Redirects were followed with no bound and no scheme pin (<code>@perform</code>)</h3>
-<p><code>CURLOPT_FOLLOWLOCATION</code> was on with neither <code>CURLOPT_MAXREDIRS</code> nor an explicit</p>
-<p>redirect-protocol set. That is the SSRF amplifier shape: an arbitrarily long</p>
-<p>chain, and — more importantly — **which schemes a redirect may switch to was left</p>
-<p>to whatever the linked curl defaults to**, and <code>CURLOPT_REDIR_PROTOCOLS</code>' default</p>
-<p>has changed across curl versions. A program fetching an <code>https</code> URL could be</p>
-<p>walked onto <code>file://</code> by the remote side, on a curl old or configured enough.</p>
-<p>Now <code>MAXREDIRS 10</code> and redirect protocols pinned to <code>http,https</code>, using</p>
-<p><code>CURLOPT_REDIR_PROTOCOLS_STR</code> where available and the older bitmask otherwise.</p>
-<p><strong>Only REDIRECT schemes are restricted, deliberately.</strong> <code>corelib</code>'s own test</p>
-<p>fetches a <code>file://</code> URL directly, and that stays legal: the danger is a *remote</p>
-<p>party* changing the scheme, not the caller choosing one.</p>
+<p><code>CURLOPT_FOLLOWLOCATION</code> was on with neither <code>CURLOPT_MAXREDIRS</code> nor an explicit redirect-protocol set. That is the SSRF amplifier shape: an arbitrarily long chain, and — more importantly — <strong>which schemes a redirect may switch to was left to whatever the linked curl defaults to</strong>, and <code>CURLOPT_REDIR_PROTOCOLS</code>' default has changed across curl versions. A program fetching an <code>https</code> URL could be walked onto <code>file://</code> by the remote side, on a curl old or configured enough.</p>
+<p>Now <code>MAXREDIRS 10</code> and redirect protocols pinned to <code>http,https</code>, using <code>CURLOPT_REDIR_PROTOCOLS_STR</code> where available and the older bitmask otherwise.</p>
+<p><strong>Only REDIRECT schemes are restricted, deliberately.</strong> <code>corelib</code>'s own test fetches a <code>file://</code> URL directly, and that stays legal: the danger is a *remote party* changing the scheme, not the caller choosing one.</p>
 <h3 id="4-decompression-had-no-ceiling--a-bomb-was-attempted-until-the-host-gave-out">4. Decompression had no ceiling — a bomb was attempted until the host gave out</h3>
-<p><code>compress_shim.c</code>'s inflate loop grew its output buffer by **doubling with no</p>
-<p>limit**. zlib cannot know the decompressed size in advance, so nothing else in</p>
-<p>the path could stop it either: a small archive that expands enormously was</p>
-<p>attempted until <code>realloc</code> failed or the machine did.</p>
-<p>Measured 2026-08-14, before the fix: a <strong>199 KB</strong> gzip decompressed to <strong>200 MB</strong></p>
-<p>with no complaint — a 1000:1 ratio, and a real bomb reaches petabytes at the same</p>
-<p>ratio. <code>compress.decompress</code> is reachable from untrusted bytes through</p>
-<p><code>tycho-ar</code>, <code>core:zip</code> and any gzip-encoded HTTP body.</p>
-<p>Now capped at 1 GiB with its own <code>ZErr.TooBig</code>, kept distinct from <code>Corrupt</code> and</p>
-<p><code>Truncated</code> because <strong>the input is VALID</strong> — that is exactly what makes it</p>
-<p>dangerous, and a caller that treats it as corruption learns the wrong thing.</p>
-<p>The ceiling is <code>#ifndef</code>-overridable so the gate can prove it fires **without</p>
-<p>allocating a gigabyte**: <code>tools/tycho-ar/run.sh</code> rebuilds the shim with</p>
-<p><code>-DZD_MAX_OUT=65536</code> and the same 325-byte input must flip from <code>out 300000</code> to</p>
-<p><code>refused</code>. Removing the ceiling reddens that leg — confirmed, not assumed. A</p>
-<p>ceiling nothing ever crosses is a ceiling nobody has tested.</p>
+<p><code>compress_shim.c</code>'s inflate loop grew its output buffer by <strong>doubling with no limit</strong>. zlib cannot know the decompressed size in advance, so nothing else in the path could stop it either: a small archive that expands enormously was attempted until <code>realloc</code> failed or the machine did.</p>
+<p>Measured 2026-08-14, before the fix: a <strong>199 KB</strong> gzip decompressed to <strong>200 MB</strong> with no complaint — a 1000:1 ratio, and a real bomb reaches petabytes at the same ratio. <code>compress.decompress</code> is reachable from untrusted bytes through <code>tycho-ar</code>, <code>core:zip</code> and any gzip-encoded HTTP body.</p>
+<p>Now capped at 1 GiB with its own <code>ZErr.TooBig</code>, kept distinct from <code>Corrupt</code> and <code>Truncated</code> because <strong>the input is VALID</strong> — that is exactly what makes it dangerous, and a caller that treats it as corruption learns the wrong thing.</p>
+<p>The ceiling is <code>#ifndef</code>-overridable so the gate can prove it fires <strong>without allocating a gigabyte</strong>: <code>tools/tycho-ar/run.sh</code> rebuilds the shim with <code>-DZD_MAX_OUT=65536</code> and the same 325-byte input must flip from <code>out 300000</code> to <code>refused</code>. Removing the ceiling reddens that leg — confirmed, not assumed. A ceiling nothing ever crosses is a ceiling nobody has tested.</p>
 <h3 id="5-tls-is-configured-correctly--the-notable-result-is-a-negative-one">5. TLS is configured correctly — the notable result is a negative one</h3>
-<p><code>corelib/tls/tls_shim.c</code> (128 lines) does all four of the things this class of</p>
-<p>code usually gets wrong, and none of the shortcuts:</p>
+<p><code>corelib/tls/tls_shim.c</code> (128 lines) does all four of the things this class of code usually gets wrong, and none of the shortcuts:</p>
 <table>
 <tr><th>the classic mistake</th><th>what it does</th></tr>
 <tr><td>verification left off</td><td><code>SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL)</code></td></tr>
@@ -106,19 +90,11 @@
 <tr><td>cert checked, hostname NOT</td><td><code>SSL_set1_host(ssl, host)</code></td></tr>
 <tr><td>no SNI, so the server picks the wrong cert</td><td><code>SSL_set_tlsext_host_name(ssl, host)</code></td></tr>
 </table>
-<p>plus <code>SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION)</code>. <code>tlsx_read</code> guards</p>
-<p><code>max &lt;= 0</code>, a failed <code>malloc</code> and the <code>SSL_read</code> result.</p>
-<p><strong>One narrow fix.</strong> <code>SSL_read</code> takes an <code>int</code> and <code>tycho_int</code> is 64-bit, so a</p>
-<p>caller asking for more than <code>INT_MAX</code> handed it a truncated or negative length</p>
-<p>while the buffer really was that large — undefined, and silently. Now clamped;</p>
-<p>"up to max" is the documented contract, so a short read loses nothing. The</p>
-<p>sibling <code>netx_read</code> has the same shape but passes <code>size_t</code> and needs no clamp.</p>
-<p>Not reachable from the network — <code>max</code> comes from the calling Tycho program —</p>
-<p>which is why it is a hardening rather than a vulnerability.</p>
+<p>plus <code>SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION)</code>. <code>tlsx_read</code> guards <code>max &lt;= 0</code>, a failed <code>malloc</code> and the <code>SSL_read</code> result.</p>
+<p><strong>One narrow fix.</strong> <code>SSL_read</code> takes an <code>int</code> and <code>tycho_int</code> is 64-bit, so a caller asking for more than <code>INT_MAX</code> handed it a truncated or negative length while the buffer really was that large — undefined, and silently. Now clamped; "up to max" is the documented contract, so a short read loses nothing. The sibling <code>netx_read</code> has the same shape but passes <code>size_t</code> and needs no clamp.</p>
+<p>Not reachable from the network — <code>max</code> comes from the calling Tycho program — which is why it is a hardening rather than a vulnerability.</p>
 <h3 id="6-coreregex-does-not-backtrack-catastrophically--measured-with-a-control">6. <code>core:regex</code> does NOT backtrack catastrophically — measured, with a control</h3>
-<p>The concern was ReDoS: the shim uses POSIX <code>regcomp</code>/<code>regexec</code>, and a backtracking</p>
-<p>engine on attacker-controlled input is an exponential-time DoS. Measured</p>
-<p>2026-08-14 with the textbook killer, <code>^(a+)+$</code> against <code>a{n}!</code>:</p>
+<p>The concern was ReDoS: the shim uses POSIX <code>regcomp</code>/<code>regexec</code>, and a backtracking engine on attacker-controlled input is an exponential-time DoS. Measured 2026-08-14 with the textbook killer, <code>^(a+)+$</code> against <code>a{n}!</code>:</p>
 <table>
 <tr><th>n</th><th>Python's <code>re</code> (backtracking)</th><th><code>core:regex</code> here</th></tr>
 <tr><td>18</td><td>9 ms</td><td>2 ms</td></tr>
@@ -127,208 +103,67 @@
 <tr><td>28</td><td>8940 ms</td><td>2 ms</td></tr>
 <tr><td>20000</td><td>—</td><td><strong>2 ms</strong></td></tr>
 </table>
-<p>The Python column is the <strong>control</strong>: it proves the probe shape detects blowup,</p>
-<p>so the flat column is a result and not a probe that measures nothing — which is</p>
-<p>the failure mode a clean security finding usually has. glibc's <code>regexec</code> is a</p>
-<p>hybrid automaton and does not explore that space.</p>
-<p><strong>Scope of the claim, stated because it is narrower than "regex is safe":</strong> one</p>
-<p>pattern class, on glibc, on this host. The shim binds whatever POSIX regex the</p>
-<p>platform provides, and Windows and musl are different implementations that were</p>
-<p>NOT measured. A pattern with backreferences — which force backtracking in any</p>
-<p>engine — was also not tried.</p>
+<p>The Python column is the <strong>control</strong>: it proves the probe shape detects blowup, so the flat column is a result and not a probe that measures nothing — which is the failure mode a clean security finding usually has. glibc's <code>regexec</code> is a hybrid automaton and does not explore that space.</p>
+<p><strong>Scope of the claim, stated because it is narrower than "regex is safe":</strong> one pattern class, on glibc, on this host. The shim binds whatever POSIX regex the platform provides, and Windows and musl are different implementations that were NOT measured. A pattern with backreferences — which force backtracking in any engine — was also not tried.</p>
 <h3 id="7-the-png-decoder-allocates-exactly-what-libpng-will-write">7. The PNG decoder allocates exactly what libpng will write</h3>
-<p><code>imgx_decode</code> uses libpng's <strong>simplified</strong> API, which is the one that validates:</p>
-<p><code>png_image_begin_read_from_memory</code> parses and checks the header, <code>PNG_IMAGE_SIZE</code></p>
-<p>computes the output size from the validated fields, the <code>malloc</code> is that size, and</p>
-<p><code>png_image_finish_read</code> writes into exactly that. Failure at each step is handled</p>
-<p>and mapped to a distinct status. The format is forced to <code>PNG_FORMAT_RGBA</code>, so</p>
-<p>the size is not a function of anything the file chooses.</p>
+<p><code>imgx_decode</code> uses libpng's <strong>simplified</strong> API, which is the one that validates: <code>png_image_begin_read_from_memory</code> parses and checks the header, <code>PNG_IMAGE_SIZE</code> computes the output size from the validated fields, the <code>malloc</code> is that size, and <code>png_image_finish_read</code> writes into exactly that. Failure at each step is handled and mapped to a distinct status. The format is forced to <code>PNG_FORMAT_RGBA</code>, so the size is not a function of anything the file chooses.</p>
 <p>That is the arithmetic the "did not cover" note was worried about, and it holds.</p>
-<p><strong>One residual, not fixed:</strong> there is no ceiling on the decoded size, so a PNG</p>
-<p>declaring enormous dimensions asks for a correspondingly enormous allocation. It</p>
-<p>fails *safely* — <code>malloc</code> returns NULL and that branch is handled — so this is</p>
-<p>memory pressure, not corruption. Unlike the decompression bomb (finding 4) the</p>
-<p>allocation is a single sized request rather than an unbounded doubling loop, and</p>
-<p>the caller learns about it. Worth a cap if <code>core:image</code> ever decodes untrusted</p>
-<p>input in a long-lived process.</p>
+<p><strong>One residual, not fixed:</strong> there is no ceiling on the decoded size, so a PNG declaring enormous dimensions asks for a correspondingly enormous allocation. It fails *safely* — <code>malloc</code> returns NULL and that branch is handled — so this is memory pressure, not corruption. Unlike the decompression bomb (finding 4) the allocation is a single sized request rather than an unbounded doubling loop, and the caller learns about it. Worth a cap if <code>core:image</code> ever decodes untrusted input in a long-lived process.</p>
 <h3 id="8-the-emitted-c-bounds-checks-hold-and-no-user-data-reaches-a-format-string">8. The emitted C: bounds checks hold, and no user data reaches a format string</h3>
-<p>The previous note listed this as uncovered while conceding it is sanitizer-tested</p>
-<p>(<code>make test</code> runs all 717 fixtures under ASan/UBSan/LeakSanitizer; <code>asan-self</code></p>
-<p>covers the compiler's own execution over 736 programs). What was missing was a</p>
-<p>look at the emitted code as CODE. Two classes checked, both by probe rather than</p>
-<p>by reading:</p>
-<p><strong>Format strings.</strong> Every <code>printf</code>/<code>fprintf</code> in the emitted C takes a string</p>
-<p>LITERAL as its format; no value from the program is ever passed as one. That is</p>
-<p>the format-string class closed by construction rather than by discipline.</p>
-<p><strong>Bounds.</strong> Each shape was indexed out of range through a <code>fn at(n: int) -&gt; int</code></p>
-<p>so nothing folds at compile time, and every one traps with the offending index</p>
-<p>AND the true length:</p>
+<p>The previous note listed this as uncovered while conceding it is sanitizer-tested (<code>make test</code> runs all 717 fixtures under ASan/UBSan/LeakSanitizer; <code>asan-self</code> covers the compiler's own execution over 736 programs). What was missing was a look at the emitted code as CODE. Two classes checked, both by probe rather than by reading:</p>
+<p><strong>Format strings.</strong> Every <code>printf</code>/<code>fprintf</code> in the emitted C takes a string LITERAL as its format; no value from the program is ever passed as one. That is the format-string class closed by construction rather than by discipline.</p>
+<p><strong>Bounds.</strong> Each shape was indexed out of range through a <code>fn at(n: int) -&gt; int</code> so nothing folds at compile time, and every one traps with the offending index AND the true length:</p>
 <pre><code>xs[-1]                  tycho: index -1 out of bounds (len 3)
 xs[INT64_MAX]           tycho: index 9223372036854775807 out of bounds (len 3)
 xs[1:99]                tycho: slice [1:99] out of bounds (len 3)
 [3]int   a[5]           tycho: index 5 out of bounds (len 3)
 bounded[3]int b[7]      tycho: index 7 out of bounds (len 2)
 </code></pre>
-<p>The <code>bounded</code> case reports the LIVE length (2), not the capacity (3), which is the</p>
-<p>right answer and the one a caller can act on. Negative indices and an index at</p>
-<p><code>INT64_MAX</code> are both caught, so the check is not a naive <code>i &gt;= len</code> on a signed</p>
-<p>value. <code>-fwrapv</code> is passed by the build, so the arithmetic reaching those checks</p>
-<p>is defined rather than UB the optimiser may assume away.</p>
-<p><strong>What this does NOT establish:</strong> that every emitted construct is checked, only</p>
-<p>that these five are. <code>bytes</code>/<code>string</code> slices CLAMP rather than trap — that is</p>
-<p>deliberate and has its own recorded verdict at FRICTION #5, re-probed 2026-08-13</p>
-<p>against the reference languages.</p>
+<p>The <code>bounded</code> case reports the LIVE length (2), not the capacity (3), which is the right answer and the one a caller can act on. Negative indices and an index at <code>INT64_MAX</code> are both caught, so the check is not a naive <code>i &gt;= len</code> on a signed value. <code>-fwrapv</code> is passed by the build, so the arithmetic reaching those checks is defined rather than UB the optimiser may assume away.</p>
+<p><strong>What this does NOT establish:</strong> that every emitted construct is checked, only that these five are. <code>bytes</code>/<code>string</code> slices CLAMP rather than trap — that is deliberate and has its own recorded verdict at FRICTION #5, re-probed 2026-08-13 against the reference languages.</p>
 <h3 id="9-slowloris-the-per-read-idle-timeout-does-not-bound-a-request">9. Slowloris: the per-read idle timeout does not bound a request</h3>
-<p><code>tycho-httpd</code> survives every malformed shape thrown at it — an unterminated head,</p>
-<p>an 8 MiB header line (reset by the cap), a lying <code>Content-Length</code>, NUL bytes in</p>
-<p>the request line, connect-and-vanish, binary garbage — and keeps serving after</p>
-<p>all of them. <code>server-check</code>'s "two rude clients" leg is real.</p>
-<p><strong>A slow client is a different thing from a rude one.</strong> <code>net.set_read_timeout_ms</code></p>
-<p>is per READ, so dribbling one byte before each expiry makes every read succeed and</p>
-<p>resets the timer forever. Measured 2026-08-15, <code>workers=4</code>:</p>
+<p><code>tycho-httpd</code> survives every malformed shape thrown at it — an unterminated head, an 8 MiB header line (reset by the cap), a lying <code>Content-Length</code>, NUL bytes in the request line, connect-and-vanish, binary garbage — and keeps serving after all of them. <code>server-check</code>'s "two rude clients" leg is real.</p>
+<p><strong>A slow client is a different thing from a rude one.</strong> <code>net.set_read_timeout_ms</code> is per READ, so dribbling one byte before each expiry makes every read succeed and resets the timer forever. Measured 2026-08-15, <code>workers=4</code>:</p>
 <pre><code>12 dribbling connections (1 byte / 2s)   legitimate request BLOCKED at 8s, 16s
                                           service returned only when they closed
 </code></pre>
-<p><strong>Fixed to the extent the architecture allows.</strong> <code>httpd.read_request_deadline</code></p>
-<p>adds a TOTAL deadline for the head — what nginx calls <code>client_header_timeout</code> —</p>
-<p>and the server passes 15s. Re-measured against the same attack:</p>
+<p><strong>Fixed to the extent the architecture allows.</strong> <code>httpd.read_request_deadline</code> adds a TOTAL deadline for the head — what nginx calls <code>client_header_timeout</code> — and the server passes 15s. Re-measured against the same attack:</p>
 <pre><code>blocked at 5s and 20s, SERVING again at 35s while the attackers dribbled on
 </code></pre>
-<p>The deadline evicts each held connection, so service recovers on its own instead</p>
-<p>of waiting for the attacker to lose interest.</p>
-<p><strong>This is not "slowloris fixed" and the write-up should not say so.</strong> An attacker</p>
-<p>who reconnects continuously still saturates four workers; that is inherent to</p>
-<p>connection-per-worker and the answers are more workers, an event loop, or a</p>
-<p>per-peer connection limit — a design decision, not a patch. What changed is</p>
-<p>indefinite denial becoming bounded degradation that self-heals every deadline.</p>
-<p><code>read_request_capped</code> keeps its exact old signature and behaviour (`deadline_ms</p>
-<p>&lt;= 0<code> means none), so no caller moves — the same split </code>core:strings` has between</p>
-<p><code>parse_int</code> and <code>parse_int_checked</code>.</p>
+<p>The deadline evicts each held connection, so service recovers on its own instead of waiting for the attacker to lose interest.</p>
+<p><strong>This is not "slowloris fixed" and the write-up should not say so.</strong> An attacker who reconnects continuously still saturates four workers; that is inherent to connection-per-worker and the answers are more workers, an event loop, or a per-peer connection limit — a design decision, not a patch. What changed is indefinite denial becoming bounded degradation that self-heals every deadline.</p>
+<p><code>read_request_capped</code> keeps its exact old signature and behaviour (<code>deadline_ms &lt;= 0</code> means none), so no caller moves — the same split <code>core:strings</code> has between <code>parse_int</code> and <code>parse_int_checked</code>.</p>
 <h2 id="where-a-next-reviewer-should-start">Where a next reviewer should start</h2>
-<p>Every item this pass originally listed as uncovered has since been worked — TLS,</p>
-<p>regex, the image decoders, compression bombs, boundary fuzzing and the emitted C.</p>
-<p>That is not the same as "there is nothing left", so this section is now a list of</p>
-<p>what is genuinely open rather than a list of struck-through entries.</p>
-<p><strong>The largest gap is not technical.</strong> <code>ROADMAP.md</code> §7 asks for a THIRD-PARTY</p>
-<p>review. Everything here was done by one reviewer who did not write the shims but</p>
-<p>is not independent of the project either, and who chose which classes to look</p>
-<p>for. A reviewer who picks different classes will find different things; that is</p>
-<p>the whole argument for §7 and nothing in this document substitutes for it.</p>
+<p>Every item this pass originally listed as uncovered has since been worked — TLS, regex, the image decoders, compression bombs, boundary fuzzing and the emitted C. That is not the same as "there is nothing left", so this section is now a list of what is genuinely open rather than a list of struck-through entries.</p>
+<p><strong>The largest gap is not technical.</strong> <code>ROADMAP.md</code> §7 asks for a THIRD-PARTY review. Everything here was done by one reviewer who did not write the shims but is not independent of the project either, and who chose which classes to look for. A reviewer who picks different classes will find different things; that is the whole argument for §7 and nothing in this document substitutes for it.</p>
 <p>Concretely open:</p>
 <ul>
-<li>~~<code>corelib/zip</code>, <code>corelib/json</code>, <code>corelib/csv</code>, <code>corelib/markdown</code>~~ — **all</li>
+<li>~~<code>corelib/zip</code>, <code>corelib/json</code>, <code>corelib/csv</code>, <code>corelib/markdown</code>~~ — <strong>all four are now in <code>scripts/fuzz_shims.sh</code></strong> alongside <code>compress</code> and <code>regex</code>: 1950 mutated inputs, 0 failures. The text parsers are reached through <code>io.read_text</code> so invalid UTF-8 gets in too.</li>
 </ul>
-<p>four are now in <code>scripts/fuzz_shims.sh</code>** alongside <code>compress</code> and <code>regex</code>:</p>
-<p>1950 mutated inputs, 0 failures. The text parsers are reached through</p>
-<p><code>io.read_text</code> so invalid UTF-8 gets in too.</p>
-<p><strong>The seeds were the hard part, twice.</strong> With only gzip-shaped seeds the text</p>
-<p>parsers rejected at the first byte and deep state — nesting, escapes, quoted</p>
-<p>commas, embedded newlines — was never reached. Then a hand-written zip EOCD</p>
-<p>record proved equally shallow: <code>zip.list</code> returned **0 entries for it, exactly</p>
-<p>as for pure junk**, so every mutant died before the <code>le16</code>/<code>le32</code> offset</p>
-<p>arithmetic that is the entire reason to fuzz an archive parser. Measured, not</p>
-<p>assumed. The seed is now a real archive built by <code>zipfile</code>, which yields 1</p>
-<p>entry before mutation.</p>
-<p>Both times the harness reported a large number of clean inputs while testing</p>
-<p>almost nothing. That is the failure mode of fuzzing, and it does not announce</p>
-<p>itself.</p>
+<p><strong>The seeds were the hard part, twice.</strong> With only gzip-shaped seeds the text parsers rejected at the first byte and deep state — nesting, escapes, quoted commas, embedded newlines — was never reached. Then a hand-written zip EOCD record proved equally shallow: <code>zip.list</code> returned <strong>0 entries for it, exactly as for pure junk</strong>, so every mutant died before the <code>le16</code>/<code>le32</code> offset arithmetic that is the entire reason to fuzz an archive parser. Measured, not assumed. The seed is now a real archive built by <code>zipfile</code>, which yields 1 entry before mutation.</p>
+<p>Both times the harness reported a large number of clean inputs while testing almost nothing. That is the failure mode of fuzzing, and it does not announce itself.</p>
 <ul>
-<li>~~<code>corelib/net</code> under hostile peers~~ — **probed, finding 9. A slowloris DoS</li>
+<li>~~<code>corelib/net</code> under hostile peers~~ — <strong>probed, finding 9. A slowloris DoS was confirmed and BOUNDED, not eliminated;</strong> the residual is a design property of connection-per-worker, described below.</li>
+<li>~~The image decoders' uncapped allocation~~ — <strong>capped at 512 MiB of RGBA (an 11600x11600 image) with its own <code>ImgErr.TooBig</code>,</strong> overridable at compile time like <code>compress</code>'s so a gate can prove it fires cheaply. It failed safely before (a NULL <code>malloc</code> is handled), so this is defence in depth and a NAMED error rather than a generic allocation failure.</li>
+<li>~~<strong>Windows.</strong> Every measurement here is Linux. The wine lanes cover behaviour, not memory safety: there is no ASan equivalent in that path.~~ — <strong>partly closed 2026-08-15 by <code>make wine-ubsan</code>.</strong> True of ASan: the mingw-w64 here ships neither libasan nor libubsan, so <code>-fsanitize=address</code> and plain <code>-fsanitize=undefined</code> both fail at LINK. But UBSan needs no runtime if the checks TRAP — <code>-fsanitize-undefined-trap-on-error</code> lowers each to an illegal instruction. The whole fixture corpus and every corelib package that ports were rebuilt that way and run under wine: <strong>361 fixtures, 0 failures</strong>, with a control proving a deliberate out-of-bounds access exits 29 in that exact configuration while the same source exits 0 without the flags. What it still does NOT cover: <code>-fwrapv</code> is kept to match the shipped cc line, so signed overflow is defined and unchecked; and this is not ASan — a use-after-free or a heap overflow past an unknown bound stays invisible on Windows.</li>
+<li>~~Timing and side channels in <code>core:crypto</code>~~ — <strong>the one comparison that matters is constant-time.</strong> <code>cx_ct_equal</code> uses OpenSSL's <code>CRYPTO_memcmp</code>, not <code>memcmp</code>/<code>strcmp</code>, and it is the ONLY comparison in the shim (grep: 1 match). Length is compared first, which leaks the length and nothing else — standard, since a digest's length is not secret. The <code>hexdec</code> decode ahead of it is not constant-time, so this bounds the claim: <strong>the comparison</strong> does not leak, a full side-channel analysis of the package was not done, and nothing here says anything about the rest of the tree.</li>
 </ul>
-<p>was confirmed and BOUNDED, not eliminated;** the residual is a design property</p>
-<p>of connection-per-worker, described below.</p>
 <ul>
-<li>~~The image decoders' uncapped allocation~~ — **capped at 512 MiB of RGBA</li>
+<li><strong>The remaining side-channel surface</strong> — key handling, <code>hexdec</code>, and anything in <code>core:tls</code> — is unexamined.</li>
 </ul>
-<p>(an 11600x11600 image) with its own <code>ImgErr.TooBig</code>,** overridable at compile</p>
-<p>time like <code>compress</code>'s so a gate can prove it fires cheaply. It failed safely</p>
-<p>before (a NULL <code>malloc</code> is handled), so this is defence in depth and a NAMED</p>
-<p>error rather than a generic allocation failure.</p>
-<ul>
-<li>~~<strong>Windows.</strong> Every measurement here is Linux. The wine lanes cover behaviour,</li>
-</ul>
-<p>not memory safety: there is no ASan equivalent in that path.~~ — **partly</p>
-<p>closed 2026-08-15 by <code>make wine-ubsan</code>.** True of ASan: the mingw-w64 here</p>
-<p>ships neither libasan nor libubsan, so <code>-fsanitize=address</code> and plain</p>
-<p><code>-fsanitize=undefined</code> both fail at LINK. But UBSan needs no runtime if the</p>
-<p>checks TRAP — <code>-fsanitize-undefined-trap-on-error</code> lowers each to an illegal</p>
-<p>instruction. The whole fixture corpus and every corelib package that ports were</p>
-<p>rebuilt that way and run under wine: <strong>361 fixtures, 0 failures</strong>, with a</p>
-<p>control proving a deliberate out-of-bounds access exits 29 in that exact</p>
-<p>configuration while the same source exits 0 without the flags. What it still</p>
-<p>does NOT cover: <code>-fwrapv</code> is kept to match the shipped cc line, so signed</p>
-<p>overflow is defined and unchecked; and this is not ASan — a use-after-free or a</p>
-<p>heap overflow past an unknown bound stays invisible on Windows.</p>
-<ul>
-<li>~~Timing and side channels in <code>core:crypto</code>~~ — **the one comparison that</li>
-</ul>
-<p>matters is constant-time.** <code>cx_ct_equal</code> uses OpenSSL's <code>CRYPTO_memcmp</code>, not</p>
-<p><code>memcmp</code>/<code>strcmp</code>, and it is the ONLY comparison in the shim (grep: 1 match).</p>
-<p>Length is compared first, which leaks the length and nothing else — standard,</p>
-<p>since a digest's length is not secret. The <code>hexdec</code> decode ahead of it is not</p>
-<p>constant-time, so this bounds the claim: <strong>the comparison</strong> does not leak, a</p>
-<p>full side-channel analysis of the package was not done, and nothing here says</p>
-<p>anything about the rest of the tree.</p>
-<ul>
-<li><strong>The remaining side-channel surface</strong> — key handling, <code>hexdec</code>, and anything</li>
-</ul>
-<p>in <code>core:tls</code> — is unexamined.</p>
 <hr/>
 <h2 id="follow-up-2026-08-15-key-handling-measured">Follow-up, 2026-08-15: key handling, measured</h2>
-<p>The item above named <strong>key handling</strong> as unexamined. It is now examined, by</p>
-<p>running the code rather than reading it — <code>scripts/crypto_hygiene.sh</code>, which</p>
-<p>interposes the shim's own <code>free</code> with <code>-Wl,--wrap=free</code> and scans each released</p>
-<p>block for a known plaintext.</p>
-<p><strong>Two real leaks, both fixed.</strong> <code>cx_aead_encrypt</code> plain-<code>free</code>d the plaintext it</p>
-<p>decoded from hex, and <code>cx_aead_decrypt</code> plain-<code>free</code>d the plaintext it had just</p>
-<p>recovered — each one block, found on the probe's first run. The discipline was</p>
-<p>already in the file and applied unevenly: <code>cx_key_from_hex</code> cleanses its decode</p>
-<p>buffer with a comment saying why, and <code>cx_x25519_shared</code> cleanses the shared</p>
-<p>secret. Both AEAD paths now do the same, and each site reddens the lane on its</p>
-<p>own when reverted.</p>
-<p><strong>A third, quieter one.</strong> <code>out_hex</code> recycles one buffer per thread, so whatever</p>
-<p>hex it produced last stayed live for the life of the thread — including the raw</p>
-<p>secret key that <code>cx_key_export_hex</code> puts through it. It now wipes the previous</p>
-<p>contents before <code>realloc</code> may copy or release them.</p>
-<p><strong><code>hexdec</code> is now constant-time, measured the same way.</strong> It rejected at the</p>
-<p>first bad digit, which timed the *offset* of the error, and it is on the</p>
-<p>key-import path. The digit decode is branch-free now; the proof is valgrind, not</p>
-<p>a stopwatch — the input is marked UNDEFINED and memcheck reports every branch</p>
-<p>derived from it. <strong>The old version scored 7. It scores 0.</strong> Two things are</p>
-<p>declassified on purpose and naming them bounds the claim: the input</p>
-<p>LENGTH, and the single bit "was the hex well-formed", which the caller must be</p>
-<p>able to branch on. A control built against a copy with a branching digit decode</p>
-<p>still scores 2, so the suppressions are not hiding the subject.</p>
-<p>Rewriting a security parser in bit tricks is its own risk, so the new classifier</p>
-<p>is compared against the branching original over <strong>all 256 byte values</strong> plus</p>
-<p>accept/reject cases either side of every boundary — and a control with one</p>
-<p><code>&amp; 0xFF</code> removed must fail that comparison, because without the mask a</p>
-<p>non-digit's wrapped subtraction tests as valid.</p>
-<p><strong>What is still NOT claimed.</strong> This measures whether a secret survives in memory</p>
-<p>the shim released, and whether the key-import decode branches on it. It says</p>
-<p>nothing about memory the shim never owned — OpenSSL's own allocations, or the</p>
-<p>copy Tycho's runtime makes at the FFI boundary — nothing about cache-line or</p>
-<p>table-lookup side channels.</p>
-<p><strong><code>core:tls</code> now has one thing proved about it, and only one.</strong> It is the client</p>
-<p>half of every HTTPS request a Tycho program makes, and the only test it had</p>
-<p>connected to a CLOSED LOOPBACK PORT — which cannot tell a refused CERTIFICATE</p>
-<p>from a refused CONNECTION, since both return a null handle. Turning</p>
-<p><code>SSL_VERIFY_PEER</code> into <code>SSL_VERIFY_NONE</code> passed every gate in this tree — verified</p>
-<p>by running it, not by reading it. <code>make tls-verify</code> now runs a real server on the loopback</p>
-<p>with an untrusted certificate and pins three outcomes that must disagree, so both</p>
-<p>chain validation and the hostname check are held by a leg that reddens on its</p>
-<p>own. That is the whole claim: **nothing here says anything about the tls shim's</p>
-<p>memory handling, its error paths, or its session lifetime.**</p>
-<p><strong>One thing the probe taught about probes.</strong> Its first version held two shim</p>
-<p>results at once and reported the round trip BROKEN. That was the probe:</p>
-<p><code>out_hex</code> returns the same pointer every call, so a C caller must copy. Tycho</p>
-<p>callers are unaffected — the compiler copies at the boundary, measured with two</p>
-<p>live <code>crypto.random_hex</code> results coming back distinct.</p>
+<p>The item above named <strong>key handling</strong> as unexamined. It is now examined, by running the code rather than reading it — <code>scripts/crypto_hygiene.sh</code>, which interposes the shim's own <code>free</code> with <code>-Wl,--wrap=free</code> and scans each released block for a known plaintext.</p>
+<p><strong>Two real leaks, both fixed.</strong> <code>cx_aead_encrypt</code> plain-<code>free</code>d the plaintext it decoded from hex, and <code>cx_aead_decrypt</code> plain-<code>free</code>d the plaintext it had just recovered — each one block, found on the probe's first run. The discipline was already in the file and applied unevenly: <code>cx_key_from_hex</code> cleanses its decode buffer with a comment saying why, and <code>cx_x25519_shared</code> cleanses the shared secret. Both AEAD paths now do the same, and each site reddens the lane on its own when reverted.</p>
+<p><strong>A third, quieter one.</strong> <code>out_hex</code> recycles one buffer per thread, so whatever hex it produced last stayed live for the life of the thread — including the raw secret key that <code>cx_key_export_hex</code> puts through it. It now wipes the previous contents before <code>realloc</code> may copy or release them.</p>
+<p><strong><code>hexdec</code> is now constant-time, measured the same way.</strong> It rejected at the first bad digit, which timed the *offset* of the error, and it is on the key-import path. The digit decode is branch-free now; the proof is valgrind, not a stopwatch — the input is marked UNDEFINED and memcheck reports every branch derived from it. <strong>The old version scored 7. It scores 0.</strong> Two things are declassified on purpose and naming them bounds the claim: the input LENGTH, and the single bit "was the hex well-formed", which the caller must be able to branch on. A control built against a copy with a branching digit decode still scores 2, so the suppressions are not hiding the subject.</p>
+<p>Rewriting a security parser in bit tricks is its own risk, so the new classifier is compared against the branching original over <strong>all 256 byte values</strong> plus accept/reject cases either side of every boundary — and a control with one <code>&amp; 0xFF</code> removed must fail that comparison, because without the mask a non-digit's wrapped subtraction tests as valid.</p>
+<p><strong>What is still NOT claimed.</strong> This measures whether a secret survives in memory the shim released, and whether the key-import decode branches on it. It says nothing about memory the shim never owned — OpenSSL's own allocations, or the copy Tycho's runtime makes at the FFI boundary — nothing about cache-line or table-lookup side channels.</p>
+<p><strong><code>core:tls</code> now has one thing proved about it, and only one.</strong> It is the client half of every HTTPS request a Tycho program makes, and the only test it had connected to a CLOSED LOOPBACK PORT — which cannot tell a refused CERTIFICATE from a refused CONNECTION, since both return a null handle. Turning <code>SSL_VERIFY_PEER</code> into <code>SSL_VERIFY_NONE</code> passed every gate in this tree — verified by running it, not by reading it. <code>make tls-verify</code> now runs a real server on the loopback with an untrusted certificate and pins three outcomes that must disagree, so both chain validation and the hostname check are held by a leg that reddens on its own. That is the whole claim: <strong>nothing here says anything about the tls shim's memory handling, its error paths, or its session lifetime.</strong></p>
+<p><strong>One thing the probe taught about probes.</strong> Its first version held two shim results at once and reported the round trip BROKEN. That was the probe: <code>out_hex</code> returns the same pointer every call, so a C caller must copy. Tycho callers are unaffected — the compiler copies at the boundary, measured with two live <code>crypto.random_hex</code> results coming back distinct.</p>
 <hr/>
 <h2 id="addendum-2026-08-15-what-a-second-pass-found-and-what-it-says-about-the-first">Addendum, 2026-08-15: what a second pass found, and what it says about the first</h2>
-<p>The review above was one person choosing which classes to look for. A second pass</p>
-<p>the following day, choosing differently, found <strong>nine defects</strong> — which is the</p>
-<p>argument for §7 restated as evidence rather than as principle.</p>
+<p>The review above was one person choosing which classes to look for. A second pass the following day, choosing differently, found <strong>nine defects</strong> — which is the argument for §7 restated as evidence rather than as principle.</p>
 <p>None of them were visible to a golden. Ranked by what they cost:</p>
 <table>
 <tr><th>where</th><th>what</th><th>how it was found</th></tr>
@@ -342,61 +177,32 @@ bounded[3]int b[7]      tycho: index 7 out of bounds (len 2)
 <tr><td><code>src/tychoc.c</code></td><td>a deprecation marker attached across files by line number</td><td>a throwaway positive control</td></tr>
 <tr><td>test lanes</td><td>one leaked servers for 11 days; one asserted a schedule</td><td>reading machine state after a red sweep</td></tr>
 </table>
-<p><strong>The shape repeats and is worth naming for whoever reviews next.</strong> Seven of the</p>
-<p>nine are the same defect: *a comment claims a property, and the code delivers it</p>
-<p>in one respect but not the one that matters.* <code>markdown</code> escaped the text and not</p>
-<p>the scheme. <code>httpd</code> validated the length after blocking on it. <code>gcd</code> said</p>
-<p>non-negative and composed with an <code>abs</code> that is documented to return a negative.</p>
-<p>Grepping for the claim finds nothing; only running the thing does.</p>
-<p><strong>Start where a claim is written down.</strong> Every one of the nine was found by taking</p>
-<p>a sentence in a header comment literally and building the smallest thing that</p>
-<p>could falsify it. <code>docs/internals/FRICTION.md</code> #57–#64 record the current crop</p>
-<p>including the three that are still open decisions.</p>
-<p><strong>And distrust your instrument first.</strong> Thirteen times in that pass the</p>
-<p>measurement was wrong and the code was right — a decimal oracle using Python's</p>
-<p>notation, a wine sweep where every invocation was <code>command not found</code>, a codec</p>
-<p>harness shifted by one line, an inverted control that reports zero either way. The</p>
-<p>ones that cost real time all *looked like results*. That is why every lane added</p>
-<p>since (<code>scripts/format_diff.sh</code>, <code>scripts/crypto_hygiene.sh</code>,</p>
-<p><code>scripts/tls_verify.sh</code>, <code>make wine-ubsan</code>) refuses to score anything until a</p>
-<p>deliberately wrong expectation has been shown to fail.</p>
-<p><strong>Still open here</strong>, unchanged by that pass: no third-party audit; Windows memory</p>
-<p>safety is covered for undefined behaviour by <code>make wine-ubsan</code> but not for</p>
-<p>use-after-free, which needs an ASan that mingw-w64 does not ship.</p>
+<p><strong>The shape repeats and is worth naming for whoever reviews next.</strong> Seven of the nine are the same defect: *a comment claims a property, and the code delivers it in one respect but not the one that matters.* <code>markdown</code> escaped the text and not the scheme. <code>httpd</code> validated the length after blocking on it. <code>gcd</code> said non-negative and composed with an <code>abs</code> that is documented to return a negative. Grepping for the claim finds nothing; only running the thing does.</p>
+<p><strong>Start where a claim is written down.</strong> Every one of the nine was found by taking a sentence in a header comment literally and building the smallest thing that could falsify it. <code>docs/internals/FRICTION.md</code> #57–#64 record the current crop including the three that are still open decisions.</p>
+<p><strong>And distrust your instrument first.</strong> Thirteen times in that pass the measurement was wrong and the code was right — a decimal oracle using Python's notation, a wine sweep where every invocation was <code>command not found</code>, a codec harness shifted by one line, an inverted control that reports zero either way. The ones that cost real time all *looked like results*. That is why every lane added since (<code>scripts/format_diff.sh</code>, <code>scripts/crypto_hygiene.sh</code>, <code>scripts/tls_verify.sh</code>, <code>make wine-ubsan</code>) refuses to score anything until a deliberately wrong expectation has been shown to fail.</p>
+<p><strong>Still open here</strong>, unchanged by that pass: no third-party audit; Windows memory safety is covered for undefined behaviour by <code>make wine-ubsan</code> but not for use-after-free, which needs an ASan that mingw-w64 does not ship.</p>
 <hr/>
 <h2 id="follow-up-2026-08-15-the-last-ungated-https-client">Follow-up, 2026-08-15: the last ungated HTTPS client</h2>
-<p>The line above used to name a third open item — <code>core:http</code> cannot be pointed at</p>
-<p>a private CA, so its certificate verification is ungated (FRICTION #57). It is</p>
-<p>closed, and the shape of the fix is the reusable part.</p>
-<p><strong>The blocker was not the check, it was the absence of a success.</strong> The</p>
-<p>three-way discrimination <code>scripts/tls_verify.sh</code> runs was written for <code>core:http</code></p>
-<p>and then deleted, because no leg could be made to pass: <code>CURL_CA_BUNDLE</code> is read</p>
-<p>by the curl <strong>tool</strong>, <code>SSL_CERT_FILE</code> was pre-empted by libcurl's compiled-in</p>
-<p><code>CAINFO</code>, and the shim exposed neither. With every leg failing for a reason</p>
-<p>nobody could distinguish, "the untrusted chain was refused" and "nothing</p>
-<p>connected at all" are the same observation — so a <code>CURLOPT_SSL_VERIFYPEER, 0L</code></p>
-<p>added while debugging would have passed every lane in this tree, on the HTTPS</p>
-<p>client every Tycho program reaches for. That is the identical blindness this</p>
-<p>document records <code>tls-verify</code> closing, surviving one package over.</p>
-<p>The shim honours <code>SSL_CERT_FILE</code>/<code>SSL_CERT_DIR</code> now — the two <code>core:tls</code> already</p>
-<p>obeyed, so the tree's two HTTPS clients stop trusting different stores from the</p>
-<p>same environment. They redirect trust and cannot disable it. <code>make http-verify</code></p>
-<p>is the lane that follows, with four controls each reddening exactly one leg.</p>
+<p>The line above used to name a third open item — <code>core:http</code> cannot be pointed at a private CA, so its certificate verification is ungated (FRICTION #57). It is closed, and the shape of the fix is the reusable part.</p>
+<p><strong>The blocker was not the check, it was the absence of a success.</strong> The three-way discrimination <code>scripts/tls_verify.sh</code> runs was written for <code>core:http</code> and then deleted, because no leg could be made to pass: <code>CURL_CA_BUNDLE</code> is read by the curl <strong>tool</strong>, <code>SSL_CERT_FILE</code> was pre-empted by libcurl's compiled-in <code>CAINFO</code>, and the shim exposed neither. With every leg failing for a reason nobody could distinguish, "the untrusted chain was refused" and "nothing connected at all" are the same observation — so a <code>CURLOPT_SSL_VERIFYPEER, 0L</code> added while debugging would have passed every lane in this tree, on the HTTPS client every Tycho program reaches for. That is the identical blindness this document records <code>tls-verify</code> closing, surviving one package over.</p>
+<p>The shim honours <code>SSL_CERT_FILE</code>/<code>SSL_CERT_DIR</code> now — the two <code>core:tls</code> already obeyed, so the tree's two HTTPS clients stop trusting different stores from the same environment. They redirect trust and cannot disable it. <code>make http-verify</code> is the lane that follows, with four controls each reddening exactly one leg.</p>
 <p><strong>Two things worth carrying to the next reviewer.</strong></p>
-<p>*An ungated property is not a broken one.* The lane's control leg — a probe built</p>
-<p>against a copy of corelib with verification off — returned **200 against the same</p>
-<p>untrusted server the real probe refused**, on the run made *before* the fix. So</p>
-<p><code>core:http</code> was verifying correctly the whole time. What was missing was any way</p>
-<p>to notice when it stopped.</p>
-<p>*The control script nearly produced a false clean result*, in the way this</p>
-<p>document's own §"distrust your instrument first" predicts. It restored the shim</p>
-<p>between runs with <code>git checkout --</code>, which restores <strong>HEAD</strong> — and the fix was</p>
-<p>still uncommitted, so three of four controls ran against the unfixed shim and</p>
-<p>each "reddened" for a reason that had nothing to do with the break under test.</p>
-<p>The output looked exactly like a working control set. Restoring from a copy of</p>
-<p>the working-tree file, and refusing to score unless that copy contains the fix,</p>
-<p>is what it does now.</p>
+<p>*An ungated property is not a broken one.* The lane's control leg — a probe built against a copy of corelib with verification off — returned <strong>200 against the same untrusted server the real probe refused</strong>, on the run made *before* the fix. So <code>core:http</code> was verifying correctly the whole time. What was missing was any way to notice when it stopped.</p>
+<p>*The control script nearly produced a false clean result*, in the way this document's own §"distrust your instrument first" predicts. It restored the shim between runs with <code>git checkout --</code>, which restores <strong>HEAD</strong> — and the fix was still uncommitted, so three of four controls ran against the unfixed shim and each "reddened" for a reason that had nothing to do with the break under test. The output looked exactly like a working control set. Restoring from a copy of the working-tree file, and refusing to score unless that copy contains the fix, is what it does now.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

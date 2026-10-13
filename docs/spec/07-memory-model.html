@@ -4,205 +4,122 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>9. Value semantics · 10. Object lifetimes and storage · 11. `inout` — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/07-memory-model.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html" aria-current="page">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#9-value-semantics">9. Value semantics</a>
+<a class="sub" href="#91-no-reference-type">9.1 No reference type</a>
+<a class="sub" href="#92-copy-on-assignment-argument-and-return">9.2 Copy on assignment, argument, and return</a>
+<a class="sub" href="#93-structural-equality-mirrors-the-copy">9.3 Structural equality mirrors the copy</a>
+<a class="sub" href="#94-uniqueness">9.4 Uniqueness</a>
+<a class="sub" href="#95-observationally-transparent-optimizations">9.5 Observationally-transparent optimizations</a>
+<a href="#10-object-lifetimes-and-storage">10. Object lifetimes and storage</a>
+<a class="sub" href="#101-lifetime-is-lexical">10.1 Lifetime is lexical</a>
+<a class="sub" href="#102-the-escape-rule">10.2 The escape rule</a>
+<a class="sub" href="#103-observable-storage-guarantees">10.3 Observable storage guarantees</a>
+<a class="sub" href="#104-why-the-model-is-sound">10.4 Why the model is sound</a>
+<a href="#11-inout">11. inout</a>
+<a class="sub" href="#111-copy-in--copy-out-semantics">11.1 Copy-in / copy-out semantics</a>
+<a class="sub" href="#112-exclusivity">11.2 Exclusivity</a>
+<a class="sub" href="#113-heap-inout">11.3 Heap inout</a>
+<a class="sub" href="#114-relationship-to-sink">11.4 Relationship to sink</a>
+<a class="sub" href="#115-types-that-cannot-be-inout">11.5 Types that cannot be inout</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/07-memory-model.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="9-value-semantics--10-object-lifetimes-and-storage--11-inout">9. Value semantics · 10. Object lifetimes and storage · 11. <code>inout</code></h1>
-<p>This part defines Tycho's memory and object model. The model has one observable</p>
-<p>contract — <strong>value semantics</strong> — and one realization that makes it work without a</p>
-<p>garbage collector — <strong>implicit hierarchical arenas</strong>. The contract is normative;</p>
-<p>the arena realization is described because it is how the reference</p>
-<p>implementation achieves the contract and why the language needs neither a GC nor</p>
-<p>manual <code>free</code>, but an implementation MAY use any strategy with the same</p>
-<p>observable behavior.</p>
+<p>This part defines Tycho's memory and object model. The model has one observable contract — <strong>value semantics</strong> — and one realization that makes it work without a garbage collector — <strong>implicit hierarchical arenas</strong>. The contract is normative; the arena realization is described because it is how the reference implementation achieves the contract and why the language needs neither a GC nor manual <code>free</code>, but an implementation MAY use any strategy with the same observable behavior.</p>
 <h2 id="9-value-semantics">9. Value semantics</h2>
 <h3 id="91-no-reference-type">9.1 No reference type</h3>
-<p>Tycho has <strong>no reference type</strong>. A program cannot name, store, or return a</p>
-<p>pointer into another value's storage. Consequently two variables never share</p>
-<p>mutable state, and there is no aliasing to reason about. Every binding is an</p>
-<p>independent value.</p>
-<p>The single, tightly-scoped exception is <code>inout</code> (§11): a call-scoped,</p>
-<p>copy-in/copy-out mutable *borrow* that is provably equivalent to <code>x = f(x)</code> and</p>
-<p>is not a storable reference. <code>inout</code> does not reintroduce aliasing; it is</p>
-<p>specified precisely so that it cannot.</p>
+<p>Tycho has <strong>no reference type</strong>. A program cannot name, store, or return a pointer into another value's storage. Consequently two variables never share mutable state, and there is no aliasing to reason about. Every binding is an independent value.</p>
+<p>The single, tightly-scoped exception is <code>inout</code> (§11): a call-scoped, copy-in/copy-out mutable *borrow* that is provably equivalent to <code>x = f(x)</code> and is not a storable reference. <code>inout</code> does not reintroduce aliasing; it is specified precisely so that it cannot.</p>
 <blockquote>
-<p>The contract is copy-in/copy-out; the <strong>codegen is in-place</strong>. An <code>inout</code></p>
-<p>argument is passed as a pointer to the caller's variable plus the value's</p>
-<p>owning arena (a hidden <code>_ina_</code> parameter), and the callee's allocating</p>
-<p>mutations route into that arena — the caller's, where the value lives — so</p>
-<p>no aggregate is ever copied in or out. The <code>x = f(x)</code> contract is what the</p>
-<p>language promises; the pointer pass is how it is kept (measured in</p>
-<p><code>docs/internals/design-aggregate-ref.md</code>).</p>
+<p>The contract is copy-in/copy-out; the <strong>codegen is in-place</strong>. An <code>inout</code> argument is passed as a pointer to the caller's variable plus the value's owning arena (a hidden <code>_ina_</code> parameter), and the callee's allocating mutations route into that arena — the caller's, where the value lives — so no aggregate is ever copied in or out. The <code>x = f(x)</code> contract is what the language promises; the pointer pass is how it is kept (measured in <code>docs/internals/design-aggregate-ref.md</code>).</p>
 </blockquote>
 <h3 id="92-copy-on-assignment-argument-and-return">9.2 Copy on assignment, argument, and return</h3>
-<p>Assignment (<code>b := a</code>, <code>b = a</code>), argument passing, and returning a value all</p>
-<p><strong>copy</strong> the value, and the copy is <strong>deep</strong>: copying a heap-bearing value</p>
-<p>(a <code>string</code>'s bytes, an array's buffer, and recursively a struct's or array's</p>
-<p>heap-bearing fields/elements) duplicates all of that storage, so the source and</p>
-<p>the copy share nothing. After <code>b := a</code>, a mutation of <code>b</code> MUST NOT be observable</p>
-<p>through <code>a</code>, at any depth of nesting.</p>
-<p>This is the language's defining invariant. It holds identically at every level:</p>
-<p>copying a <code>[string]</code> copies the element buffer *and* every element's bytes;</p>
-<p>copying a struct copies each heap field, recursing.</p>
-<p>Immutability is <strong>not</strong> a substitute for the copy. Immutability makes aliasing</p>
-<p>safe (no one can mutate a shared buffer) but does nothing for *lifetime* — a</p>
-<p>value whose storage is reclaimed is gone whether or not it was mutable. The deep</p>
-<p>copy is what guarantees a value outlives every place that holds it.</p>
+<p>Assignment (<code>b := a</code>, <code>b = a</code>), argument passing, and returning a value all <strong>copy</strong> the value, and the copy is <strong>deep</strong>: copying a heap-bearing value (a <code>string</code>'s bytes, an array's buffer, and recursively a struct's or array's heap-bearing fields/elements) duplicates all of that storage, so the source and the copy share nothing. After <code>b := a</code>, a mutation of <code>b</code> MUST NOT be observable through <code>a</code>, at any depth of nesting.</p>
+<p>This is the language's defining invariant. It holds identically at every level: copying a <code>[string]</code> copies the element buffer *and* every element's bytes; copying a struct copies each heap field, recursing.</p>
+<p>Immutability is <strong>not</strong> a substitute for the copy. Immutability makes aliasing safe (no one can mutate a shared buffer) but does nothing for *lifetime* — a value whose storage is reclaimed is gone whether or not it was mutable. The deep copy is what guarantees a value outlives every place that holds it.</p>
 <h3 id="93-structural-equality-mirrors-the-copy">9.3 Structural equality mirrors the copy</h3>
-<p>Equality (<code>==</code>) is the mirror image of the deep copy: it compares by content,</p>
-<p>recursing through the same structure (<a href="03-types.html#55-equality-and-ordering">§5.5</a>).</p>
-<p>Therefore <code>a == b</code> holds exactly when <code>b</code> is an independent deep copy of <code>a</code>.</p>
-<p>Function values are the exception: a bare function is <strong>not comparable</strong> at all</p>
-<p>(§5.5), and a function embedded in a comparable aggregate compares by <strong>identity</strong>,</p>
-<p>not content — the one place the copy/equality symmetry does not apply.</p>
+<p>Equality (<code>==</code>) is the mirror image of the deep copy: it compares by content, recursing through the same structure (<a href="03-types.html#55-equality-and-ordering">§5.5</a>). Therefore <code>a == b</code> holds exactly when <code>b</code> is an independent deep copy of <code>a</code>. Function values are the exception: a bare function is <strong>not comparable</strong> at all (§5.5), and a function embedded in a comparable aggregate compares by <strong>identity</strong>, not content — the one place the copy/equality symmetry does not apply.</p>
 <h3 id="94-uniqueness">9.4 Uniqueness</h3>
-<p>Because nothing aliases, <strong>every mutable heap buffer has exactly one owner</strong></p>
-<p>(immutable interned string literals, which are shared and immortal, aside). This</p>
-<p>uniqueness is what lets the reference implementation mutate or recycle a value's</p>
-<p>storage in place whenever the value is provably dead or uniquely held, with no</p>
-<p>reference counting — the check a reference-counted language performs at run time</p>
-<p>is discharged here statically, by the absence of aliasing.</p>
+<p>Because nothing aliases, <strong>every mutable heap buffer has exactly one owner</strong> (immutable interned string literals, which are shared and immortal, aside). This uniqueness is what lets the reference implementation mutate or recycle a value's storage in place whenever the value is provably dead or uniquely held, with no reference counting — the check a reference-counted language performs at run time is discharged here statically, by the absence of aliasing.</p>
 <h3 id="95-observationally-transparent-optimizations">9.5 Observationally-transparent optimizations</h3>
-<p>A conforming implementation MAY perform storage optimizations that eliminate</p>
-<p>copies or reuse buffers — the reference implementation performs at least</p>
-<p>return-slot move, in-place accumulation, move-on-last-use, and dead-buffer</p>
-<p>recycling. Every such optimization is <strong>observationally transparent</strong>: it MUST</p>
-<p>NOT change any observed value, program output, or accept/reject decision. It may</p>
-<p>change only *when* and *whether* storage is allocated or freed. This</p>
-<p>transparency is guaranteed by the value-semantics asymmetry (§10.4): under value</p>
-<p>semantics a wrong storage decision can change only when memory is reclaimed,</p>
-<p>never whether a pointer dangles.</p>
-<p>A conforming implementation MUST hold to the same</p>
-<p>observable-equivalence standard: optimizations MUST NOT change any observed value, output, or accept/reject decision.</p>
+<p>A conforming implementation MAY perform storage optimizations that eliminate copies or reuse buffers — the reference implementation performs at least return-slot move, in-place accumulation, move-on-last-use, and dead-buffer recycling. Every such optimization is <strong>observationally transparent</strong>: it MUST NOT change any observed value, program output, or accept/reject decision. It may change only *when* and *whether* storage is allocated or freed. This transparency is guaranteed by the value-semantics asymmetry (§10.4): under value semantics a wrong storage decision can change only when memory is reclaimed, never whether a pointer dangles.</p>
+<p>A conforming implementation MUST hold to the same observable-equivalence standard: optimizations MUST NOT change any observed value, output, or accept/reject decision.</p>
 <h2 id="10-object-lifetimes-and-storage">10. Object lifetimes and storage</h2>
 <h3 id="101-lifetime-is-lexical">10.1 Lifetime is lexical</h3>
-<p>Every value's lifetime is determined <strong>lexically</strong>, from the statement that</p>
-<p>produces it and the signatures involved — never from a whole-program pointer</p>
-<p>analysis (which value semantics makes unnecessary). A value lives at least as</p>
-<p>long as the scope it is bound in, and longer exactly when it *escapes* that</p>
-<p>scope by one of the two syntactic routes in §10.2.</p>
-<p>The reference implementation realizes this with <strong>implicit hierarchical arenas</strong>:</p>
-<p>each function activation (and, as scratch, each block and each loop iteration)</p>
-<p>owns a bump-allocated arena that is reclaimed as a unit when the scope exits, and</p>
-<p>each allocation is directed into the arena of the scope the value must outlive.</p>
-<p>The arena *mechanism* (which scope resets versus frees, block-level scratch</p>
-<p>arenas, per-statement temporaries) is an implementation realization and is not</p>
-<p>observable beyond the guarantees in §10.3.</p>
+<p>Every value's lifetime is determined <strong>lexically</strong>, from the statement that produces it and the signatures involved — never from a whole-program pointer analysis (which value semantics makes unnecessary). A value lives at least as long as the scope it is bound in, and longer exactly when it *escapes* that scope by one of the two syntactic routes in §10.2.</p>
+<p>The reference implementation realizes this with <strong>implicit hierarchical arenas</strong>: each function activation (and, as scratch, each block and each loop iteration) owns a bump-allocated arena that is reclaimed as a unit when the scope exits, and each allocation is directed into the arena of the scope the value must outlive. The arena *mechanism* (which scope resets versus frees, block-level scratch arenas, per-statement temporaries) is an implementation realization and is not observable beyond the guarantees in §10.3.</p>
 <h3 id="102-the-escape-rule">10.2 The escape rule</h3>
-<p>A value moves between scopes' storage in exactly two directions, both visible in</p>
-<p>the syntax:</p>
+<p>A value moves between scopes' storage in exactly two directions, both visible in the syntax:</p>
 <ul>
-<li><strong>Down</strong> — passed as an argument to a callee. The callee's activation is</li>
+<li><strong>Down</strong> — passed as an argument to a callee. The callee's activation is nested within the caller's, so the argument outlives the call; no copy is required to pass it down.</li>
+<li><strong>Up</strong> — returned, or assigned to a variable that lives in an enclosing scope. The value is produced directly in the destination's storage (the caller's, for a <code>return</code>; the outer variable's, for an outer assignment), so it survives the inner scope's collapse.</li>
 </ul>
-<p>nested within the caller's, so the argument outlives the call; no copy is</p>
-<p>required to pass it down.</p>
-<ul>
-<li><strong>Up</strong> — returned, or assigned to a variable that lives in an enclosing scope.</li>
-</ul>
-<p>The value is produced directly in the destination's storage (the caller's, for</p>
-<p>a <code>return</code>; the outer variable's, for an outer assignment), so it survives the</p>
-<p>inner scope's collapse.</p>
-<p>The write forms that route a value to another scope, and their destinations,</p>
-<p>are: <strong>up</strong> — <code>return e</code> (to the caller), and <code>outer = e</code> / <code>push(outer, v)</code> /</p>
-<p>any store through a place whose root is an outer variable (to that variable's</p>
-<p>storage); and <strong>down</strong> — passing an argument or <code>inout</code> (to the callee). Every</p>
-<p>destination is decidable at the write site from the local scopes and signatures.</p>
+<p>The write forms that route a value to another scope, and their destinations, are: <strong>up</strong> — <code>return e</code> (to the caller), and <code>outer = e</code> / <code>push(outer, v)</code> / any store through a place whose root is an outer variable (to that variable's storage); and <strong>down</strong> — passing an argument or <code>inout</code> (to the callee). Every destination is decidable at the write site from the local scopes and signatures.</p>
 <h3 id="103-observable-storage-guarantees">10.3 Observable storage guarantees</h3>
 <p>A conforming implementation MUST guarantee:</p>
-<p>1. <strong>No dangling.</strong> No value is ever read after its storage has been reclaimed;</p>
-<p>there is no use-after-free. Under value semantics this is guaranteed *by</p>
-<p>construction* (§10.4).</p>
-<p>2. <strong>No leak at scope exit.</strong> When a scope exits (including <code>main</code>), the storage</p>
-<p>it exclusively owns is reclaimed; no value's storage outlives its owning scope,</p>
-<p>and at normal program termination there are no reachable leaks. (The reference</p>
-<p>implementation enforces</p>
-<p>this under LeakSanitizer.)</p>
-<p>The reference implementation additionally provides two properties that follow</p>
-<p>from the arena realization and are relied on in practice, stated here as strong</p>
-<p>expectations (performance characteristics are otherwise out of scope, §1.1): a</p>
-<p>loop whose body only produces throwaway temporaries runs in memory bounded</p>
-<p>independently of the iteration count (per-iteration scratch is reset), and a</p>
-<p>self-append accumulation (<code>acc = acc + e</code> in a loop) runs in linear, not</p>
-<p>quadratic, memory.</p>
+<ol>
+<li><strong>No dangling.</strong> No value is ever read after its storage has been reclaimed; there is no use-after-free. Under value semantics this is guaranteed *by construction* (§10.4).</li>
+<li><strong>No leak at scope exit.</strong> When a scope exits (including <code>main</code>), the storage it exclusively owns is reclaimed; no value's storage outlives its owning scope, and at normal program termination there are no reachable leaks. (The reference implementation enforces this under LeakSanitizer.)</li>
+</ol>
+<p>The reference implementation additionally provides two properties that follow from the arena realization and are relied on in practice, stated here as strong expectations (performance characteristics are otherwise out of scope, §1.1): a loop whose body only produces throwaway temporaries runs in memory bounded independently of the iteration count (per-iteration scratch is reset), and a self-append accumulation (<code>acc = acc + e</code> in a loop) runs in linear, not quadratic, memory.</p>
 <h3 id="104-why-the-model-is-sound">10.4 Why the model is sound</h3>
 <p>Correctness rests on a single asymmetry:</p>
 <blockquote>
-<p>Under value semantics, a wrong *escape* decision can change only <strong>when</strong> memory</p>
-<p>is reclaimed — never <strong>whether</strong> a pointer dangles.</p>
+<p>Under value semantics, a wrong *escape* decision can change only <strong>when</strong> memory is reclaimed — never <strong>whether</strong> a pointer dangles.</p>
 </blockquote>
-<p>Over-approximating "this might escape" allocates a value in a longer-lived scope</p>
-<p>than strictly necessary: at worst mild retention, never a bug, because there are</p>
-<p>no aliases to invalidate. There is no symmetric failure. This is why the</p>
-<p>storage decisions and the §9.5 optimizations can be made freely by the</p>
-<p>implementation, and why no borrow checker, lifetime annotation, or GC is needed.</p>
+<p>Over-approximating "this might escape" allocates a value in a longer-lived scope than strictly necessary: at worst mild retention, never a bug, because there are no aliases to invalidate. There is no symmetric failure. This is why the storage decisions and the §9.5 optimizations can be made freely by the implementation, and why no borrow checker, lifetime annotation, or GC is needed.</p>
 <h2 id="11-inout">11. <code>inout</code></h2>
 <h3 id="111-copy-in--copy-out-semantics">11.1 Copy-in / copy-out semantics</h3>
-<p>An <code>inout</code> parameter is an **exclusive, call-scoped, copy-in/copy-out mutable</p>
-<p>borrow**. A call <code>f(&amp;x)</code> where <code>f</code>'s parameter is <code>inout</code> is defined to be</p>
-<p>equivalent to <code>x = f_body_applied_to(x)</code>: the argument's value is made available</p>
-<p>to the callee, the callee may mutate it, and the final value is written back to</p>
-<p>the caller's variable when the call returns. The <code>&amp;</code> at the call site is</p>
-<p>required and MUST name a mutable place in the caller. <code>inout</code> is <strong>not</strong> a stored</p>
-<p>reference: the borrow exists only for the duration of the call and cannot be</p>
-<p>captured, returned, or stored.</p>
+<p>An <code>inout</code> parameter is an <strong>exclusive, call-scoped, copy-in/copy-out mutable borrow</strong>. A call <code>f(&amp;x)</code> where <code>f</code>'s parameter is <code>inout</code> is defined to be equivalent to <code>x = f_body_applied_to(x)</code>: the argument's value is made available to the callee, the callee may mutate it, and the final value is written back to the caller's variable when the call returns. The <code>&amp;</code> at the call site is required and MUST name a mutable place in the caller. <code>inout</code> is <strong>not</strong> a stored reference: the borrow exists only for the duration of the call and cannot be captured, returned, or stored.</p>
 <h3 id="112-exclusivity">11.2 Exclusivity</h3>
-<p>The same caller variable MUST NOT be passed to two <code>inout</code> parameters of a single</p>
-<p>call, and more generally two <code>inout</code> arguments of one call MUST NOT share a root</p>
-<p>variable. The check is by <strong>root variable</strong>, conservatively (may-overlap): both</p>
-<p><code>&amp;a[i]</code> and <code>&amp;a[j]</code> — and <code>&amp;a.x</code> with <code>&amp;a.y</code> — are rejected because they root at</p>
-<p>the same <code>a</code>, even when the elements or fields provably do not overlap. Such</p>
-<p>overlap is rejected at compile time (*"overlapping mutable</p>
-<p>access"*); it would make the copy-out order observable and reintroduce aliasing.</p>
+<p>The same caller variable MUST NOT be passed to two <code>inout</code> parameters of a single call, and more generally two <code>inout</code> arguments of one call MUST NOT share a root variable. The check is by <strong>root variable</strong>, conservatively (may-overlap): both <code>&amp;a[i]</code> and <code>&amp;a[j]</code> — and <code>&amp;a.x</code> with <code>&amp;a.y</code> — are rejected because they root at the same <code>a</code>, even when the elements or fields provably do not overlap. Such overlap is rejected at compile time (*"overlapping mutable access"*); it would make the copy-out order observable and reintroduce aliasing.</p>
 <h3 id="113-heap-inout">11.3 Heap <code>inout</code></h3>
-<p><code>inout</code> extends to heap-bearing values — <code>[int]</code>, <code>[string]</code>, heap-bearing</p>
-<p>structs, and maps — including <code>push</code>/growth and element/field mutation through</p>
-<p>the borrow. A reassignment through an <code>inout string</code> (<code>s = s + "."</code>) reaches the</p>
-<p>caller, with the new bytes produced in the caller's storage. To make an</p>
-<p>allocating mutation land where the borrowed value lives, the caller's owning</p>
-<p>scope is threaded to the callee; this threading is an implementation realization</p>
-<p>(not observable) but its *effect* — that the mutation survives the call in the</p>
-<p>caller's value — is normative. This is what lets a memoization table, a mutable</p>
-<p>context object, or a recursive output collector be genuinely shared across all</p>
-<p>call frames while preserving value semantics.</p>
+<p><code>inout</code> extends to heap-bearing values — <code>[int]</code>, <code>[string]</code>, heap-bearing structs, and maps — including <code>push</code>/growth and element/field mutation through the borrow. A reassignment through an <code>inout string</code> (<code>s = s + "."</code>) reaches the caller, with the new bytes produced in the caller's storage. To make an allocating mutation land where the borrowed value lives, the caller's owning scope is threaded to the callee; this threading is an implementation realization (not observable) but its *effect* — that the mutation survives the call in the caller's value — is normative. This is what lets a memoization table, a mutable context object, or a recursive output collector be genuinely shared across all call frames while preserving value semantics.</p>
 <h3 id="114-relationship-to-sink">11.4 Relationship to <code>sink</code></h3>
-<p><code>sink</code> is a distinct parameter mode: the callee <strong>owns and consumes</strong> the</p>
-<p>argument (§15.2). Unlike <code>inout</code>, <code>sink</code> does not write a value back;</p>
-<p>it takes ownership, and the caller MUST NOT use the argument after the call.</p>
-<p><code>sink</code> and <code>inout</code> are mutually exclusive on a parameter, and neither may combine</p>
-<p>with a variadic parameter.</p>
+<p><code>sink</code> is a distinct parameter mode: the callee <strong>owns and consumes</strong> the argument (§15.2). Unlike <code>inout</code>, <code>sink</code> does not write a value back; it takes ownership, and the caller MUST NOT use the argument after the call. <code>sink</code> and <code>inout</code> are mutually exclusive on a parameter, and neither may combine with a variadic parameter.</p>
 <h3 id="115-types-that-cannot-be-inout">11.5 Types that cannot be <code>inout</code></h3>
-<p>Two parameter types MUST NOT be declared <code>inout</code>, because copy-out through the</p>
-<p>borrow would defeat the affinity or the lifetime rule that governs the value:</p>
+<p>Two parameter types MUST NOT be declared <code>inout</code>, because copy-out through the borrow would defeat the affinity or the lifetime rule that governs the value:</p>
 <ul>
-<li><strong><code>Channel(T)</code></strong> (<a href="13-concurrency.html">§23.1</a>). A channel parameter is already a</li>
+<li><strong><code>Channel(T)</code></strong> (<a href="13-concurrency.html">§23.1</a>). A channel parameter is already a shared handle onto one queue: every by-value copy names the same queue, so an <code>inout</code> borrow buys no additional sharing, while a copy-out could write a *different* channel back into the caller's variable and so retarget a queue the caller still owns. A plain (by-value) <code>Channel(T)</code> parameter is the supported — and sufficient — way to pass a channel to a callee.</li>
+<li><strong>A function value</strong> (<code>fn(P…) -&gt; R</code>, <a href="11-functions.html">§15.4</a>). Copy-out could store a callee-local closure into the caller's variable, outliving the storage its captures were re-homed into (<a href="#102-the-escape-rule">§10.2</a>) — a dangling call. A function value may be passed and returned by value; it may not be borrowed mutably.</li>
 </ul>
-<p>shared handle onto one queue: every by-value copy names the same queue, so an</p>
-<p><code>inout</code> borrow buys no additional sharing, while a copy-out could write a</p>
-<p>*different* channel back into the caller's variable and so retarget a queue the</p>
-<p>caller still owns. A plain (by-value) <code>Channel(T)</code> parameter is the supported —</p>
-<p>and sufficient — way to pass a channel to a callee.</p>
-<ul>
-<li><strong>A function value</strong> (<code>fn(P…) -&gt; R</code>, <a href="11-functions.html">§15.4</a>). Copy-out could</li>
-</ul>
-<p>store a callee-local closure into the caller's variable, outliving the storage</p>
-<p>its captures were re-homed into (<a href="#102-the-escape-rule">§10.2</a>) — a dangling</p>
-<p>call. A function value may be passed and returned by value; it may not be</p>
-<p>borrowed mutably.</p>
-<p>A <strong>generic</strong> function is held to the same rule, in two places. Where the</p>
-<p>parameter is written concretely (<code>inout Channel(int)</code> in a <code>$T</code> signature) the</p>
-<p>declaration is rejected like any other. Where the parameter is written `inout</p>
-<p>$T<code>, the declaration is legal — the rule is about what </code>T` becomes — and the</p>
-<p>check moves to the <strong>instantiation</strong>, reported at the call that chose the</p>
-<p>binding. A <code>$T</code> alone is neither a channel nor a function value and passes</p>
-<p>untouched; <code>inout Channel($T)</code> is rejected, because the rule is about the</p>
-<p>channel and not about <code>T</code>. The <code>inout</code> is the whole of the restriction: a plain</p>
-<p><code>Channel($T)</code> parameter is a legal type pattern and composes like any other</p>
-<p>(<a href="05-generics.html#71-type-parameters">§7.1</a>).</p>
+<p>A <strong>generic</strong> function is held to the same rule, in two places. Where the parameter is written concretely (<code>inout Channel(int)</code> in a <code>$T</code> signature) the declaration is rejected like any other. Where the parameter is written <code>inout $T</code>, the declaration is legal — the rule is about what <code>T</code> becomes — and the check moves to the <strong>instantiation</strong>, reported at the call that chose the binding. A <code>$T</code> alone is neither a channel nor a function value and passes untouched; <code>inout Channel($T)</code> is rejected, because the rule is about the channel and not about <code>T</code>. The <code>inout</code> is the whole of the restriction: a plain <code>Channel($T)</code> parameter is a legal type pattern and composes like any other (<a href="05-generics.html#71-type-parameters">§7.1</a>).</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

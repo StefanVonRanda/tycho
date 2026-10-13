@@ -4,22 +4,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Types — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / reference/types.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details open><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html" aria-current="page">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#scalars">Scalars</a>
+<a class="sub" href="#u32--u64--f32">u32 / u64 / f32</a>
+<a class="sub" href="#char">char</a>
+<a class="sub" href="#bytes">bytes</a>
+<a href="#string-escapes">String escapes</a>
+<a href="#string-interpolation">String interpolation</a>
+<a href="#distinct-newtypes-type">Distinct newtypes (type)</a>
+<a href="#type-inference-bidirectional">Type inference (bidirectional)</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / reference/types.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="types">Types</h1>
 <blockquote>
-<p><strong>Memory:</strong> Newtypes cost nothing at runtime, and every value — scalar or</p>
-<p>aggregate — copies deeply on assignment.</p>
+<p><strong>Memory:</strong> Newtypes cost nothing at runtime, and every value — scalar or aggregate — copies deeply on assignment.</p>
 </blockquote>
-<p>Tycho is statically typed, and every value has a type known at compile time. This page</p>
-<p>covers the scalar types, the <code>bytes</code> buffer, distinct <code>type</code> newtypes, and how</p>
-<p>inference lets you leave most annotations off. The compound types — arrays, structs, maps, tuples, enums — each have</p>
-<p>their own page.</p>
+<p>Tycho is statically typed, and every value has a type known at compile time. This page covers the scalar types, the <code>bytes</code> buffer, distinct <code>type</code> newtypes, and how inference lets you leave most annotations off. The compound types — arrays, structs, maps, tuples, enums — each have their own page.</p>
 <h2 id="scalars">Scalars</h2>
 <table>
 <tr><th>Type</th><th>Values</th></tr>
@@ -31,53 +53,28 @@
 <tr><td><code>u32</code> / <code>u64</code></td><td>32- / 64-bit <strong>unsigned</strong> integer, wraps at 2³² / 2⁶⁴</td></tr>
 <tr><td><code>f32</code></td><td>32-bit IEEE-754 single-precision float</td></tr>
 </table>
-<p><code>int</code> and <code>float</code> never mix implicitly — there is no automatic widening. Convert</p>
-<p>explicitly with <code>to_float(n)</code> and <code>to_int(x)</code> (the latter truncates toward zero). The</p>
-<p>operators each type supports are in <a href="basics.html#expressions">Basics</a>.</p>
+<p><code>int</code> and <code>float</code> never mix implicitly — there is no automatic widening. Convert explicitly with <code>to_float(n)</code> and <code>to_int(x)</code> (the latter truncates toward zero). The operators each type supports are in <a href="basics.html#expressions">Basics</a>.</p>
 <h3 id="u32--u64--f32"><code>u32</code> / <code>u64</code> / <code>f32</code></h3>
-<p>Fixed-width numerics for bit-twiddling, hashing, and crypto (<code>corelib/sha256</code> is written</p>
-<p>in <code>u32</code>). They behave like <code>int</code>/<code>float</code> but at a defined width:</p>
+<p>Fixed-width numerics for bit-twiddling, hashing, and crypto (<code>corelib/sha256</code> is written in <code>u32</code>). They behave like <code>int</code>/<code>float</code> but at a defined width:</p>
 <ul>
-<li><strong>Wrap is defined.</strong> <code>u32</code>/<code>u64</code> arithmetic (<code>+ - * &lt;&lt; ~</code> …) wraps modulo 2³²/2⁶⁴ — no</li>
-</ul>
-<p>masking needed. <code>&gt;&gt;</code> is a logical shift; <code>/</code> and <code>%</code> abort cleanly on a zero divisor.</p>
-<ul>
-<li><strong>Distinct and non-mixing</strong>, like <code>char</code>. A <code>u32</code> never silently becomes an <code>int</code>.</li>
-</ul>
-<p>Bridge explicitly with <code>to_u32(x)</code>, <code>to_u64(x)</code>, <code>to_f32(x)</code>, <code>to_int(x)</code>, <code>to_float(x)</code></p>
-<p>(each takes any numeric scalar). A bare <strong>int literal adapts</strong> to a <code>u32</code>/<code>u64</code> operand</p>
-<p>and a numeric literal to <code>f32</code>, so <code>h ^ 16777619</code> and <code>x &amp; 255</code> need no cast on the</p>
-<p>constant; a non-literal <code>int</code> does (<code>state[i]</code> → <code>to_u32(state[i])</code>).</p>
-<ul>
+<li><strong>Wrap is defined.</strong> <code>u32</code>/<code>u64</code> arithmetic (<code>+ - * &lt;&lt; ~</code> …) wraps modulo 2³²/2⁶⁴ — no masking needed. <code>&gt;&gt;</code> is a logical shift; <code>/</code> and <code>%</code> abort cleanly on a zero divisor.</li>
+<li><strong>Distinct and non-mixing</strong>, like <code>char</code>. A <code>u32</code> never silently becomes an <code>int</code>. Bridge explicitly with <code>to_u32(x)</code>, <code>to_u64(x)</code>, <code>to_f32(x)</code>, <code>to_int(x)</code>, <code>to_float(x)</code> (each takes any numeric scalar). A bare <strong>int literal adapts</strong> to a <code>u32</code>/<code>u64</code> operand and a numeric literal to <code>f32</code>, so <code>h ^ 16777619</code> and <code>x &amp; 255</code> need no cast on the constant; a non-literal <code>int</code> does (<code>state[i]</code> → <code>to_u32(state[i])</code>).</li>
 <li>Arrays (<code>[u32]</code>, <code>[f32]</code>, …), struct fields, <code>str(...)</code>, and f-strings all work.</li>
 <li>They also cross <a href="ffi.html">FFI</a> as their real C type (<code>u32</code> ↔ <code>uint32_t</code>, etc.).</li>
 </ul>
 <h3 id="char"><code>char</code></h3>
-<p>A <code>char</code> is one byte, written with a quoted literal — <code>'x'</code>, with the escapes</p>
-<p><code>\n \t \r \0 \\ \'</code> and <code>\xNN</code> (exactly two hex digits, either case: <code>'\x41'</code> is</p>
-<p><code>'A'</code>). That set is <strong>not</strong> the one a <a href="#string-escapes">string literal</a> takes. It</p>
-<p>interoperates with <code>int</code> deliberately and narrowly:</p>
+<p>A <code>char</code> is one byte, written with a quoted literal — <code>'x'</code>, with the escapes <code>\n \t \r \0 \\ \'</code> and <code>\xNN</code> (exactly two hex digits, either case: <code>'\x41'</code> is <code>'A'</code>). That set is <strong>not</strong> the one a <a href="#string-escapes">string literal</a> takes. It interoperates with <code>int</code> deliberately and narrowly:</p>
 <ul>
-<li><code>char ± int</code> is a <code>char</code> (a byte offset — <code>'a' + 1</code> is <code>'b'</code>). The result wraps</li>
+<li><code>char ± int</code> is a <code>char</code> (a byte offset — <code>'a' + 1</code> is <code>'b'</code>). The result wraps to <code>0..255</code>, like <code>u8</code>: <code>'A' + 255</code> wraps to <code>'@'</code> (64).</li>
+<li><code>string + char</code> appends the byte <strong>in place</strong>, without allocating, so building a string one character at a time is a byte-write, not an allocation per character:</li>
 </ul>
-<p>to <code>0..255</code>, like <code>u8</code>: <code>'A' + 255</code> wraps to <code>'@'</code> (64).</p>
-<ul>
-<li><code>string + char</code> appends the byte <strong>in place</strong>, without allocating, so building a string</li>
-</ul>
-<p>one character at a time is a byte-write, not an allocation per character:</p>
 <pre><code class="language-tycho">s := ""
 for d := 0; d &lt; 10; d += 1:
     s = s + ('0' + d)          # zero-allocation one-byte append per digit
 </code></pre>
-<p><code>char</code> does not silently become <code>int</code> elsewhere — <code>str(c)</code> and <code>c == n</code> (mixing <code>char</code></p>
-<p>and <code>int</code>) are type errors, so the byte/number distinction is never lost by accident.</p>
+<p><code>char</code> does not silently become <code>int</code> elsewhere — <code>str(c)</code> and <code>c == n</code> (mixing <code>char</code> and <code>int</code>) are type errors, so the byte/number distinction is never lost by accident.</p>
 <h3 id="bytes"><code>bytes</code></h3>
-<p><code>bytes</code> is an immutable binary buffer. Unlike <code>string</code>, it is not NUL-terminated, so</p>
-<p>interior <code>\0</code> bytes survive — which is what you want for hashing, crypto, and binary I/O.</p>
-<p><code>to_bytes(s)</code> and <code>to_str(b)</code> bridge the two; <code>to_bytes(xs)</code> over an <code>[int]</code> (each</p>
-<p>element <code>&amp; 0xFF</code>) builds a binary buffer from computed bytes — the way to produce a</p>
-<p><code>bytes</code> with interior NULs in pure Tycho. <code>bytes</code> also crosses the <a href="ffi.html">FFI</a></p>
-<p>boundary as a <code>(pointer, length)</code> pair.</p>
+<p><code>bytes</code> is an immutable binary buffer. Unlike <code>string</code>, it is not NUL-terminated, so interior <code>\0</code> bytes survive — which is what you want for hashing, crypto, and binary I/O. <code>to_bytes(s)</code> and <code>to_str(b)</code> bridge the two; <code>to_bytes(xs)</code> over an <code>[int]</code> (each element <code>&amp; 0xFF</code>) builds a binary buffer from computed bytes — the way to produce a <code>bytes</code> with interior NULs in pure Tycho. <code>bytes</code> also crosses the <a href="ffi.html">FFI</a> boundary as a <code>(pointer, length)</code> pair.</p>
 <p>It takes the same operators as <code>string</code>, with the same meanings:</p>
 <table>
 <tr><th>Form</th><th>Result</th><th>Notes</th></tr>
@@ -87,12 +84,9 @@ for d := 0; d &lt; 10; d += 1:
 <tr><td><code>a + b</code>, <code>b + 'c'</code></td><td><code>bytes</code></td><td>concatenation; appending a char adds its one byte</td></tr>
 <tr><td><code>a == b</code>, <code>a != b</code></td><td><code>bool</code></td><td>byte-wise</td></tr>
 </table>
-<p>Because the slice clamps, a slice that returned normally does not prove its range</p>
-<p>existed. When that is the thing being checked, use <code>strings.slice_bytes(b, start, stop)</code>,</p>
-<p>which returns an <code>Err</code> instead (<a href="../spec/03-types.html#526-bytes">spec §5.2.6</a>).</p>
+<p>Because the slice clamps, a slice that returned normally does not prove its range existed. When that is the thing being checked, use <code>strings.slice_bytes(b, start, stop)</code>, which returns an <code>Err</code> instead (<a href="../spec/03-types.html#526-bytes">spec §5.2.6</a>).</p>
 <h2 id="string-escapes">String escapes</h2>
-<p>A string literal takes exactly five escapes; anything else is a compile error that</p>
-<p>names the set — <code>unsupported escape \q (use \n \t \r \\ \")</code>.</p>
+<p>A string literal takes exactly five escapes; anything else is a compile error that names the set — <code>unsupported escape \q (use \n \t \r \\ \")</code>.</p>
 <table>
 <tr><th>escape</th><th>byte</th><th></th></tr>
 <tr><td><code>\n</code></td><td>10</td><td>newline</td></tr>
@@ -101,12 +95,7 @@ for d := 0; d &lt; 10; d += 1:
 <tr><td><code>\\</code></td><td>92</td><td>backslash</td></tr>
 <tr><td><code>\"</code></td><td>34</td><td>double quote</td></tr>
 </table>
-<p>There is no <code>\0</code>, <code>\'</code>, <code>\a</code>, <code>\b</code>, <code>\f</code>, <code>\v</code>, <code>\e</code>, <code>\xNN</code> or <code>\uNNNN</code>. A single</p>
-<p>quote needs no escape — <code>"it's"</code> is a valid literal. For any other byte, build it:</p>
-<p><code>chr(27)</code> is a one-byte string holding ESC, and <code>to_bytes(xs)</code> over an <code>[int]</code> is</p>
-<p>the way to a <code>bytes</code> with interior NULs. An <code>f"..."</code> lexes the same five and</p>
-<p>rejects the same rest. A <a href="#char"><code>char</code> literal</a> is a <strong>different</strong> set — it takes</p>
-<p><code>\0</code>, <code>\'</code> and <code>\xNN</code>, and refuses <code>\"</code>.</p>
+<p>There is no <code>\0</code>, <code>\'</code>, <code>\a</code>, <code>\b</code>, <code>\f</code>, <code>\v</code>, <code>\e</code>, <code>\xNN</code> or <code>\uNNNN</code>. A single quote needs no escape — <code>"it's"</code> is a valid literal. For any other byte, build it: <code>chr(27)</code> is a one-byte string holding ESC, and <code>to_bytes(xs)</code> over an <code>[int]</code> is the way to a <code>bytes</code> with interior NULs. An <code>f"..."</code> lexes the same five and rejects the same rest. A <a href="#char"><code>char</code> literal</a> is a <strong>different</strong> set — it takes <code>\0</code>, <code>\'</code> and <code>\xNN</code>, and refuses <code>\"</code>.</p>
 <pre><code class="language-tycho">fn main():
     println("tab:\there")
     println("quote:\" backslash:\\")
@@ -117,17 +106,9 @@ quote:" backslash:\
 3
 </code></pre>
 <h2 id="string-interpolation">String interpolation</h2>
-<p>An <code>f"..."</code> string interpolates <code>{expr}</code> holes, desugaring to ordinary concatenation —</p>
-<p><code>f"point=({p.x},{p.y}) sum={a + b}"</code> becomes <code>"point=(" + str(p.x) + ...</code>. A plain</p>
-<p><code>"..."</code> is <strong>never</strong> interpolated, so it needs no brace escaping; inside an <code>f"..."</code>,</p>
-<p><code>{{</code> and <code>}}</code> are literal braces. A hole may hold any expression — including one with its</p>
-<p>own string literals or a nested f-string — and must evaluate to a value <code>str</code> accepts: an</p>
-<p><code>int</code>, a <code>u32</code>/<code>u64</code>/<code>f32</code>, a <code>float</code>, a <code>bool</code> (printed <code>true</code>/<code>false</code>), or a <code>string</code>.</p>
+<p>An <code>f"..."</code> string interpolates <code>{expr}</code> holes, desugaring to ordinary concatenation — <code>f"point=({p.x},{p.y}) sum={a + b}"</code> becomes <code>"point=(" + str(p.x) + ...</code>. A plain <code>"..."</code> is <strong>never</strong> interpolated, so it needs no brace escaping; inside an <code>f"..."</code>, <code>{{</code> and <code>}}</code> are literal braces. A hole may hold any expression — including one with its own string literals or a nested f-string — and must evaluate to a value <code>str</code> accepts: an <code>int</code>, a <code>u32</code>/<code>u64</code>/<code>f32</code>, a <code>float</code>, a <code>bool</code> (printed <code>true</code>/<code>false</code>), or a <code>string</code>.</p>
 <h2 id="distinct-newtypes-type">Distinct newtypes (<code>type</code>)</h2>
-<p><code>type Meters = float</code> declares a <strong>distinct</strong> type: same runtime representation as its</p>
-<p>underlying type (zero cost — a <code>Meters</code> *is* a <code>double</code> in the generated C), but</p>
-<p>type-incompatible with <code>float</code> and with every other newtype. There is no transparent</p>
-<p>alias: <code>type</code> always declares a distinct type.</p>
+<p><code>type Meters = float</code> declares a <strong>distinct</strong> type: same runtime representation as its underlying type (zero cost — a <code>Meters</code> *is* a <code>double</code> in the generated C), but type-incompatible with <code>float</code> and with every other newtype. There is no transparent alias: <code>type</code> always declares a distinct type.</p>
 <pre><code class="language-tycho">type Meters = float
 type Seconds = float
 
@@ -141,20 +122,10 @@ fn main():
     # area(3.0, 4.0)           -&gt; error: a float is not a Meters
     # w + Seconds(1.0)         -&gt; error: can't mix two newtypes
 </code></pre>
-<p>A newtype supports its base type's <strong>arithmetic, ordering, <code>==</code>, and <code>str</code></strong> — but only</p>
-<p>between two values of the *same* newtype, so <code>Meters</code> and <code>Seconds</code> never mix by accident.</p>
-<p>That is the point: zero-cost unit and ID safety. Construct one with <code>Meters(x)</code>; recover</p>
-<p>the raw value with <code>to_int</code> / <code>to_float</code> / <code>to_str</code> / <code>to_bool</code> per the underlying scalar.</p>
-<p>The underlying type may also be an <strong>aggregate</strong> — <code>type Ids = [int]</code>,</p>
-<p><code>type Env = [string: int]</code>, <code>type Pos = Pt</code> (a struct). Wrap with <code>Ids(v)</code>, unwrap with the</p>
-<p>generic <code>to_under(x)</code> (zero-cost, works on any newtype), and value semantics carries</p>
-<p>through the wrapper unchanged. A newtype over <code>string</code> or <code>int</code> is also a valid</p>
-<p><a href="maps.html#keys">map key</a>.</p>
+<p>A newtype supports its base type's <strong>arithmetic, ordering, <code>==</code>, and <code>str</code></strong> — but only between two values of the *same* newtype, so <code>Meters</code> and <code>Seconds</code> never mix by accident. That is the point: zero-cost unit and ID safety. Construct one with <code>Meters(x)</code>; recover the raw value with <code>to_int</code> / <code>to_float</code> / <code>to_str</code> / <code>to_bool</code> per the underlying scalar.</p>
+<p>The underlying type may also be an <strong>aggregate</strong> — <code>type Ids = [int]</code>, <code>type Env = [string: int]</code>, <code>type Pos = Pt</code> (a struct). Wrap with <code>Ids(v)</code>, unwrap with the generic <code>to_under(x)</code> (zero-cost, works on any newtype), and value semantics carries through the wrapper unchanged. A newtype over <code>string</code> or <code>int</code> is also a valid <a href="maps.html#keys">map key</a>.</p>
 <h2 id="type-inference-bidirectional">Type inference (bidirectional)</h2>
-<p>A local infers forward from its initializer — <code>x := e</code> gives <code>x</code> the type of <code>e</code>. In the</p>
-<p>other direction, every position with a known destination type — declarations, assignments,</p>
-<p>call arguments, <code>return</code>, stores, literal elements — *checks* the expression against it.</p>
-<p>This local inference lets the annotation-light forms work:</p>
+<p>A local infers forward from its initializer — <code>x := e</code> gives <code>x</code> the type of <code>e</code>. In the other direction, every position with a known destination type — declarations, assignments, call arguments, <code>return</code>, stores, literal elements — *checks* the expression against it. This local inference lets the annotation-light forms work:</p>
 <pre><code class="language-tycho">import "core:iter"
 
 fn tally(m: [string: int], extra: [int]) -&gt; int:
@@ -171,12 +142,21 @@ _doubled := iter.map(xs, fn(x: int) -&gt; int: x * 2)   # lambda params from the
 ys := []                     # a bare decl stays pending...
 push(ys, 3)                  # ...until its first grounding use types it ([int])
 </code></pre>
-<p>Each line is typed on its own — from its parts, or against the destination it</p>
-<p>feeds — so errors stay local. The cost is</p>
-<p>that a value with *no* way to determine its type is rejected rather than guessed — a bare</p>
-<p><code>x := None</code> or <code>x := []</code> with no grounding use is a compile error; annotate it. Function</p>
-<p>signatures are always explicit: they are the module's interface and the inference's seeds.</p>
+<p>Each line is typed on its own — from its parts, or against the destination it feeds — so errors stay local. The cost is that a value with *no* way to determine its type is rejected rather than guessed — a bare <code>x := None</code> or <code>x := []</code> with no grounding use is a compile error; annotate it. Function signatures are always explicit: they are the module's interface and the inference's seeds.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

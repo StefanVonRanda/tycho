@@ -4,452 +4,199 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>31. The library contract · 32. Core-tier packages · 33. Extended-tier packages — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / spec/18-library.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details open><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html" aria-current="page">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#31-the-library-contract">31. The library contract</a>
+<a class="sub" href="#311-the-allocation-contract">31.1 The allocation contract</a>
+<a class="sub" href="#312-conformance-tiers">31.2 Conformance tiers</a>
+<a class="sub" href="#313-realization-kinds">31.3 Realization kinds</a>
+<a href="#32-core-tier-packages">32. Core-tier packages</a>
+<a class="sub" href="#321-math">32.1 math</a>
+<a class="sub" href="#322-fmath">32.2 fmath</a>
+<a class="sub" href="#323-char">32.3 char</a>
+<a class="sub" href="#324-strings">32.4 strings</a>
+<a class="sub" href="#325-path">32.5 path</a>
+<a class="sub" href="#326-arrays">32.6 arrays</a>
+<a class="sub" href="#327-iter">32.7 iter</a>
+<a class="sub" href="#328-sort">32.8 sort</a>
+<a class="sub" href="#329-rand">32.9 rand</a>
+<a class="sub" href="#3210-time">32.10 time</a>
+<a class="sub" href="#3211-datetime">32.11 datetime</a>
+<a class="sub" href="#3212-json">32.12 json</a>
+<a class="sub" href="#3213-csv">32.13 csv</a>
+<a class="sub" href="#3214-base64">32.14 base64</a>
+<a class="sub" href="#3215-hex">32.15 hex</a>
+<a class="sub" href="#3216-url">32.16 url</a>
+<a class="sub" href="#3217-uuid">32.17 uuid</a>
+<a class="sub" href="#3218-hash">32.18 hash</a>
+<a class="sub" href="#3219-md5">32.19 md5</a>
+<a class="sub" href="#3220-sha256">32.20 sha256</a>
+<a class="sub" href="#3221-io">32.21 io</a>
+<a class="sub" href="#3222-os">32.22 os</a>
+<a class="sub" href="#3223-regex">32.23 regex</a>
+<a class="sub" href="#3224-net">32.24 net</a>
+<a class="sub" href="#3225-bignum">32.25 bignum</a>
+<a class="sub" href="#3226-decimal">32.26 decimal</a>
+<a class="sub" href="#3227-signal">32.27 signal</a>
+<a href="#33-extended-tier-packages">33. Extended-tier packages</a>
+<a class="sub" href="#331-http--libcurl">33.1 http — libcurl</a>
+<a class="sub" href="#332-crypto--libcrypto-openssl">33.2 crypto — libcrypto (OpenSSL)</a>
+<a class="sub" href="#333-compress--zlib">33.3 compress — zlib</a>
+<a class="sub" href="#334-image--libpng">33.4 image — libpng</a>
+<a class="sub" href="#335-tls--openssl">33.5 tls — openssl</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / spec/18-library.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="31-the-library-contract--32-core-tier-packages--33-extended-tier-packages">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</h1>
-<p>This part specifies the <strong>corelib</strong> — Tycho's standard library, a set of</p>
-<p>packages under <code>corelib/</code> imported through the <code>core:</code> collection root</p>
-<p>(<a href="15-program.html">§28</a>). It is <strong>normative but tiered</strong>: §31 states</p>
-<p>the contract every corelib package satisfies and defines the two conformance</p>
-<p>tiers of <a href="00-conventions.html#13-conformance">§1.3</a>; §32 catalogs the core-tier</p>
-<p>packages a conforming implementation MUST provide; §33 catalogs the extended-tier</p>
-<p>packages it MAY omit. This is a <strong>catalog</strong> — each subsection gives a package's</p>
-<p>purpose, its realization kind, and its key exported functions and types. Full</p>
-<p>per-function API semantics (argument-by-argument behavior, edge cases, error</p>
-<p>values) are <strong>deferred</strong>; until they are written, the</p>
-<p><a href="../reference/index.html">reference pages</a> and each package's source and golden</p>
-<p>tests are the authoritative description of a function's exact behavior.</p>
+<p>This part specifies the <strong>corelib</strong> — Tycho's core library, a set of packages under <code>corelib/</code> imported through the <code>core:</code> collection root (<a href="15-program.html">§28</a>). It is <strong>normative but tiered</strong>: §31 states the contract every corelib package satisfies and defines the two conformance tiers of <a href="00-conventions.html#13-conformance">§1.3</a>; §32 catalogs the core-tier packages a conforming implementation MUST provide; §33 catalogs the extended-tier packages it MAY omit. This is a <strong>catalog</strong> — each subsection gives a package's purpose, its realization kind, and its key exported functions and types. Full per-function API semantics (argument-by-argument behavior, edge cases, error values) are <strong>deferred</strong>; until they are written, the <a href="../reference/index.html">reference pages</a> and each package's source and golden tests are the authoritative description of a function's exact behavior.</p>
 <h2 id="31-the-library-contract">31. The library contract</h2>
 <h3 id="311-the-allocation-contract">31.1 The allocation contract</h3>
-<p>Every corelib function obeys the same value-semantic boundary as any Tycho call</p>
-<p>(<a href="07-memory-model.html">§9</a>): it <strong>allocates its results into the caller's arena</strong></p>
-<p>and returns independent values, never aliasing the caller's inputs and never</p>
-<p>retaining a reference to them past the call. A corelib call is, for the purposes</p>
-<p>of the memory model, an ordinary function call; corelib introduces no hidden</p>
-<p>global state, no shared mutable buffers, and no lifetime escaping the caller's</p>
-<p>arena. Where a package threads mutable state (for example a PRNG seed), it does</p>
-<p>so through an explicit <code>inout</code> parameter at the call site, not through a global</p>
-<p>(<a href="07-memory-model.html#11-inout">§11</a>).</p>
-<p>The one exception is a <strong>C-owned opaque handle</strong> returned as <code>ptr</code></p>
-<p>(§31.3): such a handle is *not* arena-managed and MUST be released by the</p>
-<p>package's stated free function (for example <code>regex.release</code>, <code>http.release</code>,</p>
-<p><code>image</code> frees internally). The <code>ptr</code> itself is carried by value and is never</p>
-<p>dereferenced by Tycho (<a href="14-ffi.html">§24</a>).</p>
+<p>Every corelib function obeys the same value-semantic boundary as any Tycho call (<a href="07-memory-model.html">§9</a>): it <strong>allocates its results into the caller's arena</strong> and returns independent values, never aliasing the caller's inputs and never retaining a reference to them past the call. A corelib call is, for the purposes of the memory model, an ordinary function call; corelib introduces no hidden global state, no shared mutable buffers, and no lifetime escaping the caller's arena. Where a package threads mutable state (for example a PRNG seed), it does so through an explicit <code>inout</code> parameter at the call site, not through a global (<a href="07-memory-model.html#11-inout">§11</a>).</p>
+<p>The one exception is a <strong>C-owned opaque handle</strong> returned as <code>ptr</code> (§31.3): such a handle is *not* arena-managed and MUST be released by the package's stated free function (for example <code>regex.release</code>, <code>http.release</code>, <code>image</code> frees internally). The <code>ptr</code> itself is carried by value and is never dereferenced by Tycho (<a href="14-ffi.html">§24</a>).</p>
 <h3 id="312-conformance-tiers">31.2 Conformance tiers</h3>
-<p>The corelib is partitioned by <a href="00-conventions.html#13-conformance">§1.3</a> into two</p>
-<p>tiers, determined by what each package depends on:</p>
+<p>The corelib is partitioned by <a href="00-conventions.html#13-conformance">§1.3</a> into two tiers, determined by what each package depends on:</p>
 <ul>
-<li><strong>Core tier.</strong> Packages that are <strong>pure Tycho</strong> or depend only on the **C</li>
+<li><strong>Core tier.</strong> Packages that are <strong>pure Tycho</strong> or depend only on the <strong>C standard library</strong> (a libc-only shim; §31.3). A conforming implementation <strong>MUST</strong> provide every core-tier package (§32). Core-tier packages are the ones the reference test harness builds and runs unconditionally.</li>
+<li><strong>Extended tier.</strong> Packages whose shim depends on an <strong>external C library</strong> via <code>pkg-config</code>, declared in a <code>corelib/&lt;pkg&gt;/deps</code> manifest (§33). An implementation <strong>MAY</strong> omit the extended tier and still conform at the core tier. A program that imports an absent extended package <strong>MUST</strong> be diagnosed before producing an executable — never silently mis-linked. The reference harness (<code>corelib/run.sh</code>) probes each <code>deps</code> with <code>pkg-config --exists</code> and <strong>skips</strong> (does not fail) a package's test when its C library is absent.</li>
 </ul>
-<p>standard library** (a libc-only shim; §31.3). A conforming implementation</p>
-<p><strong>MUST</strong> provide every core-tier package (§32). Core-tier packages are the ones</p>
-<p>the reference test harness builds and runs unconditionally.</p>
-<ul>
-<li><strong>Extended tier.</strong> Packages whose shim depends on an <strong>external C library</strong> via</li>
-</ul>
-<p><code>pkg-config</code>, declared in a <code>corelib/&lt;pkg&gt;/deps</code> manifest (§33). An</p>
-<p>implementation <strong>MAY</strong> omit the extended tier and still conform at the core</p>
-<p>tier. A program that imports an absent extended package <strong>MUST</strong> be diagnosed</p>
-<p>before producing an executable — never silently mis-linked. The reference</p>
-<p>harness (<code>corelib/run.sh</code>) probes each <code>deps</code> with <code>pkg-config --exists</code> and</p>
-<p><strong>skips</strong> (does not fail) a package's test when its C library is absent.</p>
-<p>A package's tier is mechanically identifiable from its directory: a <code>deps</code> file</p>
-<p>present ⇒ extended tier; a <code>&lt;pkg&gt;_shim.c</code> with no <code>deps</code> ⇒ libc-only shim, core</p>
-<p>tier; neither ⇒ pure Tycho, core tier.</p>
+<p>A package's tier is mechanically identifiable from its directory: a <code>deps</code> file present ⇒ extended tier; a <code>&lt;pkg&gt;_shim.c</code> with no <code>deps</code> ⇒ libc-only shim, core tier; neither ⇒ pure Tycho, core tier.</p>
 <h3 id="313-realization-kinds">31.3 Realization kinds</h3>
-<p>A corelib package is realized in exactly one of three ways. The kind is stated</p>
-<p>for each package in §32–§33.</p>
-<p>1. <strong>Pure Tycho</strong> — no shim, no FFI. The package is ordinary Tycho source</p>
-<p>(<code>math</code>, <code>json</code>, <code>sha256</code>, <code>bignum</code>, …).</p>
-<p>2. <strong>Libc-only C shim</strong> — a sibling <code>&lt;pkg&gt;_shim.c</code> the transpiler auto-compiles</p>
-<p>and links on <code>import "core:&lt;pkg&gt;"</code>, calling only libc (POSIX). No <code>deps</code></p>
-<p>manifest, nothing external to install. The <code>.ty</code> declares the shim's entry</p>
-<p>points with <code>extern fn</code> (<code>regex</code>, <code>os</code>, <code>net</code>, and <code>datetime</code>'s timezone</p>
-<p>helpers). <strong>Core tier.</strong></p>
-<p>3. <strong>pkg-config <code>deps</code></strong> — a <code>&lt;pkg&gt;_shim.c</code> plus a <code>corelib/&lt;pkg&gt;/deps</code> manifest</p>
-<p>naming pkg-config packages, one per line. On import the transpiler runs</p>
-<p><code>pkg-config --cflags --libs &lt;name&gt;</code> for each and splices the result onto the</p>
-<p>cc line (<code>add_pkg_deps</code>), so the include path and link flags resolve per</p>
-<p>platform. <strong>Extended tier.</strong></p>
-<p>The <code>core:&lt;pkg&gt;</code> resolution, the auto-compile/link of shims, the <code>extern "Lib" fn</code></p>
-<p>bare-<code>-lLib</code> form, and the <code>deps</code> skip-don't-fail policy are specified in</p>
-<p><a href="15-program.html">§28</a>; this part references them without restating</p>
-<p>the mechanism.</p>
+<p>A corelib package is realized in exactly one of three ways. The kind is stated for each package in §32–§33.</p>
+<ol>
+<li><strong>Pure Tycho</strong> — no shim, no FFI. The package is ordinary Tycho source (<code>math</code>, <code>json</code>, <code>sha256</code>, <code>bignum</code>, …).</li>
+<li><strong>Libc-only C shim</strong> — a sibling <code>&lt;pkg&gt;_shim.c</code> the transpiler auto-compiles and links on <code>import "core:&lt;pkg&gt;"</code>, calling only libc (POSIX). No <code>deps</code> manifest, nothing external to install. The <code>.ty</code> declares the shim's entry points with <code>extern fn</code> (<code>regex</code>, <code>os</code>, <code>net</code>, and <code>datetime</code>'s timezone helpers). <strong>Core tier.</strong></li>
+<li><strong>pkg-config <code>deps</code></strong> — a <code>&lt;pkg&gt;_shim.c</code> plus a <code>corelib/&lt;pkg&gt;/deps</code> manifest naming pkg-config packages, one per line. On import the transpiler runs <code>pkg-config --cflags --libs &lt;name&gt;</code> for each and splices the result onto the cc line (<code>add_pkg_deps</code>), so the include path and link flags resolve per platform. <strong>Extended tier.</strong></li>
+</ol>
+<p>The <code>core:&lt;pkg&gt;</code> resolution, the auto-compile/link of shims, the <code>extern "Lib" fn</code> bare-<code>-lLib</code> form, and the <code>deps</code> skip-don't-fail policy are specified in <a href="15-program.html">§28</a>; this part references them without restating the mechanism.</p>
 <h2 id="32-core-tier-packages">32. Core-tier packages</h2>
-<p>Each subsection gives: <strong>realization kind</strong> and the **key exported</p>
-<p>functions/types**. Unless noted, a package is pure Tycho and every function</p>
-<p>returns a fresh value (value semantics; §31.1).</p>
+<p>Each subsection gives: <strong>realization kind</strong> and the <strong>key exported functions/types</strong>. Unless noted, a package is pure Tycho and every function returns a fresh value (value semantics; §31.1).</p>
 <h3 id="321-math">32.1 <code>math</code></h3>
-<p>Scalar math (pure Tycho). Generic <code>min</code>/<code>max</code>/<code>clamp(x, lo, hi)</code> over any</p>
-<p>comparable type, and lane-wise over a <code>vector[N]T</code> (<a href="03-types.html#5311-vectornt">§5.3.11</a>);</p>
-<p><code>sign(x)</code> over any numeric (returns int −1/0/1); integer-specific</p>
-<p><code>abs</code>, <code>gcd</code>, <code>ipow(base, exp)</code>. (<code>sqrt</code>/<code>pow</code>/<code>floor</code>/<code>fabs</code> are float builtins,</p>
-<p>not here.) <code>docs/reference/corelib.md:57-60</code>.</p>
+<p>Scalar math (pure Tycho). Generic <code>min</code>/<code>max</code>/<code>clamp(x, lo, hi)</code> over any comparable type, and lane-wise over a <code>vector[N]T</code> (<a href="03-types.html#5311-vectornt">§5.3.11</a>); <code>sign(x)</code> over any numeric (returns int −1/0/1); integer-specific <code>abs</code>, <code>gcd</code>, <code>ipow(base, exp)</code>. (<code>sqrt</code>/<code>pow</code>/<code>floor</code>/<code>fabs</code> are float builtins, not here.) <code>docs/reference/corelib.md:57-60</code>.</p>
 <h3 id="322-fmath">32.2 <code>fmath</code></h3>
-<p>Float-only helpers (pure Tycho): constant-valued nullary functions <code>pi()</code>, <code>e()</code>; <code>round</code> (half away from</p>
-<p>zero), <code>trunc</code>, <code>lerp(a, b, t)</code>, <code>approx_eq(a, b, eps)</code>. No trig (no libm sin/cos</p>
-<p>builtin). <code>docs/reference/corelib.md:61-63</code>.</p>
+<p>Float-only helpers (pure Tycho): constant-valued nullary functions <code>pi()</code>, <code>e()</code>; <code>round</code> (half away from zero), <code>trunc</code>, <code>lerp(a, b, t)</code>, <code>approx_eq(a, b, eps)</code>. No trig (no libm sin/cos builtin). <code>docs/reference/corelib.md:61-63</code>.</p>
 <h3 id="323-char">32.3 <code>char</code></h3>
-<p>Byte/char classification and conversion over the int byte values <code>s[i]</code>/<code>chr</code></p>
-<p>produce (pure Tycho): <code>is_digit</code>, <code>is_alpha</code>, <code>is_alnum</code>, <code>is_upper</code>, <code>is_lower</code>,</p>
-<p><code>is_space</code>, <code>is_hex</code>; <code>to_upper</code>/<code>to_lower</code> (one byte); <code>digit_val</code> (−1 if not a</p>
-<p>digit), <code>hex_val</code> (0..15 or −1). The lexer/parser workhorse. <code>docs/reference/corelib.md:64-67</code>.</p>
+<p>Byte/char classification and conversion over the int byte values <code>s[i]</code>/<code>chr</code> produce (pure Tycho): <code>is_digit</code>, <code>is_alpha</code>, <code>is_alnum</code>, <code>is_upper</code>, <code>is_lower</code>, <code>is_space</code>, <code>is_hex</code>; <code>to_upper</code>/<code>to_lower</code> (one byte); <code>digit_val</code> (−1 if not a digit), <code>hex_val</code> (0..15 or −1). The lexer/parser workhorse. <code>docs/reference/corelib.md:64-67</code>.</p>
 <h3 id="324-strings">32.4 <code>strings</code></h3>
-<p>String utilities (pure Tycho): <code>to_upper</code>, <code>to_lower</code>, <code>starts_with</code>,</p>
-<p><code>ends_with</code>, <code>contains</code>, <code>repeat(s, n)</code>, <code>trim</code>, <code>parse_int</code>, <code>is_space</code>,</p>
-<p><code>lines</code>, <code>replace</code>, <code>count(s, sub)</code>, <code>strip_prefix</code>/<code>strip_suffix</code>,</p>
-<p><code>pad_left</code>/<code>pad_right(s, width, pad)</code>, <code>reverse</code>, <code>capitalize</code>,</p>
-<p><code>split_once(s, sep) -&gt; (before, after)</code>; and the fail-closed slices</p>
-<p><code>slice_bytes(b, start, stop)</code> / <code>slice_str(s, start, stop)</code>, both</p>
-<p><code>-&gt; Result(_, SliceErr)</code>, for callers that need the bounds checked rather than</p>
-<p>clamped (<a href="03-types.html#526-bytes">§5.2.6</a>).</p>
-<p>(<code>split</code>/<code>find</code>/<code>substr</code>/<code>len</code>/<code>chr</code> are</p>
-<p>builtins.) <code>docs/reference/corelib.md:68-74</code>.</p>
+<p>String utilities (pure Tycho): <code>to_upper</code>, <code>to_lower</code>, <code>starts_with</code>, <code>ends_with</code>, <code>contains</code>, <code>repeat(s, n)</code>, <code>trim</code>, <code>parse_int</code>, <code>is_space</code>, <code>lines</code>, <code>replace</code>, <code>count(s, sub)</code>, <code>strip_prefix</code>/<code>strip_suffix</code>, <code>pad_left</code>/<code>pad_right(s, width, pad)</code>, <code>reverse</code>, <code>capitalize</code>, <code>split_once(s, sep) -&gt; (before, after)</code>; and the fail-closed slices <code>slice_bytes(b, start, stop)</code> / <code>slice_str(s, start, stop)</code>, both <code>-&gt; Result(_, SliceErr)</code>, for callers that need the bounds checked rather than clamped (<a href="03-types.html#526-bytes">§5.2.6</a>). (<code>split</code>/<code>find</code>/<code>substr</code>/<code>len</code>/<code>chr</code> are builtins.) <code>docs/reference/corelib.md:68-74</code>.</p>
 <h3 id="325-path">32.5 <code>path</code></h3>
-<p>POSIX path string math, no filesystem access (pure Tycho): <code>base</code>, <code>dir</code>, <code>ext</code>,</p>
-<p><code>stem</code>, <code>join(a, b)</code>, <code>is_abs</code>, <code>split_path(p) -&gt; (dir, base)</code> (inverse of</p>
-<p><code>join</code>), and <code>clean</code> (lexical normalize). <code>docs/reference/corelib.md:75-112</code>.</p>
+<p>POSIX path string math, no filesystem access (pure Tycho): <code>base</code>, <code>dir</code>, <code>ext</code>, <code>stem</code>, <code>join(a, b)</code>, <code>is_abs</code>, <code>split_path(p) -&gt; (dir, base)</code> (inverse of <code>join</code>), and <code>clean</code> (lexical normalize). <code>docs/reference/corelib.md:75-112</code>.</p>
 <h3 id="326-arrays">32.6 <code>arrays</code></h3>
-<p>Generic utilities over any element type <code>[T]</code> (pure Tycho), all returning a new</p>
-<p>array: <code>contains</code>, <code>index_of</code>, <code>count</code>, <code>reverse</code>, <code>take</code>, <code>drop</code>, <code>concat</code>,</p>
-<p><code>fill(n, v)</code>, <code>dedup</code>; <code>sort</code>, <code>is_sorted</code>, <code>min</code>, <code>max</code> (<code>where comparable</code>);</p>
-<p><code>sum</code>, <code>product</code> (<code>where numeric</code>); <code>join(xs, sep)</code> (element convertible to</p>
-<p>string). (<code>push</code>/<code>pop</code>/<code>len</code>/<code>range</code> are builtins.) <code>docs/reference/corelib.md:114-121</code>.</p>
+<p>Generic utilities over any element type <code>[T]</code> (pure Tycho), all returning a new array: <code>contains</code>, <code>index_of</code>, <code>count</code>, <code>reverse</code>, <code>take</code>, <code>drop</code>, <code>concat</code>, <code>fill(n, v)</code>, <code>dedup</code>; <code>sort</code>, <code>is_sorted</code>, <code>min</code>, <code>max</code> (<code>where comparable</code>); <code>sum</code>, <code>product</code> (<code>where numeric</code>); <code>join(xs, sep)</code> (element convertible to string). (<code>push</code>/<code>pop</code>/<code>len</code>/<code>range</code> are builtins.) <code>docs/reference/corelib.md:114-121</code>.</p>
 <h3 id="327-iter">32.7 <code>iter</code></h3>
-<p>Generic higher-order helpers over any <code>[T]</code>, each taking a <code>fn</code>/closure (pure</p>
-<p>Tycho): <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>count</code>, <code>any</code>. <code>map</code> is the one that may</p>
-<p>change the element type — <code>map(xs: [$T], f: fn($T) -&gt; $U) -&gt; [$U]</code>, so</p>
-<p><code>map(ints, to_str)</code> is a <code>[string]</code>; the rest are type-preserving.</p>
-<p><code>docs/reference/corelib.md:122-129</code>.</p>
+<p>Generic higher-order helpers over any <code>[T]</code>, each taking a <code>fn</code>/closure (pure Tycho): <code>map</code>, <code>filter</code>, <code>reduce</code>, <code>count</code>, <code>any</code>. <code>map</code> is the one that may change the element type — <code>map(xs: [$T], f: fn($T) -&gt; $U) -&gt; [$U]</code>, so <code>map(ints, to_str)</code> is a <code>[string]</code>; the rest are type-preserving. <code>docs/reference/corelib.md:122-129</code>.</p>
 <h3 id="328-sort">32.8 <code>sort</code></h3>
-<p>Stable index-permutation sorting (pure Tycho): <code>argsort(keys)</code> /</p>
-<p><code>argsort_desc(keys)</code> return the permutation ordering any comparable key type;</p>
-<p><code>by_key(xs, key)</code> sorts by a derived int key (a <code>fn</code>/closure); **deprecated since</p>
-<p>0.5.0**, it is <code>sort_by(xs, fn(a, b) -&gt; int: key(a) - key(b))</code>.</p>
-<p><code>docs/reference/corelib.md:130-138</code>.</p>
+<p>Stable index-permutation sorting (pure Tycho): <code>argsort(keys)</code> / <code>argsort_desc(keys)</code> return the permutation ordering any comparable key type; <code>by_key(xs, key)</code> sorts by a derived int key (a <code>fn</code>/closure); <strong>deprecated since 0.5.0</strong>, it is <code>sort_by(xs, fn(a, b) -&gt; int: key(a) - key(b))</code>. <code>docs/reference/corelib.md:130-138</code>.</p>
 <h3 id="329-rand">32.9 <code>rand</code></h3>
-<p>Deterministic (non-cryptographic) xorshift32 (pure Tycho); state is an explicit</p>
-<p>int threaded via <code>inout</code>: <code>seed(n)</code>, <code>next(&amp;st)</code> (<code>[1, 2^32)</code>), <code>below(&amp;st, n)</code></p>
-<p>(<code>[0, n)</code>), <code>shuffle(&amp;st, xs)</code> (Fisher-Yates, new array). <code>docs/reference/corelib.md:165-172</code>.</p>
+<p>Deterministic (non-cryptographic) xorshift32 (pure Tycho); state is an explicit int threaded via <code>inout</code>: <code>seed(n)</code>, <code>next(&amp;st)</code> (<code>[1, 2^32)</code>), <code>below(&amp;st, n)</code> (<code>[0, n)</code>), <code>shuffle(&amp;st, xs)</code> (Fisher-Yates, new array). <code>docs/reference/corelib.md:165-172</code>.</p>
 <h3 id="3210-time">32.10 <code>time</code></h3>
-<p>Wraps the <code>clock()</code> (monotonic ns) and <code>now()</code> (UNIX seconds) builtins: stopwatch</p>
-<p><code>start()</code>, <code>elapsed_ns</code>/<code>elapsed_us</code>/<code>elapsed_ms</code>; conversions</p>
-<p><code>ns_to_us</code>/<code>ns_to_ms</code>/<code>ns_to_s</code>; wall clock <code>unix_secs()</code>. <code>docs/reference/corelib.md:173-182</code>.</p>
-<p>The clock surface is pure Tycho, but the package carries a <strong>libc-only shim</strong></p>
-<p>(<code>time_shim.c</code>) for blocking sleep: <code>sleep_ms(ms)</code> and <code>sleep_ns(ns)</code> over POSIX</p>
-<p><code>nanosleep</code>. Core tier. Three semantics are normative for the package: a</p>
-<p>non-positive duration returns immediately (no syscall, no busy-spin, no abort);</p>
-<p>the sleep is <strong>not</strong> interruptible (the shim retries on <code>EINTR</code> with the</p>
-<p>remaining time, so the full requested duration always elapses); and it parks the</p>
-<p><strong>calling task only</strong> — a task is a thread, so a sleeping worker does not stall</p>
-<p>its siblings. The wait is at least the requested duration, never shorter. Shim</p>
-<p><code>corelib/time/time_shim.c</code>.</p>
+<p>Wraps the <code>clock()</code> (monotonic ns) and <code>now()</code> (UNIX seconds) builtins: stopwatch <code>start()</code>, <code>elapsed_ns</code>/<code>elapsed_us</code>/<code>elapsed_ms</code>; conversions <code>ns_to_us</code>/<code>ns_to_ms</code>/<code>ns_to_s</code>; wall clock <code>unix_secs()</code>. <code>docs/reference/corelib.md:173-182</code>. The clock surface is pure Tycho, but the package carries a <strong>libc-only shim</strong> (<code>time_shim.c</code>) for blocking sleep: <code>sleep_ms(ms)</code> and <code>sleep_ns(ns)</code> over POSIX <code>nanosleep</code>. Core tier. Three semantics are normative for the package: a non-positive duration returns immediately (no syscall, no busy-spin, no abort); the sleep is <strong>not</strong> interruptible (the shim retries on <code>EINTR</code> with the remaining time, so the full requested duration always elapses); and it parks the <strong>calling task only</strong> — a task is a thread, so a sleeping worker does not stall its siblings. The wait is at least the requested duration, never shorter. Shim <code>corelib/time/time_shim.c</code>.</p>
 <h3 id="3211-datetime">32.11 <code>datetime</code></h3>
-<p>Civil (proleptic Gregorian) calendar math over UNIX timestamps (Howard Hinnant's</p>
-<p><code>days_from_civil</code>/<code>civil_from_days</code>). A <code>DateTime</code> struct (UTC). <code>from_unix(secs)</code></p>
-<p>/ <code>to_unix(dt)</code>; the day-count core; <code>weekday(y,m,d)</code>, <code>is_leap</code>, <code>days_in_month</code>;</p>
-<p><code>now_utc()</code>; formatting <code>format_iso</code>, <code>weekday_name</code>, <code>month_name</code>, <code>pad2</code>/<code>pad4</code>.</p>
-<p>The calendar core is pure Tycho, but the package now carries a <strong>libc-only shim</strong></p>
-<p>(<code>datetime_shim.c</code>) exposing DST-aware timezone offsets: <code>dtx_local_offset(secs)</code></p>
-<p>and <code>dtx_offset_at(tz, secs)</code>. Core tier. <code>docs/reference/corelib.md:183-198</code>; shim</p>
-<p><code>corelib/datetime/datetime_shim.c</code>.</p>
+<p>Civil (proleptic Gregorian) calendar math over UNIX timestamps (Howard Hinnant's <code>days_from_civil</code>/<code>civil_from_days</code>). A <code>DateTime</code> struct (UTC). <code>from_unix(secs)</code> / <code>to_unix(dt)</code>; the day-count core; <code>weekday(y,m,d)</code>, <code>is_leap</code>, <code>days_in_month</code>; <code>now_utc()</code>; formatting <code>format_iso</code>, <code>weekday_name</code>, <code>month_name</code>, <code>pad2</code>/<code>pad4</code>. The calendar core is pure Tycho, but the package now carries a <strong>libc-only shim</strong> (<code>datetime_shim.c</code>) exposing DST-aware timezone offsets: <code>dtx_local_offset(secs)</code> and <code>dtx_offset_at(tz, secs)</code>. Core tier. <code>docs/reference/corelib.md:183-198</code>; shim <code>corelib/datetime/datetime_shim.c</code>.</p>
 <h3 id="3212-json">32.12 <code>json</code></h3>
-<p>Recursive-descent JSON parser + serializer (pure Tycho). Value-semantic <code>Json</code></p>
-<p>enum (<code>JNull</code>/<code>JBool</code>/<code>JNum</code>/<code>JStr</code>/<code>JArr</code>/<code>JObj</code>). <code>parse(s) -&gt; Json</code> (fails</p>
-<p>closed to <code>JNull</code>), <code>stringify(j) -&gt; string</code> (compact); typed queries <code>kind</code>,</p>
-<p><code>get(j, key)</code>, <code>at(j, i)</code>, <code>keys</code>, <code>len_of</code>, <code>as_num</code>/<code>as_str</code>/<code>as_bool</code>.</p>
-<p>Variants are constructible cross-package (<code>json.JNum(1)</code>). Scope: integers only,</p>
-<p>four common escapes. <code>docs/reference/corelib.md:218-241</code>.</p>
+<p>Recursive-descent JSON parser + serializer (pure Tycho). Value-semantic <code>Json</code> enum (<code>JNull</code>/<code>JBool</code>/<code>JNum</code>/<code>JStr</code>/<code>JArr</code>/<code>JObj</code>). <code>parse(s) -&gt; Json</code> (fails closed to <code>JNull</code>), <code>stringify(j) -&gt; string</code> (compact); typed queries <code>kind</code>, <code>get(j, key)</code>, <code>at(j, i)</code>, <code>keys</code>, <code>len_of</code>, <code>as_num</code>/<code>as_str</code>/<code>as_bool</code>. Variants are constructible cross-package (<code>json.JNum(1)</code>). Scope: integers only, four common escapes. <code>docs/reference/corelib.md:218-241</code>.</p>
 <h3 id="3213-csv">32.13 <code>csv</code></h3>
-<p>RFC 4180 CSV parser + serializer (pure Tycho); a document is <code>[[string]]</code>.</p>
-<p><code>parse(s) -&gt; [[string]]</code> (small state machine; quoted fields, <code>""</code> escape,</p>
-<p>LF/CRLF/lone-CR; fails closed), <code>stringify(rows) -&gt; string</code> (round-trips</p>
-<p><code>parse</code>); <code>parse_delim</code>/<code>stringify_delim</code> for an arbitrary single-byte delimiter</p>
-<p>(TSV = <code>parse_delim(s, 9)</code>); <code>get(rows, r, c)</code> (bounds-safe). <code>docs/reference/corelib.md:242-252</code>.</p>
+<p>RFC 4180 CSV parser + serializer (pure Tycho); a document is <code>[[string]]</code>. <code>parse(s) -&gt; [[string]]</code> (small state machine; quoted fields, <code>""</code> escape, LF/CRLF/lone-CR; fails closed), <code>stringify(rows) -&gt; string</code> (round-trips <code>parse</code>); <code>parse_delim</code>/<code>stringify_delim</code> for an arbitrary single-byte delimiter (TSV = <code>parse_delim(s, 9)</code>); <code>get(rows, r, c)</code> (bounds-safe). <code>docs/reference/corelib.md:242-252</code>.</p>
 <h3 id="3214-base64">32.14 <code>base64</code></h3>
-<p>Base64 (RFC 4648) <code>encode</code>/<code>decode</code>, plus <code>encode_url</code> (URL-safe alphabet, no</p>
-<p>padding) (pure Tycho, no bit-operators). <code>decode</code> is lenient (skips non-alphabet</p>
-<p>bytes). Byte-safety caveat: <code>decode</code> silently drops interior <code>0x00</code>.</p>
-<p><code>docs/reference/corelib.md:260-268</code>.</p>
+<p>Base64 (RFC 4648) <code>encode</code>/<code>decode</code>, plus <code>encode_url</code> (URL-safe alphabet, no padding) (pure Tycho, no bit-operators). <code>decode</code> is lenient (skips non-alphabet bytes). Byte-safety caveat: <code>decode</code> silently drops interior <code>0x00</code>. <code>docs/reference/corelib.md:260-268</code>.</p>
 <h3 id="3215-hex">32.15 <code>hex</code></h3>
-<p>Hexadecimal <code>encode</code> (lowercase) / <code>encode_upper</code> / <code>decode</code>, plus <code>is_valid</code></p>
-<p>(strict) (pure Tycho). <code>decode</code> is lenient (skips non-hex bytes), reuses</p>
-<p><code>char.hex_val</code>. Same <code>0x00</code> decode caveat as <code>base64</code>. <code>docs/reference/corelib.md:269-272</code>.</p>
+<p>Hexadecimal <code>encode</code> (lowercase) / <code>encode_upper</code> / <code>decode</code>, plus <code>is_valid</code> (strict) (pure Tycho). <code>decode</code> is lenient (skips non-hex bytes), reuses <code>char.hex_val</code>. Same <code>0x00</code> decode caveat as <code>base64</code>. <code>docs/reference/corelib.md:269-272</code>.</p>
 <h3 id="3216-url">32.16 <code>url</code></h3>
-<p>URL percent-encoding (RFC 3986) (pure Tycho): component-style <code>encode</code> (like</p>
-<p><code>encodeURIComponent</code>), <code>encode_form</code>/<code>decode_form</code> (<code>x-www-form-urlencoded</code>,</p>
-<p>space ↔ <code>+</code>), and <code>decode</code> (<code>%XX</code>, leaving <code>+</code>; lenient). Reuses <code>char.hex_val</code>.</p>
-<p>Same <code>0x00</code> decode caveat. <code>docs/reference/corelib.md:273-278</code>.</p>
+<p>URL percent-encoding (RFC 3986) (pure Tycho): component-style <code>encode</code> (like <code>encodeURIComponent</code>), <code>encode_form</code>/<code>decode_form</code> (<code>x-www-form-urlencoded</code>, space ↔ <code>+</code>), and <code>decode</code> (<code>%XX</code>, leaving <code>+</code>; lenient). Reuses <code>char.hex_val</code>. Same <code>0x00</code> decode caveat. <code>docs/reference/corelib.md:273-278</code>.</p>
 <h3 id="3217-uuid">32.17 <code>uuid</code></h3>
-<p>Random version-4 UUIDs (RFC 4122) (pure Tycho): <code>v4(&amp;st)</code> (draws 16 bytes from</p>
-<p><code>core:rand</code>, state via <code>inout</code>), <code>nil()</code>, <code>parse(s) -&gt; [int]</code> (16 bytes, lenient),</p>
-<p><code>format(bytes) -&gt; string</code> (canonical 8-4-4-4-12), <code>is_valid</code> (strict), <code>version</code>.</p>
-<p><code>docs/reference/corelib.md:279-287</code>.</p>
+<p>Random version-4 UUIDs (RFC 4122) (pure Tycho): <code>v4(&amp;st)</code> (draws 16 bytes from <code>core:rand</code>, state via <code>inout</code>), <code>nil()</code>, <code>parse(s) -&gt; [int]</code> (16 bytes, lenient), <code>format(bytes) -&gt; string</code> (canonical 8-4-4-4-12), <code>is_valid</code> (strict), <code>version</code>. <code>docs/reference/corelib.md:279-287</code>.</p>
 <h3 id="3218-hash">32.18 <code>hash</code></h3>
-<p>Non-cryptographic 32-bit hashes — for hash tables / checksums / dedup, **not</p>
-<p>security** (pure Tycho): <code>fnv1a_32</code>, <code>djb2</code>, <code>sdbm</code>, <code>crc32</code> (IEEE/zlib), plus</p>
-<p><code>to_hex</code>. All return a non-negative int in <code>[0, 2^32)</code>. <code>docs/reference/corelib.md:286-297</code>.</p>
+<p>Non-cryptographic 32-bit hashes — for hash tables / checksums / dedup, <strong>not security</strong> (pure Tycho): <code>fnv1a_32</code>, <code>djb2</code>, <code>sdbm</code>, <code>crc32</code> (IEEE/zlib), plus <code>to_hex</code>. All return a non-negative int in <code>[0, 2^32)</code>. <code>docs/reference/corelib.md:286-297</code>.</p>
 <h3 id="3219-md5">32.19 <code>md5</code></h3>
-<p>MD5 message-digest (RFC 1321) (pure 32-bit-arithmetic Tycho): <code>hex(s)</code> (32-char)</p>
-<p>and <code>digest(s)</code> (16 raw bytes). <strong>Broken for security</strong> — checksums/interop only.</p>
-<p>Bit-exact against RFC 1321 vectors. <code>docs/reference/corelib.md:298-303</code>.</p>
+<p>MD5 message-digest (RFC 1321) (pure 32-bit-arithmetic Tycho): <code>hex(s)</code> (32-char) and <code>digest(s)</code> (16 raw bytes). <strong>Broken for security</strong> — checksums/interop only. Bit-exact against RFC 1321 vectors. <code>docs/reference/corelib.md:298-303</code>.</p>
 <h3 id="3220-sha256">32.20 <code>sha256</code></h3>
-<p>SHA-256 (FIPS 180-4) (pure 32-bit-arithmetic Tycho): <code>hex(s)</code> (64-char) and</p>
-<p><code>digest(s)</code> (32 raw bytes). A real cryptographic digest (not a standalone</p>
-<p>password hash — use a KDF). Bit-exact against NIST vectors. <code>docs/reference/corelib.md:304-308</code>.</p>
+<p>SHA-256 (FIPS 180-4) (pure 32-bit-arithmetic Tycho): <code>hex(s)</code> (64-char) and <code>digest(s)</code> (32 raw bytes). A real cryptographic digest (not a standalone password hash — use a KDF). Bit-exact against NIST vectors. <code>docs/reference/corelib.md:304-308</code>.</p>
 <h3 id="3221-io">32.21 <code>io</code></h3>
-<p>Filesystem helpers over the <code>read_file</code>/<code>write_file</code>/<code>list_dir</code> builtins</p>
-<p>(composes <code>core:strings</code> for line splitting): <code>read(p)</code>, <code>write(p, s)</code>,</p>
-<p><code>append(p, s)</code>, <code>read_lines(p)</code>/<code>write_lines(p, lines)</code>, <code>list(p)</code>, <code>exists(p)</code>;</p>
-<p><code>read_bytes(p) -&gt; Result(bytes, IoErr)</code> for a whole file as raw bytes; and the</p>
-<p>bounded-memory streaming reader <code>open_lines</code>/<code>read_line</code>/<code>close_lines</code> plus</p>
-<p><code>fold_lines</code>. The helper core is pure Tycho, but the package carries a</p>
-<p><strong>libc-only shim</strong> (<code>io_shim.c</code>; no <code>deps</code>) for everything the builtins do not</p>
-<p>reach: the streaming reader is a <code>getline</code> loop in it, <code>exists(p)</code>, <code>is_dir(p)</code>,</p>
-<p><code>make_dir(p)</code> and <code>remove(p)</code> are <code>stat(2)</code>, <code>mkdir(2)</code> and <code>remove(3)</code>, and so</p>
-<p>are the three below. <code>make_dir_all(p) -&gt; Result(bool, IoErr)</code> is <code>mkdir -p</code>,</p>
-<p>pure Tycho over <code>make_dir</code> with no shim of its own: <code>Ok(true)</code> if at least one</p>
-<p>component was created, <code>Ok(false)</code> if every one already existed, <code>Err</code> at the</p>
-<p>first component that failed. A bare Windows drive letter (<code>C:</code>) is a root and is</p>
-<p>skipped rather than created; a UNC root (<code>//host/share</code>) is not handled. Core tier. Nothing aborts; a call returns</p>
-<p><code>Result(T, IoErr)</code> wherever a sentinel would be ambiguous and mirrors the</p>
-<p>builtins' sentinels elsewhere. <code>docs/reference/corelib.md:399-445</code>; shim</p>
-<p><code>corelib/io/io_shim.c</code>.</p>
-<p><code>mtime(p) -&gt; Result(int, IoErr)</code> is when <code>p</code> was last modified, in whole seconds</p>
-<p>on the same clock <code>now()</code> reads. <code>size(p) -&gt; Result(int, IoErr)</code> is how many</p>
-<p>bytes <code>p</code> holds, without reading them. `read_at(p, off, n) -&gt; Result(bytes,</p>
-<p>IoErr)<code> reads at most </code>n<code> bytes starting at byte offset </code>off<code>, over </code>pread(2)`,</p>
-<p>which disturbs no file offset. Five semantics are normative for the three:</p>
+<p>Filesystem helpers over the <code>read_file</code>/<code>write_file</code>/<code>list_dir</code> builtins (composes <code>core:strings</code> for line splitting): <code>read(p)</code>, <code>write(p, s)</code>, <code>append(p, s)</code>, <code>read_lines(p)</code>/<code>write_lines(p, lines)</code>, <code>list(p)</code>, <code>exists(p)</code>; <code>read_bytes(p) -&gt; Result(bytes, IoErr)</code> for a whole file as raw bytes; and the bounded-memory streaming reader <code>open_lines</code>/<code>read_line</code>/<code>close_lines</code> plus <code>fold_lines</code>. The helper core is pure Tycho, but the package carries a <strong>libc-only shim</strong> (<code>io_shim.c</code>; no <code>deps</code>) for everything the builtins do not reach: the streaming reader is a <code>getline</code> loop in it, <code>exists(p)</code>, <code>is_dir(p)</code>, <code>make_dir(p)</code> and <code>remove(p)</code> are <code>stat(2)</code>, <code>mkdir(2)</code> and <code>remove(3)</code>, and so are the three below. <code>make_dir_all(p) -&gt; Result(bool, IoErr)</code> is <code>mkdir -p</code>, pure Tycho over <code>make_dir</code> with no shim of its own: <code>Ok(true)</code> if at least one component was created, <code>Ok(false)</code> if every one already existed, <code>Err</code> at the first component that failed. A bare Windows drive letter (<code>C:</code>) is a root and is skipped rather than created; a UNC root (<code>//host/share</code>) is not handled. Core tier. Nothing aborts; a call returns <code>Result(T, IoErr)</code> wherever a sentinel would be ambiguous and mirrors the builtins' sentinels elsewhere. <code>docs/reference/corelib.md:399-445</code>; shim <code>corelib/io/io_shim.c</code>.</p>
+<p><code>mtime(p) -&gt; Result(int, IoErr)</code> is when <code>p</code> was last modified, in whole seconds on the same clock <code>now()</code> reads. <code>size(p) -&gt; Result(int, IoErr)</code> is how many bytes <code>p</code> holds, without reading them. <code>read_at(p, off, n) -&gt; Result(bytes, IoErr)</code> reads at most <code>n</code> bytes starting at byte offset <code>off</code>, over <code>pread(2)</code>, which disturbs no file offset. Five semantics are normative for the three:</p>
 <ul>
-<li><strong>A directory is <code>Ok</code> for <code>mtime</code> and <code>Err(IsDir)</code> for <code>size</code>.</strong> <code>IsDir</code> is likewise absent from <code>is_dir</code>, where being a directory is</li>
+<li><strong>A directory is <code>Ok</code> for <code>mtime</code> and <code>Err(IsDir)</code> for <code>size</code>.</strong> <code>IsDir</code> is likewise absent from <code>is_dir</code>, where being a directory is the answer rather than a failure to give one.</li>
 </ul>
-<p>the answer rather than a failure to give one.</p>
 <p>Rationale: a directory has a modification time the kernel reports, while its <code>st_size</code> is filesystem-dependent entry metadata no read can produce.</p>
 <ul>
-<li><strong><code>size</code> succeeds on exactly the paths <code>read_at</code> can read.</strong> Regular file →</li>
+<li><strong><code>size</code> succeeds on exactly the paths <code>read_at</code> can read.</strong> Regular file → both <code>Ok</code>; directory → both <code>Err(IsDir)</code>; a fifo, socket, device or anything else unseekable → both <code>Err(Failed)</code>. <code>size(p)</code> is the length <code>read_bytes(p)</code> would return, on every path, or neither call answers.</li>
+<li><strong><code>Ok(0)</code> from <code>size</code> is a success and is never the failure value.</strong> An empty file has a length and that length is zero; the status does not travel in the payload, so a failure is an <code>Err</code> and cannot present as a small number.</li>
+<li><strong><code>read_at</code>'s allocation is bounded by the FILE, not by <code>n</code>.</strong> It allocates <code>min(n, size - off)</code>, so <code>read_at(p, 0, 10^12)</code> on a 26-byte file allocates 26 bytes, and no further cap is imposed. That bound, not a policy limit, is what makes <code>n</code> safe to take from untrusted input such as a <code>Range</code> header.</li>
+<li><strong>A read starting at or past EOF is <code>Ok</code> with zero bytes, not an error.</strong> The caller chose the offset, so "no bytes there" is a complete answer to the question asked. An <code>n</code> running past EOF is a short <code>Ok</code> with no padding — <code>len(b)</code> is the count, which is why no separate out-parameter exists — and <code>n == 0</code> is <code>Ok</code> with zero bytes. A negative <code>off</code> or <code>n</code> is <code>Err(Failed)</code>, refused before <code>open(2)</code> so it can never be sign-extended into a wild read.</li>
 </ul>
-<p>both <code>Ok</code>; directory → both <code>Err(IsDir)</code>; a fifo, socket, device or anything</p>
-<p>else unseekable → both <code>Err(Failed)</code>. <code>size(p)</code> is the length <code>read_bytes(p)</code></p>
-<p>would return, on every path, or neither call answers.</p>
-<ul>
-<li><strong><code>Ok(0)</code> from <code>size</code> is a success and is never the failure value.</strong> An empty</li>
-</ul>
-<p>file has a length and that length is zero; the status does not travel in the</p>
-<p>payload, so a failure is an <code>Err</code> and cannot present as a small number.</p>
-<ul>
-<li><strong><code>read_at</code>'s allocation is bounded by the FILE, not by <code>n</code>.</strong> It allocates</li>
-</ul>
-<p><code>min(n, size - off)</code>, so <code>read_at(p, 0, 10^12)</code> on a 26-byte file allocates 26</p>
-<p>bytes, and no further cap is imposed. That bound, not a policy limit, is what</p>
-<p>makes <code>n</code> safe to take from untrusted input such as a <code>Range</code> header.</p>
-<ul>
-<li><strong>A read starting at or past EOF is <code>Ok</code> with zero bytes, not an error.</strong> The</li>
-</ul>
-<p>caller chose the offset, so "no bytes there" is a complete answer to the</p>
-<p>question asked. An <code>n</code> running past EOF is a short <code>Ok</code> with no padding —</p>
-<p><code>len(b)</code> is the count, which is why no separate out-parameter exists — and</p>
-<p><code>n == 0</code> is <code>Ok</code> with zero bytes. A negative <code>off</code> or <code>n</code> is <code>Err(Failed)</code>,</p>
-<p>refused before <code>open(2)</code> so it can never be sign-extended into a wild read.</p>
 <h3 id="3222-os">32.22 <code>os</code></h3>
-<p>Run external commands via a <strong>libc-only shim</strong> (<code>os_shim.c</code>, <code>popen</code>/<code>system</code>/</p>
-<p><code>posix_spawnp</code>; no <code>deps</code>). Core tier. <code>system(cmd)</code> runs <code>cmd</code> through</p>
-<p><code>/bin/sh -c</code> returning its exit code; <code>run(cmd)</code> also captures stdout into</p>
-<p><code>Output{code, out}</code>. <code>cmd</code> is a shell line — quote untrusted input yourself.</p>
-<p><code>exec(argv)</code> and <code>exec_out(argv)</code> take a <code>[string]</code> and start <strong>no shell</strong></p>
-<p>(<code>posix_spawnp</code>; <code>CreateProcess</code> on Windows, where the vector is joined by the</p>
-<p><code>CommandLineToArgvW</code> quoting rules), so arguments are never re-interpreted by a</p>
-<p>shell; they fail closed with <code>-1</code> on an empty argv, a build failure, or an</p>
-<p>unspawnable program. <code>docs/reference/corelib.md:449-473</code>.</p>
+<p>Run external commands via a <strong>libc-only shim</strong> (<code>os_shim.c</code>, <code>popen</code>/<code>system</code>/ <code>posix_spawnp</code>; no <code>deps</code>). Core tier. <code>system(cmd)</code> runs <code>cmd</code> through <code>/bin/sh -c</code> returning its exit code; <code>run(cmd)</code> also captures stdout into <code>Output{code, out}</code>. <code>cmd</code> is a shell line — quote untrusted input yourself. <code>exec(argv)</code> and <code>exec_out(argv)</code> take a <code>[string]</code> and start <strong>no shell</strong> (<code>posix_spawnp</code>; <code>CreateProcess</code> on Windows, where the vector is joined by the <code>CommandLineToArgvW</code> quoting rules), so arguments are never re-interpreted by a shell; they fail closed with <code>-1</code> on an empty argv, a build failure, or an unspawnable program. <code>docs/reference/corelib.md:449-473</code>.</p>
 <h3 id="3223-regex">32.23 <code>regex</code></h3>
-<p>POSIX extended regular expressions (ERE) via a <strong>libc-only shim</strong> (<code>regex_shim.c</code></p>
-<p>over <code>&lt;regex.h&gt;</code>; no <code>deps</code>). Core tier. <code>compile(pat) -&gt; ptr</code> (opaque handle;</p>
-<p><code>ok</code>/<code>is_null</code>), <code>is_match</code>, <code>find</code>/<code>find_end</code> (offset or −1), <code>matched</code> (first</p>
-<p>match), <code>release</code> (the pattern is C-malloc'd, <strong>not</strong> arena-managed — release when</p>
-<p>done; §31.1). <code>docs/reference/corelib.md:199-205</code>.</p>
+<p>POSIX extended regular expressions (ERE) via a <strong>libc-only shim</strong> (<code>regex_shim.c</code> over <code>&lt;regex.h&gt;</code>; no <code>deps</code>). Core tier. <code>compile(pat) -&gt; ptr</code> (opaque handle; <code>ok</code>/<code>is_null</code>), <code>is_match</code>, <code>find</code>/<code>find_end</code> (offset or −1), <code>matched</code> (first match), <code>release</code> (the pattern is C-malloc'd, <strong>not</strong> arena-managed — release when done; §31.1). <code>docs/reference/corelib.md:199-205</code>.</p>
 <h3 id="3224-net">32.24 <code>net</code></h3>
-<p>TCP and UDP sockets via a <strong>libc-only shim</strong> (<code>net_shim.c</code>, pure POSIX sockets; no</p>
-<p><code>deps</code>, same self-contained model as <code>core:os</code>). Core tier. A socket is a file</p>
-<p>descriptor (<code>int</code>); every open/move call returns a <strong>negative int on failure</strong>;</p>
-<p>payloads are <code>bytes</code> (binary-safe). TCP: <code>listen(host, port)</code> (port 0 ⇒</p>
-<p>ephemeral), <code>accept(fd)</code>, <code>connect(host, port)</code>, <code>port_of(fd)</code> (getsockname — the</p>
-<p>LOCAL port), <code>peer_addr(fd)</code> (getpeername — the REMOTE address as text, the field</p>
-<p>an access log leads with), <code>write(fd, data)</code>,</p>
-<p><code>read(fd, max)</code>, <code>close_fd(fd)</code>. UDP: <code>udp_bind(host, port)</code>,</p>
-<p><code>udp_send(fd, host, port, data)</code>, <code>udp_read(fd, max)</code>. Source</p>
-<p><code>corelib/net/net.ty</code>, <code>corelib/net/net_shim.c</code>.</p>
+<p>TCP and UDP sockets via a <strong>libc-only shim</strong> (<code>net_shim.c</code>, pure POSIX sockets; no <code>deps</code>, same self-contained model as <code>core:os</code>). Core tier. A socket is a file descriptor (<code>int</code>); every open/move call returns a <strong>negative int on failure</strong>; payloads are <code>bytes</code> (binary-safe). TCP: <code>listen(host, port)</code> (port 0 ⇒ ephemeral), <code>accept(fd)</code>, <code>connect(host, port)</code>, <code>port_of(fd)</code> (getsockname — the LOCAL port), <code>peer_addr(fd)</code> (getpeername — the REMOTE address as text, the field an access log leads with), <code>write(fd, data)</code>, <code>read(fd, max)</code>, <code>close_fd(fd)</code>. UDP: <code>udp_bind(host, port)</code>, <code>udp_send(fd, host, port, data)</code>, <code>udp_read(fd, max)</code>. Source <code>corelib/net/net.ty</code>, <code>corelib/net/net_shim.c</code>.</p>
 <h3 id="3225-bignum">32.25 <code>bignum</code></h3>
-<p>Arbitrary-precision integers (pure Tycho, no FFI, no floats). A <code>Big</code> is a sign</p>
-<p>plus a little-endian array of base-10^9 limbs; every op returns a fresh <code>Big</code></p>
-<p>(value semantics, arena-managed). Constructors <code>zero</code>, <code>from_int(n)</code>,</p>
-<p><code>from_str(s)</code>; predicates/queries <code>is_zero</code>, <code>cmp(a, b)</code>, <code>neg</code>, <code>abs</code>; arithmetic</p>
-<p><code>add</code>, <code>sub</code>, <code>mul</code>, <code>divmod(a, b) -&gt; (Big, Big)</code>, <code>div</code>, <code>mod</code>, <code>pow(a, e)</code>;</p>
-<p>conversions <code>to_str</code>, <code>to_int</code>. Source <code>corelib/bignum/bignum.ty</code>.</p>
+<p>Arbitrary-precision integers (pure Tycho, no FFI, no floats). A <code>Big</code> is a sign plus a little-endian array of base-10^9 limbs; every op returns a fresh <code>Big</code> (value semantics, arena-managed). Constructors <code>zero</code>, <code>from_int(n)</code>, <code>from_str(s)</code>; predicates/queries <code>is_zero</code>, <code>cmp(a, b)</code>, <code>neg</code>, <code>abs</code>; arithmetic <code>add</code>, <code>sub</code>, <code>mul</code>, <code>divmod(a, b) -&gt; (Big, Big)</code>, <code>div</code>, <code>mod</code>, <code>pow(a, e)</code>; conversions <code>to_str</code>, <code>to_int</code>. Source <code>corelib/bignum/bignum.ty</code>.</p>
 <h3 id="3226-decimal">32.26 <code>decimal</code></h3>
-<p>Arbitrary-precision base-10 fixed-point (pure Tycho; built on <code>core:bignum</code>). A</p>
-<p><code>Decimal</code> is an integer coefficient (<code>bignum.Big</code>) times <code>10^(-scale)</code>, so it is</p>
-<p>base-10 exact (<code>0.1 + 0.2 == 0.3</code>) — the right type for money. <code>from_int(n)</code>,</p>
-<p><code>from_str(s)</code>; <code>neg</code>, <code>abs</code>, <code>is_zero</code>; <code>add</code>, <code>sub</code>, <code>mul</code>, <code>cmp</code> (exact,</p>
-<p>scale-preserving); <code>rescale(a, newscale)</code> (truncates toward zero); <code>to_str</code>.</p>
-<p>Division is deferred (needs a target scale + rounding policy). Source</p>
-<p><code>corelib/decimal/decimal.ty</code>.</p>
+<p>Arbitrary-precision base-10 fixed-point (pure Tycho; built on <code>core:bignum</code>). A <code>Decimal</code> is an integer coefficient (<code>bignum.Big</code>) times <code>10^(-scale)</code>, so it is base-10 exact (<code>0.1 + 0.2 == 0.3</code>) — the right type for money. <code>from_int(n)</code>, <code>from_str(s)</code>; <code>neg</code>, <code>abs</code>, <code>is_zero</code>; <code>add</code>, <code>sub</code>, <code>mul</code>, <code>cmp</code> (exact, scale-preserving); <code>rescale(a, newscale)</code> (truncates toward zero); <code>to_str</code>. Division is deferred (needs a target scale + rounding policy). Source <code>corelib/decimal/decimal.ty</code>.</p>
 <h3 id="3227-signal">32.27 <code>signal</code></h3>
-<p>Clean shutdown on <code>SIGTERM</code>/<code>SIGINT</code> — and nothing else — via a</p>
-<p><strong>libc-only shim</strong> (<code>signal_shim.c</code> over <code>sigaction(2)</code> and <code>shutdown(2)</code>; no</p>
-<p><code>deps</code>, the same self-contained model as <code>core:os</code> and <code>core:net</code>). Core tier.</p>
-<p><code>on_shutdown(fd) -&gt; bool</code> installs one handler for both signals whose only effect</p>
-<p>is <code>shutdown(fd, SHUT_RDWR)</code> on the listening socket <code>fd</code>, so every thread blocked</p>
-<p>in <code>accept</code> on it (§32.24) is released and the program winds down through the</p>
-<p>failure path it already has; <code>shutdown_requested() -&gt; bool</code> reports whether such a</p>
-<p>signal has arrived since. <code>on_shutdown</code> <strong>MUST</strong> fail closed: on a descriptor it</p>
-<p>cannot register or a handler it cannot install it returns <code>false</code> and leaves the</p>
-<p>default disposition in place (the process dies on <code>SIGTERM</code>), never a half-armed</p>
-<p>state. Source <code>corelib/signal/signal.ty</code>, <code>corelib/signal/signal_shim.c</code>.</p>
-<p><strong>The narrowness is normative, not an omission.</strong> There is no</p>
-<p><code>signal.on(sig, handler)</code>, and an implementation <strong>MUST NOT</strong> run Tycho code in</p>
-<p>handler context. Every Tycho value lives in a bump-allocated arena (§31.1,</p>
-<p><a href="07-memory-model.html">§9</a>) whose allocator is not re-entrant, and channel</p>
-<p>operations park behind a mutex ; a handler that interrupts the</p>
-<p>allocator or a lock holder and then allocates or touches a channel corrupts or</p>
-<p>deadlocks the process it was invoked to shut down. A wider surface is therefore a</p>
-<p>language feature rather than a library one, and would need at minimum: an</p>
-<p>async-signal-safe hand-off out of handler context (a self-pipe or <code>signalfd</code> read</p>
-<p>by a dedicated thread) so the Tycho callback runs on an ordinary stack; a rule</p>
-<p>holding the handler itself to a <code>sig_atomic_t</code> store; a <code>pthread_sigmask</code> policy,</p>
-<p>because a process-directed signal is delivered to an arbitrary thread and</p>
-<p>"whichever worker the kernel picked runs your callback" is not a contract a</p>
-<p>program can be written against (<a href="13-concurrency.html">§23</a>); and a re-entrancy</p>
-<p>clause in this chapter.</p>
+<p>Clean shutdown on <code>SIGTERM</code>/<code>SIGINT</code> — and nothing else — via a <strong>libc-only shim</strong> (<code>signal_shim.c</code> over <code>sigaction(2)</code> and <code>shutdown(2)</code>; no <code>deps</code>, the same self-contained model as <code>core:os</code> and <code>core:net</code>). Core tier. <code>on_shutdown(fd) -&gt; bool</code> installs one handler for both signals whose only effect is <code>shutdown(fd, SHUT_RDWR)</code> on the listening socket <code>fd</code>, so every thread blocked in <code>accept</code> on it (§32.24) is released and the program winds down through the failure path it already has; <code>shutdown_requested() -&gt; bool</code> reports whether such a signal has arrived since. <code>on_shutdown</code> <strong>MUST</strong> fail closed: on a descriptor it cannot register or a handler it cannot install it returns <code>false</code> and leaves the default disposition in place (the process dies on <code>SIGTERM</code>), never a half-armed state. Source <code>corelib/signal/signal.ty</code>, <code>corelib/signal/signal_shim.c</code>.</p>
+<p><strong>The narrowness is normative, not an omission.</strong> There is no <code>signal.on(sig, handler)</code>, and an implementation <strong>MUST NOT</strong> run Tycho code in handler context. Every Tycho value lives in a bump-allocated arena (§31.1, <a href="07-memory-model.html">§9</a>) whose allocator is not re-entrant, and channel operations park behind a mutex ; a handler that interrupts the allocator or a lock holder and then allocates or touches a channel corrupts or deadlocks the process it was invoked to shut down. A wider surface is therefore a language feature rather than a library one, and would need at minimum: an async-signal-safe hand-off out of handler context (a self-pipe or <code>signalfd</code> read by a dedicated thread) so the Tycho callback runs on an ordinary stack; a rule holding the handler itself to a <code>sig_atomic_t</code> store; a <code>pthread_sigmask</code> policy, because a process-directed signal is delivered to an arbitrary thread and "whichever worker the kernel picked runs your callback" is not a contract a program can be written against (<a href="13-concurrency.html">§23</a>); and a re-entrancy clause in this chapter.</p>
 <p>#### The handler's async-signal-safety contract</p>
-<p>The installed handler performs <strong>exactly five actions</strong></p>
-<p>(<code>corelib/signal/signal_shim.c:77-85</code>), and every one is either an access to a</p>
-<p><code>volatile sig_atomic_t</code> — the one object type POSIX permits a handler to write</p>
-<p>while the rest of the program reads it — or a call POSIX lists as</p>
-<p>async-signal-safe:</p>
-<p>1. save <code>errno</code> into an automatic <code>int</code>, because <code>shutdown()</code> may clobber it and</p>
-<p>the interrupted thread is entitled to find its own value;</p>
-<p>2. store <code>1</code> to the flag <code>shutdown_requested</code> reads</p>
-<p>(<code>corelib/signal/signal_shim.c:65@sigx_flag</code>);</p>
-<p>3. load the registered descriptor (<code>corelib/signal/signal_shim.c:66@sigx_fd</code>);</p>
-<p>4. if that descriptor is non-negative, call <code>shutdown(fd, SHUT_RDWR)</code></p>
-<p>(<code>corelib/signal/signal_shim.c:70@shutdown</code>) — a bare syscall that allocates</p>
-<p>nothing and takes no userspace lock the interrupted thread could already hold;</p>
-<p>5. restore <code>errno</code>.</p>
-<p>No <code>malloc</code>, no stdio, no <code>pthread_*</code>, no arena access, so the handler holds no</p>
-<p>lock the interrupted thread can deadlock against. <code>memset</code>, <code>sigemptyset</code> and</p>
-<p><code>sigaction</code> (<code>corelib/signal/signal_shim.c:104-110</code>) run inside <code>on_shutdown</code>,</p>
-<p>which is ordinary code. Two orderings are load-bearing and an implementation</p>
-<p><strong>MUST</strong> preserve both:</p>
+<p>The installed handler performs <strong>exactly five actions</strong> (<code>corelib/signal/signal_shim.c:77-85</code>), and every one is either an access to a <code>volatile sig_atomic_t</code> — the one object type POSIX permits a handler to write while the rest of the program reads it — or a call POSIX lists as async-signal-safe:</p>
+<ol>
+<li>save <code>errno</code> into an automatic <code>int</code>, because <code>shutdown()</code> may clobber it and the interrupted thread is entitled to find its own value;</li>
+<li>store <code>1</code> to the flag <code>shutdown_requested</code> reads (<code>corelib/signal/signal_shim.c:65@sigx_flag</code>);</li>
+<li>load the registered descriptor (<code>corelib/signal/signal_shim.c:66@sigx_fd</code>);</li>
+<li>if that descriptor is non-negative, call <code>shutdown(fd, SHUT_RDWR)</code> (<code>corelib/signal/signal_shim.c:70@shutdown</code>) — a bare syscall that allocates nothing and takes no userspace lock the interrupted thread could already hold;</li>
+<li>restore <code>errno</code>.</li>
+</ol>
+<p>No <code>malloc</code>, no stdio, no <code>pthread_*</code>, no arena access, so the handler holds no lock the interrupted thread can deadlock against. <code>memset</code>, <code>sigemptyset</code> and <code>sigaction</code> (<code>corelib/signal/signal_shim.c:104-110</code>) run inside <code>on_shutdown</code>, which is ordinary code. Two orderings are load-bearing and an implementation <strong>MUST</strong> preserve both:</p>
 <ul>
-<li><strong>The descriptor is registered before the first <code>sigaction</code></strong></li>
+<li><strong>The descriptor is registered before the first <code>sigaction</code></strong> (<code>corelib/signal/signal_shim.c:107@sigx_fd</code>), so a signal arriving mid-install can never find a handler in place and a stale or absent descriptor to act on. An unregistered descriptor <strong>MUST</strong> leave the handler setting only the flag.</li>
+<li><strong>The handler is installed with <code>sa_flags = 0</code></strong> (<code>corelib/signal/signal_shim.c:112@sa_flags</code>), that is, <strong>without <code>SA_RESTART</code></strong>. This is observable, so it is normative: with <code>sa_flags = 0</code> the thread that receives the signal finds its <code>accept</code> interrupted and <code>net.accept</code> reports <code>Err</code> (§32.24), which is the wind-down path a program is entitled to observe; under <code>SA_RESTART</code> the kernel restarts that <code>accept</code> and the receiving thread does not wake at all. Correctness does not rest on this — the <code>shutdown()</code> releases every blocked thread whichever one ran the handler, which is why that mechanism was chosen over closing the descriptor — but a program <strong>MUST</strong> be able to see an interrupted <code>accept</code> as a failed one rather than as a silently restarted call.</li>
 </ul>
-<p>(<code>corelib/signal/signal_shim.c:107@sigx_fd</code>), so a signal arriving mid-install</p>
-<p>can never find a handler in place and a stale or absent descriptor to act on. An</p>
-<p>unregistered descriptor <strong>MUST</strong> leave the handler setting only the flag.</p>
-<ul>
-<li><strong>The handler is installed with <code>sa_flags = 0</code></strong></li>
-</ul>
-<p>(<code>corelib/signal/signal_shim.c:112@sa_flags</code>), that is, **without</p>
-<p><code>SA_RESTART</code>**. This is observable, so it is normative: with <code>sa_flags = 0</code> the</p>
-<p>thread that receives the signal finds its <code>accept</code> interrupted and <code>net.accept</code></p>
-<p>reports <code>Err</code> (§32.24), which is the wind-down path a program is entitled to</p>
-<p>observe; under <code>SA_RESTART</code> the kernel restarts that <code>accept</code> and the receiving</p>
-<p>thread does not wake at all. Correctness does not rest on this — the <code>shutdown()</code></p>
-<p>releases every blocked thread whichever one ran the handler, which is why that</p>
-<p>mechanism was chosen over closing the descriptor — but a program <strong>MUST</strong> be able</p>
-<p>to see an interrupted <code>accept</code> as a failed one rather than as a silently</p>
-<p>restarted call.</p>
-<p><strong>What it costs, recorded because it is not portable.</strong> <code>shutdown()</code> waking a</p>
-<p>thread blocked in <code>accept</code> on a *listening* socket is a Linux behaviour, not a</p>
-<p>POSIX guarantee, and connections still sitting in the backlog are dropped rather</p>
-<p>than drained. An implementation on another platform <strong>MUST</strong> re-establish the</p>
-<p>released-every-thread property rather than assume it; closing the descriptor is</p>
-<p>not a substitute, since a thread already blocked in <code>accept</code> is not woken by the</p>
-<p>close and the descriptor number can be handed back out while it is still blocked</p>
-<p>on it.</p>
+<p><strong>What it costs, recorded because it is not portable.</strong> <code>shutdown()</code> waking a thread blocked in <code>accept</code> on a *listening* socket is a Linux behaviour, not a POSIX guarantee, and connections still sitting in the backlog are dropped rather than drained. An implementation on another platform <strong>MUST</strong> re-establish the released-every-thread property rather than assume it; closing the descriptor is not a substitute, since a thread already blocked in <code>accept</code> is not woken by the close and the descriptor number can be handed back out while it is still blocked on it.</p>
 <h2 id="33-extended-tier-packages">33. Extended-tier packages</h2>
-<p>Each package below declares a <code>corelib/&lt;pkg&gt;/deps</code> manifest naming a pkg-config</p>
-<p>library (§31.3). A conforming implementation <strong>MAY</strong> omit any of them; a program</p>
-<p>importing an absent one <strong>MUST</strong> be diagnosed (§31.2). Every value still crosses</p>
-<p>the FFI boundary into the caller's arena (§31.1).</p>
+<p>Each package below declares a <code>corelib/&lt;pkg&gt;/deps</code> manifest naming a pkg-config library (§31.3). A conforming implementation <strong>MAY</strong> omit any of them; a program importing an absent one <strong>MUST</strong> be diagnosed (§31.2). Every value still crosses the FFI boundary into the caller's arena (§31.1).</p>
 <h3 id="331-http--libcurl">33.1 <code>http</code> — libcurl</h3>
-<p>An HTTP(S) client over <strong>libcurl</strong> (<code>deps</code> → <code>libcurl</code>). <code>get(url) -&gt; ptr</code> /</p>
-<p><code>post(url, body, content_type) -&gt; ptr</code> return an opaque, <strong>C-owned</strong> response</p>
-<p>handle (or null on transport failure; <code>ok</code>/<code>is_null</code>); <code>status(r)</code>, <code>body(r)</code></p>
-<p>(arena-copied), <code>release(r)</code>. Convenience <code>get_body(url)</code> / <code>get_status(url)</code> do</p>
-<p>the request and free the handle. The arena-copied body truncates at an interior</p>
-<p><code>0x00</code> (text APIs). <code>docs/reference/corelib.md:206-217</code>.</p>
+<p>An HTTP(S) client over <strong>libcurl</strong> (<code>deps</code> → <code>libcurl</code>). <code>get(url) -&gt; ptr</code> / <code>post(url, body, content_type) -&gt; ptr</code> return an opaque, <strong>C-owned</strong> response handle (or null on transport failure; <code>ok</code>/<code>is_null</code>); <code>status(r)</code>, <code>body(r)</code> (arena-copied), <code>release(r)</code>. Convenience <code>get_body(url)</code> / <code>get_status(url)</code> do the request and free the handle. The arena-copied body truncates at an interior <code>0x00</code> (text APIs). <code>docs/reference/corelib.md:206-217</code>.</p>
 <h3 id="332-crypto--libcrypto-openssl">33.2 <code>crypto</code> — libcrypto (OpenSSL)</h3>
-<p>The security-grade module, a shim over OpenSSL <strong>libcrypto</strong> (<code>deps</code> →</p>
-<p><code>libcrypto</code>). Reach for it when an attacker is in the threat model (vs the pure</p>
-<p><code>sha256</code>/<code>md5</code> for non-adversarial integrity): CSPRNG (<code>random_hex</code>),</p>
-<p><code>sha256</code>/<code>sha512</code> of binary, <code>hmac_sha256</code>, <code>pbkdf2_sha256</code>, constant-time</p>
-<p><code>ct_equal</code>, ChaCha20-Poly1305 AEAD (<code>aead_encrypt</code>/<code>aead_decrypt</code>, <code>"!err"</code> on</p>
-<p>auth failure), Ed25519 (<code>ed25519_pubkey</code>/<code>sign</code>/<code>verify</code>), X25519</p>
-<p>(<code>x25519_pubkey</code>/<code>shared</code>). Every value crosses as lowercase hex (a Tycho string</p>
-<p>can't hold <code>0x00</code>; use <code>core:hex</code> to convert text). Bound to OpenSSL rather than</p>
-<p>reimplemented because real crypto must be constant-time and audited.</p>
-<p><code>docs/reference/corelib.md:319-334</code>.</p>
+<p>The security-grade module, a shim over OpenSSL <strong>libcrypto</strong> (<code>deps</code> → <code>libcrypto</code>). Reach for it when an attacker is in the threat model (vs the pure <code>sha256</code>/<code>md5</code> for non-adversarial integrity): CSPRNG (<code>random_hex</code>), <code>sha256</code>/<code>sha512</code> of binary, <code>hmac_sha256</code>, <code>pbkdf2_sha256</code>, constant-time <code>ct_equal</code>, ChaCha20-Poly1305 AEAD (<code>aead_encrypt</code>/<code>aead_decrypt</code>, <code>"!err"</code> on auth failure), Ed25519 (<code>ed25519_pubkey</code>/<code>sign</code>/<code>verify</code>), X25519 (<code>x25519_pubkey</code>/<code>shared</code>). Every value crosses as lowercase hex (a Tycho string can't hold <code>0x00</code>; use <code>core:hex</code> to convert text). Bound to OpenSSL rather than reimplemented because real crypto must be constant-time and audited. <code>docs/reference/corelib.md:319-334</code>.</p>
 <h3 id="333-compress--zlib">33.3 <code>compress</code> — zlib</h3>
-<p>gzip (RFC 1952) compression over <strong>zlib</strong> (<code>deps</code> → <code>zlib</code>). `compress(data) -&gt;</p>
-<p>bytes<code> (gzip-compress), </code>decompress(data) -&gt; Result(bytes, ZErr)` (inflate a</p>
-<p>gzip *or* zlib stream), plus <code>raw_compress(data) -&gt; bytes</code> and</p>
-<p><code>raw_decompress(data) -&gt; Result(bytes, ZErr)</code> for a headerless deflate stream.</p>
-<p><code>ZErr</code> has four causes: <code>Corrupt</code> (the bytes are not a valid stream), <code>Truncated</code></p>
-<p>(the stream ends early), <code>Failed</code> (zlib could not complete, e.g. out of memory)</p>
-<p>and <code>TooBig</code> (the decompressed output exceeds the limit). The default output</p>
-<p>limit is 1 GiB, or the zlib <code>uInt</code> limit when lower. **An <code>Ok</code> of length 0 is a</p>
-<p>real empty payload and is distinct from every failure** — a decompressor must</p>
-<p>not signal failure by returning empty bytes.</p>
-<p>Conflating the two is a data-loss bug, not a style choice: for a container format</p>
-<p>it makes a corrupt member read as a legitimate zero-byte file. On a raw deflate</p>
-<p>stream <code>Truncated</code> also covers "not a deflate stream at all", since a headerless</p>
-<p>stream carries no wrapper or checksum to tell those apart. Binary-safe</p>
-<p>(<code>bytes</code>, interior NUL preserved). <strong><code>compress</code> is byte-deterministic</strong>: for a</p>
-<p>given zlib build it is a pure function of its input, so the same bytes in give</p>
-<p>byte-identical bytes out across processes, wall-clock times, locales and time</p>
-<p>zones. Concretely, RFC 1952's MTIME header field is <strong>zero</strong> — an implementation</p>
-<p>must not fill it from the clock or from a source file's mtime, the way <code>gzip(1)</code></p>
-<p>does. This is a requirement on any implementation of <code>core:compress</code>, not an</p>
-<p>accident of zlib's defaults: <code>tools/tycho-ar</code>'s reproducibility gate ("archive</p>
-<p>the same tree twice, <code>cmp</code>-identical") rests on it. The compressed *length* is a</p>
-<p>zlib tuning detail and is not fixed by this spec. Source</p>
-<p><code>corelib/compress/compress.ty</code>, <code>corelib/compress/deps</code>.</p>
+<p>gzip (RFC 1952) compression over <strong>zlib</strong> (<code>deps</code> → <code>zlib</code>). <code>compress(data) -&gt; bytes</code> (gzip-compress), <code>decompress(data) -&gt; Result(bytes, ZErr)</code> (inflate a gzip *or* zlib stream), plus <code>raw_compress(data) -&gt; bytes</code> and <code>raw_decompress(data) -&gt; Result(bytes, ZErr)</code> for a headerless deflate stream. <code>ZErr</code> has four causes: <code>Corrupt</code> (the bytes are not a valid stream), <code>Truncated</code> (the stream ends early), <code>Failed</code> (zlib could not complete, e.g. out of memory) and <code>TooBig</code> (the decompressed output exceeds the limit). The default output limit is 1 GiB, or the zlib <code>uInt</code> limit when lower. <strong>An <code>Ok</code> of length 0 is a real empty payload and is distinct from every failure</strong> — a decompressor must not signal failure by returning empty bytes. Conflating the two is a data-loss bug, not a style choice: for a container format it makes a corrupt member read as a legitimate zero-byte file. On a raw deflate stream <code>Truncated</code> also covers "not a deflate stream at all", since a headerless stream carries no wrapper or checksum to tell those apart. Binary-safe (<code>bytes</code>, interior NUL preserved). <strong><code>compress</code> is byte-deterministic</strong>: for a given zlib build it is a pure function of its input, so the same bytes in give byte-identical bytes out across processes, wall-clock times, locales and time zones. Concretely, RFC 1952's MTIME header field is <strong>zero</strong> — an implementation must not fill it from the clock or from a source file's mtime, the way <code>gzip(1)</code> does. This is a requirement on any implementation of <code>core:compress</code>, not an accident of zlib's defaults: <code>tools/tycho-ar</code>'s reproducibility gate ("archive the same tree twice, <code>cmp</code>-identical") rests on it. The compressed *length* is a zlib tuning detail and is not fixed by this spec. Source <code>corelib/compress/compress.ty</code>, <code>corelib/compress/deps</code>.</p>
 <h3 id="334-image--libpng">33.4 <code>image</code> — libpng</h3>
-<p>PNG decode/encode over <strong>libpng</strong> ≥ 1.6 (simplified <code>png_image</code> API; <code>deps</code> →</p>
-<p><code>libpng</code>). Images are 8-bit RGBA, row-major, top-to-bottom; a value-semantic</p>
-<p><code>Image</code> struct (<code>width</code>, <code>height</code>, <code>pixels: bytes</code>). `decode(png_bytes) -&gt;</p>
-<p>Result(Image, ImgErr)<code>, </code>encode(img) -&gt; Result(bytes, ImgErr)<code>, </code>make(w, h,</p>
-<p>pixels) -&gt; Image<code>. One </code>ImgErr<code> serves both, with six causes: </code>Empty` (the input</p>
-<p>has no bytes), <code>NotPng</code> (the header did not read — wrong signature, or the data</p>
-<p>stops inside the header), <code>Corrupt</code> (the header read, the pixel data did not —</p>
-<p>truncated or damaged), <code>BadDims</code> (encode: a width or height ≤ 0, or beyond the</p>
-<p>implementation's bound), <code>ShortPixels</code> (encode: fewer than <code>width*height*4</code> pixel</p>
-<p>bytes) and <code>Failed</code> (libpng or an allocation failed). Decode returns the first</p>
-<p>three and <code>Failed</code>; encode returns the last three. **Every failure must be an</p>
-<p><code>Err</code>, never an empty or zero-dimension <code>Ok</code>** — the same requirement §33.3 makes</p>
-<p>of <code>decompress</code>, for the same reason: a sentinel makes a truncated PNG, a JPEG</p>
-<p>renamed <code>.png</code> and an empty file one answer, and the caller who forgets to test</p>
-<p>it gets silence instead of an error. A 0-width or 0-height image is not</p>
-<p>representable in PNG (IHDR rejects a zero dimension), so an <code>Ok</code> from <code>decode</code></p>
-<p>always carries <code>width ≥ 1</code> and <code>height ≥ 1</code>, and an <code>Ok</code> from <code>encode</code> always</p>
-<p>carries a non-empty buffer; a caller may rely on both. The libpng decode handle</p>
-<p>is freed internally (not exposed). Source <code>corelib/image/image.ty</code>,</p>
-<p><code>corelib/image/deps</code>.</p>
+<p>PNG decode/encode over <strong>libpng</strong> ≥ 1.6 (simplified <code>png_image</code> API; <code>deps</code> → <code>libpng</code>). Images are 8-bit RGBA, row-major, top-to-bottom; a value-semantic <code>Image</code> struct (<code>width</code>, <code>height</code>, <code>pixels: bytes</code>). <code>decode(png_bytes) -&gt; Result(Image, ImgErr)</code>, <code>encode(img) -&gt; Result(bytes, ImgErr)</code>, <code>make(w, h, pixels) -&gt; Image</code>. One <code>ImgErr</code> serves both, with six causes: <code>Empty</code> (the input has no bytes), <code>NotPng</code> (the header did not read — wrong signature, or the data stops inside the header), <code>Corrupt</code> (the header read, the pixel data did not — truncated or damaged), <code>BadDims</code> (encode: a width or height ≤ 0, or beyond the implementation's bound), <code>ShortPixels</code> (encode: fewer than <code>width*height*4</code> pixel bytes) and <code>Failed</code> (libpng or an allocation failed). Decode returns the first three and <code>Failed</code>; encode returns the last three. <strong>Every failure must be an <code>Err</code>, never an empty or zero-dimension <code>Ok</code></strong> — the same requirement §33.3 makes of <code>decompress</code>, for the same reason: a sentinel makes a truncated PNG, a JPEG renamed <code>.png</code> and an empty file one answer, and the caller who forgets to test it gets silence instead of an error. A 0-width or 0-height image is not representable in PNG (IHDR rejects a zero dimension), so an <code>Ok</code> from <code>decode</code> always carries <code>width ≥ 1</code> and <code>height ≥ 1</code>, and an <code>Ok</code> from <code>encode</code> always carries a non-empty buffer; a caller may rely on both. The libpng decode handle is freed internally (not exposed). Source <code>corelib/image/image.ty</code>, <code>corelib/image/deps</code>.</p>
 <h3 id="335-tls--openssl">33.5 <code>tls</code> — openssl</h3>
-<p>A TLS 1.2/1.3 <strong>client</strong> over <strong>OpenSSL</strong> (<code>deps</code> → <code>openssl</code> ⇒ `-lssl</p>
-<p>-lcrypto<code>). Secure by default: </code>connect` verifies the server certificate against</p>
-<p>the system CA store, checks the hostname, and sends SNI; a failed</p>
-<p>resolve/connect/handshake/verify returns a <strong>null</strong> handle (fail closed — guard</p>
-<p>with <code>is_null</code>/<code>tls.ok</code>). <code>connect(host, port) -&gt; ptr</code>, <code>write(conn, data) -&gt; int</code></p>
-<p>(bytes sent or −1), <code>read(conn, max) -&gt; bytes</code> (empty on close/error),</p>
-<p><code>close_conn(conn)</code> (safe on null), <code>ok(conn) -&gt; bool</code>. Payloads are binary-safe</p>
-<p><code>bytes</code>. Source <code>corelib/tls/tls.ty</code>, <code>corelib/tls/deps</code>.</p>
+<p>A TLS 1.2/1.3 <strong>client</strong> over <strong>OpenSSL</strong> (<code>deps</code> → <code>openssl</code> ⇒ <code>-lssl -lcrypto</code>). Secure by default: <code>connect</code> verifies the server certificate against the system CA store, checks the hostname, and sends SNI; a failed resolve/connect/handshake/verify returns a <strong>null</strong> handle (fail closed — guard with <code>is_null</code>/<code>tls.ok</code>). <code>connect(host, port) -&gt; ptr</code>, <code>write(conn, data) -&gt; int</code> (bytes sent or −1), <code>read(conn, max) -&gt; bytes</code> (empty on close/error), <code>close_conn(conn)</code> (safe on null), <code>ok(conn) -&gt; bool</code>. Payloads are binary-safe <code>bytes</code>. Source <code>corelib/tls/tls.ty</code>, <code>corelib/tls/deps</code>.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

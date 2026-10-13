@@ -4,130 +4,73 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>What the next program says the language needs — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/plan-tycho-scheme-compiler-DONE.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html" aria-current="page">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#the-program">The program</a>
+<a href="#findings">Findings</a>
+<a href="#phases">Phases</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/plan-tycho-scheme-compiler-DONE.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="what-the-next-program-says-the-language-needs">What the next program says the language needs</h1>
 <p><strong>Status: DONE. Program: bytecode compiler for the Scheme interpreter — <code>tools/tycho-scheme</code> grew a <code>compile</code> front end lowering Scheme to tycho-vm bytecode. Outcome: differential byte-identical on all six programs; one real compiler bug found and fixed; no language phases.</strong></p>
 <blockquote>
-<p>This plan is a fresh clone, 2026-08-03: the completed tycho-scheme plan lives</p>
-<p>at <code>docs/internals/plan-tycho-scheme-DONE.md</code>. The rule from that plan holds</p>
-<p>here: *does anything that is not the program written to want it need this?* A</p>
-<p>finding becomes a phase only when a second, independent caller exists.</p>
+<p>This plan is a fresh clone, 2026-08-03: the completed tycho-scheme plan lives at <code>docs/internals/plan-tycho-scheme-DONE.md</code>. The rule from that plan holds here: *does anything that is not the program written to want it need this?* A finding becomes a phase only when a second, independent caller exists.</p>
 </blockquote>
 <h2 id="the-program">The program</h2>
-<p><strong>A bytecode compiler for the Scheme interpreter</strong> -- <code>tools/tycho-scheme</code></p>
-<p>grows a <code>compile</code> front end that lowers Scheme to tycho-vm bytecode, so</p>
-<p><code>tycho-scheme</code> and <code>tycho-vm</code> converge. It is the first real customer for</p>
-<p>tycho-vm's instruction encoding and const pools outside the tool's own</p>
-<p>fixtures, and it re-exercises the interpreter's reader (reused verbatim),</p>
-<p>symbol interning (the const pool), and scalar-match dispatch at a new scale.</p>
-<p>The differential gate: compile the same four programs, run them on the VM,</p>
-<p>and the output must be byte-identical to the interpreter's golden.</p>
+<p><strong>A bytecode compiler for the Scheme interpreter</strong> -- <code>tools/tycho-scheme</code> grows a <code>compile</code> front end that lowers Scheme to tycho-vm bytecode, so <code>tycho-scheme</code> and <code>tycho-vm</code> converge. It is the first real customer for tycho-vm's instruction encoding and const pools outside the tool's own fixtures, and it re-exercises the interpreter's reader (reused verbatim), symbol interning (the const pool), and scalar-match dispatch at a new scale. The differential gate: compile the same four programs, run them on the VM, and the output must be byte-identical to the interpreter's golden.</p>
 <p><strong>Design, settled before a line of code:</strong></p>
 <ul>
-<li>The VM's <code>CALL</code> takes a STATIC pc and its <code>Val</code> is int-or-string only, so</li>
+<li>The VM's <code>CALL</code> takes a STATIC pc and its <code>Val</code> is int-or-string only, so first-class functions and lists cannot be expressed in the current ISA. The VM grows the minimum the compiler needs, all appended (existing opcode numbers and goldens untouched): <code>CONS</code>/<code>CAR</code>/<code>CDR</code>/<code>SET-CAR</code> over a bounded pair heap (lists AND environment chains), <code>NIL</code>/<code>ISNIL</code> (Scheme truth: everything but <code>#f</code>/<code>()</code> is true), <code>EQV</code> (generic equality: int/nil/string, pairs never equal -- matching the interpreter's <code>eq?</code>), <code>PRINTS</code> (print a value as its Scheme form, no newline -- the compiled <code>display</code>), <code>DIE k</code> (die with a const-pool message -- the compiled "attempt to call a non-function"). <code>Val</code> gains <code>isnil</code>/<code>ispair</code> flags (pairs live in the heap; <code>i</code> holds the cell index).</li>
+<li><strong>Defunctionalization</strong> (Reynolds): every lambda is compiled to one VM function with a static signature <code>(params..., env)</code> -- params in slots 0..k-1, the captured-env chain in slot k. A closure VALUE is the pair <code>(tag . env)</code> where <code>tag</code> is a compile-time int and <code>env</code> is a list of the captured free vars' values. A call through a function value dispatches on the tag (a chain of <code>EQ</code>/<code>JNZ</code>); a call to a statically-known global function compiles to a direct <code>CALL</code>.</li>
+<li><strong>Globals</strong> are frame-0 slot 0, a pair-chain built by the entry code in define order; a global reference walks the chain at a compile-known depth (two-pass: collect all top-level defines first, then compile with the depths). Frame 0 keeps 16 slots -- the VM's fixed limit stays untouched. Primitives compile to direct ops (<code>+</code> -&gt; <code>ADD</code> chains, <code>=</code> -&gt; <code>EQ</code>, ...), never an env lookup.</li>
+<li><strong>Mutable captures</strong> (<code>set!</code> on a captured var -- the counter in closures.scm): a local that an inner lambda captures is BOXED at its binding -- one <code>CONS</code> cell; reads become <code>CAR</code>, <code>set!</code> becomes <code>SET-CAR</code>; the closure captures the cell. Uncaptured locals stay plain slots.</li>
+<li><strong>Compile-time checks that die loudly, never silently wrong</strong>: unbound variables, arity errors, bad defines, malformed lambdas, and primitives the compiler does not lower yet (<code>pair?</code>, <code>number?</code>, <code>symbol?</code>, <code>string?</code>, <code>boolean?</code>) die at compile time with "not compilable". Documented gaps that stay runtime divergences: a bare <code>#t</code> displayed as <code>1</code> (the VM has no bool Val), <code>zero?</code>/<code>eq?</code> on a pair, and passing a primitive as a value.</li>
 </ul>
-<p>first-class functions and lists cannot be expressed in the current ISA. The</p>
-<p>VM grows the minimum the compiler needs, all appended (existing opcode</p>
-<p>numbers and goldens untouched): <code>CONS</code>/<code>CAR</code>/<code>CDR</code>/<code>SET-CAR</code> over a bounded</p>
-<p>pair heap (lists AND environment chains), <code>NIL</code>/<code>ISNIL</code> (Scheme truth:</p>
-<p>everything but <code>#f</code>/<code>()</code> is true), <code>EQV</code> (generic equality: int/nil/string,</p>
-<p>pairs never equal -- matching the interpreter's <code>eq?</code>), <code>PRINTS</code> (print a</p>
-<p>value as its Scheme form, no newline -- the compiled <code>display</code>), <code>DIE k</code></p>
-<p>(die with a const-pool message -- the compiled "attempt to call a</p>
-<p>non-function"). <code>Val</code> gains <code>isnil</code>/<code>ispair</code> flags (pairs live in the heap;</p>
-<p><code>i</code> holds the cell index).</p>
-<ul>
-<li><strong>Defunctionalization</strong> (Reynolds): every lambda is compiled to one VM</li>
-</ul>
-<p>function with a static signature <code>(params..., env)</code> -- params in slots</p>
-<p>0..k-1, the captured-env chain in slot k. A closure VALUE is the pair</p>
-<p><code>(tag . env)</code> where <code>tag</code> is a compile-time int and <code>env</code> is a list of the</p>
-<p>captured free vars' values. A call through a function value dispatches on</p>
-<p>the tag (a chain of <code>EQ</code>/<code>JNZ</code>); a call to a statically-known global</p>
-<p>function compiles to a direct <code>CALL</code>.</p>
-<ul>
-<li><strong>Globals</strong> are frame-0 slot 0, a pair-chain built by the entry code in</li>
-</ul>
-<p>define order; a global reference walks the chain at a compile-known depth</p>
-<p>(two-pass: collect all top-level defines first, then compile with the</p>
-<p>depths). Frame 0 keeps 16 slots -- the VM's fixed limit stays untouched.</p>
-<p>Primitives compile to direct ops (<code>+</code> -&gt; <code>ADD</code> chains, <code>=</code> -&gt; <code>EQ</code>, ...),</p>
-<p>never an env lookup.</p>
-<ul>
-<li><strong>Mutable captures</strong> (<code>set!</code> on a captured var -- the counter in</li>
-</ul>
-<p>closures.scm): a local that an inner lambda captures is BOXED at its</p>
-<p>binding -- one <code>CONS</code> cell; reads become <code>CAR</code>, <code>set!</code> becomes <code>SET-CAR</code>;</p>
-<p>the closure captures the cell. Uncaptured locals stay plain slots.</p>
-<ul>
-<li><strong>Compile-time checks that die loudly, never silently wrong</strong>: unbound</li>
-</ul>
-<p>variables, arity errors, bad defines, malformed lambdas, and primitives the</p>
-<p>compiler does not lower yet (<code>pair?</code>, <code>number?</code>, <code>symbol?</code>, <code>string?</code>,</p>
-<p><code>boolean?</code>) die at compile time with "not compilable". Documented gaps that</p>
-<p>stay runtime divergences: a bare <code>#t</code> displayed as <code>1</code> (the VM has no bool</p>
-<p>Val), <code>zero?</code>/<code>eq?</code> on a pair, and passing a primitive as a value.</p>
 <h2 id="findings">Findings</h2>
-<p><strong>The compiler works -- the differential is byte-identical.</strong> All six programs</p>
-<p>(fib, closures, ho, sort, shadow, eqsym) compile to tycho-vm bytecode and the</p>
-<p>VM's run matches the interpreter's golden byte-for-byte, including the two</p>
-<p>counter closures staying independent (<code>1 2 1</code>). The gate asserts that</p>
-<p>differential on every run. What the build found, all tool-level (none became</p>
-<p>a phase -- nothing outside the compiler wants it):</p>
+<p><strong>The compiler works -- the differential is byte-identical.</strong> All six programs (fib, closures, ho, sort, shadow, eqsym) compile to tycho-vm bytecode and the VM's run matches the interpreter's golden byte-for-byte, including the two counter closures staying independent (<code>1 2 1</code>). The gate asserts that differential on every run. What the build found, all tool-level (none became a phase -- nothing outside the compiler wants it):</p>
 <ul>
-<li>**The VM's <code>CALL</code> is static and <code>Val</code> is int-or-string, so the compiler</li>
+<li><strong>The VM's <code>CALL</code> is static and <code>Val</code> is int-or-string, so the compiler needed pairs and a truthiness test.</strong> The VM grew ten ops, all appended (existing opcode numbers untouched): CONS/CAR/CDR/SET-CAR over a bounded pair heap (lists AND environment chains), NIL/ISNIL, EQV (generic equality; pairs never equal -- the interpreter's <code>eq?</code>), PRINTS (a value's Scheme form, no newline -- the compiled <code>display</code>), DIE (die with a const-pool message), TRUTHY (false = nil OR int 0). TRUTHY exists because the compiled comparisons return the VM's int 0/1, and a comparison result used as a cond must be false when it is 0 -- the VM's own comparison semantics did not change, so tycho-vm's goldens did not move.</li>
+<li><strong>Cross-file declaration order matters.</strong> A multi-file package compiles its files in lexical order and types do not forward-reference across files, so the compiler (which uses main.ty's <code>Val</code>) must sort AFTER main.ty. It is named <code>main_compiler.ty</code> for exactly that reason.</li>
+<li><strong>A real compiler bug, found by this build and FIXED: returning a map PARAMETER emits the wrong C copy.</strong> <code>src/tychoc.c</code>'s return branch hardcoded <code>tycho_map_%s_copy(map_fn)</code>; <code>map_fn</code> defaults to <code>"si"</code> for every map that is not sf/ii/if, so <code>[string: Struct]</code> and <code>[string: string]</code> returned from a parameter emitted <code>tycho_map_si_copy</code> over a <code>TychoMapC0</code> and the generated C did not compile. Returning a LOCAL dodged it via the return-slot no-op move; only the param-copy path reached the wrong name. Fixed by routing the copy through <code>copy_into</code> (which already picks <code>tycho_mapc%d_copy</code> for composite maps); the compiler's earlier <code>scope_copy</code> workaround was then reverted, so the compiler itself now exercises the fixed path. Regression fixture: <code>tests/map_param_return.ty</code> (struct-valued and string-valued param returns).</li>
+<li><strong>Divergences from the interpreter, each documented in the code and avoided by the programs</strong> (the gate's differential would catch one): a bare <code>#t</code> displays as <code>1</code> (the VM has no bool Val); symbols ARE strings, so <code>eq?</code> cannot tell a symbol from a string; the compiled truthiness treats int 0 as false (the interpreter's <code>is_true</code> does not); a top-level display between defines runs after all defines (globals are a chain walked at compile-known depth, so defines are emitted first -- the interpreter resolves by name); a closure call evaluates its arguments before the operator (the dispatch needs the operator on top). All four fail loudly or are invisible in the programs; none is silent.</li>
 </ul>
-<p>needed pairs and a truthiness test.** The VM grew ten ops, all appended</p>
-<p>(existing opcode numbers untouched): CONS/CAR/CDR/SET-CAR over a bounded</p>
-<p>pair heap (lists AND environment chains), NIL/ISNIL, EQV (generic equality;</p>
-<p>pairs never equal -- the interpreter's <code>eq?</code>), PRINTS (a value's Scheme</p>
-<p>form, no newline -- the compiled <code>display</code>), DIE (die with a const-pool</p>
-<p>message), TRUTHY (false = nil OR int 0). TRUTHY exists because the compiled</p>
-<p>comparisons return the VM's int 0/1, and a comparison result used as a</p>
-<p>cond must be false when it is 0 -- the VM's own comparison semantics did</p>
-<p>not change, so tycho-vm's goldens did not move.</p>
-<ul>
-<li><strong>Cross-file declaration order matters.</strong> A multi-file package compiles its</li>
-</ul>
-<p>files in lexical order and types do not forward-reference across files, so</p>
-<p>the compiler (which uses main.ty's <code>Val</code>) must sort AFTER main.ty. It is</p>
-<p>named <code>main_compiler.ty</code> for exactly that reason.</p>
-<ul>
-<li>**A real compiler bug, found by this build and FIXED: returning a map</li>
-</ul>
-<p>PARAMETER emits the wrong C copy.** <code>src/tychoc.c</code>'s return branch</p>
-<p>hardcoded <code>tycho_map_%s_copy(map_fn)</code>; <code>map_fn</code> defaults to <code>"si"</code> for</p>
-<p>every map that is not sf/ii/if, so <code>[string: Struct]</code> and `[string:</p>
-<p>string]<code> returned from a parameter emitted </code>tycho_map_si_copy` over a</p>
-<p><code>TychoMapC0</code> and the generated C did not compile. Returning a LOCAL dodged</p>
-<p>it via the return-slot no-op move; only the param-copy path reached the</p>
-<p>wrong name. Fixed by routing the copy through <code>copy_into</code> (which already</p>
-<p>picks <code>tycho_mapc%d_copy</code> for composite maps); the compiler's earlier</p>
-<p><code>scope_copy</code> workaround was then reverted, so the compiler itself now</p>
-<p>exercises the fixed path. Regression fixture: <code>tests/map_param_return.ty</code></p>
-<p>(struct-valued and string-valued param returns).</p>
-<ul>
-<li>**Divergences from the interpreter, each documented in the code and</li>
-</ul>
-<p>avoided by the programs** (the gate's differential would catch one): a bare</p>
-<p><code>#t</code> displays as <code>1</code> (the VM has no bool Val); symbols ARE strings, so</p>
-<p><code>eq?</code> cannot tell a symbol from a string; the compiled truthiness treats</p>
-<p>int 0 as false (the interpreter's <code>is_true</code> does not); a top-level display</p>
-<p>between defines runs after all defines (globals are a chain walked at</p>
-<p>compile-known depth, so defines are emitted first -- the interpreter</p>
-<p>resolves by name); a closure call evaluates its arguments before the</p>
-<p>operator (the dispatch needs the operator on top). All four fail loudly or</p>
-<p>are invisible in the programs; none is silent.</p>
 <h2 id="phases">Phases</h2>
-<p>(none -- a finding becomes a phase only when a second, independent caller</p>
-<p>needs it)</p>
+<p>(none -- a finding becomes a phase only when a second, independent caller needs it)</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

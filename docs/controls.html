@@ -4,114 +4,85 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Every gate must be able to fail — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="index.html">docs</a> / controls.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../#idea">Overview</a>
+    <a href="../#costs">Tradeoffs</a>
+    <a href="../#try">Install</a>
+    <a href="index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="index.html">Documentation home</a><details open><summary>Guide</summary><a href="tutorial.html">Tutorial</a><a href="README.html">Tycho documentation</a><a href="from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="idioms.html">Thinking in Tycho</a><a href="memory-model.html">The memory model</a><a href="quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="performance.html">Performance and memory</a><a href="platforms.html">Platforms and toolchains, in detail</a><a href="debugging.html">Debugging generated C</a><a href="architecture.html">Architecture &amp; project status</a><a href="thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="perf.html">Performance: the compiler and the C it emits</a><a href="controls.html" aria-current="page">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="reference/arrays-slices.html">Arrays and slices</a><a href="reference/basics.html">Basics</a><a href="reference/builtins.html">Builtins</a><a href="reference/concurrency.html">Concurrency</a><a href="reference/corelib.html">corelib — Tycho's core library</a><a href="reference/enums-options.html">Enums, options, and `match`</a><a href="reference/ffi.html">FFI (calling C)</a><a href="reference/functions.html">Functions and closures</a><a href="reference/generics.html">Generics</a><a href="reference/index.html">Tycho language reference</a><a href="reference/maps.html">Maps</a><a href="reference/packages.html">Packages</a><a href="reference/strings.html">Strings</a><a href="reference/structs-tuples.html">Structs and tuples</a><a href="reference/subscripts.html">Subscripts (user-defined projections)</a><a href="reference/types.html">Types</a></details><details><summary>Specification</summary><a href="spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="spec/01-lexical.html">3. Lexical structure</a><a href="spec/02-grammar.html">4. Grammar</a><a href="spec/03-types.html">5. Types</a><a href="spec/04-inference.html">6. Type inference</a><a href="spec/05-generics.html">7. Generics</a><a href="spec/06-conversions.html">8. Conversions and casts</a><a href="spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="spec/09-expressions.html">13. Expressions</a><a href="spec/10-statements.html">14. Statements and control flow</a><a href="spec/11-functions.html">15. Functions</a><a href="spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="spec/16-builtins.html">29. Builtins</a><a href="spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="spec/README.html">The Tycho language specification</a><a href="spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="internals/FRICTION.html">FRICTION</a><a href="internals/README.html">Internals</a><a href="internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="internals/audit-brief.html">Brief for an external security review</a><a href="internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="internals/design-aggregates.html">Aggregates design note</a><a href="internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="internals/design-corelib.html">corelib design notes (maintainers)</a><a href="internals/design-enums.html">Enum design notes (maintainers)</a><a href="internals/design-ffi.html">FFI design notes (maintainers)</a><a href="internals/design-functions.html">Function design notes (maintainers)</a><a href="internals/design-generics.html">Generics design notes (maintainers)</a><a href="internals/design-maps.html">Map design notes (maintainers)</a><a href="internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="internals/probe-procedure.html">Running an agent probe</a><a href="internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="rfc/README.html">RFCs</a><a href="rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="changelog.html">Changelog</a><a href="release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#1-sixteen-attacks-refused-and-the-gate-was-measuring-nothing">1. Sixteen attacks refused, and the gate was measuring nothing</a>
+<a href="#2-the-flag-that-quietly-emptied-the-corpus">2. The flag that quietly emptied the corpus</a>
+<a href="#3-a-control-that-was-optimised-into-its-own-negative">3. A control that was optimised into its own negative</a>
+<a href="#4-the-class-no-sanitizer-sees">4. The class no sanitizer sees</a>
+<a href="#the-practice">The practice</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="index.html">Docs</a> / controls.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="every-gate-must-be-able-to-fail">Every gate must be able to fail</h1>
-<p>A green test suite is evidence of nothing until you know each test can go red.</p>
-<p>That sounds obvious and it is routinely untrue: a check that passes because it</p>
-<p>is broken looks exactly like a check that passes because the code is right.</p>
-<p>Tycho has no cloud CI, 102 entries in a defect log, and a rule that fell out of</p>
-<p>both — **every gate here has to demonstrate it can redden, and the demonstration</p>
-<p>is part of the gate.**</p>
-<p>This page is four cases where that rule paid off. Every number below is from</p>
-<p><a href="internals/FRICTION.html"><code>internals/FRICTION.md</code></a>, the project's defect log.</p>
+<p>A green test suite is evidence of nothing until you know each test can go red. That sounds obvious and it is routinely untrue: a check that passes because it is broken looks exactly like a check that passes because the code is right. Tycho has no cloud CI, 102 entries in a defect log, and a rule that fell out of both — <strong>every gate here has to demonstrate it can redden, and the demonstration is part of the gate.</strong></p>
+<p>This page is four cases where that rule paid off. Every number below is from <a href="internals/FRICTION.html"><code>internals/FRICTION.md</code></a>, the project's defect log.</p>
 <h2 id="1-sixteen-attacks-refused-and-the-gate-was-measuring-nothing">1. Sixteen attacks refused, and the gate was measuring nothing</h2>
-<p>The server was probed with sixteen hostile requests — raw <code>../</code>, <code>%2e%2e%2f</code>,</p>
-<p>double-encoded <code>%252e</code>, <code>....//</code>, overlong UTF-8 <code>%c0%af</code>, absolute-form, a NUL</p>
-<p>in the target, an 8000-byte target. All refused. Nothing leaked. The server kept</p>
-<p>serving afterwards.</p>
-<p>Then the control was run: one of the two defence layers was replaced with naive</p>
-<p>string concatenation, to check the probe would notice.</p>
+<p>The server was probed with sixteen hostile requests — raw <code>../</code>, <code>%2e%2e%2f</code>, double-encoded <code>%252e</code>, <code>....//</code>, overlong UTF-8 <code>%c0%af</code>, absolute-form, a NUL in the target, an 8000-byte target. All refused. Nothing leaked. The server kept serving afterwards.</p>
+<p>Then the control was run: one of the two defence layers was replaced with naive string concatenation, to check the probe would notice.</p>
 <p>It still returned 403.</p>
-<p>The defence is two independent layers, and **either one alone refuses every</p>
-<p>payload in the suite**. So deleting one changed no observable behaviour, and</p>
-<p>sixteen green results were compatible with the defence being half gone. Two</p>
-<p>commits, neither of which looks wrong in review, would have taken it to zero</p>
-<p>with every gate still green.</p>
-<p>Nothing was broken. The finding was that nothing *could tell* — which is a</p>
-<p>different and worse problem, because it has no symptom. (<code>FRICTION.md</code> entry 72.)</p>
+<p>The defence is two independent layers, and <strong>either one alone refuses every payload in the suite</strong>. So deleting one changed no observable behaviour, and sixteen green results were compatible with the defence being half gone. Two commits, neither of which looks wrong in review, would have taken it to zero with every gate still green.</p>
+<p>Nothing was broken. The finding was that nothing *could tell* — which is a different and worse problem, because it has no symptom. (<code>FRICTION.md</code> entry 72.)</p>
 <h2 id="2-the-flag-that-quietly-emptied-the-corpus">2. The flag that quietly emptied the corpus</h2>
-<p><code>make ci N=0</code> is documented as "skip the slow fuzz lanes for a quick check".</p>
-<p><code>scripts/format_diff.sh</code> read its corpus size from a bare <code>N=${N:-400}</code>. Make</p>
-<p>exports its variables, so the differential picked up the same <code>N</code>:</p>
+<p><code>make ci N=0</code> is documented as "skip the slow fuzz lanes for a quick check". <code>scripts/format_diff.sh</code> read its corpus size from a bare <code>N=${N:-400}</code>. Make exports its variables, so the differential picked up the same <code>N</code>:</p>
 <pre><code>N=0 sh scripts/format_diff.sh   -&gt;  20 paths,   9 refused
 sh scripts/format_diff.sh       -&gt; 420 paths, 129 refused
 </code></pre>
-<p>The quick-check flag cut that lane to <strong>4.8% of its corpus</strong> and said nothing.</p>
-<p>It was caught by luck: the lane happens to exit non-zero if fewer than ten paths</p>
-<p>are refused — a guard written for an unrelated reason — and with <code>N=0</code> the</p>
-<p>corpus fell just past it. Without that accident, <code>make ci N=0</code> would have been a</p>
-<p>green sweep over a twentieth of the evidence. (Entry 84.)</p>
+<p>The quick-check flag cut that lane to <strong>4.8% of its corpus</strong> and said nothing. It was caught by luck: the lane happens to exit non-zero if fewer than ten paths are refused — a guard written for an unrelated reason — and with <code>N=0</code> the corpus fell just past it. Without that accident, <code>make ci N=0</code> would have been a green sweep over a twentieth of the evidence. (Entry 84.)</p>
 <h2 id="3-a-control-that-was-optimised-into-its-own-negative">3. A control that was optimised into its own negative</h2>
-<p>Tycho's crypto gate proves a hex decoder does not branch on secret key material.</p>
-<p>Proving an *absence* needs an instrument known to detect the presence, so the</p>
-<p>control is a patched copy of the decoder with the branchless select rewritten as</p>
-<p>an <code>if/else</code> chain. It must redden. If it does not, the leg proves nothing.</p>
-<p>Under gcc at <code>-O1</code> that chain survives and the control reports four</p>
-<p>secret-dependent branches. Under clang at <code>-O1</code> it is if-converted straight back</p>
-<p>into a branchless select — so the control emitted no branch, reported zero, and</p>
-<p>the gate refused to certify.</p>
-<p><strong>The control had been optimised into the thing it was the negative of.</strong> The</p>
-<p>fix is to build the control at <code>-O0</code>, where its branch survives any compiler,</p>
-<p>while the subject stays at <code>-O1</code>, because "the shipped decode has no</p>
-<p>secret-dependent branch" is a claim about optimised code and is worth nothing at</p>
-<p><code>-O0</code>. (Entry 92.)</p>
-<p>Two sibling entries the same day were the same mistake wearing different</p>
-<p>clothes: a packed-instruction count and an unused-symbol suppression, each a</p>
-<p>property of *gcc* that a gate had recorded as a property of *C*. All three</p>
-<p>failed closed, which is the gates working. What none of them could do was say</p>
-<p>"this is a property of the compiler I happen to be." (Entries 89, 90, 92.)</p>
+<p>Tycho's crypto gate proves a hex decoder does not branch on secret key material. Proving an *absence* needs an instrument known to detect the presence, so the control is a patched copy of the decoder with the branchless select rewritten as an <code>if/else</code> chain. It must redden. If it does not, the leg proves nothing.</p>
+<p>Under gcc at <code>-O1</code> that chain survives and the control reports four secret-dependent branches. Under clang at <code>-O1</code> it is if-converted straight back into a branchless select — so the control emitted no branch, reported zero, and the gate refused to certify.</p>
+<p><strong>The control had been optimised into the thing it was the negative of.</strong> The fix is to build the control at <code>-O0</code>, where its branch survives any compiler, while the subject stays at <code>-O1</code>, because "the shipped decode has no secret-dependent branch" is a claim about optimised code and is worth nothing at <code>-O0</code>. (Entry 92.)</p>
+<p>Two sibling entries the same day were the same mistake wearing different clothes: a packed-instruction count and an unused-symbol suppression, each a property of *gcc* that a gate had recorded as a property of *C*. All three failed closed, which is the gates working. What none of them could do was say "this is a property of the compiler I happen to be." (Entries 89, 90, 92.)</p>
 <h2 id="4-the-class-no-sanitizer-sees">4. The class no sanitizer sees</h2>
-<p>Four sanitizer lanes run here: addresses, undefined behaviour, leaks, races.</p>
-<p>None of them sees a <strong>read of memory that was never written</strong>.</p>
-<p>That gap lands squarely on this design. <code>arena_alloc</code> is a bump pointer over a</p>
-<p><code>malloc</code>'d block, so it hands back memory that is not zeroed and that ASan</p>
-<p>considers perfectly valid, because the enclosing block is live. A codegen path</p>
-<p>reading a field before writing it is invisible to every lane — and it tends to</p>
-<p>*pass a golden*, because a fresh page reads as zeros until the allocation</p>
-<p>pattern shifts.</p>
-<p>So the arena was instrumented under valgrind, every handout marked undefined,</p>
-<p>and the whole corpus swept: the fixtures, every corelib package, every example,</p>
-<p>and all 27 tools driven through their own gates with their real inputs.</p>
+<p>Four sanitizer lanes run here: addresses, undefined behaviour, leaks, races. None of them sees a <strong>read of memory that was never written</strong>.</p>
+<p>That gap lands squarely on this design. <code>arena_alloc</code> is a bump pointer over a <code>malloc</code>'d block, so it hands back memory that is not zeroed and that ASan considers perfectly valid, because the enclosing block is live. A codegen path reading a field before writing it is invisible to every lane — and it tends to *pass a golden*, because a fresh page reads as zeros until the allocation pattern shifts.</p>
+<p>So the arena was instrumented under valgrind, every handout marked undefined, and the whole corpus swept: the fixtures, every corelib package, every example, and all 27 tools driven through their own gates with their real inputs.</p>
 <p><strong>972 programs, 0 uninitialised arena reads.</strong></p>
-<p>The number that makes that worth printing is not 972. It is the control, run in</p>
-<p>both directions: a read of an unwritten arena slot fires `Conditional jump or</p>
-<p>move depends on uninitialised value(s)` and exits 42, and the same slot written</p>
-<p>first is silent and exits 0. Without the first, a clean sweep is indistinguishable</p>
-<p>from a dead detector. Without the second, it is indistinguishable from a detector</p>
-<p>that flags everything. (<code>internals/probe-uninit-arena-2026-09-11.md</code>.)</p>
+<p>The number that makes that worth printing is not 972. It is the control, run in both directions: a read of an unwritten arena slot fires <code>Conditional jump or move depends on uninitialised value(s)</code> and exits 42, and the same slot written first is silent and exits 0. Without the first, a clean sweep is indistinguishable from a dead detector. Without the second, it is indistinguishable from a detector that flags everything. (<code>internals/probe-uninit-arena-2026-09-11.md</code>.)</p>
 <h2 id="the-practice">The practice</h2>
 <ul>
-<li><strong>Every closed entry names a command that would catch its regression.</strong> 93</li>
+<li><strong>Every closed entry names a command that would catch its regression.</strong> 93 closed, 92 pinned by 66 distinct commands, 1 excused with a stated reason, 0 unpinned — and <code>make friction-check</code> *runs the pins*, so the log is executable rather than decorative. An entry claiming a fix that no longer holds turns the gate red.</li>
+<li><strong>Skips are enumerated, never silent.</strong> A lane that cannot run on this host names itself and the reason; an unenumerated skip is a failure.</li>
+<li><strong>A gate that cannot discriminate refuses to certify</strong> rather than passing vacuously. That is why entries 89 and 92 above surfaced as red builds on a tree where nothing was wrong.</li>
+<li><strong>The log records the wrong turns too</strong> — theories that were disproved, a commit message that was wrong on a point of fact and the entry that corrects it, recommendations made without reading the comment above the code.</li>
 </ul>
-<p>closed, 92 pinned by 66 distinct commands, 1 excused with a stated reason, 0</p>
-<p>unpinned — and <code>make friction-check</code> *runs the pins*, so the log is executable</p>
-<p>rather than decorative. An entry claiming a fix that no longer holds turns the</p>
-<p>gate red.</p>
-<ul>
-<li><strong>Skips are enumerated, never silent.</strong> A lane that cannot run on this host</li>
-</ul>
-<p>names itself and the reason; an unenumerated skip is a failure.</p>
-<ul>
-<li><strong>A gate that cannot discriminate refuses to certify</strong> rather than passing</li>
-</ul>
-<p>vacuously. That is why entries 89 and 92 above surfaced as red builds on a</p>
-<p>tree where nothing was wrong.</p>
-<ul>
-<li><strong>The log records the wrong turns too</strong> — theories that were disproved, a</li>
-</ul>
-<p>commit message that was wrong on a point of fact and the entry that corrects</p>
-<p>it, recommendations made without reading the comment above the code.</p>
-<p>None of this makes the language good. It makes the *evidence* about the language</p>
-<p>worth reading, which is the part a stranger cannot take on trust.</p>
-<p>See also: <a href="architecture.html">architecture</a> · <a href="thesis.html">thesis</a> ·</p>
-<p><a href="internals/FRICTION.html">the friction log itself</a></p>
+<p>None of this makes the language good. It makes the *evidence* about the language worth reading, which is the part a stranger cannot take on trust.</p>
+<p>See also: <a href="architecture.html">architecture</a> · <a href="thesis.html">thesis</a> · <a href="internals/FRICTION.html">the friction log itself</a></p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="tutorial.html">Tutorial</a>
+    <a href="reference/index.html">Reference</a>
+    <a href="thesis.html">The thesis</a>
+    <a href="idioms.html">Thinking in Tycho</a>
+    <a href="changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

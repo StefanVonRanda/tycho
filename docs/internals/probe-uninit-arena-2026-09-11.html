@@ -4,43 +4,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Probe: uninitialised arena reads, 2026-09-11 — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="../index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="../index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="../index.html">docs</a> / internals/probe-uninit-arena-2026-09-11.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance and memory</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html" aria-current="page">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#why">Why</a>
+<a href="#what-was-run">What was run</a>
+<a href="#the-control-because-a-clean-sweep-from-an-unproven-instrument-is-worth-nothing">The control, because a clean sweep from an unproven instrument is worth nothing</a>
+<a href="#what-this-does-and-does-not-establish">What this does and does not establish</a>
+<a href="#4-tools--closed-2026-09-18-and-it-was-not-the-job-this-record-expected">4. tools/ — closed 2026-09-18, and it was not the job this record expected</a>
+<a href="#why-no-lane-was-added">Why no lane was added</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/probe-uninit-arena-2026-09-11.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="probe-uninitialised-arena-reads-2026-09-11">Probe: uninitialised arena reads, 2026-09-11</h1>
 <blockquote>
-<p>Status: probe record. The instrumented runtime was thrown away; this is the</p>
-<p>artifact. Nothing was committed to <code>runtime/tycho_rt.c</code>.</p>
+<p>Status: probe record. The instrumented runtime was thrown away; this is the artifact. Nothing was committed to <code>runtime/tycho_rt.c</code>.</p>
 </blockquote>
 <p><strong>Verdict: 371 programs, 0 uninitialised arena reads; 972 instrumented tool runs, 0 reads. Probed 2026-09-11, tools sweep closed 2026-09-18. Outcome: no lane added — the method stays recorded for re-runs after codegen work touching initialisation.</strong></p>
 <h2 id="why">Why</h2>
-<p>Rule: the four sanitizer lanes cover addresses (ASan), undefined behaviour</p>
-<p>(UBSan), leaks (LSan), and races (TSan). None of them sees a read of</p>
-<p>memory that was never written.</p>
-<p>That gap matters here. <code>arena_alloc</code> is a bump</p>
-<p>pointer over a block the runtime got from <code>malloc</code>: it hands back memory that is</p>
-<p>*not* zeroed and that ASan considers valid, because the enclosing</p>
-<p>block is a live allocation. So a codegen path that reads a struct field or array</p>
-<p>slot before writing it is invisible to every lane in the tree, and prints</p>
-<p>whatever the arena last held. It also tends to pass a</p>
-<p>golden — a fresh page reads as zeros, so the output looks right until the</p>
-<p>allocation pattern shifts.</p>
-<p>Valgrind's memcheck closes that gap. This tree already</p>
-<p>uses valgrind client requests for the constant-time crypto proof</p>
-<p>(<code>docs/internals/ffi-review-2026-08-14.md</code>), so the technique is established; it</p>
-<p>had never been pointed at the arena.</p>
+<p>Rule: the four sanitizer lanes cover addresses (ASan), undefined behaviour (UBSan), leaks (LSan), and races (TSan). None of them sees a read of memory that was never written.</p>
+<p>That gap matters here. <code>arena_alloc</code> is a bump pointer over a block the runtime got from <code>malloc</code>: it hands back memory that is *not* zeroed and that ASan considers valid, because the enclosing block is a live allocation. So a codegen path that reads a struct field or array slot before writing it is invisible to every lane in the tree, and prints whatever the arena last held. It also tends to pass a golden — a fresh page reads as zeros, so the output looks right until the allocation pattern shifts.</p>
+<p>Valgrind's memcheck closes that gap. This tree already uses valgrind client requests for the constant-time crypto proof (<code>docs/internals/ffi-review-2026-08-14.md</code>), so the technique is established; it had never been pointed at the arena.</p>
 <h2 id="what-was-run">What was run</h2>
-<p>Two sweeps over the 288 flat fixtures in <code>tests/*.ty</code>, each built and then run</p>
-<p>under <code>valgrind --error-exitcode=42 --errors-for-leak-kinds=none</code>.</p>
-<p><strong>1. Plain memcheck — 288 ran, 0 errors.</strong> Weak by construction: valgrind sees the arena as one large <code>malloc</code> and cannot tell a slot</p>
-<p>inside it from any other byte. This sweep tests roughly what ASan</p>
-<p>already tests.</p>
-<p><strong>2. Arena-instrumented memcheck — 288 ran, 0 errors.</strong> A copy of</p>
-<p><code>runtime/tycho_rt.c</code> was patched so every arena handout is marked undefined:</p>
+<p>Two sweeps over the 288 flat fixtures in <code>tests/*.ty</code>, each built and then run under <code>valgrind --error-exitcode=42 --errors-for-leak-kinds=none</code>.</p>
+<p><strong>1. Plain memcheck — 288 ran, 0 errors.</strong> Weak by construction: valgrind sees the arena as one large <code>malloc</code> and cannot tell a slot inside it from any other byte. This sweep tests roughly what ASan already tests.</p>
+<p><strong>2. Arena-instrumented memcheck — 288 ran, 0 errors.</strong> A copy of <code>runtime/tycho_rt.c</code> was patched so every arena handout is marked undefined:</p>
 <pre><code class="language-c">static inline void *arena_alloc_vg(Arena *a, size_t n) {
     void *p = arena_alloc_i(a, n);
     if (p) VALGRIND_MAKE_MEM_UNDEFINED(p, n);
@@ -48,103 +55,64 @@
 }
 #define arena_alloc(a, n) arena_alloc_vg((a), (n))
 </code></pre>
-<p>The macro matters: internal callers reach <code>arena_alloc_i</code></p>
-<p>through it, so patching only the exported <code>arena_alloc</code> function would have</p>
-<p>instrumented almost nothing. Fixtures were built against the patched copy with</p>
-<p><code>./tychoc1 &lt;f&gt; --runtime &lt;copy&gt;</code>, which is why the repo needed no change.</p>
+<p>The macro matters: internal callers reach <code>arena_alloc_i</code> through it, so patching only the exported <code>arena_alloc</code> function would have instrumented almost nothing. Fixtures were built against the patched copy with <code>./tychoc1 &lt;f&gt; --runtime &lt;copy&gt;</code>, which is why the repo needed no change.</p>
 <h2 id="the-control-because-a-clean-sweep-from-an-unproven-instrument-is-worth-nothing">The control, because a clean sweep from an unproven instrument is worth nothing</h2>
-<p>A detector that cannot report is indistinguishable from a clean tree. So the</p>
-<p>instrument was made to fire on purpose — a C program including the patched</p>
-<p>runtime, allocating 64 bytes from a real <code>Arena</code> and branching on them without</p>
-<p>writing:</p>
+<p>A detector that cannot report is indistinguishable from a clean tree. So the instrument was made to fire on purpose — a C program including the patched runtime, allocating 64 bytes from a real <code>Arena</code> and branching on them without writing:</p>
 <pre><code class="language-text">exit=42
 ==2128933== Conditional jump or move depends on uninitialised value(s)
 </code></pre>
 <p>It reports. The 288/0 above was measured against a working detector.</p>
-<p>**3. Extended to corelib and the examples — 83 ran, 0 errors, 0 failed to</p>
-<p>build.** All 46 packages under <code>corelib/test/</code> and all 37 under</p>
-<p><code>examples/corelib/</code>, same instrumented runtime. This is the stronger half of the</p>
-<p>result: the flat fixtures are mostly minimal feature probes, while these are</p>
-<p>real programs that allocate, grow and partially fill buffers — <code>bignum</code>,</p>
-<p><code>decimal</code>, <code>regex</code>, <code>json</code>, <code>compress</code>, <code>sha256</code>, <code>zip</code> — the shape</p>
-<p>that produces a read of a slot nobody wrote. The libcurl-, libpng- and</p>
-<p>sqlite-backed packages built and ran too, so nothing was silently skipped.</p>
+<p><strong>3. Extended to corelib and the examples — 83 ran, 0 errors, 0 failed to build.</strong> All 46 packages under <code>corelib/test/</code> and all 37 under <code>examples/corelib/</code>, same instrumented runtime. This is the stronger half of the result: the flat fixtures are mostly minimal feature probes, while these are real programs that allocate, grow and partially fill buffers — <code>bignum</code>, <code>decimal</code>, <code>regex</code>, <code>json</code>, <code>compress</code>, <code>sha256</code>, <code>zip</code> — the shape that produces a read of a slot nobody wrote. The libcurl-, libpng- and sqlite-backed packages built and ran too, so nothing was silently skipped.</p>
 <p><strong>371 programs total, 0 uninitialised arena reads.</strong></p>
 <h2 id="what-this-does-and-does-not-establish">What this does and does not establish</h2>
-<p><strong>Does:</strong> across 371 programs — every flat fixture, every corelib test package</p>
-<p>and every corelib example — no execution reads an arena slot it never wrote,</p>
-<p>with an instrument demonstrated to catch exactly that.</p>
-<p><strong>Does not:</strong> prove the property. The corpus exercises the paths the corpus</p>
-<p>exercises — a codegen path nothing reaches is as untested here as anywhere. And</p>
-<p>memcheck reports the <strong>read</strong>, not the missing <strong>write</strong>, so a real finding would</p>
-<p>still need tracing back to the construct that failed to initialise.</p>
+<p><strong>Does:</strong> across 371 programs — every flat fixture, every corelib test package and every corelib example — no execution reads an arena slot it never wrote, with an instrument demonstrated to catch exactly that.</p>
+<p><strong>Does not:</strong> prove the property. The corpus exercises the paths the corpus exercises — a codegen path nothing reaches is as untested here as anywhere. And memcheck reports the <strong>read</strong>, not the missing <strong>write</strong>, so a real finding would still need tracing back to the construct that failed to initialise.</p>
 <h2 id="4-tools--closed-2026-09-18-and-it-was-not-the-job-this-record-expected">4. <code>tools/</code> — closed 2026-09-18, and it was not the job this record expected</h2>
-<p>This record first called driving 30 programs "a bigger job than this</p>
-<p>probe". The arguments already existed: 27 of the 30</p>
-<p>tools ship their own <code>run.sh</code> gate that feeds them real inputs, and every one</p>
-<p>resolves its compiler as <code>TYCHOC="${TYCHOC:-./tychoc1}"</code>. So nothing had to be</p>
-<p>invented and no gate had to be edited — a wrapper standing in for <code>tychoc1</code> does</p>
-<p>both halves:</p>
-<p>1. appends <code>--runtime &lt;instrumented copy&gt;</code>, and</p>
-<p>2. replaces the produced binary with a shim that runs it under `valgrind -q</p>
-<p>--log-file=...`.</p>
-<p><strong>Findings go to a log, deliberately not to <code>--error-exitcode</code>.</strong> The gates'</p>
-<p>exit codes and stdout have to stay byte-identical or they stop testing what they</p>
-<p>test, and a probe that quietly breaks the suite it is riding on is worse than no</p>
-<p>probe.</p>
+<p>This record first called driving 30 programs "a bigger job than this probe". The arguments already existed: 27 of the 30 tools ship their own <code>run.sh</code> gate that feeds them real inputs, and every one resolves its compiler as <code>TYCHOC="${TYCHOC:-./tychoc1}"</code>. So nothing had to be invented and no gate had to be edited — a wrapper standing in for <code>tychoc1</code> does both halves:</p>
+<ol>
+<li>appends <code>--runtime &lt;instrumented copy&gt;</code>, and</li>
+<li>replaces the produced binary with a shim that runs it under <code>valgrind -q --log-file=...</code>.</li>
+</ol>
+<p><strong>Findings go to a log, deliberately not to <code>--error-exitcode</code>.</strong> The gates' exit codes and stdout have to stay byte-identical or they stop testing what they test, and a probe that quietly breaks the suite it is riding on is worse than no probe.</p>
 <p><strong>The instrument was proved in BOTH directions this time:</strong></p>
 <table>
 <tr><th>control</th><th>expected</th><th>measured</th></tr>
 <tr><td>read an arena slot nobody wrote</td><td>must fire</td><td>exit 42, <code>Conditional jump or move depends on uninitialised value(s)</code></td></tr>
 <tr><td>the same slot, written first</td><td>must stay silent</td><td>exit 0, nothing reported</td></tr>
 </table>
-<p>The negative half is not decoration: without it a scanner that matches anything</p>
-<p>is indistinguishable from a working one.</p>
+<p>The negative half is not decoration: without it a scanner that matches anything is indistinguishable from a working one.</p>
 <p><strong>27 tools, 972 instrumented runs, 0 uninitialised arena reads.</strong></p>
 <p><strong>Two of the gaps this record first reported were closed the same day:</strong></p>
 <ul>
-<li><strong><code>tycho-fh</code> — now covered.</strong> It compiles its own binaries with <code>cc</code> after</li>
+<li><strong><code>tycho-fh</code> — now covered.</strong> It compiles its own binaries with <code>cc</code> after <code>--emit-c</code>, so the <code>tychoc1</code> wrapper alone never reached them. A second shim, on <code>cc</code>, wraps only *linked executables* and leaves <code>-c</code> objects alone — hand the linker a shell script and the gate fails for the wrong reason. Gate green, 6 instrumented runs, 0 reads.</li>
+<li><strong><code>tycho-debug</code> — mostly covered.</strong> Legs [1]–[6] pass under instrumentation — scripted session, <code>-b</code>, run-to-completion, Ctrl-C, fail-closed, the <code>tycho debug</code> wrapper — with 12 instrumented runs and 0 reads. Only leg [7] fails, and it is the one leg that *cannot* survive this harness: it asserts how <code>tycho-debug</code> <strong>locates a compiler</strong> (beside the binary, via <code>TYCHOC</code>, via <code>PATH</code>), while the probe's whole method is replacing the compiler with a wrapper somewhere else. The leg is measuring the variable the probe changes.</li>
 </ul>
-<p><code>--emit-c</code>, so the <code>tychoc1</code> wrapper alone never reached them. A second shim,</p>
-<p>on <code>cc</code>, wraps only *linked executables* and leaves <code>-c</code> objects alone — hand</p>
-<p>the linker a shell script and the gate fails for the wrong reason. Gate green,</p>
-<p>6 instrumented runs, 0 reads.</p>
-<ul>
-<li><strong><code>tycho-debug</code> — mostly covered.</strong> Legs [1]–[6]</li>
-</ul>
-<p>pass under instrumentation — scripted session, <code>-b</code>, run-to-completion,</p>
-<p>Ctrl-C, fail-closed, the <code>tycho debug</code> wrapper — with 12 instrumented runs and</p>
-<p>0 reads. Only leg [7] fails, and it is the one leg that *cannot* survive this</p>
-<p>harness: it asserts how <code>tycho-debug</code> <strong>locates a compiler</strong> (beside the</p>
-<p>binary, via <code>TYCHOC</code>, via <code>PATH</code>), while the probe's whole method is replacing</p>
-<p>the compiler with a wrapper somewhere else. The leg is measuring the variable</p>
-<p>the probe changes.</p>
 <p><strong>What is NOT covered, named rather than rounded up:</strong></p>
 <ul>
-<li><strong><code>tycho-debug</code> leg [7]</strong> — see above; not closable by this method at all, and</li>
+<li><strong><code>tycho-debug</code> leg [7]</strong> — see above; not closable by this method at all, and the only thing in <code>tools/</code> that is not.</li>
 </ul>
-<p>the only thing in <code>tools/</code> that is not.</p>
-<p><strong><code>tycho-chess</code> was the third gap and it is closed too:</strong> leaving it running. The gate passes *under memcheck* — 24 published and</p>
-<p>oracle perft totals, the divides against golden, 5 search positions deterministic</p>
-<p>and TT-invariant, parallel == serial — across 63 instrumented runs, 0 reads. It</p>
-<p>was stopped at 41 runs earlier for cost: perft is pure compute, so it buys minutes of memcheck per arena</p>
-<p>allocation it does not make.</p>
+<p><strong><code>tycho-chess</code> was the third gap and it is closed too:</strong> leaving it running. The gate passes *under memcheck* — 24 published and oracle perft totals, the divides against golden, 5 search positions deterministic and TT-invariant, parallel == serial — across 63 instrumented runs, 0 reads. It was stopped at 41 runs earlier for cost: perft is pure compute, so it buys minutes of memcheck per arena allocation it does not make.</p>
 <ul>
 <li><strong><code>tycho-fetch</code>, <code>prof</code>, <code>prunner</code></strong> and the single-file tools — no <code>run.sh</code>.</li>
 </ul>
-<p><strong>One failure that is the INSTRUMENT, not the tree.</strong> <code>tycho-flow</code> fails under</p>
-<p>memcheck: *"the pool drained out of order only 77 of 200 runs"*. Running the same gate with the same compiler and no valgrind is green</p>
-<p>and reorders on essentially all 200 — memcheck serialises threads, so an</p>
-<p>assertion that needs real parallelism degrades. Recorded because the next run pointing valgrind at a concurrency gate will meet it again.</p>
-<p><strong>Found on the way:</strong> five of these gates silently discard the <code>TYCHOC</code></p>
-<p>override and run the C bootstrap instead of the shipped compiler — FRICTION 93.</p>
-<p>That is why the sweep initially reported "no instrumented run" for them.</p>
+<p><strong>One failure that is the INSTRUMENT, not the tree.</strong> <code>tycho-flow</code> fails under memcheck: *"the pool drained out of order only 77 of 200 runs"*. Running the same gate with the same compiler and no valgrind is green and reorders on essentially all 200 — memcheck serialises threads, so an assertion that needs real parallelism degrades. Recorded because the next run pointing valgrind at a concurrency gate will meet it again.</p>
+<p><strong>Found on the way:</strong> five of these gates silently discard the <code>TYCHOC</code> override and run the C bootstrap instead of the shipped compiler — FRICTION 93. That is why the sweep initially reported "no instrumented run" for them.</p>
 <h2 id="why-no-lane-was-added">Why no lane was added</h2>
-<p>It found nothing, and a lane costs time on every run forever. The method is</p>
-<p>cheap to re-run from this record when there is a reason — after codegen work</p>
-<p>that touches initialisation, or if a golden ever differs in a way that smells</p>
-<p>like stale bytes. Recorded rather than institutionalised.</p>
+<p>It found nothing, and a lane costs time on every run forever. The method is cheap to re-run from this record when there is a reason — after codegen work that touches initialisation, or if a golden ever differs in a way that smells like stale bytes. Recorded rather than institutionalised.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>

@@ -1,46 +1,25 @@
 <!DOCTYPE html>
-<!-- og-card.html: regeneration source for og.png. Screenshot this at 1200x630 with a headless browser:
-     google-chrome --headless=new --window-size=1200,630 --screenshot=og.png http://localhost:PORT/og-card.html -->
+<!-- Source for og.png. Render at 1200 × 630 after fonts finish loading. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tycho — social preview</title>
 <link rel="stylesheet" href="fonts/fonts.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <style>
-  *{box-sizing:border-box; margin:0; padding:0}
-  body{width:1200px; height:630px; background:#eceee9; color:#0d0d0c; overflow:hidden;
-    font-family:"IBM Plex Mono",monospace; position:relative}
-  .ring{position:absolute; border:2px solid rgba(13,13,12,.18); border-radius:50%}
-  .ring1{width:430px; height:430px; right:-110px; top:-60px}
-  .ring2{width:300px; height:300px; right:-20px; top:5px; border-color:rgba(13,13,12,.30)}
-  .ring3{width:170px; height:170px; right:45px; top:70px; border-color:rgba(13,13,12,.42)}
-  .dot{position:absolute; border-radius:50%; background:#1c1c2e}
-  .sat{position:absolute; border:2px solid rgba(13,13,12,.42); border-radius:50%; background:#eceee9}
-  .k{font-size:16px; letter-spacing:4px; color:#0d0d0c; font-weight:600; margin-bottom:26px}
-  h1{font-size:46px; line-height:1.25; font-weight:700; letter-spacing:-.5px; color:#0d0d0c; max-width:700px}
-  h1 .tok{color:#0d0d0c; border-bottom:3px solid #c2431b; padding-bottom:3px}
-  .sub{margin-top:26px; font-size:16px; letter-spacing:1.6px; color:#2c2c2a; text-transform:uppercase; max-width:620px; line-height:1.8}
-  .meta{position:absolute; left:60px; bottom:52px; display:flex; gap:30px; font-size:13px; letter-spacing:2px; color:#65665f; text-transform:uppercase}
-  .meta b{color:#0d0d0c; font-weight:600; display:block; font-size:15px; margin-bottom:3px}
-  .rule{position:absolute; left:60px; right:60px; bottom:118px; height:1px; background:#bcc0b6}
+*{box-sizing:border-box;margin:0}
+body{width:1200px;height:630px;padding:64px;background:#ffffff;color:#000000;font-family:"Space Grotesk",system-ui,sans-serif}
+.kicker{font:14px "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;margin-bottom:40px}
+h1{font-family:"Fraunces",Georgia,serif;font-weight:600;font-size:72px;line-height:1.08;letter-spacing:-.02em}
+p{font-size:24px;line-height:1.6;margin-top:28px;max-width:850px;color:#4d4d4d}
+footer{position:absolute;left:64px;right:64px;bottom:52px;border-top:1px solid #767676;padding-top:22px;display:flex;justify-content:space-between;font:14px "IBM Plex Mono",monospace}
 </style>
 </head>
 <body>
-  <div style="position:absolute; left:60px; top:62px; right:60px">
-    <div class="k">TYCHO — EXPERIMENTAL SYSTEMS LANGUAGE</div>
-    <h1>Automatic memory management.<br>No GC, no manual <span class="tok">free</span>.</h1>
-    <div class="sub">Implicit hierarchical arenas under value semantics —<br>memory from lexical scope, transpiles to C.</div>
-  </div>
-  <div class="rule"></div>
-  <div class="meta">
-    <div><b>cc + make</b>whole toolchain</div>
-    <div><b>45</b>stdlib packages</div>
-    <div><b>719</b>gated fixtures</div>
-    <div><b>MIT</b>licensed</div>
-  </div>
-  <div class="ring ring1"></div><div class="ring ring2"></div><div class="ring ring3"></div>
-  <div class="dot" style="width:26px; height:26px; right:128px; top:112px"></div>
-  <div class="dot" style="width:14px; height:14px; right:62px; top:252px"></div>
-  <div class="sat" style="width:56px; height:56px; right:150px; top:236px"></div>
-  <div class="dot" style="width:10px; height:10px; right:196px; top:252px"></div>
+<div class="kicker">Tycho · Experimental systems language</div>
+<h1>Memory from scope.<br>Not a collector.</h1>
+<p>Implicit arenas and value semantics.<br>No garbage collector, no manual free, no borrow checker.</p>
+<footer><span>Transpiles to C · Builds with cc + make</span><span>tycho-lang.com</span></footer>
 </body>
 </html>

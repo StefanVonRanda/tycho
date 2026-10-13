@@ -4,87 +4,65 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Architecture &amp; project status — Tycho docs</title>
 <script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
-<style>:root{--paper:#000000;--ink:#ffffff;--ink-soft:#e6e6e6;--dim:#b3b3b3;--faint:#a6a6a6;--line:#808080;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#ffffff;--acc-code:#ffffff;--acc-on:#000000}:root[data-theme="light"]{--paper:#ffffff;--ink:#000000;--ink-soft:#222222;--dim:#4d4d4d;--faint:#595959;--line:#767676;--code-bg:#0d0d0d;--code-fg:#f5f5f5;--code-dim:#a3a3a3;--code-line:#616161;--acc:#000000;--acc-code:#ffffff;--acc-on:#ffffff}*{box-sizing:border-box}body{margin:0 auto;max-width:44rem;padding:24px 20px 64px;background:var(--paper);color:var(--ink-soft);font-family:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.7}a{color:inherit;text-decoration:none}::selection{background:var(--acc);color:var(--acc-on)}.skip{position:absolute;left:12px;top:-56px;z-index:100;background:var(--ink);color:var(--paper);padding:12px 20px;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.skip:focus{top:8px}a:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:3px}h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-weight:600;color:var(--ink);line-height:1.15;letter-spacing:0}h1{font-size:34px;margin:0 0 24px}h2{font-size:26px;margin:40px 0 16px}h3{font-size:20px;margin:32px 0 12px}p{margin:0 0 16px}p a,li a,td a,blockquote a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}strong{color:var(--ink)}pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}pre{background:var(--code-bg);color:var(--code-fg);border:1px solid var(--code-line);border-radius:8px;padding:20px 24px;overflow-x:auto;font-size:13px;line-height:1.8}code{font-size:.9em;color:var(--ink)}table{border-collapse:collapse;margin:24px 0}th,td{border:1px solid var(--line);padding:8px 12px;text-align:left}th{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}td{font-size:14.5px}blockquote{border-left:2px solid var(--ink);margin:24px 0;padding:4px 0 4px 16px;color:var(--dim)}hr{border:0;border-top:1px solid var(--line);margin:32px 0}nav.crumb{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--faint);margin-bottom:24px}nav.crumb a{color:var(--dim)}nav.crumb a:hover{color:var(--ink)}.masthead{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--line)}.masthead .in{padding:12px 0;display:flex;align-items:center;gap:16px}.wordmark{display:flex;align-items:center;gap:8px;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;font-weight:700;letter-spacing:.12em}.wordmark svg{width:18px;height:18px}.masthead nav{display:flex;gap:4px;margin-left:auto}.masthead nav a{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 12px}.masthead nav a:hover{color:var(--ink)}.search{margin:0 0 8px;max-width:34em}#q{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink)}#q::placeholder{color:var(--faint)}#r{margin:12px 0 0}#r .n{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 4px}#r a.r{display:flex;align-items:baseline;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line);color:var(--dim)}#r a.r:first-of-type{border-top:1px solid var(--line)}#r a.r:hover{color:var(--ink)}#r a.r .t{color:var(--ink)}#r a.r .arr{margin-left:auto;color:var(--faint)}#r .none{color:var(--faint);font-size:14px;padding:12px 4px}ul.pages{list-style:none;margin:32px 0 0;padding:0}ul.pages li{padding:12px 4px;border-top:1px solid var(--line);color:var(--dim)}ul.pages li:first-child{border-top:0}ul.pages li a{color:var(--ink);text-decoration:underline;text-underline-offset:3px}footer{margin-top:64px;padding:40px 0;text-align:center;border-top:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--dim)}.fbrand{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink);font-weight:700;font-size:14px;letter-spacing:.12em;margin-bottom:12px}.fbrand svg{width:18px;height:18px}.tagline{color:var(--faint);font-size:14px}</style>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<script src="site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<div class="masthead"><div class="in"><a class="wordmark" href="index.html"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></a><nav aria-label="Docs"><a href="index.html">Docs</a><a href="https://github.com/StefanVonRanda/tycho">GitHub</a></nav></div></div>
-<main id="main">
-<nav class="crumb"><a href="index.html">docs</a> / architecture.md</nav>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../#idea">Overview</a>
+    <a href="../#costs">Tradeoffs</a>
+    <a href="../#try">Install</a>
+    <a href="index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="index.html">Documentation home</a><details open><summary>Guide</summary><a href="tutorial.html">Tutorial</a><a href="README.html">Tycho documentation</a><a href="from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="idioms.html">Thinking in Tycho</a><a href="memory-model.html">The memory model</a><a href="quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="performance.html">Performance and memory</a><a href="platforms.html">Platforms and toolchains, in detail</a><a href="debugging.html">Debugging generated C</a><a href="architecture.html" aria-current="page">Architecture &amp; project status</a><a href="thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="perf.html">Performance: the compiler and the C it emits</a><a href="controls.html">Every gate must be able to fail</a></details><details><summary>Reference</summary><a href="reference/arrays-slices.html">Arrays and slices</a><a href="reference/basics.html">Basics</a><a href="reference/builtins.html">Builtins</a><a href="reference/concurrency.html">Concurrency</a><a href="reference/corelib.html">corelib — Tycho's core library</a><a href="reference/enums-options.html">Enums, options, and `match`</a><a href="reference/ffi.html">FFI (calling C)</a><a href="reference/functions.html">Functions and closures</a><a href="reference/generics.html">Generics</a><a href="reference/index.html">Tycho language reference</a><a href="reference/maps.html">Maps</a><a href="reference/packages.html">Packages</a><a href="reference/strings.html">Strings</a><a href="reference/structs-tuples.html">Structs and tuples</a><a href="reference/subscripts.html">Subscripts (user-defined projections)</a><a href="reference/types.html">Types</a></details><details><summary>Specification</summary><a href="spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="spec/01-lexical.html">3. Lexical structure</a><a href="spec/02-grammar.html">4. Grammar</a><a href="spec/03-types.html">5. Types</a><a href="spec/04-inference.html">6. Type inference</a><a href="spec/05-generics.html">7. Generics</a><a href="spec/06-conversions.html">8. Conversions and casts</a><a href="spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="spec/09-expressions.html">13. Expressions</a><a href="spec/10-statements.html">14. Statements and control flow</a><a href="spec/11-functions.html">15. Functions</a><a href="spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="spec/16-builtins.html">29. Builtins</a><a href="spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="spec/README.html">The Tycho language specification</a><a href="spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details><summary>Maintainer records</summary><a href="internals/FRICTION.html">FRICTION</a><a href="internals/README.html">Internals</a><a href="internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="internals/audit-brief.html">Brief for an external security review</a><a href="internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="internals/design-aggregates.html">Aggregates design note</a><a href="internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="internals/design-corelib.html">corelib design notes (maintainers)</a><a href="internals/design-enums.html">Enum design notes (maintainers)</a><a href="internals/design-ffi.html">FFI design notes (maintainers)</a><a href="internals/design-functions.html">Function design notes (maintainers)</a><a href="internals/design-generics.html">Generics design notes (maintainers)</a><a href="internals/design-maps.html">Map design notes (maintainers)</a><a href="internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="internals/probe-procedure.html">Running an agent probe</a><a href="internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="rfc/README.html">RFCs</a><a href="rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="changelog.html">Changelog</a><a href="release-notes.html"></a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#the-pieces">The pieces</a>
+<a class="sub" href="#bootstrapping">Bootstrapping</a>
+<a class="sub" href="#which-compiler-is-right">Which compiler is right</a>
+<a href="#the-verification-surface">The verification surface</a>
+<a href="#shipped">Shipped</a>
+<a href="#decided-non-goals">Decided non-goals</a>
+<a class="sub" href="#traits--typeclasses--reopened-2026-09-11-re-closed-the-same-day">Traits / typeclasses — reopened 2026-09-11, re-closed the same day</a>
+<a href="#known-limits">Known limits</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="index.html">Docs</a> / architecture.md</nav>
+<div class="search-panel"><label for="q">Search documentation</label><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="" aria-controls="search-results" autocomplete="off"><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button><div id="r" class="search-results" hidden><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div></div>
 <h1 id="architecture--project-status">Architecture &amp; project status</h1>
-<p>Where the project stands: how it's built, what each verification gate proves, what's</p>
-<p>shipped, and what's a decided non-goal.</p>
-<p>Tycho tests one claim: value semantics</p>
-<p>makes hierarchical arena allocation fully implicit, with no whole-program analysis. It</p>
-<p>transpiles to C and is MIT-licensed. For the argument itself see <a href="thesis.html">thesis.md</a>;</p>
-<p>for a full accounting of where the model wins and loses see</p>
-<p><a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
+<p>Where the project stands: how it's built, what each verification gate proves, what's shipped, and what's a decided non-goal.</p>
+<p>Tycho tests one claim: value semantics makes hierarchical arena allocation fully implicit, with no whole-program analysis. It transpiles to C and is MIT-licensed. For the argument itself see <a href="thesis.html">thesis.md</a>; for a full accounting of where the model wins and loses see <a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
 <h2 id="the-pieces">The pieces</h2>
 <p><strong>Two compilers ship, and only one is normative.</strong></p>
-<p><code>src/tychoc.c</code> — 14,529 lines of C, the reference implementation. It and [the</p>
-<p>spec](spec/) define the language: where the two disagree, this one is right by</p>
-<p>definition.</p>
-<p><code>compiler/</code> — 21,498 lines of Tycho across 13 files, the same language written</p>
-<p>in itself, built as <code>tychoc1</code>.</p>
-<p><a href="../ROADMAP.html#the-self-hosted-compiler">ROADMAP</a> tracks its status and the one</p>
-<p>question about it that is not decided. Six packages: <code>lex</code>, <code>parse</code>, <code>ast</code>, <code>types</code>,</p>
-<p><code>emit</code>, <code>driver</code>. It serves two purposes — to prove the language can carry a real</p>
-<p>program, and to be a second opinion on the first. <code>make parse-check</code> scores its</p>
-<p>front end against <code>./tychoc</code>'s own answers file by file; <code>make tychoc1-check</code></p>
-<p>runs the whole fixture corpus and every tool lane with <code>TYCHOC=./tychoc1</code>.</p>
+<p><code>src/tychoc.c</code> — 14,529 lines of C, the reference implementation. It and <a href="spec/">the spec</a> define the language: where the two disagree, this one is right by definition.</p>
+<p><code>compiler/</code> — 21,498 lines of Tycho across 13 files, the same language written in itself, built as <code>tychoc1</code>. <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#the-self-hosted-compiler">ROADMAP</a> tracks its status and the one question about it that is not decided. Six packages: <code>lex</code>, <code>parse</code>, <code>ast</code>, <code>types</code>, <code>emit</code>, <code>driver</code>. It serves two purposes — to prove the language can carry a real program, and to be a second opinion on the first. <code>make parse-check</code> scores its front end against <code>./tychoc</code>'s own answers file by file; <code>make tychoc1-check</code> runs the whole fixture corpus and every tool lane with <code>TYCHOC=./tychoc1</code>.</p>
 <h3 id="bootstrapping">Bootstrapping</h3>
 <p><code>make tychoc1</code> builds in two stages (<code>Makefile@tychoc1</code>):</p>
 <pre><code>./tychoc          compiler/main.ty -o tychoc1-stage1
 ./tychoc1-stage1  compiler/main.ty -o tychoc1
 </code></pre>
-<p>The second stage is not ceremony. Stage 1 is emitted by the C compiler; the</p>
-<p>shipped <code>tychoc1</code> is emitted by a compiler that was itself written in Tycho, so</p>
-<p>a defect in tychoc1's own code generation reaches the binary you actually run</p>
-<p>instead of hiding one generation back.</p>
-<p>The fixpoint holds. Generating three further compilers from <code>compiler/main.ty</code></p>
-<p>gives byte-identical C at every hop — gen2 == gen3 == gen4. Note that the corelib is resolved relative to the running binary,</p>
-<p>so a generation built somewhere else must be run from the repo root or it</p>
-<p>cannot find <code>core:strings</code>.</p>
-<p><code>TYCHOC1_CFLAGS</code> (<code>Makefile@TYCHOC1_CFLAGS</code>) links <code>-static-pie</code>, not</p>
-<p><code>-static</code>: a plain static link leaves <code>.eh_frame</code> unsorted, so the first unwind</p>
-<p>runs <code>classify_object_over_fdes</code> over the whole table — 201,604 Ir on every</p>
-<p>compile regardless of input size.</p>
-<p>The fixpoint is gated rather than measured by hand: <code>make fixpoint-check</code></p>
-<p>(<code>scripts/fixpoint_check.sh</code>) has <code>tychoc1</code> emit the compiler's C, builds that</p>
-<p>one generation <code>-O0</code> (it only has to run), has *it* emit the compiler again, and</p>
-<p>requires the two C files byte-identical — <code>f(f(x)) == f(x)</code>. It compares the</p>
-<p>emitted C rather than binaries, so it is free of link-time noise. It is <code>[1e/13]</code> in <code>make ci</code>.</p>
+<p>The second stage is not ceremony. Stage 1 is emitted by the C compiler; the shipped <code>tychoc1</code> is emitted by a compiler that was itself written in Tycho, so a defect in tychoc1's own code generation reaches the binary you actually run instead of hiding one generation back.</p>
+<p>The fixpoint holds. Generating three further compilers from <code>compiler/main.ty</code> gives byte-identical C at every hop — gen2 == gen3 == gen4. Note that the corelib is resolved relative to the running binary, so a generation built somewhere else must be run from the repo root or it cannot find <code>core:strings</code>.</p>
+<p><code>TYCHOC1_CFLAGS</code> (<code>Makefile@TYCHOC1_CFLAGS</code>) links <code>-static-pie</code>, not <code>-static</code>: a plain static link leaves <code>.eh_frame</code> unsorted, so the first unwind runs <code>classify_object_over_fdes</code> over the whole table — 201,604 Ir on every compile regardless of input size.</p>
+<p>The fixpoint is gated rather than measured by hand: <code>make fixpoint-check</code> (<code>scripts/fixpoint_check.sh</code>) has <code>tychoc1</code> emit the compiler's C, builds that one generation <code>-O0</code> (it only has to run), has *it* emit the compiler again, and requires the two C files byte-identical — <code>f(f(x)) == f(x)</code>. It compares the emitted C rather than binaries, so it is free of link-time noise. It is <code>[1e/13]</code> in <code>make ci</code>.</p>
 <h3 id="which-compiler-is-right">Which compiler is right</h3>
-<p>The two are <strong>not</strong> peers, and saying so turns "keep them agreeing forever" from</p>
-<p>a standing tax into a procedure with a known shape:</p>
+<p>The two are <strong>not</strong> peers, and saying so turns "keep them agreeing forever" from a standing tax into a procedure with a known shape:</p>
 <ul>
-<li><strong><code>src/tychoc.c</code> is normative.</strong> It defines what the language does. It is also</li>
+<li><strong><code>src/tychoc.c</code> is normative.</strong> It defines what the language does. It is also the bootstrap, and the README's "one dependency-free C file" is a promise about it.</li>
+<li><strong><code>tychoc1</code> is the oracle.</strong> Its value is being a second implementation that can disagree. It is what every suite here defaults to (<code>tests/run.sh:175@TYCHOC</code>), so it is exercised far harder than a spare would be.</li>
 </ul>
-<p>the bootstrap, and the README's "one dependency-free C file" is a promise</p>
-<p>about it.</p>
-<ul>
-<li><strong><code>tychoc1</code> is the oracle.</strong> Its value is being a second implementation that</li>
-</ul>
-<p>can disagree. It is what every suite here defaults to</p>
-<p>(<code>tests/run.sh:175@TYCHOC</code>), so it is exercised far harder than a spare would</p>
-<p>be.</p>
-<p>**When they disagree the question is "which is right", not "make <code>tychoc1</code></p>
-<p>match".** A divergence is a finding: one of the two is wrong, and which one is</p>
-<p>decided on the merits. FRICTION 87 is the worked example — the two worded a</p>
-<p>diagnostic differently, <code>tychoc1</code>'s answer was better, and **<code>src/tychoc.c</code> was</p>
-<p>changed to match it**. The oracle improving the reference is the mechanism</p>
-<p>working, not an inversion of it.</p>
+<p><strong>When they disagree the question is "which is right", not "make <code>tychoc1</code> match".</strong> A divergence is a finding: one of the two is wrong, and which one is decided on the merits. FRICTION 87 is the worked example — the two worded a diagnostic differently, <code>tychoc1</code>'s answer was better, and <strong><code>src/tychoc.c</code> was changed to match it</strong>. The oracle improving the reference is the mechanism working, not an inversion of it.</p>
 <h2 id="the-verification-surface">The verification surface</h2>
-<p><strong>One class the lanes below do not cover</strong>, stated so it is not mistaken for</p>
-<p>covered: ASan sees addresses, UBSan undefined behaviour, LSan leaks, TSan races</p>
-<p>— <strong>none sees a read of memory that was never written</strong>. That gap was probed</p>
-<p>with valgrind memcheck over the fixtures, corelib packages, examples, and all</p>
-<p>tools driven through their gates — clean — with the instrument proved able to</p>
-<p>fire in both directions. The method is recorded in</p>
-<p><a href="internals/probe-uninit-arena-2026-09-11.html"><code>internals/probe-uninit-arena-2026-09-11.md</code></a></p>
-<p>and the controls in <a href="controls.html">controls.md</a>.</p>
-<p><code>make ci</code> runs the whole gate locally — there is no hosted CI, by policy. What each</p>
-<p>step proves:</p>
+<p><strong>One class the lanes below do not cover</strong>, stated so it is not mistaken for covered: ASan sees addresses, UBSan undefined behaviour, LSan leaks, TSan races — <strong>none sees a read of memory that was never written</strong>. That gap was probed with valgrind memcheck over the fixtures, corelib packages, examples, and all tools driven through their gates — clean — with the instrument proved able to fire in both directions. The method is recorded in <a href="internals/probe-uninit-arena-2026-09-11.html"><code>internals/probe-uninit-arena-2026-09-11.md</code></a> and the controls in <a href="controls.html">controls.md</a>.</p>
+<p><code>make ci</code> runs the whole gate locally — there is no hosted CI, by policy. What each step proves:</p>
 <table>
 <tr><th>Gate</th><th>Proves</th></tr>
 <tr><td><code>make test</code></td><td>golden-output tests pass under ASan/UBSan/LSan; <code>tests/reject/</code> must fail with a non-empty diagnostic; <code>tests/abort/</code> must die with a <code>tycho:</code> message; <code>tests/diag/</code> and <code>tests/warn/</code> match their recorded stderr.</td></tr>
@@ -102,43 +80,20 @@
 <tr><td><code>make recursion</code></td><td>deep input fails closed (no stack-overflow DoS).</td></tr>
 <tr><td><code>make spec-check</code></td><td>the spec's grammar matches the prose, its fixtures exist, and its examples produce the documented output.</td></tr>
 </table>
-<p>The <code>make hooks</code> pre-push gate runs the full deterministic lane set plus a fast fuzz</p>
-<p>smoke, so a red <code>make ci</code> can't reach <code>main</code>: a green <code>make test</code> is *not* a green tree.</p>
+<p>The <code>make hooks</code> pre-push gate runs the full deterministic lane set plus a fast fuzz smoke, so a red <code>make ci</code> can't reach <code>main</code>: a green <code>make test</code> is *not* a green tree.</p>
 <h2 id="shipped">Shipped</h2>
 <ul>
-<li><strong>Types:</strong> int/float/bool/string/char/bytes, the full fixed-width numeric family</li>
+<li><strong>Types:</strong> int/float/bool/string/char/bytes, the full fixed-width numeric family (<code>u8</code>…<code>u64</code>, <code>i8</code>…<code>i64</code>, <code>f32</code> — first-class, defined wrap), arrays + nested, maps (<code>[K:V]</code>, scalar <strong>and</strong> composite keys and values), tuples, structs, enums, <code>Option</code>/<code>Result</code>, struct-of-arrays, newtypes, typed FFI handles.</li>
+<li><strong>Language:</strong> generics (monomorphized — structs/enums/fns, <code>where</code> constraints, recursive + nested), pattern <code>match</code>, expression-valued <code>if</code>/<code>match</code>, closures (capture by value at creation -- upward closures ship; the Scheme interpreter in tools/tycho-scheme returns capturing closures and mutates captured bindings via explicit set! semantics), UFCS methods, f-strings, <code>or_return</code>, compound assignment, slices, destructuring, bidirectional type inference, Odin-style packages.</li>
+<li><strong>Concurrency:</strong> <code>spawn</code>/<code>Task</code>/<code>wait</code> (affine + implicit join), <code>parallel for</code>, lock-free channels, <code>select</code>, a bounded spawn cap (fork-bomb fails closed).</li>
+<li><strong>Safety:</strong> defined two's-complement wrap (<code>-fwrapv</code>), checked div/mod/bounds/substr, hash-flooding-resistant maps (SipHash + random seed), byte-safe strings.</li>
+<li><strong>FFI:</strong> <code>extern</code> over scalars/string/bytes/opaque <code>ptr</code>/typed handles, sized-int boundary types, nullable-<code>Option(string)</code> returns, <code>inout</code> out-params.</li>
 </ul>
-<p>(<code>u8</code>…<code>u64</code>, <code>i8</code>…<code>i64</code>, <code>f32</code> — first-class, defined wrap), arrays + nested, maps</p>
-<p>(<code>[K:V]</code>, scalar <strong>and</strong> composite keys and values), tuples, structs, enums,</p>
-<p><code>Option</code>/<code>Result</code>, struct-of-arrays, newtypes, typed FFI handles.</p>
-<ul>
-<li><strong>Language:</strong> generics (monomorphized — structs/enums/fns, <code>where</code> constraints,</li>
-</ul>
-<p>recursive + nested), pattern <code>match</code>, expression-valued <code>if</code>/<code>match</code>, closures</p>
-<p>(capture by value at creation -- upward closures ship; the Scheme interpreter</p>
-<p>in tools/tycho-scheme returns capturing closures and mutates captured</p>
-<p>bindings via explicit set! semantics), UFCS methods, f-strings, <code>or_return</code>, compound assignment,</p>
-<p>slices, destructuring, bidirectional type inference, Odin-style packages.</p>
-<ul>
-<li><strong>Concurrency:</strong> <code>spawn</code>/<code>Task</code>/<code>wait</code> (affine + implicit join), <code>parallel for</code>,</li>
-</ul>
-<p>lock-free channels, <code>select</code>, a bounded spawn cap (fork-bomb fails closed).</p>
-<ul>
-<li><strong>Safety:</strong> defined two's-complement wrap (<code>-fwrapv</code>), checked div/mod/bounds/substr,</li>
-</ul>
-<p>hash-flooding-resistant maps (SipHash + random seed), byte-safe strings.</p>
-<ul>
-<li><strong>FFI:</strong> <code>extern</code> over scalars/string/bytes/opaque <code>ptr</code>/typed handles, sized-int</li>
-</ul>
-<p>boundary types, nullable-<code>Option(string)</code> returns, <code>inout</code> out-params.</p>
 <h2 id="decided-non-goals">Decided non-goals</h2>
 <p>These are settled — please don't propose them:</p>
 <ul>
 <li>Traits / typeclasses (re-closed on new grounds — see below)</li>
-<li>A package manager (re-affirmed 2026-08-15: vendoring, Odin-style —</li>
-</ul>
-<p><a href="../ROADMAP.html#what-production-ready-requires">ROADMAP</a> §2)</p>
-<ul>
+<li>A package manager (re-affirmed 2026-08-15: vendoring, Odin-style — <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#what-production-ready-requires">ROADMAP</a> §2)</li>
 <li>A C-style ternary <code>?:</code> (the need is met by expression-valued <code>if</code>/<code>match</code> in tail position)</li>
 <li>Hindley-Milner inference</li>
 <li>Copy-on-write / reference counting</li>
@@ -147,19 +102,23 @@
 <li>Hosted CI</li>
 </ul>
 <h3 id="traits--typeclasses--reopened-2026-09-11-re-closed-the-same-day">Traits / typeclasses — reopened 2026-09-11, re-closed the same day</h3>
-<p>Traits were first closed as "complete for the thesis", then reopened when that</p>
-<p>premise was retired — and closed again on new grounds: the *dynamic* form</p>
-<p>(trait objects held in fields or heterogeneous containers) is impossible under</p>
-<p>value semantics (<a href="thesis.html">thesis §5</a>), while the *static* form is largely</p>
-<p>already present via post-substitution generics, leaving only overloading as the</p>
-<p>demand-gated gap (<a href="../ROADMAP.html#near-term">ROADMAP</a>). The full argument is in</p>
-<p><a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
+<p>Traits were first closed as "complete for the thesis", then reopened when that premise was retired — and closed again on new grounds: the *dynamic* form (trait objects held in fields or heterogeneous containers) is impossible under value semantics (<a href="thesis.html">thesis §5</a>), while the *static* form is largely already present via post-substitution generics, leaving only overloading as the demand-gated gap (<a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#near-term">ROADMAP</a>). The full argument is in <a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
 <h2 id="known-limits">Known limits</h2>
-<p>Pointer-shaped, structurally-shared data (tries, graphs) costs ~1.55× C in RAM because</p>
-<p>children are stored by value, with no sharing. The recommended</p>
-<p>idiom (a flat index-pool) is documented but not presented as "the model."</p>
-<p>See <a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
+<p>Pointer-shaped, structurally-shared data (tries, graphs) costs ~1.55× C in RAM because children are stored by value, with no sharing. The recommended idiom (a flat index-pool) is documented but not presented as "the model." See <a href="internals/value-semantics-limits.html">internals/value-semantics-limits.md</a>.</p>
 </main>
-<footer><div class="fbrand"><svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="14" aria-hidden="true"><circle cx="100" cy="100" r="40"/><circle cx="100" cy="100" r="8" fill="currentColor" stroke="none"/></svg><span>TYCHO</span></div><p class="tagline">Generated from the repo — pre-1.0, subject to change.</p></footer>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="tutorial.html">Tutorial</a>
+    <a href="reference/index.html">Reference</a>
+    <a href="thesis.html">The thesis</a>
+    <a href="idioms.html">Thinking in Tycho</a>
+    <a href="changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
 </body>
 </html>
