@@ -8,6 +8,15 @@
     <a href="{{docs}}index.html">Docs</a>
     <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
   </nav>
+  <a class="search-trigger" id="search-open" href="{{docs}}index.html" aria-haspopup="dialog" aria-controls="search-dialog" aria-keyshortcuts="Control+k Meta+k">Search <kbd aria-hidden="true">Ctrl K</kbd></a>
   <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
  </div>
 </div>
+<dialog class="site-search" id="search-dialog" aria-labelledby="search-title" aria-describedby="search-help">
+ <div class="search-heading-row"><h2 class="search-heading" id="search-title">Search documentation</h2><button type="button" id="search-close" aria-label="Close search">Esc</button></div>
+ <div class="search-panel">
+  <div class="search-input-row"><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="{{docs}}" aria-labelledby="search-title" aria-controls="search-results" autocomplete="off" spellcheck="false" autofocus><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button></div>
+  <div id="r" class="search-results"><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div>
+ </div>
+ <p class="search-help" id="search-help">↑ ↓ to move · Enter to open · Esc to close</p>
+</dialog>

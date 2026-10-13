@@ -43,14 +43,19 @@ sidebar links to level-two and level-three headings; it also becomes a disclosur
 on narrower screens. Guides begin with the tutorial and introductory material,
 not an alphabetical list.
 
-Every docs page has search. The index is fetched only when search is focused,
-so ordinary reading does not download it. It searches the complete document body, rather than
-page chrome or a truncated prefix, requires all query terms, and ranks exact
-titles and title matches ahead of body matches. Results include document paths,
-matching excerpts, and highlights. `/` or Ctrl/Cmd+K focuses search; arrow keys
-move through results and Escape clears it. Loading, no-results, and fetch-failure
-states are explicit, with a retry button after failure. Results are constructed
-with text nodes, and index URLs are validated before being made into links.
+Search lives in the shared header on the homepage and every docs page. Clicking
+Search, Ctrl/Cmd+K, or `/` outside an editable field opens a native modal dialog.
+It traps focus, makes the background inert, and restores focus on close. Escape,
+the close button, or a backdrop click dismisses it; arrow keys move through
+results and Enter opens a result. Without JavaScript the header link goes to
+the documentation index.
+
+Search uses the generated static `search.json`, with no backend. The index loads
+only when the dialog opens and is reused on that page. It searches complete
+document bodies, requires all query terms, and ranks exact titles and title
+matches ahead of body matches. Results include paths, excerpts, and highlights.
+Loading, no-results, and fetch-failure states are explicit, with retry and a
+link to browse the docs. Results use safe text nodes and validated relative URLs.
 
 ## Markdown and links
 

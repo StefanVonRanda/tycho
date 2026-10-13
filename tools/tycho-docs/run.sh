@@ -97,7 +97,10 @@ for p in pages:
     assert 'class="wordmark" href="' + prefix + '../"' in src, p
     assert 'id="tbtn"' in src and 'class="site-footer page"' in src, p
     assert 'class="page docs-layout"' in src and 'class="docs-sidebar"' in src, p
-    assert 'aria-label="Documentation"' in src and 'id="q"' in src, p
+    assert 'aria-label="Documentation"' in src and src.count('id="q"') == 1, p
+    assert src.count('id="search-dialog"') == 1 and 'id="search-open"' in src, p
+    assert 'data-root="' + prefix + '"' in src, p
+    assert src.index('id="search-dialog"') < src.index('class="page docs-layout"'), p
     assert 'href="' + prefix + '../favicon.svg"' in src, p
     if p != 'index.html':
         assert 'aria-current="page"' in src, p
@@ -113,7 +116,7 @@ for p in pages:
 print("links: repository-only targets routed to source; all local HTML links resolve")
 assert 'aria-label="On this page"' in tutorial
 assert all('Switch to ' not in e['x'] and '--paper:' not in e['x'] for e in idx)
-print("presentation: shared chrome, independent 44rem reading column, folding sidebars and per-page search")
+print("presentation: shared chrome, independent 44rem reading column, folding sidebars and shared global search")
 PY
 fi
 
