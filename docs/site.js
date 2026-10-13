@@ -35,8 +35,31 @@
   }
 
   const box = document.getElementById('q');
-  if (!box) return;
-  const panel = document.getElementById('r');
+  const dialog = document.getElementById('search-dialog');
+  const trigger = document.getElementById('search-open');
+  if (!box || !dialog || !trigger || typeof dialog.showModal !== 'function') return;
+  const shortcut = trigger.querySelector('kbd');
+  if (shortcut && /Mac|iPhone|iPad/.test(navigator.platform)) shortcut.textContent = '⌘ K';
+  let returnFocus = null;
+  function openSearch() {
+    if (!dialog.open) {
+      returnFocus = document.activeElement;
+      dialog.showModal();
+      document.body.classList.add('search-open');
+    }
+    box.focus(); box.select(); load(); render();
+  }
+  trigger.addEventListener('click', event => { event.preventDefault(); openSearch(); });
+  document.getElementById('search-close').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => {
+    document.body.classList.remove('search-open');
+    if (returnFocus && returnFocus.isConnected) returnFocus.focus({preventScroll:true});
+  });
+  dialog.addEventListener('click', event => {
+    if (event.target !== dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+  });
   const status = document.getElementById('search-status');
   const list = document.getElementById('search-results');
   const clear = document.getElementById('search-clear');
@@ -65,12 +88,13 @@
   function render() {
     const query = box.value.trim(), words = terms(query);
     clear.hidden = !query;
-    panel.hidden = !query;
     list.replaceChildren();
-    if (!query) { status.textContent = ''; return; }
+    if (!query) { status.textContent = 'Search syntax, concepts, or corelib packages.'; return; }
     if (!words.length) { status.textContent = 'Enter a word or a language construct to search.'; return; }
     if (failure) {
-      status.textContent = 'Search could not load. You can still browse the sidebar. ';
+      status.textContent = 'Search could not load. ';
+      const browse = node('a', 'Browse documentation'); browse.href = root + 'index.html';
+      status.append(browse, document.createTextNode(' or '));
       const retry = node('button', 'Retry search');
       retry.type = 'button'; retry.addEventListener('click', load); status.append(retry); return;
     }
@@ -116,11 +140,18 @@
   box.addEventListener('input', render);
   clear.addEventListener('click', () => { box.value = ''; render(); box.focus(); });
   document.addEventListener('keydown', event => {
-    const editing = event.target.closest('input,textarea,[contenteditable="true"]');
-    if ((event.key === '/' && !editing) || (event.key.toLowerCase() === 'k' && (event.ctrlKey || event.metaKey))) {
-      event.preventDefault(); box.focus(); box.select(); box.scrollIntoView({block:'center'});
+    if (event.isComposing) return;
+    const editing = event.target.closest('input,textarea,[contenteditable]:not([contenteditable="false"])');
+    if (!event.altKey && ((event.key === '/' && !editing && !event.ctrlKey && !event.metaKey) || (event.key.toLowerCase() === 'k' && (event.ctrlKey || event.metaKey)))) {
+      event.preventDefault(); openSearch(); return;
     }
-    if (event.key === 'Escape' && (event.target === box || panel.contains(event.target))) { box.value = ''; render(); box.focus(); }
+    if (!dialog.open) return;
+    // Search inputs consume Escape to clear themselves; close the modal first.
+    if (event.key === 'Escape') { event.preventDefault(); dialog.close(); return; }
+    if (event.key === 'Enter' && event.target === box) {
+      const first = list.querySelector('a');
+      if (first) { event.preventDefault(); first.click(); }
+    }
     if (['ArrowDown','ArrowUp'].includes(event.key) && (event.target === box || list.contains(event.target))) {
       const links = [...list.querySelectorAll('a')]; if (!links.length) return;
       event.preventDefault();
