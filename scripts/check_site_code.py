@@ -53,6 +53,7 @@ import tempfile
 import time
 
 TYCHO_START = re.compile(r"^\s*(package|fn|struct|enum|import)\s", re.M)
+RELEASE_VERSION = re.compile(r"/releases/(?:download|tag)/v(\d+\.\d+\.\d+)(?:/|[\"'\s<])")
 
 
 def listings(page):
@@ -190,7 +191,7 @@ def check_terminals(page, root):
     # [3a] a release URL naming a version that is no longer the latest is the
     # way this page rots without anyone touching it. Needs the network; a
     # missing `gh` skips this leg loudly rather than passing it.
-    vers = set(re.findall(r"/releases/download/v(\d+\.\d+\.\d+)/", "\n".join(blocks)))
+    vers = set(RELEASE_VERSION.findall(page))
     if vers:
         r = subprocess.run(["gh", "release", "list", "--limit", "1", "--json", "tagName",
                             "--jq", ".[0].tagName"], capture_output=True, text=True,
@@ -260,20 +261,20 @@ def selfcheck(page, tychoc):
     expect("[c0] the live listings are clean", page, False)
     # [c1] the defect that motivated this lane must be caught again.
     expect("[c1] a reintroduced range() loop is caught",
-           page.replace('for</span> i := 1; i &lt; 6; i += 1:',
-                        'for</span> i <span class="k">in</span> range(1, 6):'), True)
+           page.replace('for</span> i := 0; i &lt; limit; i += 1:',
+                        'for</span> i <span class="k">in</span> range(0, limit):'), True)
     # [c2] a listing that compiles but prints the wrong thing must be caught --
     # this is the leg a compile-only gate does not have.
     expect("[c2] a stale claimed output is caught",
-           page.replace("# counted: 1, 2, 3, 4, 5", "# counted: 9, 9, 9"), True)
+           page.replace("# 5</span>", "# 999</span>"), True)
     # [c3] the way this page rots with nobody touching it: a release ships and
-    # the download block still names the version before it. The version to
+    # the release link still names the version before it. The version to
     # demote is READ OUT OF THE PAGE, never written here: a literal goes stale
     # the first time the page is bumped, and `page.replace` on a string the page
     # no longer contains is a NO-OP -- it hands this leg an unmutated page, which
     # passes, and the control reports BROKEN. That is what happened on
     # 2026-09-10 when the page moved v0.7.0 -> v0.8.5.
-    cur = sorted(set(re.findall(r"/releases/download/v(\d+\.\d+\.\d+)/", page)))
+    cur = sorted(set(RELEASE_VERSION.findall(page)))
     if len(cur) != 1:
         print("  [c3] a superseded release version is caught             "
               "BROKEN (the page names %d versions, expected 1)" % len(cur))

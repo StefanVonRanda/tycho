@@ -65,6 +65,18 @@ with text nodes, and index URLs are validated before being made into links.
   except changelog/release-note links which use their local published pages.
 - Absolute URLs and same-page anchors pass through unchanged.
 
+## Homepage editorial contract
+
+The root `index.html` on `gh-pages` is truthful marketing for newcomers, not a
+language specification or a test dashboard. Read it as a visitor who has never
+heard of Tycho: identify the language and its benefit, explain the approach,
+introduce the everyday language features, show a few real programs, state the
+fit and limitations, then offer a clear way to try it and continue learning.
+Define unfamiliar terms before relying on them. Keep benchmark methodology,
+optimization internals, test inventories, and contributor procedures in their
+own documents; link to them rather than reproducing them. Do not imply mature
+production adoption, blanket memory safety, or universal performance wins.
+
 ## Browser verification
 
 `browser-check.cjs` runs with Puppeteer against the generated website (including

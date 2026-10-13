@@ -28,6 +28,9 @@ const output = process.env.SHOTS;
       await page.setViewport({width,height:1000});
       await go('/'); await page.evaluate(t => localStorage.setItem('tycho-theme',t),theme); await go('/');
       assert(await page.$eval('h1',h=>h.textContent.includes('programming language')),'homepage explains what Tycho is');
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`homepage overflow at ${width}`);
+      assert(await page.evaluate(()=>[...document.querySelectorAll('a[href^="#"],a[href^="./#"]')].every(a=>document.getElementById(a.hash.slice(1)))), 'homepage anchor targets');
+      if ([390,1440].includes(width)) await shot('home-'+width+'-'+theme);
       const shell = await page.evaluate(() => ({
         header:document.querySelector('.masthead').innerText,
         footer:document.querySelector('.site-footer').innerText,
