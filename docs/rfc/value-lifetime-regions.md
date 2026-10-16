@@ -42,8 +42,8 @@ when its scope ends (`runtime/tycho_rt.c:5-13`). The emitted shape is four rules
 every allocation takes an arena argument, and a return builds into `_parent`
 (`docs/memory-model.md:32-40`), realised in codegen by a single "current
 arena" string that defaults to `&_scope` (`src/tychoc.c:10729@g_cur_scope`) and a
-per-proc stack of enclosing block arenas (`src/tychoc.c:12743@g_ascope`) freed
-innermost-first at any exit (`src/tychoc.c:12742@g_nascope`).
+per-proc stack of enclosing block arenas (`src/tychoc.c:12779@g_ascope`) freed
+innermost-first at any exit (`src/tychoc.c:12778@g_nascope`).
 
 The three exceptions in the tree are the ones that prove the rule, because each is a
 *runtime* object the compiler finalises like a scope, not a user-visible lifetime:
@@ -283,9 +283,9 @@ typedef struct { Arena rgn; Arr_Conn conns; } Server;
 Allocations for elements of `s.conns` target `&s.rgn` instead of the current scope
 string; the deep copy becomes `_c.rgn = arena_new(0);` followed by the existing
 recursive element copy; and the free is one `arena_free(&s.rgn)` emitted into exactly
-the finaliser slot tasks and handles already use (`src/tychoc.c:12730@g_taskvars`),
+the finaliser slot tasks and handles already use (`src/tychoc.c:12766@g_taskvars`),
 which fires at block end, early `return`, `break`/`continue` and `or_return`
-(`src/tychoc.c:12857-12860`). There is a
+(`src/tychoc.c:12893-12896`). There is a
 genuine simplification available: `inout` on a heap value today threads the caller's
 owning scope to the callee as a hidden parameter so an allocating mutation lands where
 the borrowed value lives (`docs/spec/07-memory-model.md:186-192`). If the value owns

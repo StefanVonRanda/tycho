@@ -417,7 +417,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12939@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12975@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -790,7 +790,7 @@ re-scored in place above. What is new is below.
   the sugar is `tests/conc/parfor_chan.ty:11` and the guide does not name it. **This is
   what actually happened rather than a hypothetical:** this plan's recon read
   `tests/conc/workers.ty`, copied the manual `0..<N` + `select` idiom into
-  `tools/prunner/main.ty:355-360`, and never learned the sugar existed until phase 3 went
+  `tools/prunner/main.ty:358-363`, and never learned the sugar existed until phase 3 went
   looking. The sugar accepts a `send` body — verified with a scratch program, 200 jobs
   sent, 200 received — so it would have removed the `0..<n` sizing, the `select`
   scaffolding and the `sent != n` invariant. **Nothing in the language was in the way;
@@ -3304,7 +3304,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:14780` skips any function type mentioning a type
+emitted — `src/tychoc.c:14816` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just
@@ -6180,7 +6180,7 @@ wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
 (`src/tychoc.c:105@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
 stack), filled from one global pair (`src/tychoc.c:80@g_inst_from`) that
 `gen_program`'s instance loop retargets per instance
-(`src/tychoc.c:14520@g_inst_from`). So it can only ever name the innermost
+(`src/tychoc.c:14556@g_inst_from`). So it can only ever name the innermost
 frame; it is not dropping the outer one, it never had it. Making it match means
 giving `GInst` a link to the instance that instantiated it and walking that
 chain in `diag_flush` (`src/tychoc.c:1097@diag_flush`) — bounded work, but it

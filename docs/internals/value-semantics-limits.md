@@ -151,7 +151,7 @@ the OS — and eligible dead buffers can be reused incrementally. At supported
 reassignment sites the compiler checks that a buffer is dead and uniquely owned,
 then hands it back to
 the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted by the compiler at
-`src/tychoc.c:13266@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
+`src/tychoc.c:13302@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
 of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
 static value semantics. Supported churn patterns can reuse buffers rather than
 retain every intermediate; this is not a general bound for all transient churn.
@@ -180,7 +180,7 @@ exactly how far it reaches before concluding that a workload is doomed. There ar
 several supported paths:
 
 - **Loop-carried reassignment of a named array local** — `a = f(a)` inside a loop
-  (`src/tychoc.c:13258@do_recycle`). Narrow by design: it requires a *named
+  (`src/tychoc.c:13294@do_recycle`). Narrow by design: it requires a *named
   variable* (not an element or field store), a type for which `is_array` holds
   (`src/tychoc.c:1282@is_array` — note a `string` is **not** an array here), a
   loop, a non-`inout` non-accumulator target, and at least two reads in the

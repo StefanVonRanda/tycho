@@ -69,7 +69,7 @@ EXPECT = 1495          # +1 bench/allocator/readers.ty; +1 existing tools/tycho-
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:15776@declaration, src/tychoc.c:15780@declares) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:15812@declaration, src/tychoc.c:15816@declares) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
