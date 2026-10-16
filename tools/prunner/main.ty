@@ -354,6 +354,17 @@ fn main():
     if cli.flag(c, "stats"):
         stats = 1
     js := build_jobs()
+    # --only SUBSTR keeps the jobs whose name contains SUBSTR. The CI sweep
+    # uses it to prove prunner itself still runs (its sanitizer leg was broken
+    # on macOS for weeks with nothing watching) without re-running every
+    # fixture `make test` has just finished.
+    only := cli.get(c, "only", "")
+    if len(only) > 0:
+        kept := []Job
+        for j in js:
+            if strings.contains(j.name, only):
+                push(kept, j)
+        js = kept
     if len(js) == 0:
         println("prunner: no fixtures found — run me from the repo root")
         return

@@ -11,7 +11,7 @@ TYCHOC  ?= ./tychoc
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: preflight fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check builtin-qualified parity-fuzz friction-check friction-check-light surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+.PHONY: preflight prunner-check ci-linux fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check builtin-qualified parity-fuzz friction-check friction-check-light surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
 
 # tychoc1, the self-hosted compiler, is what `make` produces and what ships.
 # It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
@@ -226,6 +226,13 @@ build/prunner: tools/prunner/main.ty tychoc | build
 	@./tychoc tools/prunner/main.ty -o build/prunner
 
 prunner: build/prunner
+
+# prunner-check: prunner runs end to end on one fixture per kind. test-fast is
+# not in the sweep (it repeats make test), so this is what keeps it honest.
+prunner-check: build/prunner
+	@out=$$(./build/prunner --only hello 2>&1); echo "$$out" | grep -q "all green" \
+	    || { echo "prunner-check: FAILED"; echo "$$out" | tail -5; exit 1; }; \
+	echo "prunner-check: ok (prunner ran the hello fixtures to all green)"
 
 test-fast: build/prunner
 	@./build/prunner
@@ -575,6 +582,11 @@ compiler-storage: tychoc tychoc1
 
 bench-guard: $(TYCHOC)
 	@TYCHOC=$(TYCHOC) sh bench/guard.sh
+
+# The Linux gate. Fresh clone of HEAD in a throwaway podman container; see
+# scripts/ci_linux.sh. Uncommitted work is not tested, on purpose.
+ci-linux:
+	@sh scripts/ci_linux.sh $(N)
 
 ci:
 	@sh scripts/ci.sh $(N)

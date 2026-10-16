@@ -136,6 +136,9 @@ make -s fixpoint-check
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
+step "[2b/13] make prunner-check  (tools/prunner, the parallel fixture runner behind make test-fast, runs the hello fixtures to all green. It is not otherwise in the sweep -- test-fast repeats make test -- and its sanitizer leg hardcoded detect_leaks=1, which aborts every binary on macOS, for weeks with nothing watching)"
+make -s prunner-check
+
 step "[2a/13] lanes join: platform | corelib | apps | rest (CI_SERIAL=${CI_SERIAL:-0}; default parallel)"
 run_lanes platform corelib apps rest
 if [ "$N" -gt 0 ]; then
