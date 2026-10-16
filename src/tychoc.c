@@ -11531,7 +11531,7 @@ static char *gen_extern_raw(Expr *e) {
     if (packed_count) {
         char *pre = sfmt("%s%s", packed_pre, decls);
         if (sig->ret == T_VOID)
-            return sfmt("({ %s%s; %s; })", pre, call, packed_post);
+            return sfmt("({ %s%s; %s })", pre, call, packed_post);
         int id = g_blk++;
         return sfmt("({ %s%s _packed_r%d = %s; %s _packed_r%d; })",
                     pre, c_type(sig->ret), id, call, packed_post, id);
@@ -12013,7 +12013,7 @@ static char *gen_call(Expr *e, const char *arena) {
     char *call = sfmt("%s)", out);
     if (!packed_count) return call;
     if (cs->ret == T_VOID)
-        return sfmt("({ %s%s; %s; })", packed_pre, call, packed_post);
+        return sfmt("({ %s%s; %s })", packed_pre, call, packed_post);
     int rid = g_blk++;
     return sfmt("({ %s%s _packed_r%d = %s; %s _packed_r%d; })",
                 packed_pre, c_type(cs->ret), rid, call, packed_post, rid);
