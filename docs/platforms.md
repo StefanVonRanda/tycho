@@ -62,6 +62,13 @@ both fixtures fail with `hostile=1 expected, got 0` — the fixture refusing to
 pass while proving nothing, which is the correct behaviour for a control that
 cannot discriminate. The cure is the line above.
 
+### Running the whole gate on Linux from a Mac
+
+`make ci-linux` clones HEAD into a throwaway `debian:trixie` podman container,
+installs the packages this page lists, enables a comma-decimal locale and runs
+`make ci` there. It tests the last commit, not the working tree. Nothing hosted
+runs this repository's gate; this target is the Linux half of it.
+
 ### Optional corelib dev libraries
 
 The FFI-backed corelib packages need their dev libraries, or `make shim-warn`

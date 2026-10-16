@@ -408,6 +408,16 @@ and the keyword list is unchanged at 116.
   `detect_leaks=1`, which Apple's ASan has no LeakSanitizer for, so every
   sanitizer binary exited 134 and all 362 fixtures failed. It takes the
   same per-OS gate `tests/run.sh` has.
+- **`make ci-linux`** (unreleased) runs the whole gate on Linux from this
+  machine: a fresh clone of HEAD in a throwaway `debian:trixie` podman
+  container with the packages platforms.md lists and a comma-decimal locale.
+  Nothing hosted runs this repository's gate; this is its Linux half.
+- **`make prunner-check`, lane `[2b/13]`** (unreleased): `tools/prunner`
+  runs the hello fixtures to all green. `--only SUBSTR` filters its job list.
+- **`tests/expression_scale.sh` fixes its own stack limit** (unreleased), so a
+  nesting-depth pin cannot pass by inheriting `make`'s raised RLIMIT_STACK,
+  which is how FRICTION 146 read FIXED for three weeks on macOS while the
+  reference compiler still nested; the entry carries the correction.
 - **`CI_SERIAL=1`** runs the four lanes and the three fuzzers one after
   another for a shared machine (`6c76904d`); the default is unchanged.
 - **The allocator measurement suite, `bench/allocator/`, is opt-in**
