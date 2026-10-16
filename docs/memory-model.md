@@ -1,9 +1,11 @@
 # The memory model
 
 The practitioner's view of Tycho's memory model: value semantics over implicit
-per-scope arenas. Every binding is a value, every value belongs to the scope
-that created it, and that scope's arena is released whole when it exits. There
-is no reference type and no garbage collector. The on-ramp is
+per-scope arenas. Every binding is a value; heap storage is routed to an arena
+whose lifetime covers its use, including the caller's arena for returned values
+and `inout` updates. Scope exit releases that arena's ownership of its storage,
+not necessarily its resident memory back to the OS. There is no reference type
+and no garbage collector. The on-ramp is
 [from-c-to-arenas.md](from-c-to-arenas.md); the argument is [thesis.md](thesis.md);
 what it looks like in code is [arrays and slices](reference/arrays-slices.md).
 
@@ -38,15 +40,32 @@ The rules:
    which outlives `_scope`, so the value survives the callee's frame:
    `{ T _ret = <built in _parent>; arena_free(&_scope); return _ret; }`.
 
-Data moves between arenas in exactly two directions, both arranged by the
-transpiler: **down** as a function argument (a pointer into a parent arena, valid
-for the call, no copy) and **up** as a return value (allocated in the caller's
-arena). Assigning to a variable that lives in an outer scope works the same
-way — the value is built in *that variable's* arena, so it can never dangle.
+The transpiler arranges storage routing. Read-only arguments can borrow storage
+for the duration of the call; by-value parameters still behave independently and
+may require deep copies, notably for heap-bearing structs. Returned heap values
+are built or copied into the caller's arena. Assigning to an outer variable or
+mutating through `inout` allocates in *that binding's* owning arena.
 
-Each `if`/`else` block and each loop iteration gets its own child arena, reset or
-freed at the block's end, so per-iteration temporaries keep loop memory bounded —
-a million iterations run in constant memory.
+Blocks and loop iterations use child scratch arenas where needed, reset or
+released at their boundaries. This enables reuse for bounded per-iteration
+working sets; it does not bound memory retained in an outer container, nor does
+it guarantee constant RSS for arbitrary loops.
+
+### Reuse is not an OS release or a latency guarantee
+
+`arena_free` walks an arena's block chain and puts its blocks in a thread-local
+pool (`runtime/tycho_rt.c@block_release_chain`). Those blocks can serve later
+allocations, so a large transient can remain resident after its helper returns.
+`arena_reset` retains and rewinds the head block, pooling overflow blocks. The
+single-block fast path with statistics disabled and no recycle bookkeeping is
+O(1); general reset and teardown traverse the affected blocks. Pool lookup can
+also scan for a suitable block (`runtime/tycho_rt.c@block_get`).
+
+There is no collector and hence no GC pause, but allocation, block traversal,
+platform allocator work, page faults and scheduling can still cause latency
+spikes. Neither scope cleanup nor the absence of GC promises bounded latency or
+an immediate RSS decrease. `TYCHO_ARENA_STATS` distinguishes bump allocation and
+block reuse; its cumulative `OS reserved` counter is not a current RSS reading.
 
 ### Escape is lexical, not dataflow
 
@@ -71,14 +90,15 @@ caller must pass one.
 
 ## Reclamation techniques
 
-Per-scope freeing alone isn't enough to match hand-written C or beat a GC; four
-further techniques close the gap, and all of them are **static** — there are no
-reference counts anywhere.
+Per-scope release alone isn't enough to match hand-written C or beat a GC.
+Several compiler-directed techniques reduce copying and allocation; none uses
+reference counts.
 
 - **Transient placement.** A statement whose result is scalar or discarded builds
   its heap temporaries in a per-statement arena that is freed immediately. So a
   discarded `print(... check(make(19)) ...)` no longer leaves its tree resident
-  for the rest of the function — the transient is gone at statement end. Stores
+  for the rest of the function — its arena storage becomes reusable at statement
+  end, though pooled blocks may remain resident. Stores
   into longer-lived containers route to their own arena, so only true transients
   land in the per-statement one.
 
@@ -104,10 +124,10 @@ reference counts anywhere.
 - **Liveness-driven in-place reuse.** A loop-carried value reassigned each step
   (`a = step(a)`) is the arena's classic worst case: an arena cannot free a
   single object mid-scope, so every dead intermediate would pile up until the
-  function returns (peak = total allocation). The fix uses what value semantics
-  already proves *statically*: at `a = new`, `a`'s old buffer has exactly one
-  owner and is dead the instant `new` is computed. The transpiler hands that buffer
-  back to the arena's free-list and the next allocation reuses it — the win
+  function returns (peak = total allocation). At supported sites, the compiler
+  checks that the old buffer is dead and uniquely owned after the new value is
+  computed. It can then hand that buffer back to the arena's free-list for a
+  subsequent compatible allocation — the win
   reference counting (Perceus/FBIP) is built for, with no runtime refcount. The
   load-bearing soundness condition is to recycle only a variable read **at least
   twice**, because a read-once variable may have been moved out by
@@ -120,39 +140,46 @@ reference counts anywhere.
   the last *W* entries are live — and relies on a segregated size-class free-list
   so the eviction window's dead chunks are reused in O(1).
 
-Together these close the arena's two known weak spots (loop-carried reassignment
-and sliding-window eviction). The model's remaining loss
-is elsewhere — pointer-shaped, structurally-shared data like tries runs ~1.55× C
-in RAM after the compact indexed-dict map layout, down from ~3×; that residue is covered in [the thesis](thesis.md) and the
+These techniques bound allocation growth in supported loop-carried reassignment
+and sliding-window patterns; they do not eliminate all rebuild copies or lower
+the block pool's high-water mark. Pointer-shaped, structurally-shared data is
+another cost: tries measured ~1.55× C in RAM after the compact indexed-dict map
+layout, down from ~3×. See [the thesis](thesis.md) and the
 [value-semantics limits note](internals/value-semantics-limits.md).
 
 ## Verification
 
-The memory model is checked by four mechanisms that, between them, catch the
-ways an over-aggressive move or recycle could go wrong:
+The memory model is checked by complementary mechanisms. These are finite
+checks on executed paths, not a proof of universal memory or semantic safety:
 
 - **Sanitizers.** `make test` runs the emitted C for every fixture under
   AddressSanitizer, UndefinedBehaviorSanitizer and LeakSanitizer. This is the
-  primary oracle: a move or recycle that aliased is a use-after-free, and ASan
-  reports it.
+  memory-error oracle on executed paths. An incorrect alias can still point into
+  a valid arena block and escape detection, so sanitizers alone do not establish
+  value independence.
+- **Golden and differential output checks.** Fixtures compare expected output
+  and native/sanitized output, including snapshots and mutation independence.
+  Agreement covers those cases, not every possible program.
 - **Leak fuzzing.** `fuzz/run_leak.py` feeds generated valid, terminating programs
   through the compiler, builds them under ASan+LeakSanitizer and asserts nothing
-  is leaked at exit — a recycle that never fires shows up here.
+  is leaked at exit. This checks lost allocations or cleanup, not whether dead
+  chunks were reused before exit; an arena can retain them and still free cleanly.
 - **Compile-time refusal.** The aliasing cases under `tests/reject/` must fail to
   compile, so the rule is checked from both sides.
-- **Per-type RSS benchmarks**, wired as perf guards, confirm each type's bytes are
-  actually freed.
+- **Allocation-growth and RSS guards** check bounded growth for particular
+  workloads. Scope release, reuse and OS-resident memory are different measures.
 
 ## Across threads
 
 The model extends to concurrency without new rules (see
 [concurrency](reference/concurrency.md)): a spawned task is an ordinary call whose
 `_parent` is a private root arena (arguments deep-copy in before the thread
-starts; the result copies out at `wait`, then the whole tree frees), the block
-pool is thread-local so allocation never contends, and channel payloads live in
-per-cell arenas recycled on ring reuse. Every cross-thread byte is a deep copy —
-the same rule as an ordinary call — which is what makes threads race-free with
-zero annotations.
+starts; the result copies out at `wait`, then the whole tree releases), the block
+pool is thread-local, and channel payloads live in per-cell arenas recycled on
+ring reuse. Thread-local block reuse needs no shared pool lock; fresh allocation
+can still enter the platform allocator. Unlike ordinary read-only call borrows,
+thread-boundary copies isolate Tycho value storage; they are not a claim that
+all platform resources or runtime synchronization are race-free.
 
 ---
 

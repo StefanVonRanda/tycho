@@ -1,0 +1,16 @@
+package main
+import "../../compiler/types"
+import "../../compiler/driver"
+
+fn main():
+    a := args()
+    p := types.Program([]types.File, "", "", "", "")
+    driver.check_into(a[1], a[0], &p, "")
+    saved := p
+    driver.emit_to(p, "runtime/tycho_rt.c", a[0], a[2], "")
+    if p != saved:
+        die("compiler storage: emission changed its input Program")
+    driver.emit_to(p, "runtime/tycho_rt.c", a[0], a[3], "")
+    if p != saved:
+        die("compiler storage: repeated emission changed its input Program")
+    println("compiler storage: immutable Program")

@@ -2,6 +2,9 @@
 # new bytes build in the caller's (owner) arena via _ina_, not the callee's
 # scope -- so they survive the call and the caller's loop arenas.
 
+struct Label:
+    text: string
+
 fn shout(s: inout string):
     s = s + "!"
 
@@ -13,6 +16,53 @@ fn grow(s: inout string, n: int):
     for i < n:
         s = s + "."
         i = i + 1
+
+# The incoming string may be borrowed by another parameter. Later snapshots
+# must also stay independent once this call has adopted a growable buffer.
+fn snapshots(s: inout string, original: string):
+    s = s + "a"
+    saved := s
+    s = s + "b"
+    shout(&s)
+    s = s + "c"
+    println("borrow=" + original + " snapshot=" + saved + " nested=" + s)
+    s = "AB"
+    s = s + "." + s
+    s = s + '!'
+    s = s + "<" + "v" + ">"
+
+fn shrink(s: inout string):
+    s = "K"
+    s = s + "!"
+
+fn grow_bytes(b: inout bytes):
+    for i := 0; i < 4; i += 1:
+        b = b + to_bytes([0, 65])
+
+fn double(s: inout string):
+    s = s + s
+    s = s + s
+
+fn early(s: inout string) -> string:
+    s = s + "!"
+    return s
+
+fn suffix(s: inout string, piece: string):
+    s = s + piece
+
+fn recurse(s: inout string, n: int):
+    if n == 0:
+        return
+    shout(&s)
+    recurse(&s, n - 1)
+
+# A value parameter must start independent append state even when its caller
+# already has reusable storage. Its own snapshots must remain independent too.
+fn value_param(s: string) -> string:
+    before := s
+    shout(&s)
+    shout(&s)
+    return before + "|" + s
 
 fn main():
     msg := "hi"
@@ -29,3 +79,55 @@ fn main():
         shout(&acc)
         i = i + 1
     println(acc)
+
+    borrowed := "R" + str(1)
+    original := borrowed
+    snapshots(&borrowed, original)
+    println("rebound=" + borrowed)
+
+    # The caller's large-capacity state must not survive a callee's smaller
+    # replacement, even when the next append would fit the old capacity.
+    local := ""
+    for j := 0; j < 64; j += 1:
+        local = local + "0123456789abcdef"
+    saved_local := local
+    shrink(&local)
+    local = local + "0123456789abcdef"
+    println("caller=" + local + " saved_len=" + str(len(saved_local)))
+
+    binary := to_bytes("")
+    grow_bytes(&binary)
+    println("binary=" + str(len(binary)) + "," + str(binary[0]) + "," + str(binary[7]))
+    doubled := "Q"
+    double(&doubled)
+    println("double=" + doubled)
+    returned := early(&doubled)
+    shout(&doubled)
+    println("returned=" + returned + " current=" + doubled)
+
+    # Both field and array-element borrows still route growth to their owner.
+    words := ["x"]
+    grow(&words[0], 3)
+    println("element=" + words[0])
+    label := Label("y")
+    grow(&label.text, 2)
+    println("field=" + label.text)
+
+    # Different helpers and recursive forwarding share the caller's state, not
+    # each callee's stack. Copies made between calls must never share writes.
+    joined := "c"
+    shout(&joined)
+    saved := joined
+    suffix(&joined, "x")
+    parts := [joined]
+    joined = joined + joined
+    recurse(&joined, 2)
+    println("calls=" + joined + " saved=" + saved + " element=" + parts[0])
+    joined = saved
+    shout(&joined)
+    println("reused=" + joined + " saved=" + saved)
+    println("value=" + value_param(joined) + " caller=" + joined)
+
+    byte_snapshot := binary
+    grow_bytes(&binary)
+    println("byte_snapshot=" + str(len(byte_snapshot)) + " current=" + str(len(binary)))

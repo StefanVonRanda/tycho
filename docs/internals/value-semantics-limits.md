@@ -8,13 +8,15 @@
 | pointer-shaped structures by value (`bench/trie`) | ~1.55× memory | flat node pool + index children (§1); `core:pool` when nodes are deleted |
 | graphs as adjacency indices (`bench/dijkstra`) | ~1.3× memory, ~1.2× wall | same pool idiom |
 | fixed-capacity LRU as index pool (`bench/lru`) | ~2.8× memory, ~2× wall, ahead of Go | same pool idiom |
-| long-lived scope holding transients | holds high-water mark to scope exit | scope transients in an inner function (§2) |
+| long-lived scope holding transients | arena/pool retains high-water storage | scope transients for reuse, not an RSS-drop guarantee (§2) |
 | rebuilding a long-lived value per edit (`tools/tycho-ed/`) | one full copy per operation | mutate in place; hold hot text as `[int]` (§2) |
 
 Tycho's model — value semantics with no pointers, memory managed by implicit arenas — shapes
 how you represent data, and the shapes it rewards are not always the ones you'd reach for in C.
-The trade: no `malloc`/`free`, no use-after-free, no GC pauses, and value equality that just
-works; the price is the table above. All figures measured on one machine (AMD Ryzen 7 7735HS,
+The intended trade: no manual `malloc`/`free` in ordinary Tycho code, independent
+values and no collector pauses; the price is the table above. These are design
+properties, not proof that the compiler/runtime has no memory-safety bugs or
+that execution has no latency spikes. All figures measured on one machine (AMD Ryzen 7 7735HS,
 Debian x86-64); where a workload's shape fights the model even after the right representation,
 the note says so and names a different tool.
 
@@ -100,6 +102,12 @@ aliased. Cost is one word per slot plus one compare per dereference. Tycho packa
 `core:pool` (`corelib/pool/pool.ty`): a `Handle` newtype packs `(generation << 24) | slot`
 so a handle is type-distinct from a raw index, `remove` bumps the slot's generation, and
 `get`/`set`/`remove` die on a stale handle rather than silently reading the new occupant.
+Handles are **pool-relative coordinates**, not identity tokens for a particular
+pool. A handle from pool P can pass pool Q's check and select an unrelated value
+if its slot and generation match. Generation checks reject stale use within the
+intended pool; they do not detect mixing pools. Keep each handle associated with
+its intended pool at API boundaries.
+
 Use the raw `[Node]` pool when it only grows; reach for `core:pool` the moment deletion
 enters. For graphs, the same pattern (`[Node]` + `[[int]]` adjacency by
 index) is the idiomatic Tycho representation. Use it whenever the C/Go version would lean on
@@ -138,20 +146,23 @@ memory trades away ergonomics, and you choose how far to walk it.
 
 ### 2. Long-lived scope holding transient garbage ("build-and-hold")
 
-An arena returns memory at **scope exit**, not incrementally — but dead buffers are reused
-incrementally. The compiler proves when a heap buffer is dead and uniquely owned (a
-reassigned loop-carried local; value semantics guarantees no aliasing) and hands it back to
+An arena releases its ownership at **scope exit**, not necessarily its memory to
+the OS — and eligible dead buffers can be reused incrementally. At supported
+reassignment sites the compiler checks that a buffer is dead and uniquely owned,
+then hands it back to
 the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted by the compiler at
-`src/tychoc.c:13224@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
+`src/tychoc.c:13266@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
 of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
-static value semantics. So transient churn inside one scope recycles, and peak is bounded
-by the largest single transient rather than the sum — but the arena keeps its high-water
-mark until the scope exits, and memory is not returned to the OS mid-scope. In `bench/json`
-this is the ~2.5 MB input string tycho/C hold to the end while Go's GC drops it (Go's lower
-peak).
+static value semantics. Supported churn patterns can reuse buffers rather than
+retain every intermediate; this is not a general bound for all transient churn.
+On scope exit, arena blocks move into a thread-local reuse pool and may remain
+resident. A large touched transient can therefore leave RSS high after its helper
+returns. In `bench/json`, the ~2.5 MB input string tycho/C hold to the end while
+Go's GC drops it contributes to Go's lower peak.
 
-**Idiom — scope the transient in an inner function/block** so its arena is freed (returned
-to the OS) before the long-lived work continues:
+**Idiom — scope the transient in an inner function/block** so its arena storage
+becomes available for reuse before the long-lived work continues. This shortens
+ownership lifetime; it does not promise an immediate OS release or lower RSS:
 
 ```text
 fn load() -> Doc:
@@ -166,10 +177,10 @@ If a transient is built and consumed in the same scope as long-lived results, sp
 
 Recycling is broader than the paragraph above suggests, and it is worth knowing
 exactly how far it reaches before concluding that a workload is doomed. There are
-two distinct paths:
+several supported paths:
 
 - **Loop-carried reassignment of a named array local** — `a = f(a)` inside a loop
-  (`src/tychoc.c:13216@do_recycle`). Narrow by design: it requires a *named
+  (`src/tychoc.c:13258@do_recycle`). Narrow by design: it requires a *named
   variable* (not an element or field store), a type for which `is_array` holds
   (`src/tychoc.c:1282@is_array` — note a `string` is **not** an array here), a
   loop, a non-`inout` non-accumulator target, and at least two reads in the
@@ -235,12 +246,18 @@ starting tiny.
 
 ### 4. In-place mutation of a large value passed around
 
-Assigning or passing a large value can deep-copy it. This is correct (value semantics) but
-costs a copy.
+Assigning or passing a large value can deep-copy it. Read-only parameters can
+borrow, but a mutable by-value heap-bearing struct parameter can require a deep
+copy without a copy warning. Copy warnings cover selected source patterns, not
+every emitted copy; silence does not mean an operation is allocation-free.
 
 **Idiom:** thread large values through `inout` parameters so they are passed by
 reference and mutated in place, instead of returning rebuilt copies. The compiler already
 borrows (does not copy) `match`/`for` bindings that aren't mutated; lean on that.
+Named `string`/`bytes` append bindings also retain capacity through `inout` helper
+calls, while projections without persistent metadata adopt storage afresh per
+call. See the [storage-reuse plan](plan-value-storage-places.md). Other edits,
+such as inserting in the middle of a string, can still rebuild the whole value.
 
 ## Decision guide
 
@@ -255,7 +272,7 @@ borrows (does not copy) `match`/`for` bindings that aren't mutated; lean on that
 - Known-size or hot maps of large values → **`reserve`, or store handles not structs** (§3).
 
 None of these makes Tycho a systems allocator's equal on its worst cases. They keep you on
-the value-semantics path — no `malloc`/`free`, no UAF — for the workloads where that path is
+the value-semantics path — no manual `malloc`/`free` in ordinary code — where it is
 viable, and tell you when to step off it.
 
 Is the trie/graph cost fundamental to value semantics, or just this implementation?

@@ -37,6 +37,11 @@ measurements, and they assume you already know the codebase.
 - [`windows-port.md`](windows-port.md) — the design record of the native
   Windows port. Cited by `tests/run.sh`, `scripts/ci.sh` and the wine lanes.
 
+## Active plans
+
+- [`plan-value-storage-places.md`](plan-value-storage-places.md) — storage reuse,
+  the `inout` append fix, and follow-up evidence/documentation corrections.
+
 ## Completed plans
 
 Each `plan-*-DONE.md` is the finished record of one campaign, kept for its

@@ -20,8 +20,12 @@ done
 # The corpus file list, computed ONCE and reused by both the README lane below
 # and the CORPUS lane at the bottom. Deliberately the same list for both, so the
 # number the README is checked against is the number the parser actually ran on.
-find "$PWD" -name '*.ty' -not -path '*/.git/*' -not -path '*/node_modules/*' \
-     -not -path "$PWD/fuzz/findings/*" | sort > "$TMP/files"
+# Match the tracked-source claim, including intent-to-add fixtures. Generated
+# benchmark/release copies under build/ are not additional language fixtures.
+git -c core.quotepath=false ls-files -- '*.ty' | while IFS= read -r path; do
+    [ -f "$path" ] || continue
+    printf '%s/%s\n' "$PWD" "$path"
+done > "$TMP/files"
 nfiles=$(wc -l < "$TMP/files" | tr -d ' ')
 
 echo ">>> editors: zed README corpus claim"
@@ -67,8 +71,39 @@ fi
 COV=editors/zed/syntax-coverage.tsv
 grep -v '^#' "$COV" | awk -F'\t' '$2=="REJECTED"{print $1}' | sort > "$TMP/want"
 
-(cd "$TMP" && $TS parse -q $(cat "$TMP/files")) 2>/dev/null \
-    | awk -F'\t' '/ERROR|MISSING/ {print $1}' \
+# npx joins arguments into one shell command: a large corpus can hit E2BIG
+# before tree-sitter starts. Batch it, and require a complete parse count in
+# EVERY batch. rc=1 is normal for syntax rejects, not evidence of completeness.
+parse_batch() {
+    if (cd "$TMP" && $TS parse -q --stat "$@") >"$TMP/batch.out" 2>"$TMP/batch.err"; then
+        _rc=0
+    else
+        _rc=$?
+    fi
+    cat "$TMP/batch.out" >> "$TMP/parse.out"
+    if ! python3 - "$_rc" "$#" "$TMP/batch.out" <<'PY'
+from pathlib import Path
+import re, sys
+total = re.search(r'Total parses: (\d+);', Path(sys.argv[3]).read_text())
+sys.exit(0 if int(sys.argv[1]) in (0, 1) and total and int(total[1]) == int(sys.argv[2]) else 1)
+PY
+    then
+        echo "    PARSE COMMAND FAILED or returned incomplete results (rc=$_rc, expected=$#)"
+        head -12 "$TMP/batch.err" | sed 's/^/      /'
+        fail=1
+    fi
+}
+: > "$TMP/parse.out"
+set --
+while IFS= read -r path; do
+    set -- "$@" "$path"
+    if [ "$#" -ge 128 ]; then
+        parse_batch "$@"
+        set --
+    fi
+done < "$TMP/files"
+[ "$#" -eq 0 ] || parse_batch "$@"
+awk -F'\t' '/ERROR|MISSING/ {print $1}' "$TMP/parse.out" \
     | sed -e 's/[[:space:]]*$//' -e "s|^$PWD/||" | sort -u > "$TMP/got"
 echo ">>> editors: zed grammar over the corpus ($nfiles .ty files)"
 if diff "$TMP/want" "$TMP/got" >"$TMP/corpus.diff" 2>&1; then

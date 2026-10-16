@@ -49,7 +49,7 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 # function of fully known type. The 7 left are template BODIES walked with `$T`
 # genuinely unbound, which no amount of work grounds.
 SIXB = 7
-EXPECT = 1493          # +14 compiler regressions (three positive, three abort, eight reject), 2026-09-26; +10 D06 coercion rejects plus place-store, tuple-adaptation, pow/SoA-iteration, D24 f-string, D22 sized-float, D29/D30 map-key, D37 shift, D26 temp-namespace, D28 enum-C-name, D36 double-underscore and D21 packed-inout regressions, 2026-09-27; +20 audit/corelib fixtures, excluding the staged tycho-db .src input, 2026-09-27; +1 D81 receive escape case, 2026-09-27; 0 of 0 is not green
+EXPECT = 1495          # +1 bench/allocator/readers.ty; +1 existing tools/tycho-docs/main.ty reconciled, 2026-10-15; +14 compiler regressions (three positive, three abort, eight reject), 2026-09-26; +10 D06 coercion rejects plus place-store, tuple-adaptation, pow/SoA-iteration, D24 f-string, D22 sized-float, D29/D30 map-key, D37 shift, D26 temp-namespace, D28 enum-C-name, D36 double-underscore and D21 packed-inout regressions, 2026-09-27; +20 audit/corelib fixtures, excluding the staged tycho-db .src input, 2026-09-27; +1 D81 receive escape case, 2026-09-27; 0 of 0 is not green
                        # 1406 -> 1407: tests/reject/value_if_nested.ty (2026-09-24); -> 1410: three handle use-after-close fixtures; -> 1411: handle_close_param; -> 1413: tests/inline_arr_reassign_loop.ty and tools/tycho-grade/main.ty; -> 1414: tests/reject/slice_struct.ty; -> 1418: tests/reject/{fixarr,vector}_{pop,reserve}.ty; -> 1425: tests/or_else{,_frees}.ty and the five tests/reject/orelse_*.ty; -> 1429: tests/neg_literal_adapt.ty and tests/reject/sized_lit_binop_fit.ty, where the two compilers disagreed with no fixture; -> 1431: tests/reject/value_if_one_line.ty and fstr_hole_escaped_quote.ty
                        # 1405 -> 1406: tools/tycho-du/main.ty, the handle
                        # probe's program brought in tree (2026-09-22)
@@ -69,7 +69,7 @@ EXPECT = 1493          # +14 compiler regressions (three positive, three abort, 
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:15732@declaration, src/tychoc.c:15736@declares) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:15776@declaration, src/tychoc.c:15780@declares) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {

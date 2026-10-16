@@ -965,6 +965,37 @@ except Exception:
     pass
 s.close()
 PYEOF
+    # The cap is per payload, independent of LF/CRLF and pipelining. A late
+    # newline must not bypass it (the old newline-first branch did exactly that).
+    python3 - "$port" <<'PYEOF' || bad "server/line cap: boundary or pipelining regression"
+import socket, sys
+port = int(sys.argv[1])
+query = b"SELECT * FROM people;"
+for ending in (b"\n", b"\r\n"):
+    for size in (8191, 8192, 8193, 10000):
+        wire = query + b" " * (size - len(query)) + ending + b"QUIT\n"
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+            s.settimeout(5)
+            try:
+                s.sendall(wire)
+                reply = b""
+                while True:
+                    try:
+                        part = s.recv(4096)
+                    except ConnectionResetError:
+                        break
+                    if not part:
+                        break
+                    reply += part
+            except ConnectionResetError:
+                reply = b""
+            if size <= 8192:
+                assert b"row 1|ada|36\n" in reply, (ending, size, reply)
+                assert b"row 3|cy|29\n" in reply, (ending, size, reply)
+                assert b"bye" in reply, (ending, size, reply)
+            else:
+                assert not reply, ("oversized statement was processed", ending, size, reply)
+PYEOF
     # a THIRD client proves the daemon is still serving
     "$DB" "--client=127.0.0.1:$port" s2.sql > "$T/s3.out" 2> "$T/s3.err"
     rc=$?

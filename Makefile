@@ -194,6 +194,10 @@ wine-ffi:
 test: tychoc tychoc1
 	@sh tests/compress_limits.sh
 	@sh tests/accumulator_scope.sh
+	@sh tests/inout_append.sh
+	@sh tests/compiler_storage.sh
+	@sh tests/allocator_contract.sh
+	@python3 bench/allocator/directory.py
 	@sh tests/loop_temp_recycle.sh
 	@sh tests/recv_loop_scale.sh
 	@sh tests/map_overwrite_scale.sh
@@ -513,6 +517,7 @@ ilp32: tychoc1
 	@rm -f build/.m32probe.c build/.m32probe build/.m32probe.log
 	@echo "ilp32: -m32 toolchain OK (32-bit long, 64-bit int64_t verified)"
 	@echo "ilp32: ASan lane SKIPPED for ilp32 (32-bit ASan runtime absent under multilib; 64-bit 'make test' covers ASan)"
+	@CC="gcc -m32 -msse2 -mfpmath=sse" TYCHO_NO_ASAN=1 sh tests/allocator_contract.sh
 	@CC="gcc -m32 -msse2 -mfpmath=sse" TYCHO_NO_ASAN=1 sh tests/run.sh
 
 ffi: tychoc1
@@ -534,6 +539,39 @@ fuzz-reject: tychoc1
 
 fuzz-leak: tychoc1
 	@python3 fuzz/run_leak.py $(N)
+
+.PHONY: allocator-contract allocator-baseline allocator-packing allocator-dual dir-packing allocator-directory allocator-callers allocator-peaks allocator-compiler compiler-storage
+allocator-contract:
+	@sh tests/allocator_contract.sh
+
+# Real frontend workload; diagnostic measurements, not a noisy timing gate.
+allocator-baseline: tychoc1
+	@python3 bench/allocator/run.py
+
+# Opt-in emitted-C experiment; never changes the production runtime.
+allocator-packing: allocator-baseline
+	@python3 bench/allocator/compare.py
+
+allocator-dual:
+	@python3 bench/allocator/dual.py
+
+dir-packing:
+	@python3 bench/allocator/directory.py
+
+allocator-directory:
+	@python3 bench/allocator/directory.py --bench
+
+allocator-callers: tychoc tychoc1
+	@python3 bench/allocator/callers.py
+
+allocator-peaks: tychoc1
+	@python3 bench/allocator/peaks.py
+
+allocator-compiler: tychoc1
+	@python3 bench/allocator/compiler_peak.py
+
+compiler-storage: tychoc tychoc1
+	@sh tests/compiler_storage.sh
 
 bench-guard: $(TYCHOC)
 	@TYCHOC=$(TYCHOC) sh bench/guard.sh

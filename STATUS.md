@@ -8,7 +8,7 @@ Terms used below, on first use: `surface.lock` records the frozen language surfa
 
 ---
 
-## The thesis is proven
+## Evidence for the arena model
 
 The project was started to answer one question: can implicit lexical arenas
 under value semantics replace reference counting and garbage collection?
@@ -38,8 +38,11 @@ tree workloads essentially unaffected. Wall times are not comparable across host
 and container the way kernel-measured RSS is. Full method and reproduction are in
 [`bench/prongB/RESULTS.md`](bench/prongB/RESULTS.md).
 
-**That question is answered.** Everything below is about the second project:
-whether it is a language someone would choose to use.
+**These workloads demonstrate that the approach is viable.** They do not prove
+that arenas minimize memory for every workload, that scope exit lowers RSS, or
+that execution is jitter-free. See [the memory model](docs/memory-model.md) and
+[the latency benchmark's limits](bench/latency/RESULTS.md). Everything below is
+about whether this is a language someone would choose to use.
 
 ---
 
@@ -52,7 +55,7 @@ whether it is a language someone would choose to use.
 | **Corelib** | 45 packages shipped, each golden-locked (`corelib/test/` is the test tree, not a package) | `make corelib` |
 | **Real programs** | dozens of real programs in Tycho (~19,000 lines under `tools/`), 6 over 1,000 lines; `tycho-db` asserts crash recovery from a real `kill -9`, torn-record discard and a TCP server | `find tools -name '*.ty' \| xargs wc -l` |
 | **Normative spec** | 28 files, and the implementation is gated against them | `make spec-check` |
-| **The whole gate** | 81 lanes, green under **gcc and clang** on x86-64 Linux and under **clang on darwin-arm64** | `make ci` |
+| **The whole gate** | recorded passes under **gcc and clang** on x86-64 Linux and **clang on darwin-arm64**; rerun for the current tree/platform | `make ci` |
 | **Memory safety** | sanitizer lanes (ASan/UBSan/LSan/TSan) plus fuzz lanes, plus differential parity fuzzers | `make ci`, `make fuzz` |
 | **Float determinism** | the emitted C is compiled `-ffp-contract=off`, so `a*b+c` rounds the same on every host | `make sheet-check` |
 | **Uninitialised reads** | swept under an instrumented arena, 0 findings — the class no sanitizer sees | `docs/internals/probe-uninit-arena-2026-09-11.md` |
@@ -76,7 +79,7 @@ ships no LeakSanitizer, so leak legs run on Linux only). Running the gate on a
 new platform found and fixed latent defects in shipped code. Details are in
 [ROADMAP](ROADMAP.md#1-it-runs-where-developers-are).
 
-**1.0 is blocked on two things, and neither is code:**
+**Two external requirements for 1.0 remain:**
 
 1. **A real program written by someone who is not the author.**
 2. **An external security review.** `docs/internals/audit-brief.md` is what that
@@ -84,8 +87,8 @@ new platform found and fixed latent defects in shipped code. Details are in
 
 Both need a person. See [ROADMAP](ROADMAP.md#what-10-requires).
 
-**Ergonomics.** The language is correct and the surface is frozen, but it has not
-been tuned for daily use. `or_else` (shipped 2026-09-25) removed one class of
+**Ergonomics.** The surface is frozen and the implementation has substantial test
+coverage, but it has not been tuned for daily use. `or_else` (shipped 2026-09-25) removed one class of
 four-line `match`; more of the backlog remains unmined.
 
 **A structural limit, already decided.** Pointer-shaped and structurally-shared
@@ -98,8 +101,11 @@ index-pool idiom is the answer; references are refused by decision
 
 ## What "good enough to see the light of day" would take
 
-- **Nothing for correctness.** The gates are green under two compilers and the
-  fuzzer finds nothing at its default seeds.
+- **Continue correctness and security verification.** Passing gates and bounded
+  fuzz runs are evidence for the executed paths, not proof of a bug-free compiler
+  or runtime. On 2026-10-15, the append changes passed 1,149 fixture checks with
+  each compiler and the self-hosting fixpoint; that is not a full `make ci` run.
+  Keep regression gates and external review as requirements, not conclusions.
 - **Publishing the macOS/ARM64 build** (`gh release create`, owner's call).
 - **One other person writing one real program**, which is the actual 1.0 gate.
 - **Ergonomics work**, ranked by counting sites as surface changes were.

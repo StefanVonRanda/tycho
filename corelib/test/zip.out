@@ -19,3 +19,6 @@ nlen=60000 -> 0 entries, extract 0 bytes
 survived all structural malformation
 create limits name=true count=true
 trailing junk entries=0
+writer growth/binary=true
+writer snapshot=true
+writer empty=true

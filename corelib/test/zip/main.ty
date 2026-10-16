@@ -92,3 +92,27 @@ fn main():
     junk := ar + to_bytes([0])
     print("trailing junk entries=" + str(len(zip.list(junk))) + "\n")
 
+    # Incompressible binary payloads drive the writer through repeated growth.
+    # Input bytes and a published archive snapshot must remain independent.
+    ints := []int
+    state := 1
+    for i := 0; i < 4096; i += 1:
+        state = (state * 1103515245 + 12345) & 2147483647
+        push(ints, (state >> 16) & 255)
+    binary := to_bytes(ints)
+    inputs := []zip.Entry
+    for i := 0; i < 32; i += 1:
+        push(inputs, zip.Entry("binary-" + str(i), binary))
+    grown := zip.create(inputs)
+    gm := zip.list(grown)
+    binary_ok := len(gm) == 32
+    for m in gm:
+        if zip.extract_entry(grown, m) != binary or m.method != 0:
+            binary_ok = false
+    print("writer growth/binary=" + str(binary_ok and inputs[0].data == binary) + "\n")
+    kept := grown
+    grown = grown + to_bytes([255])
+    print("writer snapshot=" + str(len(zip.list(kept)) == 32 and len(zip.list(grown)) == 0) + "\n")
+    empty := zip.create([]zip.Entry)
+    print("writer empty=" + str(len(empty) == 22 and len(zip.list(empty)) == 0) + "\n")
+

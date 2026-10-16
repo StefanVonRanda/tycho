@@ -2,9 +2,21 @@
 # (the test harness runs binaries from there); list_dir prints a count (not
 # names) so it is order-independent; args() prints its length only (the binary
 # path in args()[0] is not portable).
+fn dir_entries() -> [string]:
+    return list_dir("tests/iobuiltins.dir")
+
 fn main():
     print("read=" + read_file("tests/iobuiltins.data"))       # io-builtins-ok
     println("missing=" + str(len(read_file("tests/nope.absent"))))   # 0
     d := list_dir("tests/iobuiltins.dir")
     println("dir_entries=" + str(len(d)))                 # 2
     println("nargs=" + str(len(args())))                  # 1 (harness passes none)
+    snapshot := d
+    d[0] = "changed"
+    println("dir_snapshot=" + str(len(snapshot) == 2 and snapshot[0] != "changed"))
+    returned := dir_entries()
+    println("dir_return=" + str(len(returned) == 2 and returned[0] != "changed"))
+    t := spawn dir_entries()
+    joined := wait(t)
+    println("dir_task=" + str(len(joined) == 2 and joined[0] != "changed"))
+    println("dir_missing=" + str(len(list_dir("tests/nope.absent"))))

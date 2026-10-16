@@ -24,6 +24,7 @@ tests/reject/char_escape_unsupported.ty	ACCEPTED	the char rule takes any backsla
 tests/reject/char_two_chars.ty	REJECTED	the char rule spells exactly one character, so `'ab'` leaves the literal unterminated
 tests/reject/char_unexpected.ty	REJECTED	'?' is in no token rule, so the grammar has nothing to match it with
 tests/reject/comment_double_slash.ty	ACCEPTED	`//` lexes as two division operators; refusing it is tychoc's lexer telling a C programmer what went wrong
+tests/reject/compiler_temp_namespace.ty	ACCEPTED	the grammar accepts identifier spellings; the reserved Ztycho_ prefix is checked by tychoc's lexer
 tests/reject/compound_assign_to_literal.ty	ACCEPTED	same as assign_to_literal for `+=` -- the place rule is tychoc's, not the grammar's
 tests/reject/const_div_overflow.ty	ACCEPTED	needs the const initialiser EVALUATED; the division parses
 tests/reject/const_expr_divzero.ty	ACCEPTED	needs the const initialiser EVALUATED; the division parses
@@ -58,6 +59,8 @@ tests/reject/fstr_hole_unterminated_string.ty	ACCEPTED	same: the escaped quote i
 tests/reject/fstr_unmatched_brace.ty	ACCEPTED	same: a bare '}' is a string byte to the grammar
 tests/reject/fstr_unterminated_brace.ty	ACCEPTED	same: the grammar's string rule ends at the first unescaped quote and counts no braces
 tests/reject/fstring_escape.ty	ACCEPTED	the string rule takes any backslash byte; the escape ALPHABET is checked in tychoc's lexer
+tests/reject/fstring_format_spec.ty	ACCEPTED	the grammar treats an f-string as a string token and does not parse or validate its interpolation holes
+tests/reject/fstring_trailing_expr.ty	ACCEPTED	the grammar treats an f-string as a string token and does not require exactly one expression inside a hole
 tests/reject/handle_body_not_free.ty	ACCEPTED	`close: h_free` is a well-formed body line; that the keyword must be `free` is a spelling rule inside the handle body
 tests/reject/hex_escape_in_string.ty	ACCEPTED	same string rule as fstring_escape -- \x is consumed, not validated
 tests/reject/hex_escape_one_digit.ty	REJECTED	the grammar spells \x with exactly two hex digits, so a one-digit escape leaves the string unterminated

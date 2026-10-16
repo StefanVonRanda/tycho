@@ -120,11 +120,19 @@ and it is the only thing that covers the wide lanes — a dogfood link break or 
 cross-package mangling divergence is invisible to `make test`.
 
 **`make ci` takes several minutes** (the sweep prints its duration on its last
-line). `make ci N=0` skips the fuzz lanes for a quicker check. It parallelises
-(`run_lanes` forks each lane group).
+line). `make ci N=0` skips the fuzz lanes for a quicker check. By default it
+parallelises (`run_lanes` forks each lane group). On a shared machine,
+`CI_SERIAL=1 make ci` serializes those groups, fact-pin checks, compiler-test
+workers, documentation and fuzz workers without skipping lanes. Fixture runtime
+concurrency is not disabled. Combine it with low CPU/I/O priority and an
+affinity limit when other work needs the box. It trades elapsed time for lower
+concurrent resource use. `TYCHO_TEST_JOBS=4` limits fixture compiler workers
+without changing the runtime's `TYCHO_THREADS`; `DOCS_FENCES_JOBS=2` and
+`FUZZ_JOBS=2` bound doc/fuzz workers. CPU affinity can bound the process tree.
 
 **Two different things get confused here.** Running EVERY lane one at a time is
-slower than the sweep — the sum beats the parallel whole, so never do that. Running
+usually slower than the parallel sweep (but appropriate under a shared-machine
+resource limit). Running
 the ONE lane that can redden for your change is seconds against fifteen minutes, and
 that is what the table below is for. Reach for the sweep when you cannot name a
 lane that covers what you touched, or when you want the three things no lane

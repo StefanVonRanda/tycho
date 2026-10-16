@@ -64,7 +64,7 @@ done
 $CC -std=c11 -fsyntax-only $WFLAGS "$T/empty.c" > /dev/null 2>&1 \
     || { echo "emit-warn: selfcheck FAILED -- a clean file was refused"; exit 1; }
 
-# One job per (compiler, entry); xargs spreads them over 8 workers. A job
+# One job per (compiler, entry); 8 workers by default, 1 in serial CI. A job
 # writes a marker when it emitted C, and a report only on a finding.
 cat > "$T/one.sh" <<'EOF'
 c="$1"; e="$2"
@@ -79,9 +79,11 @@ fi
 rm -f "$T/$id.c"
 EOF
 export CC WFLAGS T
+jobs=8
+if [ "${CI_SERIAL:-0}" = 1 ]; then jobs=1; fi
 for e in corelib/test/*/main.ty tests/*.ty; do
     printf '%s %s\n' ./tychoc "$e" ./tychoc1 "$e"
-done | xargs -n 2 -P 8 sh "$T/one.sh"
+done | xargs -n 2 -P "$jobs" sh "$T/one.sh"
 
 built=$(ls "$T" | grep -c '\.built$')
 # A floor, not the count: it stops a broken glob or a compiler that emits

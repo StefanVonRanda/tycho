@@ -117,7 +117,7 @@ piece of the space that does not exist — and it must not be added (below).
    project's central position, not an oversight (`docs/thesis.md`). A general
    borrow is Design A of the regions study — "a borrow checker with a
    different keyword" that "contradicts the thesis at the joint"
-   (`docs/rfc/value-lifetime-regions.md:405-406`). The regions study's
+   (`docs/rfc/value-lifetime-regions.md:407-408`). The regions study's
    recommendation applies here unchanged: the one genuinely sound increment in
    the space (Design B, value-owned arenas) has no paying customer in the tree,
    and the one compatible ergonomic increment (projections) has shipped. What

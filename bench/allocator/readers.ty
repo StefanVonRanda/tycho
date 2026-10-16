@@ -1,0 +1,50 @@
+package main
+# Actual request/line readers driven through a local socketpair by reader_transport.c.
+import "core:httpd"
+import "core:strings"
+import "../../tools/tycho-db/srv"
+extern fn caller_open(data: bytes, chunk: int) -> int
+extern fn caller_close(fd: int)
+extern fn caller_note(kind: int, raw: int, output: int, rest: int)
+extern fn caller_verify_body(body: bytes) -> int
+extern fn caller_verify_line(line: string, size: int) -> int
+
+fn main():
+    a := args()
+    raw := read_file(a[2])
+    chunk := strings.parse_int(a[3])
+    fd := caller_open(to_bytes(raw), chunk)
+    if fd < 0:
+        die("reader fixture: socketpair failed")
+    if a[1] == "http":
+        got, kept := httpd.read_request_capped(fd, 1048576)
+        match got:
+            Ok(r):
+                caller_note(1, len(kept), len(r.body), 0)
+                if caller_verify_body(r.body) != 1:
+                    die("reader fixture: body changed")
+                println("ok body=" + str(len(r.body)))
+            Err(e):
+                match e:
+                    httpd.Malformed: println("error Malformed")
+                    httpd.Closed: println("error Closed")
+                    httpd.Timeout: println("error Timeout")
+                    httpd.Failed: println("error Failed")
+                    httpd.TooLarge: println("error TooLarge")
+                    httpd.BodyTooLarge: println("error BodyTooLarge")
+    else:
+        buf := ""
+        if a[1] == "db-prefill":
+            buf = raw
+        for i := 0; i < 2; i += 1:
+            match srv.recv_line(fd, &buf):
+                Ok(got):
+                    match got:
+                        Some(line):
+                            caller_note(2, 0, len(line), len(buf))
+                            if caller_verify_line(line, len(line)) != 1:
+                                die("reader fixture: line changed")
+                            println("line=" + str(len(line)))
+                        None: println("eof")
+                Err(e): println("error " + srv.err_str(e))
+    caller_close(fd)

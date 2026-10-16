@@ -7,6 +7,12 @@ LANE="${2:-main}"
 case "$N" in
     *[!0-9]*|"") printf 'ci.sh: FUZZ_N must be a non-negative integer, got "%s"\n' "$N" >&2; exit 2 ;;
 esac
+# Shared machines can serialize lanes; callers may also lower priority/affinity.
+case "${CI_SERIAL:-0}" in
+    0) ;;
+    1) DOCS_FENCES_JOBS=1; FUZZ_JOBS=1; export DOCS_FENCES_JOBS FUZZ_JOBS ;;
+    *) printf 'ci.sh: CI_SERIAL must be 0 or 1\n' >&2; exit 2 ;;
+esac
 case "$LANE" in
     main|platform|corelib|apps|rest|fuzz-main|fuzz-reject|fuzz-leak) ;;
     *) printf 'ci.sh: unknown internal lane "%s"\n' "$LANE" >&2; exit 2 ;;
@@ -49,6 +55,13 @@ step() {
     printf '\n>>> %s\n' "$1"
 }
 run_lanes() {
+    if [ "${CI_SERIAL:-0}" = 1 ]; then
+        failed=0
+        for child in "$@"; do
+            if ! sh "$0" "$N" "$child"; then failed=1; fi
+        done
+        return "$failed"
+    fi
     pids=""
     for child in "$@"; do
         sh "$0" "$N" "$child" &
@@ -123,14 +136,14 @@ make -s fixpoint-check
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 
-step "[2a/13] lanes join: platform | corelib | apps | rest (4 in parallel; the wait is the LARGEST, not the sum)"
+step "[2a/13] lanes join: platform | corelib | apps | rest (CI_SERIAL=${CI_SERIAL:-0}; default parallel)"
 run_lanes platform corelib apps rest
 if [ "$N" -gt 0 ]; then
     if [ "$IS_WINDOWS" = 1 ]; then
         step "[6/13] fuzz lanes skipped (Windows: the differential builds ASan binaries; mingw has no -lasan/-lubsan -- docs/internals/windows-port.md phase 2)"
         ci_skipped="fuzz(windows)"
     else
-        step "[6/13] fuzz join: fuzz-main | fuzz-reject | fuzz-leak (3 in parallel)"
+        step "[6/13] fuzz join: fuzz-main | fuzz-reject | fuzz-leak (CI_SERIAL=${CI_SERIAL:-0}; default parallel)"
         run_lanes fuzz-main fuzz-reject fuzz-leak
     fi
 else

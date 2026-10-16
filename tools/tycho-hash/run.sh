@@ -67,11 +67,22 @@ restsum=$(echo "$d1" | cut -d' ' -f2-8 | tr ' ' '+' | bc 2>/dev/null || echo -1)
 [ "$first" = "$NFILES" ] || bad "[3b] at 1 worker the first should take all $NFILES, took $first"
 [ "$restsum" = "0" ] || bad "[3b] at 1 worker the others should take 0, took $restsum -- --workers does nothing"
 
+# The tiny golden tree can be drained before another worker is scheduled.
+# Keep that report stable, but use real work for the sharing oracle: twelve
+# deterministic 1 MiB files. No sleeps, timing threshold or weaker assertion.
+mkdir "$T/sharing"
+python3 - "$T/sharing" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for i in range(12):
+    (root / str(i)).write_bytes(bytes([i]) * (1024 * 1024))
+PY
 best=0
 tries=0
 while [ "$tries" -lt 5 ]; do
     tries=$((tries + 1))
-    ( cd "$T" && "$H" tree --workers=8 --dist ) > /dev/null 2> "$T/w8try.err" || true
+    ( cd "$T" && "$H" sharing --workers=8 --dist ) > /dev/null 2> "$T/w8try.err" || true
     dt=$(sed -n 's/^dist //p' "$T/w8try.err")
     [ -n "$dt" ] || continue
     sum=0; act=0
@@ -84,7 +95,6 @@ while [ "$tries" -lt 5 ]; do
     # Failing here made the retry pointless -- under CI load all five attempts
     # reported "the pool is not sharing" and the `best >= 6` verdict below,
     # which is the real assertion, never got to speak.
-    [ "$act" -ge 2 ] || continue
     [ "$act" -gt "$best" ] && best=$act
     [ "$best" -ge 6 ] && break
 done

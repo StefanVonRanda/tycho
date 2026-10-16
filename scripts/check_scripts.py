@@ -36,7 +36,7 @@ TERMINAL = (ast.Return, ast.Raise, ast.Continue, ast.Break)
 # A `step "...(rationale)..."` banner is DOUBLE-quoted, so a backtick in it is a
 # command substitution: the shell RUNS the text and splices its output into the
 # banner. Two ways that bites, both seen on 2026-09-19 (FRICTION 105) --
-# scripts/ci.sh:90 quoted two diagnostic examples in backticks and printed
+# scripts/ci.sh:103 quoted two diagnostic examples in backticks and printed
 # "so  died as  --" with both silently gone plus two `command not found` lines,
 # and a lane added the same day backticked `make friction-check`, which RAN the
 # 113s target mid-sweep and left a file named `Pinned-by:` in the repo root that

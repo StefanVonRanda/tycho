@@ -177,6 +177,14 @@ Several things are out of scope — traits, a package manager, a
 C-style ternary, Hindley-Milner inference, refcounting/GC, and hosted CI among them. The
 full list is in [docs/architecture.md](docs/architecture.md#decided-non-goals).
 New directions are welcome; re-proposals of these need new evidence.
+Runtime-internal double-headed / single-block packing is being evaluated now,
+without a surface change; scenario evidence and targeted opportunities are in
+[plan-value-storage-places](docs/internals/plan-value-storage-places.md).
+A measured local optimization need not wait for 1.0; no default allocator rewrite is approved.
+The compiler follow-up removes a duplicate AST adapter and reuses an existing
+append builder: about 27% lower capacity and 25% lower RSS on a frozen compiler
+input, with unchanged emitted C; no demonstrated latency gain. Controls and
+remaining limits are recorded in that same plan.
 
 Traits were reopened and re-closed 2026-09-11; see
 [architecture](docs/architecture.md#traits--typeclasses--reopened-2026-09-11-re-closed-the-same-day).

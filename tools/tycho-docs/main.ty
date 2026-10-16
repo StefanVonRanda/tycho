@@ -26,11 +26,11 @@ fn slug(s: string) -> string:
     for i := 0; i < len(s); i += 1:
         c := s[i]
         if c >= 97 and c <= 122:
-            out = out + s[i:i+1]
+            out = out + char_at(s, i)
         elif c >= 65 and c <= 90:
             out = out + chr(c + 32)
         elif c >= 48 and c <= 57:
-            out = out + s[i:i+1]
+            out = out + char_at(s, i)
         elif c == 32 or c == 45 or c == 95:   # space, '-', '_'
             out = out + "-"
     return out
@@ -66,7 +66,7 @@ fn split_cells(s: string) -> [string]:
             push(cells, strings.trim(cur))
             cur = ""
         else:
-            cur = cur + s[i:i+1]
+            cur = cur + char_at(s, i)
     push(cells, strings.trim(cur))
     lo := 0
     hi := len(cells)
@@ -112,7 +112,7 @@ fn render_spans(e: string) -> string:
                 out = out + "<code>" + e[i+1:j] + "</code>"
                 i = j + 1
             else:
-                out = out + e[i:i+1]
+                out = out + char_at(e, i)
                 i = i + 1
         elif e[i] == 42 and i + 1 < len(e) and e[i+1] == 42:   # '**'
             k := i + 2
@@ -126,7 +126,7 @@ fn render_spans(e: string) -> string:
                 out = out + "<strong>" + render_spans(e[i+2:found]) + "</strong>"
                 i = found + 2
             else:
-                out = out + e[i:i+1]
+                out = out + char_at(e, i)
                 i = i + 1
         elif e[i] == 91:                        # '['
             k := i + 1
@@ -140,13 +140,13 @@ fn render_spans(e: string) -> string:
                     out = out + "<a href=\"" + rewrite_link(e[k+2:m]) + "\">" + render_spans(e[i+1:k]) + "</a>"
                     i = m + 1
                 else:
-                    out = out + e[i:i+1]
+                    out = out + char_at(e, i)
                     i = i + 1
             else:
-                out = out + e[i:i+1]
+                out = out + char_at(e, i)
                 i = i + 1
         else:
-            out = out + e[i:i+1]
+            out = out + char_at(e, i)
             i = i + 1
     return out
 
@@ -338,7 +338,7 @@ fn published_links(content: string, home: string, source_root: bool) -> string:
             out = out + "href=\"" + u
             i = j
         else:
-            out = out + content[i:i+1]
+            out = out + char_at(content, i)
             i += 1
     return out
 
@@ -441,10 +441,10 @@ fn strip_tags(s: string) -> string:
             if j >= 0:
                 i = j + 1
             else:
-                out = out + s[i:i+1]
+                out = out + char_at(s, i)
                 i = i + 1
         else:
-            out = out + s[i:i+1]
+            out = out + char_at(s, i)
             i = i + 1
     return out
 
@@ -464,7 +464,7 @@ fn json_esc(s: string) -> string:
         elif c == 9:
             out = out + " "
         else:
-            out = out + s[i:i+1]
+            out = out + char_at(s, i)
     return out
 
 fn group_of(d: string) -> string:
@@ -580,7 +580,10 @@ fn build(docs_dir: string, out_dir: string):
             io.write(path.join(out_dir, d + "/index.html"), html)
         if i > 0:
             search = search + ","
-        search = search + "{\"u\":\"" + outs[i] + "\",\"t\":\"" + json_esc(titles[i]) + "\",\"x\":\"" + json_esc(strip_tags(body)) + "\"}"
+        # Per-page intermediates belong to this loop, not the growing index.
+        search_title := json_esc(titles[i])
+        search_text := json_esc(strip_tags(body))
+        search = search + "{\"u\":\"" + outs[i] + "\",\"t\":\"" + search_title + "\",\"x\":\"" + search_text + "\"}"
     io.write(path.join(out_dir, "search.json"), search + "]")
     idx := "<h1>Tycho documentation</h1>\n<p>Guides to get you started. A reference for the language and corelib. A specification for the precise contract.</p>\n<div class=\"start\"><p><strong>New to Tycho?</strong> Start with the <a href=\"tutorial.html\">tutorial</a>, then explore <a href=\"from-c-to-arenas.html\">the memory model</a> and <a href=\"idioms.html\">Thinking in Tycho</a>.</p><p>Looking up syntax? Open the <a href=\"reference/index.html\">language reference</a>. For the precise contract, use the <a href=\"spec/index.html\">specification</a>.</p></div>\n"
     order := ["Guide", "Reference", "Specification", "Maintainer records", "Project"]

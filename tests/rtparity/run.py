@@ -71,8 +71,8 @@ RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 # capability disappearing, an entry appearing unlisted is a capability nobody
 # wrote down.
 
-# runtime/tycho_rt.c:632@TYCHO_ARENA_STATS, runtime/tycho_rt.c:637@TYCHO_BLOCK,
-# runtime/tycho_rt.c:1007@TYCHO_MAX_TASKS, runtime/tycho_rt.c:1291@TYCHO_THREADS --
+# runtime/tycho_rt.c:633@TYCHO_ARENA_STATS, runtime/tycho_rt.c:638@TYCHO_BLOCK,
+# runtime/tycho_rt.c:1009@TYCHO_MAX_TASKS, runtime/tycho_rt.c:1293@TYCHO_THREADS --
 # the only literal getenv() names in the
 # runtime. The wrapper Tycho code calls takes a runtime string (getenv(name)), so
 # a user program's own env reads cannot land here.
@@ -83,7 +83,7 @@ EXPECT_ENV = {
     "TYCHO_THREADS",
 }
 
-# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:399-436).
+# The TYCHO_ARENA_STATS report's row labels (runtime/tycho_rt.c:400-437).
 EXPECT_ROWS = {
     "arenas",
     "block reuse",
@@ -105,17 +105,26 @@ EXPECT_MSG_RUNTIME = {
     r"tycho: [string:float] map exceeds 2^31 entries\n",
     r"tycho: [string:int] map exceeds 2^31 entries\n",
     # Both from `51dcb45b` (packed): from_bytes() validates the layout at RUN
-    # time rather than reinterpreting the bytes. runtime/tycho_rt.c:1952@width, runtime/tycho_rt.c:1952@sum.
+    # time rather than reinterpreting the bytes. runtime/tycho_rt.c:1962@width, runtime/tycho_rt.c:1962@sum.
     r"tycho: a packed field width is not 1, 2, 4 or 8",
     r"tycho: a packed struct's field widths do not sum to its size",
     r"tycho: channel already closed\n",
     r"tycho: channel capacity must be >= 1\n",
+    # Reject an oversized ring before power-of-two growth or HCell allocation
+    # can overflow. Behavior is pinned by tests/abort/channel_capacity_overflow.ty
+    # and exercised with both compilers by tests/audit_runtime_guards.sh.
+    r"tycho: channel capacity too large\n",
     r"tycho: chr(%",
     r"tycho: division by zero\n",
     r"tycho: division overflow\n",
     r"tycho: element-wise arithmetic on arrays of different lengths ",
     r"tycho: float-to-int conversion out of range\n",
     r"tycho: index %",
+    # Reject negative/oversized map capacities before doubling the index table;
+    # its int entry numbers and size_t allocation arithmetic both impose limits.
+    # Fast and composite maps are checked by tests/audit_runtime_guards.sh.
+    # The format is spliced at TY_PRId, as with the other truncated entries.
+    r"tycho: map capacity %",
     r"tycho: modulo by zero\n",
     r"tycho: negative shift count\n",
     r"tycho: out of memory\n",
@@ -136,11 +145,11 @@ EXPECT_MSG_RUNTIME = {
 # that triggers it. These are the entries the lane earns its keep on -- a codegen
 # arm that stops emitting its guard reddens here and nowhere else.
 EXPECT_MSG_CODEGEN = {
-    # src/tychoc.c:12864@exhaustive, src/tychoc.c:13729@exhaustive,
-    # src/tychoc.c:13729@exhaustive, src/tychoc.c:13729@exhaustive
+    # src/tychoc.c:12912@exhaustive, src/tychoc.c:13766@exhaustive,
+    # src/tychoc.c:13766@exhaustive, src/tychoc.c:13766@exhaustive
     r"tycho: non-exhaustive match\n",
-    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:15328@bounded (the [4] is surface.ty's Inline.slots)
-    # src/tychoc.c:12368@slice, src/tychoc.c:12368@slice
+    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:15372@bounded (the [4] is surface.ty's Inline.slots)
+    # src/tychoc.c:12414@slice, src/tychoc.c:12414@slice
     r"tycho: slice [%",
 }
 # REMOVED 2026-07-30 (the loops-cleanup plan): r"tycho: range step is zero\n".

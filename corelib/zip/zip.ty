@@ -189,9 +189,12 @@ fn create_checked(entries: [Entry]) -> Result(bytes, string):
         if len(e.data) > ZIP_MAX_U32:
             return Err("ZIP entry data exceeds 32-bit size")
 
-    out := []int
+    # The wire format is bytes, not machine-width ints. Only compressed SIZES
+    # survive into the central directory; retaining each compressed payload
+    # would duplicate data already appended to out.
+    out := to_bytes([]int)
     offs := []int                          # local header offsets, for the CD
-    cdatas := []string                      # per-entry compressed bytes
+    csizes := []int
     methods := []int
     crcs := []int
     for e in entries:
@@ -206,12 +209,13 @@ fn create_checked(entries: [Entry]) -> Result(bytes, string):
         local_bytes := size_of$(Local) + len(e.name)
         if local_bytes > ZIP_MAX_U32 - len(out) or len(cdata) > ZIP_MAX_U32 - len(out) - local_bytes:
             return Err("ZIP local records exceed 32-bit offsets")
-        push(cdatas, to_str(cdata))
+        c := crc32(e.data)
+        push(csizes, len(cdata))
         push(methods, method)
-        push(crcs, crc32(e.data))
+        push(crcs, c)
         _push_bytes(&out, to_bytes(Local(to_u32(SIG_LOCAL), to_u16(20),
             to_u16(0), to_u16(method), to_u16(0), to_u16(0),
-            to_u32(crc32(e.data)), to_u32(len(cdata)), to_u32(len(e.data)),
+            to_u32(c), to_u32(len(cdata)), to_u32(len(e.data)),
             to_u16(len(e.name)), to_u16(0))))
         _push_str(&out, e.name)
         _push_bytes(&out, cdata)
@@ -220,7 +224,7 @@ fn create_checked(entries: [Entry]) -> Result(bytes, string):
         return Err("ZIP central directory offset exceeds 32-bit size")
     for i := 0; i < len(entries); i += 1:
         e := entries[i]
-        cdata := cdatas[i]
+        csize := csizes[i]
         method := methods[i]
         c := crcs[i]
         central_bytes := size_of$(Central) + len(e.name)
@@ -228,7 +232,7 @@ fn create_checked(entries: [Entry]) -> Result(bytes, string):
             return Err("ZIP central directory exceeds 32-bit size")
         _push_bytes(&out, to_bytes(Central(to_u32(SIG_CENTRAL), to_u16(20),
             to_u16(20), to_u16(0), to_u16(method), to_u16(0), to_u16(0),
-            to_u32(c), to_u32(len(cdata)), to_u32(len(e.data)),
+            to_u32(c), to_u32(csize), to_u32(len(e.data)),
             to_u16(len(e.name)), to_u16(0), to_u16(0), to_u16(0), to_u16(0),
             to_u32(0), to_u32(offs[i]))))
         _push_str(&out, e.name)
@@ -238,7 +242,7 @@ fn create_checked(entries: [Entry]) -> Result(bytes, string):
     _push_bytes(&out, to_bytes(Eocd(to_u32(SIG_EOCD), to_u16(0), to_u16(0),
         to_u16(len(entries)), to_u16(len(entries)), to_u32(cd_size),
         to_u32(cd_start), to_u16(0))))
-    return Ok(to_bytes(out))
+    return Ok(out)
 
 # Compatibility wrapper: valid archives are unchanged, but limits no longer
 # silently wrap into a forged archive. New callers should use create_checked.
@@ -249,9 +253,7 @@ fn create(entries: [Entry]) -> bytes:
             die("tycho: core:zip.create: " + e)
             return to_bytes([]int)
 
-fn _push_str(b: inout [int], s: string):
-    for i := 0; i < len(s); i += 1:
-        push(b, s[i])
-fn _push_bytes(b: inout [int], by: bytes):
-    for i := 0; i < len(by); i += 1:
-        push(b, by[i])
+fn _push_str(b: inout bytes, s: string):
+    b = b + to_bytes(s)
+fn _push_bytes(b: inout bytes, by: bytes):
+    b = b + by

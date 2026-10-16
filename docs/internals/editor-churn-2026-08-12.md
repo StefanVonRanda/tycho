@@ -97,9 +97,8 @@ cost, and only building the fix separated them.
 
 Written down here rather than filed as a defect, because it is not one: it is a
 measured instance of a limit this project already concedes. The memory-model
-guide says the same thing in general terms — allocation-churn workloads are
-where the arena is at its weakest, and the honest loss
-([`docs/memory-model.md:109-111`](../memory-model.md)). What the
+guide distinguishes supported reuse from the remaining rebuild-copy costs
+([reclamation techniques](../memory-model.md#reclamation-techniques)). What the
 controls add is the reason to believe the diagnosis: without them, "1 M edits
 got 7× slower" is equally well explained by the arena, by string
 concatenation, or by `inout`, and the fix would be aimed at the wrong one.

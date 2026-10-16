@@ -8,7 +8,7 @@ Run from the repository root:
 
 ```sh
 make docs-site            # docs/ -> build/docs-site/
-./tycho-docs docs build/docs-site
+./build/tycho-docs docs build/docs-site
 sh tools/tycho-docs/run.sh # renderer, links, shell, and paragraph regressions
 ```
 

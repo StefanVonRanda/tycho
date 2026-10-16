@@ -417,7 +417,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:12891@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:12939@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:248` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -441,10 +441,10 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:6219@ncpu`, lowering at `src/tychoc.c:11717@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:6219@ncpu`, lowering at `src/tychoc.c:11757@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
-     (_pk > 64) _pk = 64;` (`src/tychoc.c:12102`, inside `src/tychoc.c@gen_parfor`) —
+     (_pk > 64) _pk = 64;` (`src/tychoc.c:12147`, inside `src/tychoc.c@gen_parfor`) —
      which `docs/spec/13-concurrency.md` did not mention, so on a box with more than 64
      CPUs the spec's "uses `ncpu()` chunks" was false. **That half is a ~1-line spec fix
      and should be split out and taken** — *it was, and closing it is what closed this
@@ -576,7 +576,7 @@ pick-up order is written out in full under "What moved this pass" below.
     the `bytes` representation and the channel-handle type syntax — because every compiler
     phase shifts everything below it, and `src/tychoc.c` is now 754 KB. The four that
     survived are all into files that barely moved (`corelib/httpd/httpd.ty:420`,
-    `corelib/httpd/httpd.ty:229`, `server/main.ty:634`, `runtime/tycho_rt.c:667`) — which
+    `corelib/httpd/httpd.ty:229`, `server/main.ty:634`, `runtime/tycho_rt.c:669`) — which
     is the shape of the problem: **the citations that matter most are the ones most likely
     to be wrong.** `scripts/check_citations.py` cannot catch it by construction; it
     verifies anchored `path:line@token` refs against the token and only bounds-checks bare
@@ -826,7 +826,7 @@ shape: a bounded pool over a channel with a fan-in, over jobs that all terminate
   continuously; the results channel filling and parking a worker did not happen, or at
   least was not measured.
 - **Nothing above 64 workers as a real workload.** The 64-chunk probe used synthetic 50 ms
-  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:12102`.
+  sleeps; the real corpus ran at `ncpu()` = 16, nowhere near `src/tychoc.c:12147`.
 - **No nested parallelism** — no `parallel for` inside a spawned task, and no pool inside
   a pool.
 
@@ -950,7 +950,7 @@ handling, and the difference is deliberate rather than unfinished.
   , which the `register_conn` / `retire_conn` additions pushed down): calling a Tycho function from
   handler context is a *language* feature, because every Tycho value lives in a
   bump-allocated arena that is not re-entrant and channel operations park behind a mutex
-  (`runtime/tycho_rt.c:1144@mu`) — a handler that interrupts the allocator or the lock
+  (`runtime/tycho_rt.c:1146@mu`) — a handler that interrupts the allocator or the lock
   holder and then allocates or touches a channel deadlocks or corrupts the process it was
   invoked to shut down. **What a general version would need, so the next person costs it
   rather than rediscovers it:** (1) an async-signal-safe hand-off out of handler context —
@@ -1379,9 +1379,9 @@ confirmed, not a divergence between them. An array aborts on all four, and the
 check is **purely a runtime one**: `a[2:10]` on a 5-element array compiles
 cleanly (exit 0 from tychoc) and dies only when run, so there is no
 compile-time arm to strengthen. The array check is emitted inline into the
-generated C by the compiler — `src/tychoc.c:12459-12461` for an ordinary array
+generated C by the compiler — `src/tychoc.c:12505-12507` for an ordinary array
 (the path the probe above took) and the same test again at
-`src/tychoc.c:12438-12440` for the SoA variant, both spelling it
+`src/tychoc.c:12484-12486` for the SoA variant, both spelling it
 `_lo < 0 || _hi > len || _lo > _hi`, which is why all four shapes abort and not
 just the two that overrun. The clamp is `runtime/tycho_rt.c@tycho_str_substr`,
 whose three lines are exactly `start<0 -> 0`, `end>n -> n`, `end<start -> start`.
@@ -2736,7 +2736,7 @@ Two decisions, each right on its own. Closures are **single-expression only** �
        |                            ^
 ```
 
-And a ternary is refused **by decision** (`CONTRIBUTING.md:168-169`, on the
+And a ternary is refused **by decision** (`CONTRIBUTING.md:176-177`, on the
 "please don't propose them" list). Neither is in question here.
 
 Their combination is: `sort.sort_by(xs, cmp)` (`corelib/sort/sort.ty@sort_by`)
@@ -3304,7 +3304,7 @@ struct Plan($T):
 ```
 
 **The asymmetry, in one line.** A `fn($T) -> $T` typedef is deliberately NOT
-emitted — `src/tychoc.c:14736` skips any function type mentioning a type
+emitted — `src/tychoc.c:14780` skips any function type mentioning a type
 parameter, because `$T` lowers to `void` and a `void` parameter is invalid C.
 But the composite-array BODY loop emitted `struct TychoArrC0_ { FnC0 *data; }`
 for the template's dead `[fn($T)->$T]` anyway, naming the typedef that was just
@@ -6180,7 +6180,7 @@ wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
 (`src/tychoc.c:105@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
 stack), filled from one global pair (`src/tychoc.c:80@g_inst_from`) that
 `gen_program`'s instance loop retargets per instance
-(`src/tychoc.c:14476@g_inst_from`). So it can only ever name the innermost
+(`src/tychoc.c:14520@g_inst_from`). So it can only ever name the innermost
 frame; it is not dropping the outer one, it never had it. Making it match means
 giving `GInst` a link to the instance that instantiated it and walking that
 chain in `diag_flush` (`src/tychoc.c:1097@diag_flush`) — bounded work, but it
@@ -6310,7 +6310,7 @@ does exactly that to its watchdog. Under four concurrent lanes the process churn
 is high enough for a PID to be recycled between the save and the kill, and the
 signal then lands on an unrelated process. That fits every observation above
 (needs concurrency, hits multiple unrelated scripts, no lane does it alone) and
-is consistent with `run_lanes` (`scripts/ci.sh:28@run_lanes`) backgrounding the
+is consistent with `run_lanes` (`scripts/ci.sh:34@run_lanes`) backgrounding the
 lanes into one process group. Confirming it needs PID-level tracing across a
 full run, which has not been done.
 
@@ -6508,7 +6508,7 @@ and the `osx_is_batch_ref` pointer deleted. The dodge converted an unused
 creates nothing for either compiler to warn about. It is harmless where the
 function IS used — the Windows spawn path at `:341`, and the unit gate. The
 tree already uses `__attribute__` (`runtime/tycho_rt.c:237@constructor`,
-`:906@noinline`), and the Windows build is mingw, which is gcc, so no target
+`:908@noinline`), and the Windows build is mingw, which is gcc, so no target
 loses it. Option 3 stays rejected for the reason given above.
 
 **Measured, both compilers, same tree:**
@@ -7339,7 +7339,7 @@ option (1) and not (2).
 string is **double-quoted**, so a backtick inside it is not punctuation — the
 shell runs the text and splices its output into the banner. Two were live.
 
-**The pre-existing one, `scripts/ci.sh:90`.** Its rationale quoted the two
+**The pre-existing one, `scripts/ci.sh:103`.** Its rationale quoted the two
 diagnostic examples the lane exists for. Every sweep printed:
 
 ```text

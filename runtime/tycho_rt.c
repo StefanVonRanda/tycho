@@ -273,7 +273,8 @@ __attribute__((constructor)) static void tycho_stack_guard_init(void) {
 #endif
 
 typedef struct HBlock HBlock;
-struct HBlock { HBlock *next; size_t cap; size_t off; };
+/* Payload begins at b + 1: the header size must preserve 8-byte alignment on ILP32 too. */
+struct HBlock { _Alignas(8) HBlock *next; size_t cap; size_t off; };
 /* block payload lives immediately after the header */
 
 /* Per-arena object free-list for liveness-driven recycling. When the compiler
@@ -644,6 +645,7 @@ __attribute__((constructor)) static void stats_init(void) {
 static __thread HBlock *g_block_pool = NULL;
 
 static HBlock *block_get(size_t cap) {
+    if (cap > SIZE_MAX - sizeof(HBlock)) tycho_oom();
     if (g_arena_stats) atomic_fetch_add_explicit(&st_block_gets, 1, memory_order_relaxed);
     if (g_block_pool && g_block_pool->cap >= cap) {  /* fast path: head fits (uniform sizes) */
         HBlock *b = g_block_pool;
@@ -1381,30 +1383,48 @@ char *tycho_str_concat6(Arena *a, const char *s0, const char *s1, const char *s2
     return r;
 }
 
-/* In-place string append for the accumulator pattern `acc = acc + e`. The
- * compiler emits this only for a uniquely-owned local string it tracks with
- * sidecar len/cap, so growing the buffer in place is sound (value semantics
- * guarantees no alias observes the mutation). Geometric growth makes a loop
- * of appends amortized O(1) each -> O(N) total time and memory, vs the O(N^2)
- * of repeated tycho_str_concat. Mirrors tycho_arr_int_push. The new buffer
- * lives in arena `a` (the variable's owning arena, not the caller's scratch).
- * memmove, not memcpy: e may alias *s (acc = acc + acc). */
-void tycho_str_append(Arena *a, char **s, tycho_int *len, tycho_int *cap, const char *e) {
-    tycho_int el = ((const tycho_int *)e)[-1];   /* header length: byte-safe */
-    tycho_int need = *len + el + 1;
-    if (need > *cap) {
-        tycho_int nc = *cap ? *cap * 2 : 16;
-        while (nc < need) nc *= 2;
-        char *base = (char *)arena_alloc(a, (size_t)(8 + nc));   /* +8 for the length header */
-        char *nb = base + 8;
-        memcpy(nb, *s, (size_t)*len);    /* old buffer still live (bump arena) */
+/* Append state belongs to a binding, not the string representation. Generated
+ * inout calls forward that binding's state; projections without persistent
+ * metadata use fresh per-call state. Fresh state MUST copy on first append:
+ * incoming storage may still be borrowed. Only buffers grown by THIS state
+ * may be mutated. Rebinding invalidates capacity by pointer identity; nested
+ * calls share state, and length always comes from the current header. */
+typedef struct { char *data; tycho_int cap; } TychoStrAppend;
+
+static tycho_int tycho_str_append_room(Arena *a, char **s, TychoStrAppend *st, tycho_int extra) {
+    tycho_int len = ((const tycho_int *)*s)[-1];
+    if (len < 0 || extra < 0 || len > INT64_MAX - extra - 1) tycho_oom();
+    tycho_int need = len + extra + 1;
+    size_t limit = SIZE_MAX - 8u;
+    if ((uint64_t)need > (uint64_t)limit) tycho_oom();
+    tycho_int cap = st->data == *s ? st->cap : 0;
+    if (need > cap) {
+        tycho_int nc = cap ? cap : 16;
+        while (nc < need) {
+            if (nc > INT64_MAX / 2 || (uint64_t)nc > (uint64_t)limit / 2) {
+                nc = need;
+                break;
+            }
+            nc *= 2;
+        }
+        char *nb = (char *)arena_alloc(a, (size_t)nc + 8u) + 8;
+        memcpy(nb, *s, (size_t)len);   /* the old buffer remains live for self-append */
         *s = nb;
-        *cap = nc;
+        st->data = nb;
+        st->cap = nc;
     }
-    memmove(*s + *len, e, (size_t)el);
-    *len += el;
-    (*s)[*len] = '\0';
-    ((tycho_int *)(*s))[-1] = *len;            /* keep the length header in sync (always grown by here) */
+    return len;
+}
+
+/* Geometric growth in the binding's owner arena. memmove handles s = s + s;
+ * on growth the operand still points at the old, live arena allocation. */
+void tycho_str_append(Arena *a, char **s, TychoStrAppend *st, const char *e) {
+    tycho_int el = ((const tycho_int *)e)[-1];
+    tycho_int len = tycho_str_append_room(a, s, st, el);
+    memmove(*s + len, e, (size_t)el);
+    len += el;
+    (*s)[len] = '\0';
+    ((tycho_int *)*s)[-1] = len;
 }
 
 /* string + char: one-byte append, no strlen/snprintf. `c` is a byte carried in
@@ -1419,21 +1439,11 @@ char *tycho_str_concat_char(Arena *a, const char *x, tycho_int c) {
 
 /* In-place one-byte append for the accumulator `acc = acc + c` where c is a
  * char. Same uniqueness/geometric-growth contract as tycho_str_append. */
-void tycho_str_append_char(Arena *a, char **s, tycho_int *len, tycho_int *cap, tycho_int c) {
-    tycho_int need = *len + 2;
-    if (need > *cap) {
-        tycho_int nc = *cap ? *cap * 2 : 16;
-        while (nc < need) nc *= 2;
-        char *base = (char *)arena_alloc(a, (size_t)(8 + nc));
-        char *nb = base + 8;
-        memcpy(nb, *s, (size_t)*len);
-        *s = nb;
-        *cap = nc;
-    }
-    (*s)[*len] = (char)c;
-    *len += 1;
-    (*s)[*len] = '\0';
-    ((tycho_int *)(*s))[-1] = *len;
+void tycho_str_append_char(Arena *a, char **s, TychoStrAppend *st, tycho_int c) {
+    tycho_int len = tycho_str_append_room(a, s, st, 1);
+    (*s)[len++] = (char)c;
+    (*s)[len] = '\0';
+    ((tycho_int *)*s)[-1] = len;
 }
 
 static const struct { tycho_int n; char z[8]; } ty_str_empty = { 0, { 0 } };
@@ -1467,7 +1477,7 @@ char *tycho_str_copy(Arena *a, const char *s) {
      * status an interned literal already has, which is why arena_recycle's
      * arena_owns guard copes with a pointer no arena owns. const on purpose: the
      * in-place writers (tycho_str_append/_append_char) reach an accumulator at
-     * cap 0 and grow into their own buffer before any store. */
+     * fresh append state and grow into their own buffer before any store. */
     if (n == 0) return (char *)ty_str_empty.z;
     char *r = tycho_str_alloc(a, n);
     tycho_mcpy(r, s, n);
@@ -2339,8 +2349,88 @@ TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
     return r;
 }
 
+/* Single-pass construction of fresh names plus their index in an arena tail.
+ * Names grow upward, temporary pointers downward. No arena allocation may occur
+ * between the first add and finish: libc readdir/closedir never use this arena.
+ * Both groups have ONE arena owner; no blocks are shared between logical arenas.
+ * Grow the index window geometrically inside the available tail, so a tiny
+ * listing does not touch the far end of a mostly empty 64 KiB block. */
+typedef struct {
+    Arena *arena;
+    HBlock *block;
+    size_t begin, low, high, end, limit;
+    tycho_int len;
+} TychoDirBuild;
+
+static int tycho_dir_build_add(TychoDirBuild *b, const char *name) {
+    size_t n = strlen(name);
+    if (n > SIZE_MAX - 16u || (uint64_t)n > INT64_MAX) return 0;
+    size_t span = (n + 16u) & ~(size_t)7u;   /* header + bytes + NUL, rounded to 8 */
+    if (!b->block) {
+        Arena *a = b->arena;
+        size_t need = span + sizeof(char *);
+        if (need < span || need > SIZE_MAX - 7u) return 0;
+        need = (need + 7u) & ~(size_t)7u;
+        if (!a->head || need > a->head->cap - a->head->off) {
+            /* Prefer ordinary recycling over acquiring a special fresh tail. */
+            if (a->bkt || a->freelist) return 0;
+            size_t cap = need > a->blocksz ? need : a->blocksz;
+            HBlock *h = block_get(cap);
+            h->next = a->head; a->head = h;
+        }
+        b->block = a->head; b->begin = a->head->off;
+        b->limit = (a->head->cap - b->begin) & ~(size_t)7u;
+        b->end = b->limit < 256u ? b->limit : 256u;
+        b->high = b->end;
+    }
+    if (span > b->limit - b->low || sizeof(char *) > b->limit - b->low - span) return 0;
+    size_t required = b->low + span + sizeof(char *);
+    size_t pointers = b->end - b->high;
+    if (pointers > b->limit - required) return 0;
+    char *base = (char *)(b->block + 1) + b->begin;
+    if (span + sizeof(char *) > b->high - b->low) {
+        size_t end = b->end;
+        while (end < required + pointers)
+            end = end > b->limit / 2u ? b->limit : end * 2u;
+        size_t high = end - pointers;
+        memmove(base + high, base + b->high, pointers);
+        b->high = high; b->end = end;
+    }
+    char *field = base + b->low;
+    *(tycho_int *)field = (tycho_int)n;
+    memcpy(field + 8, name, n);
+    memset(field + 8 + n, 0, span - 8 - n);
+    b->low += span;
+    b->high -= sizeof(char *);
+    *(char **)(base + b->high) = field + 8;
+    b->len++;
+    return 1;
+}
+
+static TychoArrStr tycho_dir_build_finish(TychoDirBuild *b) {
+    TychoArrStr r = {NULL, b->len, b->len};
+    if (!b->len) return r;
+    char *base = (char *)(b->block + 1) + b->begin;
+    char **index = (char **)(base + b->high);
+    for (tycho_int i = 0; i < b->len / 2; i++) {
+        char *p = index[i]; index[i] = index[b->len - 1 - i]; index[b->len - 1 - i] = p;
+    }
+    size_t bytes = (size_t)b->len * sizeof(char *);
+    memmove(base + b->low, index, bytes);
+    /* Use the real allocation path for bump accounting AND recycled chunks.
+     * A recycle hit can publish elsewhere; relocate the fresh pointers then.
+     * Nothing is exposed until this commit, and the temporary index is dead. */
+    char *out = arena_alloc(b->arena, b->low + bytes);
+    if (out != base) memcpy(out, base, b->low + bytes);
+    r.data = (char **)(out + b->low);
+    if (out != base) for (tycho_int i = 0; i < r.len; i++)
+        r.data[i] = out + (r.data[i] - base);
+    return r;
+}
+
 TychoArrStr tycho_list_dir(Arena *a, const char *path) {
-    TychoArrStr r = tycho_arr_str_with_cap(a, 8);
+    TychoArrStr r = {NULL, 0, 0};
+    TychoDirBuild build = {0}; build.arena = a;
     DIR *d = opendir(path);
     if (!d) return r;
     struct dirent *de;
@@ -2348,7 +2438,23 @@ TychoArrStr tycho_list_dir(Arena *a, const char *path) {
         if (de->d_name[0] == '.' &&
             (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0')))
             continue;   /* skip "." and ".." */
-        tycho_arr_str_push(a, &r, tycho_str_from_c(a, de->d_name));   /* d_name is a bare C string */
+        if (!tycho_dir_build_add(&build, de->d_name)) break;
+    }
+    r = tycho_dir_build_finish(&build);
+    /* The first colliding entry has NOT been consumed. Finish packing before
+     * entering this ordinary growing loop; no tail reservation remains live. */
+    for (; de; de = readdir(d)) {
+        if (de->d_name[0] == '.' &&
+            (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0')))
+            continue;
+        if (r.len == r.cap) {
+            tycho_int cap = 8;
+            while (cap <= r.len) { tycho_cap_check(cap, 2u * sizeof(char *)); cap *= 2; }
+            tycho_arr_str_reserve(a, &r, cap);
+        }
+        /* This fresh libc name has no Tycho snapshot to detach from. Copy it
+         * directly into its final owner once, including on the growing path. */
+        r.data[r.len++] = tycho_str_from_c(a, de->d_name);
     }
     closedir(d);
     return r;

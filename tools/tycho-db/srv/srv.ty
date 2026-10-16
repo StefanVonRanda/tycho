@@ -113,24 +113,36 @@ fn close_conn(fd: int):
 # One line, or None at a CLEAN end of stream. None is not an error and must not
 # be one: a client that sent everything it had and closed did nothing wrong.
 # A stream that ends with bytes still in the buffer DID -- that is a statement
-# cut in half, and it comes back as Peer.
+# cut in half, and it comes back as Peer. MAX_LINE counts payload bytes, not
+# LF or an optional final CR. Check the FIRST line before splitting/rebinding;
+# a pipelined tail is not part of that line. Keep at most one CR plus LF of
+# framing headroom while reading an incomplete line.
 fn recv_line(fd: int, buf: inout string) -> Result(Option(string), SrvErr):
     sw := time.start()
     for true:
-        if strings.contains(buf, "\n"):
+        cut := find(buf, "\n")
+        line_len := len(buf)
+        if cut >= 0:
+            line_len = cut
+        if line_len > 0 and buf[line_len - 1] == 13:
+            line_len -= 1
+        if line_len > MAX_LINE:
+            return Err(TooLong(MAX_LINE))
+        if cut >= 0:
             line, rest := strings.split_once(buf, "\n")
             buf = rest
             # tolerate a CRLF peer: the protocol is LF, but a stray \r at the
             # end of a line is the client's line ending, not part of the SQL
             return Ok(Some(strings.strip_suffix(line, "\r")))
-        if len(buf) > MAX_LINE:
-            return Err(TooLong(MAX_LINE))
         remaining := IDLE_TIMEOUT_MS - time.elapsed_ms(sw)
         if remaining <= 0:
             return Err(Peer("idle timeout"))
         if not net.set_read_timeout_ms(fd, remaining):
             return Err(Peer("cannot set idle timeout"))
-        match net.read(fd, READ_CHUNK):
+        want := MAX_LINE + 2 - len(buf)
+        if want > READ_CHUNK:
+            want = READ_CHUNK
+        match net.read(fd, want):
             Ok(b): buf = buf + to_str(b)
             Err(net.Eof):
                 if len(strings.trim(buf)) > 0:

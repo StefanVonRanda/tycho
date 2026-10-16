@@ -340,8 +340,10 @@ if [ "$RECORD" = 1 ]; then
         run_one "$entry" "pkg_$name" "$gold" "$in"
     done
 else
-    test_jobs="${TYCHO_THREADS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)}"
-    case "$test_jobs" in ''|*[!0-9]*|0) echo "tests: TYCHO_THREADS must be a positive integer" >&2; exit 2 ;; esac
+    test_jobs="${TYCHO_TEST_JOBS:-${TYCHO_THREADS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)}}"
+    case "$test_jobs" in ''|*[!0-9]*|0) echo "tests: TYCHO_TEST_JOBS (or TYCHO_THREADS) must be a positive integer" >&2; exit 2 ;; esac
+    # Limit compiler orchestration, not the fixture's runtime thread setting.
+    if [ "${CI_SERIAL:-0}" = 1 ]; then test_jobs=1; fi
 
     job_count=0
     job_file="$TMP/jobs"

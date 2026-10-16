@@ -127,7 +127,7 @@ fi
 # --- [3] hard-wrapped Markdown is one paragraph, including inline markup ---
 mkdir -p "$T/paragraph-input" "$T/tools/tycho-docs"
 cp tools/tycho-docs/site.css tools/tycho-docs/site.js tools/tycho-docs/header.html tools/tycho-docs/footer.html "$T/tools/tycho-docs/"
-printf '# Paragraphs\n\nA **wrapped\nphrase** with a [link](reference.md).\n\nNext paragraph.\n\n```text\nfirst\nsecond\n```\n\n> A **wrapped\n> quotation**.\n>\n> Second quote paragraph.\n\n- A **wrapped\n  list item**.\n- Another item.\n\n2. A numbered item\n   with continuation.\n3. The next item.\n\nFinal paragraph\nwithout a trailing blank.\n' > "$T/paragraph-input/example.md"
+printf '# Paragraphs\n\nA **wrapped\nphrase** with a [link](reference.md).\n\nNext paragraph.\n\n```text\nfirst\nsecond\n```\n\n> A **wrapped\n> quotation**.\n>\n> Second quote paragraph.\n\n- A **wrapped\n  list item**.\n- Another item.\n\n2. A numbered item\n   with continuation.\n3. The next item.\n\nQuotes "x" and backslash \\ plus café 日本語.\n\nFinal paragraph\nwithout a trailing blank.\n' > "$T/paragraph-input/example.md"
 "$F" "$T/paragraph-input" "$T/paragraph-site" > "$T/paragraph.log" 2>&1 || bad "[3] paragraph fixture did not render"
 if command -v python3 >/dev/null 2>&1; then
     python3 - "$T/paragraph-site/example.html" <<'PY' || bad "[3] paragraph formatting regressed"
@@ -140,6 +140,12 @@ assert '<blockquote>\n<p>A <strong>wrapped quotation</strong>.</p>\n<p>Second qu
 assert '<ul>\n<li>A <strong>wrapped list item</strong>.</li>\n<li>Another item.</li>\n</ul>' in src
 assert '<ol start="2">\n<li>A numbered item with continuation.</li>\n<li>The next item.</li>\n</ol>' in src
 assert '<p>Final paragraph without a trailing blank.</p>' in src
+import json
+from pathlib import Path
+search = json.loads((Path(sys.argv[1]).parent / 'search.json').read_text())
+entry = next(e for e in search if e['u'] == 'example.html')
+assert 'Quotes "x" and backslash \\ plus café 日本語.' in entry['x']
+assert '<p>' not in entry['x']
 print("Markdown: soft-wrapped paragraphs/quotes/lists, ordered lists, fences and EOF intact")
 PY
 fi

@@ -22,6 +22,7 @@ source; do not point it at a FRICTION.md from anywhere else.
 """
 
 import concurrent.futures
+import os
 import re
 import subprocess
 import sys
@@ -180,7 +181,8 @@ def main():
     for group, width in ((light, 8), (heavy, 2)):
         if not group:
             continue
-        with concurrent.futures.ThreadPoolExecutor(max_workers=width) as ex:
+        workers = 1 if os.environ.get("CI_SERIAL") == "1" else width
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
             for cmd, res in zip(group, ex.map(run, group)):
                 results[cmd] = res
 

@@ -2034,7 +2034,7 @@ static void recycle_emit_body(FILE *o, Type t) {
     } else if (IS_RES(t)) {
         Type ok = res_ok(t), err = res_err(t);
         if (type_is_heap(ok)) fprintf(o, "    if (v.ok) %s(a, v.okv);\n", recycle_name(ok));
-        if (type_is_heap(err)) fprintf(o, "    else %s(a, v.errv);\n", recycle_name(err));
+        if (type_is_heap(err)) fprintf(o, "    if (!v.ok) %s(a, v.errv);\n", recycle_name(err));
     } else if (IS_TUP(t)) {
         for (int i = 0; i < tup_n(t); i++) if (type_is_heap(tup_elem(t, i)))
             fprintf(o, "    %s(a, v._%d);\n", recycle_name(tup_elem(t, i)), i);
@@ -9048,7 +9048,7 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:10860@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:10871@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
      * required value, and it matches the lambda-lift twin at src/tychoc.c:6852@is_sink which sets
@@ -10626,19 +10626,30 @@ static int g_blk = 0;   /* unique-name counter for block subarenas / literals */
  * so an assignment (or array push) can allocate in the *variable's* arena
  * rather than the current (possibly inner, soon-to-collapse) one. This is
  * what keeps the implicit model sound: a value never outlives its arena. */
-typedef struct { const char *name; const char *arena; } CVar;
+typedef struct { const char *name; const char *arena; const char *append; } CVar;
 static CVar *g_cv;
 static int  g_ncv = 0, g_cv_cap = 0;
 static int  cv_mark(void) { return g_ncv; }
 static void cv_restore(int m) { g_ncv = m; }
 static void cv_push(const char *name, const char *arena) {
     TBL_ENSURE(g_cv, g_ncv, g_cv_cap);
-    g_cv[g_ncv].name = name; g_cv[g_ncv].arena = arena; g_ncv++;
+    g_cv[g_ncv].name = name; g_cv[g_ncv].arena = arena;
+    g_cv[g_ncv].append = NULL; g_ncv++;
 }
 static const char *cv_arena(const char *name) {
     for (int i = g_ncv - 1; i >= 0; i--)
         if (!strcmp(g_cv[i].name, name)) return g_cv[i].arena;
     return NULL;
+}
+
+static const char *cv_append(const char *name) {
+    for (int i = g_ncv - 1; i >= 0; i--)
+        if (!strcmp(g_cv[i].name, name)) return g_cv[i].append;
+    return NULL;
+}
+static void cv_set_append(const char *name, const char *state) {
+    for (int i = g_ncv - 1; i >= 0; i--)
+        if (!strcmp(g_cv[i].name, name)) { g_cv[i].append = state; return; }
 }
 
 /* true iff a live variable's storage is the caller's arena (_parent). Set by
@@ -11044,9 +11055,8 @@ static void collect_ret_alias(Proc *pr) {
  * O(N). Value semantics guarantees v is uniquely owned at the rebind, so the
  * in-place mutation is invisible to every other variable (a `b := v` bind
  * already deep-copies). We pre-scan the body for such names; an eligible
- * variable carries sidecar len/cap C locals (emitted AT its declaration, in
- * v's own C scope — never hoisted, so a loop-body accumulator's sidecars
- * reset in lockstep with its buffer each iteration). */
+ * variable carries append state in its own C scope (at a local declaration
+ * or inout call entry). The runtime invalidates capacity on rebinding. */
 static const char **g_accum;
 static int g_accum_cap = 0;
 static int g_naccum = 0;
@@ -11098,10 +11108,30 @@ static int is_self_mapdel(Stmt *s) {
         && s->expr->args[0]->kind == E_IDENT
         && !strcmp(s->expr->args[0]->sval, s->name);
 }
+static int appendable(Type t) {
+    t = base_of(t);
+    return t == T_STRING || t == T_BYTES;
+}
+/* A mutable string borrow needs the same binding-local state as a direct
+ * append, even when the append happens only in a separately-called helper. */
+static void collect_append_borrows(Expr *e) {
+    if (!e) return;
+    if (e->kind == E_ADDR && e->lhs->kind == E_IDENT && appendable(e->lhs->type)) {
+        TBL_ENSURE(g_accum, g_naccum, g_accum_cap);
+        g_accum[g_naccum++] = e->lhs->sval;
+    }
+    collect_append_borrows(e->lhs); collect_append_borrows(e->rhs);
+    for (int i = 0; i < e->nargs; i++) collect_append_borrows(e->args[i]);
+}
 static void collect_accums(Stmt **body, int n) {
     for (int i = 0; i < n; i++) {
         Stmt *s = body[i];
         if (is_self_append(s) || is_self_mapset(s) || is_self_mapdel(s)) { TBL_ENSURE(g_accum, g_naccum, g_accum_cap); g_accum[g_naccum++] = s->name; }
+        collect_append_borrows(s->expr); collect_append_borrows(s->target);
+        collect_append_borrows(s->r_start); collect_append_borrows(s->r_stop);
+        if (s->ctrl) collect_accums(&s->ctrl, 1);
+        if (s->kind == S_SELECT && s->sel_ch)
+            for (int a = 0; a < s->narms; a++) collect_append_borrows(s->sel_ch[a]);
         if (s->body) collect_accums(s->body, s->nbody);
         if (s->els)  collect_accums(s->els, s->nels);
         /* match/select arm bodies are nested blocks too (s->arms[a].body, not
@@ -11116,6 +11146,16 @@ static int is_accum(const char *nm) {
     for (int i = 0; i < g_naccum; i++)
         if (!strcmp(g_accum[i], nm)) return 1;
     return 0;
+}
+
+static char *append_state_binding(const char *name, Type t) {
+    if (!appendable(t) || !is_accum(name)) return "";
+    cv_set_append(name, sfmt("&_append_h_%s", name));
+    return sfmt("TychoStrAppend _append_h_%s = {0}; ", name);
+}
+static void gen_append_state(FILE *o, const char *name, Type t, int ind) {
+    char *decl = append_state_binding(name, t);
+    if (*decl) { indent(o, ind); fprintf(o, "%s\n", decl); }
 }
 
 /* Wrap a generated C expression `val` of type `t` in the deep-copy call that
@@ -11775,7 +11815,7 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "args")) {
         return sfmt("tycho_args(%s)", arena);
     }
-    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1444`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
+    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1454`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
         return sfmt(e->sval[0] == 'c' ? "tycho_chr(%s, %s)" : "((tycho_int)(unsigned char)tycho_chr(%s, %s)[0])", arena, gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */
@@ -11960,6 +12000,11 @@ static char *gen_call(Expr *e, const char *arena) {
             while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
             const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
             out = sfmt("%s, %s, %s", out, owner, a);
+            if (appendable(cs->params[i])) {
+                Expr *place = e->args[i]->lhs;
+                const char *state = place->kind == E_IDENT ? cv_append(place->sval) : NULL;
+                out = sfmt("%s, %s", out, state ? state : "NULL");
+            }
         } else {
             out = sfmt("%s, %s", out, a);
         }
@@ -12206,6 +12251,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                 if (e->sval) {   /* borrowed: the err lives in this scope until the frees below */
                     bind = sfmt("%sh_%s = _or%d.errv; ", c_type(res_err(e->lhs->type)), e->sval, id);
                     cv_push(e->sval, NULL);
+                    bind = sfmt("%s%s", bind, append_state_binding(e->sval, res_err(e->lhs->type)));
                 }
                 char *h = copy_into(g_gen_ret, "_parent", gen_expr(e->rhs, arena));
                 cv_restore(m);
@@ -12832,6 +12878,7 @@ static void gen_match_side(FILE *o, Stmt *s, const char *tag, Type pt, char *val
                 fprintf(o, "%sh_%s = %s;\n", c_type(var->payload[b]), a->subbinds[b],
                         borrow ? field : copy_into(var->payload[b], scope, field));
                 cv_push(a->subbinds[b], borrow ? NULL : scope);
+                gen_append_state(o, a->subbinds[b], var->payload[b], ind + 1);
             }
         }
         gen_block(o, a->body, a->nbody, ind + 1, scope, ret);
@@ -12852,6 +12899,7 @@ static void gen_match_side(FILE *o, Stmt *s, const char *tag, Type pt, char *val
             fprintf(o, "%sh_%s = %s;\n", c_type(pt), plain->binds[0],
                     borrow ? val : copy_into(pt, scope, val));
             int m = cv_mark(); cv_push(plain->binds[0], borrow ? NULL : scope);
+            gen_append_state(o, plain->binds[0], pt, bind);
             gen_block(o, plain->body, plain->nbody, bind, scope, ret);
             cv_restore(m);
         } else {
@@ -12937,6 +12985,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 fprintf(o, "%sh_%s%s;\n", c_type(s->decl_type), s->name,
                         is_array(s->decl_type) ? " = {0}" : "");
                 cv_push(s->name, scope);
+                gen_append_state(o, s->name, s->decl_type, ind);
                 gen_stmt(o, s->ctrl, ind, scope, ret);
                 break;
             }
@@ -13001,17 +13050,8 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                         c_type(s->decl_type), s->name, s->name);
             else
                 fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
-            /* in-place append sidecars, declared HERE (same C scope as h_v, so
-             * a loop-body accumulator re-inits them each iteration in lockstep
-             * with its buffer — never hoist these). cap 0 = "not growable in
-             * place yet", so the first append allocates and the initial buffer
-             * (possibly a string literal in .rodata) is never written. */
-            if ((s->decl_type == T_STRING || s->decl_type == T_BYTES) && is_accum(s->name)) {
-                indent(o, ind);
-                fprintf(o, "tycho_int _len_h_%s = ((const tycho_int *)h_%s)[-1]; tycho_int _cap_h_%s = 0;\n",
-                        s->name, s->name, s->name);
-            }
             cv_push(s->name, owner);   /* this variable lives in `owner` */
+            gen_append_state(o, s->name, s->decl_type, ind);
             break;
         }
         case S_MDECL: {
@@ -13028,6 +13068,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind);
                 fprintf(o, "%sh_%s = _mt%d._%d;\n", c_type(s->mtypes[i]), s->names[i], id, i);
                 cv_push(s->names[i], scope);
+                gen_append_state(o, s->names[i], s->mtypes[i], ind);
             }
             break;
         }
@@ -13080,10 +13121,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * the function still sees an ordinary NUL-terminated char*. e is
              * fully evaluated before the buffer is touched (handles acc=acc+acc
              * and acc=acc+f(acc)). */
-            /* (an inout param is excluded: its _len_/_cap_ trackers are never
-             * declared and the target is (*h_x) — the generic path below
-             * concats into _ina_ instead, which is correct, just not in-place) */
-            if (is_accum(s->name) && is_self_append(s) && !is_inout_param(s->name)) {
+            if (cv_append(s->name) && is_self_append(s)) {
                 Expr *ops[64];
                 int nops = collect_append_ops(s->expr, s->name, ops, 64);
                 /* Multi-piece (k>=2) in-place is sound only if no operand reads
@@ -13095,10 +13133,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * behavior: one operand passed straight to the append, so the
                  * runtime still handles acc=acc+acc / acc=acc+f(acc). */
                 int alias_safe = 1;
-                if (nops >= 2)
-                    for (int k = 0; k < nops; k++)
-                        if (count_reads_e(ops[k], s->name)) { alias_safe = 0; break; }
-                if (nops == 1 || (nops >= 2 && alias_safe)) {
+                for (int k = 0; k < nops; k++)
+                    if (expr_mutates(ops[k], s->name)
+                        || (nops >= 2 && count_reads_e(ops[k], s->name))) {
+                        alias_safe = 0; break;
+                    }
+                if (nops >= 1 && alias_safe) {
+                    const char *target = is_inout_param(s->name)
+                        ? sfmt("h_%s", s->name) : sfmt("&h_%s", s->name);
                     /* a char piece appends one byte in place (no strlen); a string
                      * piece appends its bytes. Both grow the same buffer. */
                     if (nops >= 2) {
@@ -13114,16 +13156,16 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                         }
                         for (int k = 0; k < nops; k++) {
                             indent(o, ind);
-                            fprintf(o, "%s(%s, &h_%s, &_len_h_%s, &_cap_h_%s, _ap%d);\n",
+                            fprintf(o, "%s(%s, %s, %s, _ap%d);\n",
                                     ops[k]->type == T_CHAR ? "tycho_str_append_char" : "tycho_str_append",
-                                    owner, s->name, s->name, s->name, id0 + k);
+                                    owner, target, cv_append(s->name), id0 + k);
                         }
                     } else {
                         char *e = gen_expr(ops[0], owner);
                         indent(o, ind);
-                        fprintf(o, "%s(%s, &h_%s, &_len_h_%s, &_cap_h_%s, %s);\n",
+                        fprintf(o, "%s(%s, %s, %s, %s);\n",
                                 ops[0]->type == T_CHAR ? "tycho_str_append_char" : "tycho_str_append",
-                                owner, s->name, s->name, s->name, e);
+                                owner, target, cv_append(s->name), e);
                     }
                     break;
                 }
@@ -13232,12 +13274,6 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 else
                     fprintf(o, "h_%s = %s;\n", s->name, v);
             }
-            /* a non-self assignment to a tracked accumulator rebinds its
-             * buffer; resync sidecars (cap 0 = the new buffer isn't ours to
-             * grow in place — forces the next append to allocate). */
-            if (is_accum(s->name) && (s->expr->type == T_STRING || s->expr->type == T_BYTES) && !is_inout_param(s->name))
-                fprintf(o, "%*s_len_h_%s = ((const tycho_int *)h_%s)[-1]; _cap_h_%s = 0;\n",
-                        ind * 4, "", s->name, s->name, s->name);
             break;
         }
         case S_INDEXSET: {
@@ -13707,6 +13743,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                             /* a borrowed binding owns no arena (like a param):
                              * NULL keeps move-on-last-use from handing it off. */
                             cv_push(arm->binds[b], borrow ? NULL : scope);
+                            gen_append_state(o, arm->binds[b], var->payload[b], ind + 2);
                         }
                     }
                     gen_block(o, arm->body, arm->nbody, ind + 2, scope, ret);
@@ -13842,6 +13879,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 indent(o, ind + 2); fprintf(o, "%sh_%s = _v;\n", c_type(it), a->binds[0]);
                 int m = cv_mark();
                 cv_push(a->binds[0], scope);
+                gen_append_state(o, a->binds[0], it, ind + 2);
                 gen_block(o, a->body, a->nbody, ind + 2, scope, ret);
                 cv_restore(m);
                 indent(o, ind + 2); fprintf(o, "goto _sel_done_%d;\n", id);
@@ -13968,6 +14006,8 @@ static void gen_signature(FILE *o, Proc *pr) {
             fprintf(o, ", %s*h_%s", c_type(pt), pr->params[i].name);
         else
             fprintf(o, ", %sh_%s", c_type(pt), pr->params[i].name);
+        if (pr->params[i].is_inout && appendable(pt))
+            fprintf(o, ", TychoStrAppend *_aps_h_%s", pr->params[i].name);
     }
     fprintf(o, ")");
 }
@@ -14029,18 +14069,10 @@ static void gen_proc(FILE *o, Proc *pr) {
     /* in-place append: which string locals are self-append accumulators */
     g_naccum = 0;
     collect_accums(pr->body, pr->nbody);
-    /* the string accumulator opt declares its sidecar len/cap locals at the
-     * variable's S_DECL; a by-value parameter has no S_DECL, so a self-append on
-     * a string param (`s = s + e`) must NOT take the in-place path — its
-     * sidecars would be undeclared C. Drop NON-inout params from the accumulator
-     * set; they fall back to ordinary concat/pure-set-and-rebind, which is
-     * correct. A inout param is KEPT: it carries no string sidecars (inout
-     * string is forbidden, so the only inout accumulator is a map), and its
-     * in-place map put/del is exactly the wanted mutation — landing in the
-     * caller's arena (_ina_) so it survives the call, where the pure fallback
-     * would allocate in this callee's _scope and dangle after return. */
+    /* Strings use fresh state for value parameters and caller-owned state
+     * for inout parameters. Other borrowed value parameters remain pure. */
     for (int p = 0; p < pr->nparams; p++) {
-        if (pr->params[p].is_inout) continue;
+        if (pr->params[p].is_inout || appendable(pr->params[p].type)) continue;
         for (int a = 0; a < g_naccum; a++)
             if (!strcmp(g_accum[a], pr->params[p].name)) {
                 g_accum[a] = g_accum[--g_naccum]; a--;
@@ -14060,8 +14092,20 @@ static void gen_proc(FILE *o, Proc *pr) {
     for (int i = 0; i < pr->nparams && i < 16; i++) g_param_sink[i] = pr->params[i].is_sink;
     for (int i = 0; i < pr->nparams; i++)
         g_param[g_nparam++] = pr->params[i].name;
-    for (int i = 0; i < pr->nparams; i++)
-        cv_push(pr->params[i].name, "&_scope");
+    for (int i = 0; i < pr->nparams; i++) {
+        const char *name = pr->params[i].name;
+        cv_push(name, "&_scope");
+        if (pr->params[i].is_inout && appendable(pr->params[i].type)) {
+            /* Projections without persistent binding metadata pass NULL.
+             * Adopt once for this call, then forward that fallback on descent. */
+            indent(o, 1);
+            fprintf(o, "TychoStrAppend _fallback_h_%s = {0}; if (!_aps_h_%s) _aps_h_%s = &_fallback_h_%s;\n",
+                    name, name, name, name);
+            cv_set_append(name, sfmt("_aps_h_%s", name));
+        } else {
+            gen_append_state(o, name, pr->params[i].type, 1);
+        }
+    }
     /* Structs are passed by value, but C copies them shallowly — a heap field
      * (string/array) still points at the caller's bytes. Deep-copy heap-
      * bearing struct params into this scope so the parameter is a truly

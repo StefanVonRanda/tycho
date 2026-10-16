@@ -391,7 +391,7 @@ fn _aff_reassign_check(cs: inout C, name: string, vt: string):
 # ------------------------------------------------------- generic instantiation
 #
 # src/tychoc.c@instantiate_generic and the Stage-2 deep clone at
-# src/tychoc.c:14444@Stage. What is reproduced here is the INFERENCE, not the clone: a call to a
+# src/tychoc.c:14488@Stage. What is reproduced here is the INFERENCE, not the clone: a call to a
 # generic binds each `$T` by unifying the written parameter pattern against the
 # argument's type, checks the `where` predicates against the bindings, and
 # answers the SUBSTITUTED return type instead of `?`.
@@ -1082,7 +1082,7 @@ fn _place_root(e: ast.Expr) -> string:
 # ------------------------------------------------- generic AGGREGATE instances
 #
 # src/tychoc.c@struct_instantiate / enum_instantiate, and the Stage-2 deep clone
-# at src/tychoc.c:14444@Stage. `subst_type` there rebuilds every field type FROM SCRATCH, which is
+# at src/tychoc.c:14488@Stage. `subst_type` there rebuilds every field type FROM SCRATCH, which is
 # the seam that lost `bounded` once (FRICTION #51-54): the instance is not the
 # template, and a rule checked on the template sees `$T`, never the type it was
 # bound to. So an instance here is stamped as a real TDecl whose field types are
@@ -1500,7 +1500,7 @@ fn _sink_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int):
                 elif cs.ment.get(v, 0) != 1:
                     _cerr(&cs, "'" + v + "' is consumed by a `sink` parameter but is mentioned " + str(cs.ment.get(v, 0)) + " times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(" + v + ")`, `" + v + "[0]`, `" + v + "[0] = ...` and passing `" + v + "` anywhere else all disqualify it, even before this line. Copy it first (`y := " + v + "`) and consume `y`")
                 elif v in cs.mbind:
-                    # src/tychoc.c:11267, the arm this chain had no `else` for. A
+                    # src/tychoc.c:11307, the arm this chain had no `else` for. A
                     # match binding BORROWS the payload (cv_push with a NULL arena),
                     # so can_move_into_sink fails on it however few times it is
                     # mentioned. A binding the arm MUTATES is copied instead, and

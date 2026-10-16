@@ -1,0 +1,67 @@
+# Historical checked int-vector writer; benchmark control only.
+fn create_checked(entries: [Entry]) -> Result(bytes, string):
+    if len(entries) > ZIP_MAX_U16:
+        return Err("too many ZIP entries")
+    for e in entries:
+        if len(e.name) > ZIP_MAX_U16:
+            return Err("ZIP entry name exceeds 65535 bytes")
+        if len(e.data) > ZIP_MAX_U32:
+            return Err("ZIP entry data exceeds 32-bit size")
+
+    out := []int
+    offs := []int                          # local header offsets, for the CD
+    cdatas := []string                      # per-entry compressed bytes
+    methods := []int
+    crcs := []int
+    for e in entries:
+        if len(out) > ZIP_MAX_U32:
+            return Err("ZIP local-header offset exceeds 32-bit size")
+        push(offs, len(out))
+        cdata := compress.raw_compress(e.data)
+        method := 8
+        if len(cdata) >= len(e.data):      # deflate did not help: store raw
+            method = 0
+            cdata = e.data
+        local_bytes := size_of$(Local) + len(e.name)
+        if local_bytes > ZIP_MAX_U32 - len(out) or len(cdata) > ZIP_MAX_U32 - len(out) - local_bytes:
+            return Err("ZIP local records exceed 32-bit offsets")
+        push(cdatas, to_str(cdata))
+        push(methods, method)
+        push(crcs, crc32(e.data))
+        _push_bytes(&out, to_bytes(Local(to_u32(SIG_LOCAL), to_u16(20),
+            to_u16(0), to_u16(method), to_u16(0), to_u16(0),
+            to_u32(crc32(e.data)), to_u32(len(cdata)), to_u32(len(e.data)),
+            to_u16(len(e.name)), to_u16(0))))
+        _push_str(&out, e.name)
+        _push_bytes(&out, cdata)
+    cd_start := len(out)
+    if cd_start > ZIP_MAX_U32:
+        return Err("ZIP central directory offset exceeds 32-bit size")
+    for i := 0; i < len(entries); i += 1:
+        e := entries[i]
+        cdata := cdatas[i]
+        method := methods[i]
+        c := crcs[i]
+        central_bytes := size_of$(Central) + len(e.name)
+        if central_bytes > ZIP_MAX_U32 - len(out):
+            return Err("ZIP central directory exceeds 32-bit size")
+        _push_bytes(&out, to_bytes(Central(to_u32(SIG_CENTRAL), to_u16(20),
+            to_u16(20), to_u16(0), to_u16(method), to_u16(0), to_u16(0),
+            to_u32(c), to_u32(len(cdata)), to_u32(len(e.data)),
+            to_u16(len(e.name)), to_u16(0), to_u16(0), to_u16(0), to_u16(0),
+            to_u32(0), to_u32(offs[i]))))
+        _push_str(&out, e.name)
+    cd_size := len(out) - cd_start
+    if cd_size > ZIP_MAX_U32 or size_of$(Eocd) > ZIP_MAX_U32 - len(out):
+        return Err("ZIP archive exceeds classic 32-bit limits")
+    _push_bytes(&out, to_bytes(Eocd(to_u32(SIG_EOCD), to_u16(0), to_u16(0),
+        to_u16(len(entries)), to_u16(len(entries)), to_u32(cd_size),
+        to_u32(cd_start), to_u16(0))))
+    return Ok(to_bytes(out))
+
+fn _push_str(b: inout [int], s: string):
+    for i := 0; i < len(s); i += 1:
+        push(b, s[i])
+fn _push_bytes(b: inout [int], by: bytes):
+    for i := 0; i < len(by); i += 1:
+        push(b, by[i])

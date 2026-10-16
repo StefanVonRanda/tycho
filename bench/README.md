@@ -35,6 +35,29 @@ with detail.
 | **latency** | steady churn, pause behavior | tycho/C **0 GC pause**; Go 2927 collections / ~211 ms | C's pause-free predictability, Go's no-manual-management | `bench-latency` |
 | **gcscan** | GC scan cost under a large live set | tycho/C never scan; Go cheap at default GOGC, but `GOGC=10` matches tycho's RAM only at 2.5× wall | Go faces a memory-vs-CPU tradeoff tycho/C don't | `bench-gcscan` |
 
+## Allocator caller experiments
+
+`make allocator-directory` compares directory construction; `make allocator-callers`
+checks three real applications and traces HTTP/database reader lifetimes against
+simpler native controls. Both are opt-in; the latter needs POSIX socketpairs.
+Results, ownership constraints and the **no second integration** decision live in
+[the storage plan](../docs/internals/plan-value-storage-places.md#caller-level-follow-up-measured-gate-no-second-integration-2026-10-15).
+
+`make allocator-peaks` attributes simultaneous ownership at actual application
+capacity peaks and compares the docs/ZIP byte-builder changes with historical,
+presized and smaller-native controls, plus ablations. It needs POSIX `execinfo`;
+plain timing/RSS and diagnostic profiles are separate. See the
+[peak-driven follow-up](../docs/internals/plan-value-storage-places.md#peak-driven-follow-up-hard-framing-cap-and-ordinary-byte-builders-2026-10-15).
+
+`make allocator-compiler` compares compiler caller shapes: adapter presizing,
+smaller native blocks, fragment staging with `arrays.join`, a named append
+builder, and direct consumption of the loaded Program, including ablations.
+It freezes one compiler input, checks C/diagnostic identity on six inputs, and
+separates profiles from interleaved plain timing/RSS. Historical caller shapes
+are reconstructed from current source by default; `--before TREE` pins an actual
+prior tree. POSIX `execinfo` is required. See the
+[compiler caller results](../docs/internals/plan-value-storage-places.md#compiler-callers-remove-the-adapter-and-recognize-the-builder-2026-10-15).
+
 ## The shape dimension — value-shaped vs pointer-shaped data
 
 The clearest predictor of whether tycho matches C turned out to be the **shape** of the

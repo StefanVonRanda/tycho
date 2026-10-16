@@ -40,10 +40,10 @@ every proc, every `if`/`else` block, every loop gets an arena, and a child is fr
 when its scope ends (`runtime/tycho_rt.c:5-13`). The emitted shape is four rules —
 `main` opens `_root`, every function opens `Arena _scope = arena_child(_parent)`,
 every allocation takes an arena argument, and a return builds into `_parent`
-(`docs/memory-model.md:30-38`), realised in codegen by a single "current
-arena" string that defaults to `&_scope` (`src/tychoc.c:10718@g_cur_scope`) and a
-per-proc stack of enclosing block arenas (`src/tychoc.c:12697@g_ascope`) freed
-innermost-first at any exit (`src/tychoc.c:12696@g_nascope`).
+(`docs/memory-model.md:32-40`), realised in codegen by a single "current
+arena" string that defaults to `&_scope` (`src/tychoc.c:10729@g_cur_scope`) and a
+per-proc stack of enclosing block arenas (`src/tychoc.c:12743@g_ascope`) freed
+innermost-first at any exit (`src/tychoc.c:12742@g_nascope`).
 
 The three exceptions in the tree are the ones that prove the rule, because each is a
 *runtime* object the compiler finalises like a scope, not a user-visible lifetime:
@@ -52,8 +52,8 @@ The three exceptions in the tree are the ones that prove the rule, because each 
   `tycho_task_free` (`runtime/tycho_rt.c@tycho_task_new`,
   `runtime/tycho_rt.c@tycho_task_free`);
 - a channel cell's payload arena, one per ring slot, created at channel construction
-  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:1123@arena_new`,
-  `runtime/tycho_rt.c:1173@arena_free`);
+  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:1125@arena_new`,
+  `runtime/tycho_rt.c:1175@arena_free`);
 - a typed FFI handle's destructor, which is emitted into exactly the slot the task
   finaliser uses.
 
@@ -62,15 +62,15 @@ emits their finaliser at every exit of the scope that declared them.
 
 ### 2.2 What "no pointer crosses sideways" means here
 
-Data moves between arenas in exactly two directions — **down** as a call argument (a
-pointer into a parent arena, valid for the call, no copy) and **up** as a return or
-an outer assignment (`runtime/tycho_rt.c:15-24`, `docs/memory-model.md:40-44`,
+Storage routing is **down** for a call's borrows or independent value copies,
+and **up** for a return or an outer assignment (`runtime/tycho_rt.c:15-24`,
+[practitioner's memory model](../memory-model.md#what-the-compiler-emits),
 normatively `docs/spec/07-memory-model.md:101-118`). There is no third direction. A
 value in one scope's arena is never reachable from a sibling scope's arena, because
 neither arena outlives the other in a way the other can observe. That absence is what
 makes the escape decision *local*: the destination of every write is known at the
 write site from the enclosing scopes and the signatures alone
-(`docs/memory-model.md:50-59`), which is the whole claim of the project
+(`docs/memory-model.md:69-78`), which is the whole claim of the project
 (`docs/thesis.md:14-17`, `:39-53`).
 
 Throughout this document, **sideways** means a pointer from one value's storage into
@@ -84,10 +84,10 @@ scope is "to be copied up into the parent's arena". That overstates the cost.
 Up-escape is **destination-passing first, copy second**: the value is *produced
 directly in the destination's storage* (`docs/spec/07-memory-model.md:109-112`), and
 the emitted return is `{ T _ret = <built in _parent>; arena_free(&_scope); return
-_ret; }` (`docs/memory-model.md:36-38`, `:24-27`). A copy is paid only when
+_ret; }` (`docs/memory-model.md:38-40`, `:26-29`). A copy is paid only when
 the value already exists somewhere else and must be duplicated to be independent — and
-even then the tree carries four static mechanisms that remove copies rather than add
-them (`docs/memory-model.md:71-106`). So "repeated copy-up" is not the
+even then the compiler has several mechanisms that remove copies rather than add
+them ([reclamation techniques](../memory-model.md#reclamation-techniques)). So "repeated copy-up" is not the
 standing tax on long-lived structures. The standing tax is the one in §3: storage that
 is dead but not reclaimable until the owning scope exits.
 
@@ -96,27 +96,27 @@ is dead but not reclaimable until the owning scope exits.
 ### 3.1 The recommended representation, and what it costs
 
 For pointer-shaped, structurally-shared data the documented idiom is a flat node pool
-with integer-index children (`docs/internals/value-semantics-limits.md:61-94`). The
+with integer-index children (`docs/internals/value-semantics-limits.md:63-96`). The
 docs recommend this representation as worth choosing rather than as a constraint to
 satisfy, while not presenting it as the model
 (`docs/architecture.md:64-67`). Its two named costs are ergonomic: "you index a pool
 instead of following references, and you cannot delete a single node without
-compacting" (`docs/internals/value-semantics-limits.md:91-93`).
+compacting" (`docs/internals/value-semantics-limits.md:93-95`).
 
 The cost of *not* using it — the by-value recursive form, which is what a
 naive long-lived structure gets — is **~1.55× C peak RSS**, from a prefix tree where
 each node owns an `int -> child` map: tycho 58.7 MB vs C 37.8 MB vs Go 33.8 MB
-(`docs/internals/value-semantics-limits.md:50-54`). The figure is stated identically
-at `docs/internals/value-semantics-limits.md:54`, `docs/memory-model.md:111`,
+(`docs/internals/value-semantics-limits.md:52-56`). The figure is stated identically
+at `docs/internals/value-semantics-limits.md:56`, `docs/memory-model.md:131`,
 `docs/architecture.md:64`, `README.md:128`, `bench/README.md:26` and
 `bench/trie/RESULTS.md:28`, all of them attributing the halving from ~3.2× (119 MB) to
 the compact indexed-dict map layout. The figure is current.
 
 Two adjacent measurements bound the shape of the problem. Expressed the value-semantic
 way — a graph as an adjacency list of indices — `bench/dijkstra` lands at ~1.3× C
-memory and ~1.2× wall, competitive (`docs/internals/value-semantics-limits.md:95-104`).
+memory and ~1.2× wall, competitive (`docs/internals/value-semantics-limits.md:97-112`).
 Expressed as a delete-heavy fixed-capacity cache, `bench/lru` lands at ~2.8× C and
-ahead of Go on both axes (`docs/internals/value-semantics-limits.md:105-115`), with the
+ahead of Go on both axes (`docs/internals/value-semantics-limits.md:113-123`), with the
 index pool spelled out in its own header: nodes in one `[Node]` array, `prev`/`next` as
 `int` indices, and the tail slot overwritten in place on eviction so a full cache holds
 steady with zero per-op allocation (`bench/lru/lru.ty:4-13`).
@@ -134,7 +134,7 @@ list (`corelib/pool/pool.ty:57-65`). It does **not** clear `val`. So the removed
 value's heap bytes stay owned by the pool's arena until the slot is *reused*: `add`
 reaches `p.slots[idx].val = v` (`corelib/pool/pool.ty:24-32`), which is an
 element-overwrite, and element-overwrite recycling hands the evicted element's buffer
-back to the array's arena free list (`docs/memory-model.md:101-106`), backed by
+back to the array's arena free list (`docs/memory-model.md:121-126`), backed by
 `arena_recycle` and its segregated per-size-class lists
 (`runtime/tycho_rt.c@arena_recycle`, reused on the next allocation at
 `runtime/tycho_rt.c@arena_alloc`).
@@ -151,11 +151,12 @@ for a server the owning scope is `main`.
 The second documented weak spot is a long-lived scope holding a transient: an arena
 reclaims at scope exit, not incrementally, so a function that builds a large parse
 buffer and keeps working holds it until it returns
-(`docs/internals/value-semantics-limits.md:127-133`). The documented answer is to
+(`docs/internals/value-semantics-limits.md:135-141`). The documented answer is to
 scope the transient in an inner function or block so its arena reclaims before the
-long-lived work continues (`docs/internals/value-semantics-limits.md:135-144`). That
-answer is O(1) — one `arena_free` — and needs no new construct. Any proposed region
-feature must beat it, not merely match it.
+long-lived work continues (`docs/internals/value-semantics-limits.md:143-153`). That
+answer needs one `arena_free` call and no new construct. That call walks the
+arena's blocks into a reuse pool; it is not generally O(1) and does not promise
+an OS release. A proposed region feature must improve on that existing mechanism.
 
 ### 3.4 The case the repo has never actually hit
 
@@ -166,8 +167,9 @@ per-connection state across iterations (`examples/webserver/main.ty:186-196`); t
 `httpd` package is explicit that the caller owns the accept loop and that the package
 supplies only per-request plumbing (`corelib/httpd/httpd.ty:5-14`). A connection is an
 `int` fd, not a Tycho value with storage. Under the current model each iteration's
-arena is reset per iteration, so the loop runs in bounded memory
-(`runtime/tycho_rt.c:10-13`, `docs/memory-model.md:46-48`).
+arena is reset per iteration, enabling reuse of a bounded per-request working set
+(`runtime/tycho_rt.c:10-13`,
+[practitioner's memory model](../memory-model.md#what-the-compiler-emits)).
 
 The gap may still be real. The point stands that **no call site in this
 repository currently pays for it.**
@@ -199,15 +201,15 @@ prior art the thesis names as what Tycho makes *implicit* (`docs/thesis.md:26-32
 the feature. `n` in scope S1 and `m` in sibling scope S2 both point into `r`, which
 outlives both. That is precisely the third direction §2.2 says does not exist, and it
 is what destroys locality: the destination of a write is no longer decidable from
-enclosing scopes and signatures (`docs/memory-model.md:50-59`) — it needs the
+enclosing scopes and signatures (`docs/memory-model.md:69-78`) — it needs the
 region variable, which is an annotation on every signature in the transitive closure.
 
 **`spawn` / channels.** A spawn site allocates its argument struct in the task root
 and deep-copies each heap argument into it, after which spawner and task share zero
-bytes (`src/tychoc.c:12333-12341`, `runtime/tycho_rt.c@tycho_task_new`); `wait` copies
+bytes (`src/tychoc.c:12379-12387`, `runtime/tycho_rt.c@tycho_task_new`); `wait` copies
 the result out and frees the root eagerly
-(`src/tychoc.c:11741@arena_free(&_tk->root)`). A channel does the same per payload
-into a per-cell arena (`runtime/tycho_rt.c:1074@payload bytes live here`). An `@r` value
+(`src/tychoc.c:11781@arena_free(&_tk->root)`). A channel does the same per payload
+into a per-cell arena (`runtime/tycho_rt.c:1076@payload bytes live here`). An `@r` value
 offers neither option: copying it means copying the whole region (unbounded — the
 region exists *because* it is the long-lived structure), and passing the region pointer
 shares mutable storage across threads, which is the exact hypothesis the race-freedom
@@ -218,7 +220,7 @@ system that the spec's opening paragraph specifically claims the model does not 
 
 **C lowering.** The cheapest part. One extra `Arena *` parameter per region variable
 per function — structurally identical to the `_parent` parameter every function already
-takes (`docs/memory-model.md:33-34`). The lowering is nearly free; the entire
+takes (`docs/memory-model.md:35-36`). The lowering is nearly free; the entire
 cost is in the source language and the checker.
 
 **Verdict.** This is a lifetime-annotation system with a different keyword. It
@@ -253,26 +255,26 @@ into it: reads copy out (already the language's defining invariant,
 semantics like any other value — it moves down as an argument and up as a return, and
 its arena travels with it. The two-direction rule of §2.2 is untouched, because a
 region introduces no new direction; it changes only *which* arena an allocation lands
-in, and the compiler already picks that per write site (`src/tychoc.c:10718@g_cur_scope`,
-`docs/memory-model.md:50-59`).
+in, and the compiler already picks that per write site (`src/tychoc.c:10729@g_cur_scope`,
+`docs/memory-model.md:69-78`).
 
 **`spawn` / channels.** This design survives the boundary, which is the reason it is
 worth writing down at all. Because a region is owned and pointer-free from outside,
-`copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:12312@copy_into`) generalises without a new
+`copy_into(param, "(&_tk->root)", arg)` (`src/tychoc.c:12358@copy_into`) generalises without a new
 rule: create a fresh arena inside the task root, deep-copy every live element into it.
 Blocks crossing threads is already the status quo — the block pool is thread-local
-(`runtime/tycho_rt.c:650@g_block_pool`), blocks are released to whichever thread's pool
-frees them (`runtime/tycho_rt.c:682@HBlock *nx`), and a spawned thread flushes its pool
+(`runtime/tycho_rt.c:652@g_block_pool`), blocks are released to whichever thread's pool
+frees them (`runtime/tycho_rt.c:684@HBlock *nx`), and a spawned thread flushes its pool
 before exiting so nothing leaks with the TLS (`runtime/tycho_rt.c@tycho_pool_flush`). Channels need nothing new
 either: a region payload deep-copies into the cell arena like any other value
-(`runtime/tycho_rt.c:1074@payload bytes live here`).
+(`runtime/tycho_rt.c:1076@payload bytes live here`).
 
 The limit is that this makes regions **cheap to free and no cheaper to send**.
 A 1 GB region crosses a channel as 1 GB of deep copy. Today you would send an index
 instead, and you still would.
 
 **C lowering.** A region-bearing value carries its `Arena` inline — 48 bytes on LP64,
-six fields (`runtime/tycho_rt.c:291@Arena`):
+six fields (`runtime/tycho_rt.c:292@Arena`):
 
 ```c
 typedef struct { Arena rgn; Arr_Conn conns; } Server;
@@ -281,9 +283,9 @@ typedef struct { Arena rgn; Arr_Conn conns; } Server;
 Allocations for elements of `s.conns` target `&s.rgn` instead of the current scope
 string; the deep copy becomes `_c.rgn = arena_new(0);` followed by the existing
 recursive element copy; and the free is one `arena_free(&s.rgn)` emitted into exactly
-the finaliser slot tasks and handles already use (`src/tychoc.c:12684@g_taskvars`),
+the finaliser slot tasks and handles already use (`src/tychoc.c:12730@g_taskvars`),
 which fires at block end, early `return`, `break`/`continue` and `or_return`
-(`src/tychoc.c:12811-12814`). There is a
+(`src/tychoc.c:12857-12860`). There is a
 genuine simplification available: `inout` on a heap value today threads the caller's
 owning scope to the callee as a hidden parameter so an allocating mutation lands where
 the borrowed value lives (`docs/spec/07-memory-model.md:186-192`). If the value owns
@@ -292,7 +294,7 @@ longer needed for region-bearing types.
 
 **The arithmetic that decides it.** `arena_new(0)` sets `blocksz` to
 `TYCHO_BLOCK_DEFAULT` = 65536 (`runtime/tycho_rt.c:88@TYCHO_BLOCK_DEFAULT`,
-`runtime/tycho_rt.c:689@TYCHO_BLOCK_DEFAULT`), and the first allocation in a fresh
+`runtime/tycho_rt.c:691@TYCHO_BLOCK_DEFAULT`), and the first allocation in a fresh
 arena takes a block of `max(n, blocksz)` (`runtime/tycho_rt.c@arena_alloc`) from the
 thread-local pool or, failing a fit, from `malloc` (`runtime/tycho_rt.c@block_get`). So **every live region holds a 64 KiB block
 out of the pool for as long as it lives**, whatever it contains. Resident cost is
@@ -339,8 +341,8 @@ because it is consumed.
 **C lowering.** `drop(x)` emits a recursive walk over `x`'s heap-bearing fields calling
 `arena_recycle` on each against `x`'s home arena. The one-level version of exactly this
 walk already ships as element-overwrite recycling
-(`docs/memory-model.md:101-106`), and the recursive shape already ships as the
-deep-copy walk emitted at every escape point (`docs/memory-model.md:173-178`).
+(`docs/memory-model.md:121-126`), and the recursive shape already ships as the
+deep-copy walk emitted at every escape point (`docs/memory-model.md:200-205`).
 
 **The objection that sinks it.** Correctness in this model rests on a single asymmetry,
 stated normatively: *under value semantics, a wrong escape decision can change only
@@ -361,7 +363,7 @@ demonstrate.
 
 **Second objection.** Its motivating case — the build-and-hold transient — already has
 an O(1) answer that needs no new construct (§3.3,
-`docs/internals/value-semantics-limits.md:135-144`). `drop` wins only where the
+`docs/internals/value-semantics-limits.md:143-153`). `drop` wins only where the
 transient's lifetime is genuinely not nestable, and no call site in this repo shows
 that shape (§3.4).
 
@@ -404,7 +406,7 @@ joint (`docs/thesis.md:10`, `:14-17`). Design C buys the least and is the only p
 that weakens the asymmetry the whole project exists to demonstrate
 (`docs/spec/07-memory-model.md:141-152`) — a feature that trades the model's central
 guarantee for a case already answered by an idiom the docs recommend
-(`docs/internals/value-semantics-limits.md:135-144`) is a bad trade at any price.
+(`docs/internals/value-semantics-limits.md:143-153`) is a bad trade at any price.
 
 Design B is the only one that is genuinely sound, and it should still not be built yet,
 because its payoff is a single narrow thing — bulk reclamation at a non-scope-exit point
@@ -419,8 +421,8 @@ tree; §4.2 shows a per-node region is *worse* than the pool it would replace be
 > A benchmark exists in `bench/` whose peak RSS is dominated by storage that is dead
 > but unreclaimable before scope exit, and which none of the three shipped mechanisms
 > recovers: the inner-function transient scope
-> (`docs/internals/value-semantics-limits.md:135-144`), element-overwrite recycling
-> (`docs/memory-model.md:101-106`), or slot reuse in an index pool
+> (`docs/internals/value-semantics-limits.md:143-153`), element-overwrite recycling
+> (`docs/memory-model.md:121-126`), or slot reuse in an index pool
 > (`corelib/pool/pool.ty:24-32`). The workload's live values must have payloads
 > comparable to or larger than one 64 KiB block
 > (`runtime/tycho_rt.c:88@TYCHO_BLOCK_DEFAULT`), and its live

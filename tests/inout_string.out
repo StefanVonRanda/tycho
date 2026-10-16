@@ -2,3 +2,15 @@ hi!!
 bye
 bye...
 !!!!
+borrow=R1 snapshot=R1a nested=R1ab!c
+rebound=AB.AB!<v>
+caller=K!0123456789abcdef saved_len=1024
+binary=8,0,65
+double=QQQQ
+returned=QQQQ! current=QQQQ!!
+element=x...
+field=y..
+calls=c!xc!x!! saved=c! element=c!x
+reused=c!! saved=c!
+value=c!!|c!!!! caller=c!!
+byte_snapshot=8 current=16

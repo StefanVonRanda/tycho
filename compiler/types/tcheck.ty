@@ -219,7 +219,7 @@ struct C:
                                        # is_extern and spawn needs one
     mbind: [string: bool]              # match/if-let arm bindings. They BORROW the
                                        # scrutinee's payload, so they own no arena
-                                       # (src/tychoc.c:13924 pushes NULL) and can
+                                       # (src/tychoc.c:13962 pushes NULL) and can
                                        # never be adopted by a `sink`
     pend: [Pend]                       # locals declared as a bare `[]`: PENDING,
                                        # grounded by their first typed use
@@ -3709,7 +3709,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             elif known(cs.ret) and cs.ret != "void":
                 cs.line = l
                 _cerr(&cs, "missing return value (proc returns " + cs.ret + ")")
-        # src/tychoc.c:13952-13955. cs.loopd was already maintained by every loop
+        # src/tychoc.c:13990-13993. cs.loopd was already maintained by every loop
         # arm below and read by nothing.
         ast.BreakS(l):
             if cs.loopd == 0:
@@ -4005,15 +4005,15 @@ fn _fill_decls(cs: inout C, p: Program):
 # src/tychoc.c@check_finite_types -- a THREE-COLOUR DFS over the emit type
 # graph, rooted at every struct in declaration order. A type that contains
 # itself by value has no size; an array or a map breaks the cycle, a tuple, an
-# inline array, an Option and a Result do not (src/tychoc.c:14492@TychoOpt emits
-# `struct TychoOpt%d_ { char has; T val; }` and src/tychoc.c:14494@TychoRes the Result twin).
+# inline array, an Option and a Result do not (src/tychoc.c:14536@TychoOpt emits
+# `struct TychoOpt%d_ { char has; T val; }` and src/tychoc.c:14538@TychoRes the Result twin).
 # Which arm fires is decided by which GREY node the walk re-enters, so the
 # Option, Result or tuple that closes a cycle names ITSELF
-# (src/tychoc.c:14501@Option, src/tychoc.c:14537@Result, src/tychoc.c:14537@tuple). Walking struct
+# (src/tychoc.c:14545@Option, src/tychoc.c:14581@Result, src/tychoc.c:14581@tuple). Walking struct
 # DECLARATIONS alone, as this did until 2026-09-04, could only ever reach the
-# struct arm (src/tychoc.c:14559@infinite).
+# struct arm (src/tychoc.c:14603@infinite).
 # The line reported is the declaration whose fields were being walked when the
-# cycle closed -- g_emit_line, saved and restored per struct at src/tychoc.c:14197@save / src/tychoc.c:14197@save.
+# cycle closed -- g_emit_line, saved and restored per struct at src/tychoc.c:14241@save / src/tychoc.c:14241@save.
 fn _fin_dfs(cs: inout C, t0: string, ln: int, fl: string, col: inout [string: int]) -> bool:
     t := _base(&cs, t0)
     h := _head(t)
