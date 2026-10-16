@@ -156,6 +156,15 @@ and the keyword list is unchanged at 116.
   `equality comparison with extraneous parentheses` in every build of a
   program with such a map — 76 warning lines across the fixture corpus, none
   from the reference compiler.
+- **A long simple-int sum is emitted flat by the reference compiler**
+  (unreleased). `x+x+...+x` over 128 or more int literals or locals parses
+  left-nested and `tychoc` wrapped one parenthesis pair per `+`: clang
+  refuses 256 levels (`-fbracket-depth`) and Apple clang's frontend crashed
+  on 1400. FRICTION 146 recorded this fixed, but only the self-hosted
+  compiler had the flat path; `tests/expression_scale.sh` passed under
+  `make` on macOS only because make raises the stack limit. The reference
+  now has the same flat emission; both compilers emit the 1400-term sum at
+  depth 4.
 - **A `packed` field passed `inout` to a void call no longer warns in the
   user's build** (unreleased). The reference compiler closed the
   statement expression with `memcpy(...);; }`, and clang's `-Wunused-value`
@@ -395,6 +404,10 @@ and the keyword list is unchanged at 116.
   `tools/tycho-db/run.sh` reads a file's mode through `file_mode`, a new
   `scripts/shlib.sh` helper over GNU `stat -c` and BSD `stat -f`; the BSD
   one printed a usage message and the gate compared an empty string.
+- **`make test-fast` runs on macOS** (unreleased): `tools/prunner` hardcoded
+  `detect_leaks=1`, which Apple's ASan has no LeakSanitizer for, so every
+  sanitizer binary exited 134 and all 362 fixtures failed. It takes the
+  same per-OS gate `tests/run.sh` has.
 - **`CI_SERIAL=1`** runs the four lanes and the three fuzzers one after
   another for a shared machine (`6c76904d`); the default is unchanged.
 - **The allocator measurement suite, `bench/allocator/`, is opt-in**

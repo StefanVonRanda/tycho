@@ -12606,6 +12606,42 @@ static char *gen_expr(Expr *e, const char *arena) {
                     return fseq ? sfmt("({ %s%s); })", pre, out) : sfmt("%s)", out);
                 }
             }
+            /* A long simple-int `+` spine (`x+x+...+x`, 128 or more leaves of
+             * literals or int locals) parses left-nested, and emitting one
+             * parenthesis pair per `+` nests the C as deep as the source is
+             * long: clang refuses 256 levels (-fbracket-depth) and Apple
+             * clang's frontend overflowed its stack at 1400. Emit it flat.
+             * C's `+` is left-associative, so `(a + b + c)` is the same
+             * sequence of wrapping adds as `((a + b) + c)` under -fwrapv.
+             * The self-hosted compiler has done this since FRICTION 146;
+             * this is its twin (tests/expression_scale.sh pins both). */
+            if (e->op == TK_PLUS && e->type == T_INT) {
+                int n = 0, ok = 1;
+                Expr *cur = e;
+                for (;; n++) {
+                    if (cur->kind == E_BINOP && cur->op == TK_PLUS && cur->type == T_INT && cur->rhs) {
+                        Expr *leaf = cur->rhs;
+                        if (!(leaf->kind == E_INT || (leaf->kind == E_IDENT && leaf->type == T_INT)
+                              || (leaf->kind == E_BINOP && leaf->op == TK_MINUS && !leaf->rhs && leaf->lhs->kind == E_INT))) { ok = 0; break; }
+                        cur = cur->lhs;
+                    } else {
+                        if (!(cur->kind == E_INT || (cur->kind == E_IDENT && cur->type == T_INT))) ok = 0;
+                        n++;
+                        break;
+                    }
+                }
+                if (ok && n >= 128) {
+                    Expr **parts = (Expr **)xmalloc((size_t)n * sizeof(*parts));
+                    int k = 0;
+                    for (cur = e; cur->kind == E_BINOP && cur->op == TK_PLUS && cur->type == T_INT && cur->rhs; cur = cur->lhs)
+                        parts[k++] = cur->rhs;
+                    parts[k++] = cur;
+                    char *out = sfmt("(%s", gen_expr(parts[k - 1], arena));
+                    for (int i = k - 2; i >= 0; i--) out = sfmt("%s + %s", out, gen_expr(parts[i], arena));
+                    free(parts);
+                    return sfmt("%s)", out);
+                }
+            }
             char *l = gen_expr(e->lhs, arena);
             char *r = gen_expr(e->rhs, arena);
             /* and/or lower to C's short-circuiting && / || via op_str below */
