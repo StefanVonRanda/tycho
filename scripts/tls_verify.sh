@@ -93,7 +93,7 @@ say "[3] same server, CA trusted, name differs" "$r3"
 # [4] the SAME trusted, name-matching host with an interior NUL -> must FAIL.
 # This is the one leg [2] makes meaningful: `localhost` IS accepted by this
 # server, so if core:tls truncated at the NUL this would come back OK. The shim
-# feeds `host` to tcp_connect, SSL_set_tlsext_host_name and SSL_set1_host, so a
+# feeds `host` to tcp_connect, SSL_set_tlsext_host_name and X509_VERIFY_PARAM_set1_host, so a
 # truncation would dial, announce and VERIFY a name the caller never passed
 # (FRICTION 117).
 r4=$(SSL_CERT_FILE="$T/ca.pem" "$T/probe" --nul-host 2>/dev/null || true)

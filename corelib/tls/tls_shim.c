@@ -21,6 +21,7 @@
 #define close _close
 #endif
 #include <openssl/ssl.h>
+#include <openssl/x509_vfy.h>
 #include <errno.h>     /* EINTR -- the SIGPIPE drain below */
 #include <string.h>
 #include <stdlib.h>
@@ -213,7 +214,11 @@ void *tlsx_connect_timeout(const char *host, tycho_int port, tycho_int ms) {
     if (!ssl) { SSL_CTX_free(ctx); close(fd); return NULL; }
     SSL_set_fd(ssl, fd);
     SSL_set_tlsext_host_name(ssl, host);                       /* SNI -> the server picks its cert */
-    SSL_set1_host(ssl, host);                                  /* verify the cert matches the hostname */
+    /* Hostname verification. SSL_set1_host is a wrapper for this call and is
+     * deprecated in OpenSSL 4.0 (its replacement, SSL_set1_dnsname, exists
+     * only there); X509_VERIFY_PARAM_set1_host is in 1.0.2, 3.x, 4.x and
+     * LibreSSL alike. A 0 namelen means NUL-terminated. */
+    X509_VERIFY_PARAM_set1_host(SSL_get0_param(ssl), host, 0);
     if (SSL_connect(ssl) != 1) {                               /* handshake + cert/hostname verification */
         SSL_free(ssl); SSL_CTX_free(ctx); close(fd); return NULL;
     }

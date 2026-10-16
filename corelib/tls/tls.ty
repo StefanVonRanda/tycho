@@ -36,7 +36,7 @@ extern fn tlsx_close(conn: ptr)
 # worse than anywhere else in the corelib: the shim hands `host` to three
 # different consumers -- tcp_connect (the machine dialled),
 # SSL_set_tlsext_host_name (the SNI name the server picks a cert for) and
-# SSL_set1_host (the name that cert is VERIFIED against). All three would silently
+# X509_VERIFY_PARAM_set1_host (the name that cert is VERIFIED against). All three would silently
 # use the prefix while the caller's own checks -- an allowlist, a policy, a log
 # line -- saw the whole string. `core:net` has refused exactly this since the NUL
 # sweep, as BadAddr, on the grounds that no syscall was made so retrying cannot

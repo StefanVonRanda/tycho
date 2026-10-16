@@ -25,7 +25,7 @@ fn main():
     println("set_timeout_bad=" + str(b2i(not tls.set_timeout_ms(c, 0 - 1) and not tls.set_timeout_ms(c, 2147483648))))
 
     # An interior NUL in the host is REFUSED, not truncated. The shim feeds `host`
-    # to tcp_connect, SSL_set_tlsext_host_name (SNI) and SSL_set1_host (the name
+    # to tcp_connect, SSL_set_tlsext_host_name (SNI) and X509_VERIFY_PARAM_set1_host (the name
     # the certificate is verified against), so a truncation would dial, announce
     # and verify a DIFFERENT name than the caller passed -- while the caller's own
     # allowlist saw the whole string (FRICTION 117). core:net has refused this
