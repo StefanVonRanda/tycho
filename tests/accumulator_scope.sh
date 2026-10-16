@@ -3,6 +3,7 @@
 # and find a string accumulator declared inside a match arm.
 set -eu
 cd "$(dirname "$0")/.."
+. ./scripts/shlib.sh
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT HUP INT TERM
 for compiler in ./tychoc ./tychoc1; do

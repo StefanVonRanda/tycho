@@ -3,6 +3,7 @@
 # remain linear in the source size (the audit cases needed multiple GiB).
 set -eu
 cd "$(dirname "$0")/.."
+. ./scripts/shlib.sh
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 

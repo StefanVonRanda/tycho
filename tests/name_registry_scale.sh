@@ -3,6 +3,7 @@
 # every earlier declaration or every byte before each diagnostic.
 set -eu
 cd "$(dirname "$0")/.."
+. ./scripts/shlib.sh
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 python3 - "$tmp/registries.ty" <<'PY'

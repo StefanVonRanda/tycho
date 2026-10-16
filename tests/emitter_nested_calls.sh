@@ -3,6 +3,7 @@
 # repeatedly. The old self-hosted emitter exhausted >1 GiB at a 16-deep chain.
 set -eu
 cd "$(dirname "$0")/.."
+. ./scripts/shlib.sh
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 

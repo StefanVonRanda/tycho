@@ -3,6 +3,7 @@
 # optimizer-visible C store per element.
 set -eu
 cd "$(dirname "$0")/.."
+. ./scripts/shlib.sh
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 

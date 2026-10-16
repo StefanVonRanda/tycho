@@ -64,3 +64,12 @@ ossl_cli() {
     done
     return 1
 }
+
+# `file_mode PATH` -- the octal permission bits. GNU stat spells it `-c '%a'`,
+# BSD/macOS stat `-f '%Lp'`, and each rejects the other's flag with a usage
+# message, so a gate that compared a mode got an empty string on the Mac.
+if stat -c '%a' / > /dev/null 2>&1; then
+    file_mode() { stat -c '%a' "$1"; }
+else
+    file_mode() { stat -f '%Lp' "$1"; }
+fi

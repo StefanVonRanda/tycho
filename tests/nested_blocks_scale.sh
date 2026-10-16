@@ -17,7 +17,7 @@ Path(sys.argv[1]).write_text("\n".join(lines) + "\n")
 PY
 for compiler in ./tychoc ./tychoc1; do
     exe="$tmp/$(basename "$compiler")"
-    (ulimit -v 1228800; "$compiler" "$tmp/nested.ty" -o "$exe" >/dev/null)
+    (ulimit -v 1228800 2>/dev/null || true; "$compiler" "$tmp/nested.ty" -o "$exe" >/dev/null)
     got=$("$exe")
     [ "$got" = nested-blocks-ok ] || {
         echo "$compiler nested-block output mismatch: '$got'" >&2

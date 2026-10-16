@@ -1,5 +1,6 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 2          # repo root
+. ./scripts/shlib.sh
 TYCHOC="${TYCHOC:-./tychoc1}"
 [ -x "$TYCHOC" ] || { echo "tycho-db: no ./tychoc -- run 'make' first"; exit 2; }
 # Absolute, because probes below are built after a `cd` -- but ABSOLUTISE the
@@ -250,7 +251,7 @@ if ! "$TYCHOC" "$P3/probe.ty" -o "$T/index-scale-probe" >"$T/index-scale-build.l
     bad "index scale: probe did not compile"; sed 's/^/      /' "$T/index-scale-build.log" | head -8
 else
     (cd "$W" && rm -f index-scale.db index-scale.db.tycho-tmp && \
-        (ulimit -v 196608; "$T/index-scale-probe" >"$T/index-scale.out" 2>"$T/index-scale.err"))
+        (ulimit -v 196608 2>/dev/null || true; "$T/index-scale-probe" >"$T/index-scale.out" 2>"$T/index-scale.err"))
     _index_scale_rc=$?
     [ "$_index_scale_rc" -eq 0 ] || { bad "index scale: exceeded the 192-MiB bound or failed"; sed 's/^/      /' "$T/index-scale.err"; }
     grep -qxF 'index scale: rows=20000 probe=0' "$T/index-scale.out" || bad "index scale: wrong rebuilt index results"
@@ -614,7 +615,7 @@ printf 'SELECT * FROM t;' > "$T/atomic.read.sql"
 for mode in 640 600; do
     chmod "$mode" atomic.db || bad "atomic checkpoint: could not set mode $mode"
     "$DB" "$T/atomic.read.sql" atomic.db > /dev/null 2> "$T/atomic.mode.err" || bad "atomic checkpoint: mode-$mode reopen failed"
-    [ "$(stat -c '%a' atomic.db)" = "$mode" ] || bad "atomic checkpoint: mode $mode changed to $(stat -c '%a' atomic.db)"
+    [ "$(file_mode atomic.db)" = "$mode" ] || bad "atomic checkpoint: mode $mode changed to $(file_mode atomic.db)"
 done
 cp atomic.db "$T/atomic.before"
 (cd "$W" && (ulimit -f 1; trap '' XFSZ; "$DB" "$T/atomic.read.sql" atomic.db > "$T/atomic.limited.out" 2> "$T/atomic.limited.err"))

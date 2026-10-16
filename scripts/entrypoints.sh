@@ -76,8 +76,11 @@ echo "-----------------------------------------"
 # above a warned function a re-record -- which trains the reader to re-record
 # without looking, and that is how a real regression gets blessed. So the
 # compared form drops `:NNN:`; the located lines are still what the diff prints.
-sort "$T/warn" > "$T/warn.s"
-sed 's/:[0-9][0-9]*: warning: /: warning: /' "$T/warn.s" | sort > "$T/warn.n"
+# LC_ALL=C: the locale collation ignores punctuation and ordered `../wal/wal.ty`
+# after `srv.ty` on Linux and before it on macOS, so the recorded order moved
+# with the machine.
+LC_ALL=C sort "$T/warn" > "$T/warn.s"
+sed 's/:[0-9][0-9]*: warning: /: warning: /' "$T/warn.s" | LC_ALL=C sort > "$T/warn.n"
 # A normaliser that silently matched nothing would pin the line numbers again
 # while looking fixed, so prove it fired on every line that carries one.
 raw_located=$(grep -c ':[0-9][0-9]*: warning: ' "$T/warn.s" || true)

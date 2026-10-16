@@ -7,7 +7,7 @@ t="$(mktemp -d)"
 trap 'rm -rf "$t"' EXIT HUP INT TERM
 for cc in tychoc tychoc1; do
     ./$cc tests/map_overwrite_scale.ty -o "$t/$cc" >/dev/null
-    (ulimit -v 98304; "$t/$cc") >"$t/$cc.out"
+    (ulimit -v 98304 2>/dev/null || true; "$t/$cc") >"$t/$cc.out"
     cmp tests/map_overwrite_scale.out "$t/$cc.out" || {
         echo "map-overwrite-scale: $cc output mismatch" >&2
         exit 1

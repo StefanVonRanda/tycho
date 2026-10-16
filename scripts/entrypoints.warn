@@ -1,8 +1,8 @@
+bench/allocator/readers.ty -> bench/allocator/../../tools/tycho-db/srv/../wal/wal.ty: warning: 'open_db' is never called
 bench/allocator/readers.ty -> bench/allocator/../../tools/tycho-db/srv/srv.ty: warning: 'connect' is never called
 bench/allocator/readers.ty -> bench/allocator/../../tools/tycho-db/srv/srv.ty: warning: 'listen' is never called
 bench/allocator/readers.ty -> bench/allocator/../../tools/tycho-db/srv/srv.ty: warning: 'request' is never called
 bench/allocator/readers.ty -> bench/allocator/../../tools/tycho-db/srv/srv.ty: warning: 'serve_forever' is never called
-bench/allocator/readers.ty -> bench/allocator/../../tools/tycho-db/srv/../wal/wal.ty: warning: 'open_db' is never called
 tools/tycho-grid/main.ty -> tools/tycho-grid/main.ty: warning: `sum_all` is deprecated: use total(g, nrows, ncols) -- sum_all walks the rows and predates the subscript
 tools/tycho-kv/main.ty -> tools/tycho-kv/main.ty: warning: not all paths of 'kv_lookup' return a value (a fall-off-the-end yields a zero value)
 tools/tycho-scheme/main.ty -> tools/tycho-scheme/main.ty: warning: not all paths of 'lookup' return a value (a fall-off-the-end yields a zero value)
