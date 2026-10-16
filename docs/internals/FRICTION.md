@@ -9007,6 +9007,15 @@ generated tests pass 1,400 terms on both compilers, refuse 2,101-term sums and
 subtractions with located diagnostics, reject over-deep calls/unary chains, and
 compile the 256-term/130-hole clang cases.
 
+**Correction 2026-10-16:** the flat int-sum emission above was true of the
+self-hosted compiler only. The reference compiler kept one parenthesis pair per
+`+` until `4668aeb3`, so its 1,400-term sum reached C 1,402 levels deep: Debian
+clang 19 refused it at 256 (`-fbracket-depth`) and Apple clang 21's frontend
+crashed. The pin passed `make ci` on macOS for three weeks because `make` raises
+RLIMIT_STACK and Apple clang survived under it; run from a plain shell, or on
+Linux at all, it failed. The pin now fixes its own stack limit (`ulimit -s 8192`)
+so it cannot inherit the parent's.
+
 ### 147. Typed tuple literals used synthesized element types in C — **FIXED 2026-09-27**
 
 > Pinned-by: make -s test

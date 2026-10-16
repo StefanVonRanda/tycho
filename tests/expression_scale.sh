@@ -2,6 +2,11 @@
 # Regressions for deep left-associated sums and f-string C bracket depth (D16/D17).
 set -eu
 cd "$(dirname "$0")/.."
+# Run at the platform's default stack, not the parent's. `make` raises
+# RLIMIT_STACK, and under it Apple clang survived a 1,402-deep paren nest the
+# reference compiler emitted until 2026-10-16; the same pin failed from a plain
+# shell. A pin that passes only under make's limits is not pinning the compiler.
+ulimit -s 8192 2>/dev/null || true
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
