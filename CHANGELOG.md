@@ -12,6 +12,400 @@ gate (`make ci`); `FRICTION n` is entry n in the defect log
 (`docs/internals/FRICTION.md`); a *probe* is a small program written against the
 docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
+## [Unreleased]
+
+### Breaking
+
+Every item here makes a program that 0.8.6 accepted stop compiling. Each one
+names its rule in the diagnostic. `surface.lock` moved, by addition only: seven
+corelib functions joined it (see *Core library*), no frozen signature changed
+and the keyword list is unchanged at 116.
+
+- **An out-of-range literal is refused wherever it adapts** (`e7c485d2`,
+  `5fdcb3b9`, audit D06). `x + 300` at a `u8`, a `300` passed to a variadic or
+  UFCS parameter, a lambda body, a `m.get` default, a subscript assignment, a
+  value `match` arm, a `send`, or the broadcast scalar of a sized-int array
+  wrapped silently in the self-hosted compiler and printed the wrapped value.
+  Every site now says `300 does not fit u8 (its range is 0..255)`, the
+  reference compiler's wording; an `f32` array or vector element says
+  `f32 literal out of range`.
+- **An empty literal `[]` is refused for a `[N]T` or `vector[N]T`**
+  (`e7c485d2`, D05): `a fixed-size array of length 2 needs 2 elements, got 0`.
+  The reference compiler emitted an uninitialised C aggregate; the self-hosted
+  one built a length-0 "fixed" array.
+- **A `[N]T` whose `N` is an `int` const keeps its length in the self-hosted
+  compiler** (`e7c485d2`, D07). A wrong-arity literal, a `push` onto it
+  (`cannot push to a [3]int -- its length is fixed; use a bounded[3]int or a
+  [int]`), a zero or negative `N` (`a fixed-size array length must be
+  positive`) and a mismatched fixed-array argument all compiled and ran with the
+  wrong `len`.
+- **An f-string hole is one expression** (`e7c485d2`, D24). `f"{price:.2f}"`,
+  `f"{n, 99}"` and `f"{n )))}"` parsed the first expression, discarded the
+  rest and printed the bare value; they are refused. A space after `{`, which
+  the spec itself writes, is accepted.
+- **The identifier prefix `Ztycho_` is reserved** (`e7c485d2`, D26):
+  `identifier prefix 'Ztycho_' is reserved for compiler temporaries`. Compiler
+  temporaries used to share the user namespace, so a local named `_fc0`
+  (reference) or `_mx36_0_0` (self-hosted) was silently replaced by the
+  compiler's own and the program printed a wrong answer.
+- **A handle `free:` destructor that returns an aggregate is refused**
+  (`e7c485d2`, D52). `extern fn close_file(h: File) -> [int]` passed the
+  `free:` check and failed later in `cc` with `too few arguments`.
+- **The compiler CLIs refuse an empty `-o ""` and a trailing bare `-L` or `-I`**
+  (`e7c485d2`, `026d6c17`, D33, D34): `tychoc: -o needs a non-empty output
+  name`. The self-hosted compiler built a default-named binary from the first
+  and swallowed `-lm` on the second.
+
+### Language
+
+- **Negative literals adapt like positive ones in the self-hosted compiler**
+  (`5fdcb3b9`). `x: f32 = -0.5`, `x: i8 = -5`, `[-1, 2.0]` at a `[2]float`,
+  `g: vector[4]f32 = [-0.5, 0.25, 1.0, 7.0]` and `x * -0.5` at an `f32` were
+  refused by `tychoc1` (`element 1 of a vector[4]f32 array is the wrong type`)
+  and accepted by `tychoc`; eleven such programs now compile under both.
+- **`to_u8`..`to_i64` of a float are total in the self-hosted compiler**
+  (`e7c485d2`, D22, D27): NaN, infinity and out-of-range input give the
+  spec's wrapped result instead of aborting, and `to_u64(1e19)` fits.
+- **A `u64` shift count of 2^63 or more is zero** (`e7c485d2`, D37), as the
+  spec says, not `tycho: negative shift count`.
+- **A generic enum's variant can be constructed through a package qualifier**
+  in the self-hosted compiler (`e7c485d2`, D83): `box.Has(41)` and
+  `box.Nothing$(int)` died with an unlocated internal message.
+
+### Compiler
+
+- **The 2026-09-25 defect hunt is closed: 90 findings, all fixed**
+  (`e7c485d2`, `026d6c17`; the ledger is
+  [`docs/internals/audit-2026-09-25.md`](docs/internals/audit-2026-09-25.md),
+  FRICTION 133–200). Eleven finder agents on one surface each, every finding
+  handed to a verifier told to refute it. Beyond the items above, the compiler
+  half:
+  - **Division by zero traps cleanly in the self-hosted compiler** (D04, D08):
+    `/` and `%` on every sized integer and on element-wise array arithmetic
+    were bare C operators, so a zero divisor was SIGFPE (a literal `0`,
+    SIGILL) instead of `tycho: division by zero`, and `i64` MIN / -1 trapped.
+  - **An `if`/`elif` chain is emitted flat** (D03, D14, D23): the self-hosted
+    compiler needed 5.3 GB for 800 arms and was OOM-killed at 1250; the
+    reference compiler nested one C block per arm, segfaulted near 7000 and
+    clang refused 255+. A flat `+` chain and a many-hole f-string likewise
+    emit at constant bracket depth (D17); a 256-term sum built under clang
+    now.
+  - **Compile time on nested calls is no longer exponential** (D13, D15,
+    D19, D31, D35, FRICTION 198, 200): nested generic method chains and
+    constructors, `program_in`'s per-field copy of the struct text (900
+    structs × 20 fields needed 4 GB), one long f-string, lambdas in a function
+    with many locals, and the reference front end's quadratic procedure
+    lookup.
+  - **A constant array literal is a static table plus `memcpy`** (D18) in
+    both emitters, not one store per element inside a statement expression —
+    a 15,625-element table took gcc 21 s.
+  - **Enum variants reach C under prefixed names** (D28), so a variant named
+    `EOF`, `NULL`, `default` or `while` builds, and `enum Shape {Circle(..)}`
+    beside `enum Shape_Circle` no longer collides on a typedef.
+  - **A `packed` struct field passed as `inout` goes through an aligned
+    local** (D21) in both emitters; the emitted C dereferenced it at natural
+    alignment.
+  - **Composite map keys with a float leaf hash `+0.0` and `-0.0` alike**
+    (D29); a map held two `==`-equal keys. The self-hosted compiler refuses a
+    sized-int or `f32` leaf as the reference compiler does, instead of calling
+    a hash function it never defined (D30).
+  - **The self-hosted compiler lowers `pow(x, y)` and `for x in s` over an
+    `soa`** (D25, D40); it type-checked both and died in its emitter.
+  - **`-g` escapes quotes, backslashes and control bytes in `#line` paths**
+    (D12), in both compilers.
+  - **The reference compiler**: a `StructDef*` held across a nested generic
+    instantiation that reallocated the table was a heap use-after-free on a
+    195-byte valid program (D02); `read_file` overflowed on a pipe, FIFO or
+    `/dev/stdin` (D11); the resolver's depth counter was never reset after a
+    recovered error, so enough ordinary errors turned every later line into
+    `expression too deeply nested` (D35); a type name containing `__` was
+    mistaken for mangling (D36); `argument 2 of math__clamp` names `clamp`
+    (D38); `--symbols` exits non-zero on an invalid program (D32); a
+    cross-package "did you mean" no longer suggests a `_`-private symbol the
+    next compile refuses (D60).
+- **The builtin-collision warning described the wrong dispatch**
+  (`026d6c17`, D10). Inside `package lib`, an unqualified `pow(1.0, 2.0)` has
+  always called `lib`'s own `pow` under both compilers; the reference
+  compiler's warning said `every unqualified pow(...) calls the BUILTIN, so
+  this procedure is unreachable`. It now says what happens: `` `pow` collides
+  with the builtin of the same name -- unqualified calls in this package
+  select this procedure. Rename it if this package needs the BUILTIN; external
+  callers can use `pkg.pow(...)` ``. In `package main` the builtin wins
+  (`tests/shadow_builtin_selection.ty`); `tests/package_builtin_shadow.sh`
+  pins both. `total := total(xs)`, a local named after the function that
+  initialises it, compiles instead of emitting C that did not (D09).
+- **Diagnostics that did not state their rule now do** (`b9df4aa1`), in both
+  compilers: `x := if c: "a" else: "b"` said `expected newline` and now says
+  `` a value `if` puts each branch on its own line -- `x := if c:`, then the
+  value indented on the next line, then `else:` and its value indented below
+  it; a one-line `if c: a else: b` is not a form ``. `f"{g(\"x\")}"` said
+  `unterminated string in an interpolated hole` and now says `` a `\"` inside
+  an f-string hole: the hole is Tycho source, not string text, so a string in
+  it takes plain quotes -- f"{g("x")}", not f"{g(\"x\")}" ``. Both came from
+  an outside probe that learned the rules by trial.
+- **The shipped `tychoc` (which is `tychoc1`) called itself `tychoc1`**
+  (`212d8a5b`). A missing source file said `nope.ty: error: no 'main'
+  procedure` because the builtin `read_file` returns `""` for a file it cannot
+  open; it says `tychoc: cannot open <path>` and exits 1. Twenty-five driver
+  messages and the usage line carried the internal name and listed the
+  internal modes; `--help` is now the reference compiler's text byte for
+  byte, and `--emit-c` with no `-o` writes the C to stdout as `./tychoc` does
+  (`b9df4aa1`) instead of printing usage.
+- **The self-hosted compiler's int- and enum-keyed map probe emitted
+  `((k == q))`** (`b7ce7614`), which clang reads as a mistyped assignment:
+  `equality comparison with extraneous parentheses` in every build of a
+  program with such a map — 76 warning lines across the fixture corpus, none
+  from the reference compiler.
+- **A `packed` field passed `inout` to a void call no longer warns in the
+  user's build** (unreleased). The reference compiler closed the
+  statement expression with `memcpy(...);; }`, and clang's `-Wunused-value`
+  fires on a statement expression that ends in a null statement; `make
+  emit-warn` caught it on `tests/packed_inout.ty`, the one fixture that
+  exercises the path. The stray semicolon is gone; the self-hosted compiler
+  never emitted it.
+- **Value storage: append state belongs to the binding, not the string**
+  (`6c76904d`). The in-place `acc = acc + e` optimisation tracked length and
+  capacity in sidecar C locals declared with the variable, so an append
+  through an `inout string` in a separately called helper, or in a `bytes` or
+  match-arm accumulator in the self-hosted compiler (D72, D80), fell back to
+  quadratic concatenation — `tycho-db`'s torn-log recovery needed 7.5 GB for a
+  789 KB log. Both emitters now pass a per-binding append state, forwarded
+  through `inout` calls, that grows in the owner's arena and invalidates its
+  capacity when the binding is reassigned (`tests/inout_append.sh` bounds the
+  growth and requires a pure-concat control to fail). The self-hosted
+  compiler's redundant AST staging is gone and its statement builder is
+  shared; `tests/compiler_storage.sh` checks the driver and emitter API on a
+  deep snapshot and `bench/allocator/compiler_peak.py` records the before and
+  after. The plan and every measurement are in
+  [`docs/internals/plan-value-storage-places.md`](docs/internals/plan-value-storage-places.md).
+- **A `recv(ch)` used as an expression returned a payload built in the
+  callee's freed scope** in the self-hosted compiler (`e7c485d2`, D81) —
+  SIGSEGV or a corrupted `Option` once it escaped the function. Overwriting a
+  `[string]` element and a variadic pack in a loop grew without limit (D84).
+
+### Runtime
+
+- **Overwriting a heap value in a long-lived map reclaims the old value**
+  (`e7c485d2`, D82), in both compilers. `tycho-kvsrv` grew about 1 KB of RSS
+  per `PUT` to the same key without limit.
+- **Size arithmetic on untrusted counts is checked before it allocates**
+  (`e7c485d2`, `026d6c17`, D39, D41, FRICTION 178): `reserve(xs, n)` on a
+  composite-element array and `channel(T, cap)` with a huge capacity wrapped
+  `n * sizeof(elem)` to a tiny allocation and then wrote past it. Both abort
+  by name now (`tests/abort/reserve_composite_overflow.ty`,
+  `channel_capacity_overflow.ty`); map `reserve` bounds its capacity before
+  doubling.
+- **Directory listing builds its names in one arena pass** (`6c76904d`):
+  names grow upward and the index downward inside one block, instead of one
+  temporary string per entry copied by `push`. `tests/dir_packing.c` compares
+  it with the original against the same tree; `make dir-packing` reports the
+  numbers.
+- **The arena block header is 8-byte aligned on ILP32** (`6c76904d`), and a
+  block capacity that would overflow `SIZE_MAX` is an out-of-memory abort, not
+  a wrap. `tests/allocator_contract.sh` exercises ownership, statistics modes
+  and the 32-bit build separately from generated code.
+
+### Core library
+
+- **Seven functions joined `surface.lock`** (`e7c485d2`):
+  `io.rename(src, dst) -> Result(void, IoErr)`;
+  `io.lock_exclusive(p) -> Result(bool, IoErr)`, a process-lifetime exclusive
+  lock; `httpd.has_header(r, name) -> bool`;
+  `tls.connect_timeout(host, port, ms)` and `tls.set_timeout_ms(conn, ms)`,
+  which were documented but package-private, so no program could call them
+  (D56); `zip.create_checked(entries) -> Result(bytes, string)`, which refuses
+  a name of 64 KiB or more and more than 65535 entries instead of wrapping
+  them through `to_u16`/`to_u32` into an archive whose own reader listed
+  forged entries (D64); and `zip.extract_entry(b, e: Meta) -> bytes`, so
+  reading every entry is one directory pass rather than a re-read of the
+  central directory per entry (D69).
+- **Interior NULs fail closed at every remaining C-string boundary**
+  (`e7c485d2`, `026d6c17`, FRICTION 164): `core:crypto`'s whole hex surface —
+  `sha256`, `sha512`, `hmac`, the PBKDF2 salt, AEAD, Ed25519 sign and
+  verify, `x25519`, `key_from_hex` — truncated at the first NUL, so verify,
+  HMAC and AEAD-decrypt accepted input that was never signed (D43, D44);
+  `sqlite.open` opened a different file and `exec` ran a shorter statement
+  (D46, D85); stream lines and child-process output cross the FFI as
+  length-carrying `bytes` (D49). `SECURITY.md` no longer calls NUL a
+  Tycho-string limitation; `base64`, `hex` and `url` decode preserve `0x00`.
+- **`core:httpd` refuses framing it cannot decode** (`e7c485d2`, D54, D57,
+  D88): any `Transfer-Encoding` and an empty `Content-Length` were framed as
+  bodyless and the body was read as the next request. `parse_request` now
+  rejects whitespace before a header colon, obs-fold continuations and extra
+  request-line tokens, as RFC 9112 requires. `BodyTooLarge` separates a
+  declared body over budget (413) from an oversized header (431); `tycho-httpd`
+  answered 431 to both.
+- **`core:http` refuses a CR or LF in `content_type`** (`e7c485d2`, D47,
+  D55); it was written straight into the request headers.
+- **`core:toml`** (`e7c485d2`, D61, D63, D66): a parent table declared after
+  its subtable and the subtables of an array-of-tables were silently dropped
+  from valid documents; quoted keys and headers were split on the dot inside
+  the quotes, and a malformed literal string or a lone surrogate escape became
+  a value. Parsing is now bounded — 64 KiB of input, 512 entries or headers,
+  128 levels — and says which bound (`TOML document exceeds 65536 bytes`)
+  instead of exhausting memory.
+- **`core:regex` caps a subject at 4,096 bytes** (`e7c485d2`, D42):
+  `tycho: core:regex: subject exceeds the 4096-byte match limit`. A pattern
+  under the repetition-product ceiling still took 40+ seconds to match; the
+  ceiling bounded compile memory, not match time. A group index is checked
+  against the compiled capture count (D48).
+- **`core:compress`** (`e7c485d2`, D65, D70): a length of 4 GiB or more was
+  truncated to `uInt` and reported success on `len mod 2^32` bytes;
+  `decompress` returned only the first gzip member and accepted trailing
+  garbage as `Ok`. Both are refused.
+- **`io.copy(src, dst)` on the same file** (`e7c485d2`, D45) truncated it to
+  zero bytes and returned `Ok`; it is detected by device and inode, through a
+  symlink too. `path.resolve_under` refuses a dangling symlink inside the root
+  (D62) — a later write landed outside it. The `net` shim validates a
+  descriptor before narrowing it to `int`, so `net.close_fd(fd + 2^32)` fails
+  instead of closing an unrelated descriptor (D59). `core:datetime` bounds the
+  numeric fields of a POSIX TZ string (D51).
+- **`json.parse` and `markdown.inline` were quadratic** (`e7c485d2`, D67,
+  D68): the duplicate-key scan over every prior member, and a `]` found and
+  re-found for every unmatched `[`.
+- **`core:tls` verifies the hostname through `X509_VERIFY_PARAM_set1_host`**
+  (unreleased). `SSL_set1_host` is deprecated in OpenSSL 4.0, which Homebrew
+  now installs as `openssl`, and `make shim-warn` went red on the warning;
+  the replacement is the call it wrapped, present in OpenSSL 1.0.2 onward and
+  LibreSSL. `make tls-verify` holds all four legs.
+- **`datetime.offset_at` answers 0 for a TZ string libc accepts beyond
+  24 hours** (unreleased). `"EST25"` is refused by the rule parser and fell
+  through to libc, where glibc answers UTC and macOS libc answers -90000; the
+  fallback is bounded to ±86400 on every platform, as the corelib golden
+  already asserted.
+- **`math.sign` compared `z == z`** to tell zero from NaN (`0162f82d`). At
+  `T = int` that is `if (h_z == h_z)` and clang warned
+  `self-comparison always evaluates to true` in the build of every program
+  calling it on an `int`. It is `x == z` now, the same test for every input.
+- **`zip.create` builds its archive as `bytes`** (`6c76904d`), not as an
+  `[int]` of one machine word per byte with each entry's compressed payload
+  retained a second time; `make allocator-peaks` records the peak before and
+  after.
+
+### Tools
+
+- **`tools/tycho-db`** (`e7c485d2`, D71–D79, FRICTION 168–175): a checkpoint
+  rewrote the store in place, so a crash or full disk during it destroyed
+  every committed row — it writes and syncs a sibling file, renames it
+  atomically, syncs the directory and then rewinds the WAL. A mutation whose
+  WAL append failed was still applied in memory and served; it is validated,
+  appended, then applied. Nothing locked the store, and two processes on one
+  database lost 300 of 300 acknowledged commits; `open_db` takes an exclusive
+  `.lock` for the life of the process. `store.decode` trusted row arity and
+  types, so a one-byte corruption panicked mid-query; it validates shape,
+  tags, encodings and trailing bytes. One idle connection pinned the serial
+  server forever; a line has a one-second deadline and a session a 60-second
+  cap. The sorted-array KEY index copied every shifted entry (689 KB of
+  inserts grew the server to 1.6 GB); it is a type-tagged hash index. An
+  indexed cross-type comparison returned no rows where the scan reported an
+  error; both report it.
+- **`tycho-db`'s line cap counts payload bytes** (`6c76904d`): `MAX_LINE`
+  (8192) is checked on the first line before the buffer is split, excludes
+  the LF and an optional CR, and a pipelined tail is not part of the line. The
+  old newline-first branch let a late newline bypass the cap;
+  `tools/tycho-db/run.sh` sends 8191, 8192, 8193 and 10000-byte statements
+  under both line endings.
+- **`tools/tycho-docs`** (`7364230c`, `0218f234`, `43c498e2`) renders `docs/`
+  as a browsable site — fences, tables, quotes and nested inline spans — and
+  `make docs-site` / `make docs-site-check` build and check it. It is the
+  tree's docs site generator; see *Documentation*.
+- **`tycho-httpd`'s `Range` digit limit counts significant digits**
+  (`e7c485d2`, D58); a 16-character position with leading zeros was treated
+  as 10^15 and answered 416 for a satisfiable range.
+- **`make debug-check` accepts both gdb spellings** (`e7c485d2`, D90): gdb
+  15 prints `No line 999 in file`, gdb 17 `No compiled code for line 999`; the
+  gate required the second and `make ci` was red on Ubuntu 24.04.
+
+### Documentation
+
+- **Every user-facing page was rewritten for a reader, not a reviewer**
+  (`4bc2f281`, then `4c733ed0`, `08f55a24`, `e92536a2`, `6959541a`,
+  `901e9274`, `c4ca258e` and some thirty voice commits): the README puts the
+  first success before the trade-offs, names the on-ramp for non-C readers and
+  answers the package-manager question plainly; the index layers the reading
+  path; "honest", "measured" and "experimental" give way to the receipt
+  itself; benchmark tables are stamped as rounded snapshots (`cd19dd7f`);
+  stale pass counts and code locators are dropped from `platforms.md`,
+  `performance.md` and `architecture.md`.
+- **"Thinking in Tycho", an idioms page, leads the docs** (`91d75dc4`,
+  `4f18f963`).
+- **The reference gained `or_else` and `cli.parse_checked`** (`778f6cb8`) —
+  the 0.8.6 headline was only in spec §14.6.1, and an outside probe found it
+  by grepping the spec. FRICTION 98 and 128 said OPEN after both were closed
+  (`c005a03b`).
+- **The defect hunt is recorded in full** (`396ecbde`, `dd4708f1`): 90
+  findings, 255 verifier and note items, the refuted list, and the closure
+  status per finding.
+- **The memory model page states what arenas do and do not promise**
+  (`6c76904d`): scope exit releases ownership, not necessarily resident
+  memory; reuse is not an OS release or a latency guarantee. `STATUS.md`
+  reads "evidence for the arena model" where it read "the thesis is proven".
+- **The docs site is rebuilt** on the landing page's design tokens, serif
+  headings, a 4px spacing scale and a shared masthead (`bd803d54`,
+  `f477235e`, `03ee3f35`, `26539459`, `cb8acc3b`); one shell, navigation and
+  full-text search across the whole site, with search in a global header modal
+  (`41756958`, `337d8da4`, `3b0c7eec`); a plain-language introduction and a
+  newcomer editorial flow on the homepage (`52b98452`, `25aa9f12`,
+  `63fba1ed`); an author-to-reader voice with research references
+  (`12e12311`); and an outlined footer whose glyph seams are masked
+  (`280429ab`, `f3c6ac3a`). The contrast gate `[c5]` is retargeted at the
+  rebuilt palette (`65efc4c4`).
+
+### Verification
+
+- The fixture corpus is 1222 `.ty` files under `tests/`, from 1156; 719 are
+  rejection fixtures, from 686; `reject-expect` is 657, from 636.
+- **`make emit-warn`, lane `[3d2b/13]`** (`94dd9756`): the warnings the
+  *emitted* C raises in a user's build. Every suite compiles with `tychoc1`,
+  rolls its own `cc` line and reads `cc`'s stderr only when the build fails,
+  so the two `-Wunused-value` warnings `core:strings` put into every clang
+  build (FRICTION 128) were seen by no lane for three days. It emits every
+  corelib test and every positive fixture with both compilers — 682
+  programs — and compiles each `-fsyntax-only` under named `-Werror=` flags
+  probed against the host `cc` (`unused-value`, `tautological-compare`,
+  `parentheses-equality`); a probe per flag must be refused or the lane
+  "asserts nothing". Built against the parent it reported all ten programs.
+  81 lanes, from 80.
+- **`make test` builds both compilers and runs 27 new scripted checks**
+  beside the fixtures, from one (`e7c485d2`, `026d6c17`, `6c76904d`): the
+  audit's scale and guard tests (`elif_chain`, `nested_blocks_scale`,
+  `expression_scale`, `struct_defs_scale`, `array_literal_scale`,
+  `emitter_nested_calls`, `emitter_memory_scale`, `audit_runtime_guards`,
+  `http_header_guard`, `compress_limits`, `cli_flags`,
+  `package_builtin_shadow`, `package_diagnostic_name`, `packed_inout_ffi`,
+  `debug_path`, `stream_source`, `depth_recovery`, `proc_signature_scale`,
+  `name_registry_scale`, `place_store_order`, `recv_loop_scale`,
+  `map_overwrite_scale`, `loop_temp_recycle`, `accumulator_scope`) and the
+  storage work's (`inout_append`, `compiler_storage`, `allocator_contract`).
+  Six new abort fixtures under `tests/abort/` pin the division and overflow
+  traps. `TYCHO_TEST_JOBS` bounds the fixture runner's parallelism separately
+  from the fixtures' own `TYCHO_THREADS`.
+- **`parse-check` leg `[4e]` pins the driver's surface against `./tychoc`**
+  (`212d8a5b`, `b9df4aa1`): the missing-source message and exit, the bare
+  run's stream and exit, `--help` byte-identical, the `wrote` line's newline,
+  `--emit-c` to stdout and no `tychoc1` on an unknown flag. Against the 0.8.6
+  archive's binary it fails all five.
+- **Nine scale tests run on macOS** (unreleased): the tests added with the
+  defect hunt called `timeout` and `ulimit -v` directly, so on a Mac they
+  exited 127 and `make friction-check-light` reported their FRICTION entries
+  STALE. They source `scripts/shlib.sh` now and `ulimit -v` is a no-op where
+  the shell has none, so their memory bound is enforced on Linux only.
+  `scripts/entrypoints.sh` sorts its warning record under `LC_ALL=C`; the
+  locale order put `../wal/wal.ty` on different lines on Linux and macOS.
+  `tools/tycho-db/run.sh` reads a file's mode through `file_mode`, a new
+  `scripts/shlib.sh` helper over GNU `stat -c` and BSD `stat -f`; the BSD
+  one printed a usage message and the gate compared an empty string.
+- **`CI_SERIAL=1`** runs the four lanes and the three fuzzers one after
+  another for a shared machine (`6c76904d`); the default is unchanged.
+- **The allocator measurement suite, `bench/allocator/`, is opt-in**
+  (`6c76904d`): `make allocator-contract`, `allocator-baseline`,
+  `allocator-packing`, `allocator-dual`, `dir-packing`, `allocator-directory`,
+  `allocator-callers`, `allocator-peaks`, `allocator-compiler` and
+  `compiler-storage`. Each compares a change with historical, presized and
+  smaller-native controls plus ablations, separates profiles from plain
+  timing and RSS, and never changes the production runtime; the results and
+  the "no second integration" decision are in the storage plan.
+
 ## [0.8.6] — 2026-09-25
 
 ### Breaking
