@@ -91,8 +91,8 @@ printf ' tycho local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
 bar
 
-step "[1/13] build (make tychoc)"
-make -s tychoc
+step "[1/13] build (make tychoc tychoc1 -- the friction pins at [1d2] run tests under ./tychoc1, and on a fresh clone nothing before them had built it: the first make ci-linux, 2026-10-16, scored 28 closed entries STALE with './tychoc1: not found' while the same tree was green on a host that had it from yesterday)"
+make -s tychoc tychoc1
 
 step "[1a/13] make check-links  (relative links + every path:line citation resolves)"
 make -s check-links

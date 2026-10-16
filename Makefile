@@ -671,7 +671,7 @@ parity-fuzz: tychoc1
 builtin-qualified: tychoc tychoc1
 	@sh scripts/builtin_qualified.sh
 
-friction-check:
+friction-check: tychoc tychoc1
 	@python3 scripts/friction_check.py --selfcheck
 	@python3 scripts/friction_check.py
 
@@ -695,7 +695,7 @@ probe-selfcheck:
 # about which pins are the expensive ones, and selfcheck legs [7]-[10] pin it in
 # both directions: classify everything light and ci re-runs the suites; classify
 # everything heavy and the lane scores nothing while still printing ok.
-friction-check-light:
+friction-check-light: tychoc tychoc1
 	@python3 scripts/friction_check.py --selfcheck
 	@python3 scripts/friction_check.py --light
 
