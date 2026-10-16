@@ -321,5 +321,10 @@ tycho_int dtx_offset_at(const char *tz, tycho_int secs) {
     if (saved) { setenv("TZ", saved, 1); free(saved); } else { unsetenv("TZ"); }
     tzset();                                  /* restore the process zone exactly once */
     ty_tz_unlock();
+    /* POSIX caps a TZ offset at 24 hours and the rule parser above enforced
+     * it, but a string it rejected ("EST25") reaches libc here, and macOS
+     * libc accepts it as -90000. glibc answers UTC for the same string; so do
+     * we, on every platform. */
+    if (off > 86400 || off < -86400) off = 0;
     return off;
 }
