@@ -123,8 +123,11 @@ fn judge_pos(j: Job, d: string) -> Verdict:
     nr := os.run(nat + " <" + j.stdin + " >" + d + "/nout 2>/dev/null")
     if nr.code != 0:
         return Verdict(0, "native exit " + str(nr.code))
-    sr := os.run("ASAN_OPTIONS=detect_leaks=1 " + san + " <" + j.stdin + " >" + d +
-                 "/sout 2>" + d + "/serr")
+    # Leak detection needs LeakSanitizer, which Apple's ASan does not ship:
+    # detect_leaks=1 there aborts every sanitizer binary at exit (134, empty
+    # stderr) regardless of correctness. Same gate as tests/run.sh.
+    sr := os.run("ASAN_OPTIONS=detect_leaks=$([ \"$(uname -s)\" = Darwin ] && echo 0 || echo 1) " +
+                 san + " <" + j.stdin + " >" + d + "/sout 2>" + d + "/serr")
     if sr.code != 0:
         return Verdict(0, "sanitizer exit " + str(sr.code))
     if sanitizer_report(d + "/serr"):
