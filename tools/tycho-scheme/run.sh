@@ -38,6 +38,12 @@ for p in fib closures ho sort shadow eqsym; do
     if ! "$S" compile "$progs/$p.scm" -o "$T/$p.tyc" >"$T/$p.c.err" 2>&1; then
         bad "$p: the compiler refused it"; sed 's/^/      /' "$T/$p.c.err"; continue
     fi
+    # Small arenas stress pool reuse after parsing/analysis dies before layout.
+    if ! TYCHO_BLOCK=64 "$S" compile "$progs/$p.scm" -o "$T/$p.tiny.tyc" >"$T/$p.tiny.err" 2>&1; then
+        bad "$p: tiny-arena compilation failed"
+    elif ! cmp -s "$T/$p.tyc" "$T/$p.tiny.tyc"; then
+        bad "$p: tiny-arena compilation changed bytecode"
+    fi
     if ! "$V" run "$T/$p.tyc" >"$T/$p.vm" 2>"$T/$p.vm.err"; then
         bad "$p: the VM rejected the compiled output"; sed 's/^/      /' "$T/$p.vm.err"; continue
     fi

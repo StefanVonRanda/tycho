@@ -494,32 +494,36 @@ fn emit_ref(b: Bind, em: inout Emit):
 # ---- the driver ----------------------------------------------------------------
 
 fn compile_scheme(src: string) -> Program:
-    # parse the prelude + the program as one body of top-level forms
+    ctx := Ctx([]string, []string: int, []string: int)
+    fns := []FnCode
+    calls := []CallPatch
+    entry := []Ins
+    emit_source(src, &ctx, &fns, &calls, &entry)
+
+    code := layout(fns, entry, calls)
+    return Program(ctx.consts, code)
+
+# Return only forms; tokens and concatenated source die before analysis.
+fn parse_source(src: string) -> [Val]:
     forms := []Val
     toks := tokenize(PRELUDE + "\n" + src)
     pos := 0
     for pos < len(toks):
         push(forms, parse_toks(toks, &pos))
+    return forms
 
+# Forms and analysis die before layout; only the caller-owned emission buffers
+# and context survive this phase.
+fn emit_source(src: string, ctx: inout Ctx, fns: inout [FnCode], calls: inout [CallPatch], entry: inout [Ins]):
+    forms := parse_source(src)
     forms = order_top_forms(forms)
     gnames := []string
     collect_globals(forms, &gnames)
-    ctx := Ctx([]string, []string: int, []string: int)
     build_gdepth(gnames, &ctx)
 
     infos := []FnInfo
     analyze_forms(forms, &ctx, &infos)
-
-    fns := []FnCode
-    calls := []CallPatch
-    entry := []Ins
     tagseq := 0
-    emit_top_forms(forms, &ctx, infos, &fns, &calls, &tagseq, &entry)
-
-    code := layout(fns, entry, calls)
-    return Program(ctx.consts, code)
-
-fn emit_top_forms(forms: [Val], ctx: inout Ctx, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int, entry: inout [Ins]):
     em := Emit([]Ins, -1, -1, 0, true, []string: Bind, []string: Bind)
     e_op(&em, OP_NIL)
     e_store(&em, 0)                  # frame-0 slot 0 = the global chain
