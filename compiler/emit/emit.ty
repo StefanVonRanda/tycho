@@ -135,9 +135,21 @@ struct C:
     fsrc: [string]                     # unit i's text, so that error shows the real line
     fcore: [bool]                      # unit i lies under the corelib root (_vmath_of)
     constv: [string: int]              # compile-time integer constants used by vector[N]T emission
+    rebuild_name: string
+    rebuild_paths: [string]
+    vlocal: [bool]                     # value declarations, not borrowed pattern/iteration bindings
+    ret_local: string
+    ret_fields: [string]
+    ret_placed: bool
+    projection: [string]               # active constructor field path, never a general owner override
+    ret_update: int                    # final replacement or counted-loop index, or -1
+    ret_store: bool
+    ret_loop_inner: int                # final write or guaranteed-writing if/else in a loop, or -1
+    ret_loop_iv: string
+    ret_loop_bound: string             # stable integer bound's C expression, or empty
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "")
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -270,7 +282,7 @@ fn _tup_of(cs: inout C, es: [string]) -> string:
 
 # A map type is stamped out per (key, value) pair exactly as a tuple kind is:
 # the registry key is "K|V" and the type string is "M~<index>". The emitted C
-# mirrors src/tychoc.c:14700's compact indexed dict -- an int32 index table over
+# mirrors src/tychoc.c:14960's compact indexed dict -- an int32 index table over
 # dense insertion-ordered entries -- so keys() order and str() form agree.
 # The `$N` a parameter's written type names, if it is `[$N]T`. Emit lowers every
 # array to the dynamic one, so N is not a monomorphisation key here: inside the
@@ -390,7 +402,7 @@ fn _mpfx(cs: inout C, t: string) -> string:
     return "tycho_mapM" + _tname(t)
 
 # A soa type is stamped out per ELEMENT STRUCT, keyed by the struct's type
-# string, and spelled "O~<index>". src/tychoc.c:14849 emits the same shape: one
+# string, and spelled "O~<index>". src/tychoc.c:15109 emits the same shape: one
 # growable arena buffer per field plus a shared len/cap.
 fn _is_soa(t: string) -> bool:
     return strings.starts_with(t, "O~")
@@ -506,7 +518,7 @@ fn _vecf(cs: inout C, t: string, op: string) -> string:
     return "tycho_vec_V" + _tname(t) + op
 
 # How a key is REPRESENTED in the entry table: a fieldless enum is stored as its
-# tag, so `keys()` has to rebuild the singleton (src/tychoc.c:14732).
+# tag, so `keys()` has to rebuild the singleton (src/tychoc.c:14992).
 fn _kclass(cs: inout C, k: string) -> string:
     if k == "string":
         return "str"
@@ -564,7 +576,7 @@ fn _kcopy(cs: inout C, k: string) -> string:
     return _copy(&cs, "k", k, "a")
 
 # A struct/tuple key hashes field-wise, FNV-folded from the per-process seed --
-# src/tychoc.c:11339's gen_hash, which is what makes `==`-equal values hash equal.
+# src/tychoc.c:11559's gen_hash, which is what makes `==`-equal values hash equal.
 fn _hashable(cs: inout C, t: string) -> bool:
     return _hashable_d(&cs, t, []string: bool)
 
@@ -878,7 +890,7 @@ fn _apfx(cs: inout C, elem: string) -> string:
     return "tycho_arr_K" + str(_akind(&cs, elem))
 
 # --- generics: monomorphised, one deep instance per distinct binding ---------
-# src/tychoc.c:14579 clones the template body per instance and resolves it; the
+# src/tychoc.c:14839 clones the template body per instance and resolves it; the
 # same shape here, with a `tpn/tpv` binding stack instead of a substitution pass.
 # A binding is pushed while an instance's types (or body) are resolved and popped
 # after, so a nested instantiation sees only its own parameters.
@@ -1539,6 +1551,7 @@ fn _restore(cs: inout C, m: int):
         pop(cs.vcn)
         pop(cs.vcaps)
         pop(cs.vown)
+        pop(cs.vlocal)
         pop(cs.vacc)
 
 # src/tychoc.c@cv_push: a shadowing binding keeps the C name `h_<n>` and leans
@@ -1551,6 +1564,7 @@ fn _push(cs: inout C, n: string, t: string) -> string:
     push(cs.vcn, cn)
     push(cs.vcaps, 0)
     push(cs.vown, _curown(&cs))
+    push(cs.vlocal, false)
     push(cs.vacc, "")
     return cn
 
@@ -1664,7 +1678,7 @@ fn _fresh(cs: inout C, p: string) -> string:
     cs.tmp += 1
     return p + str(n)
 
-# --- the per-iteration loop scratch arena (src/tychoc.c:14048-14068) ---------
+# --- the per-iteration loop scratch arena (src/tychoc.c:14308-14328) ---------
 #
 # A loop opens `Arena _scrN = arena_child(<enclosing>)`, resets it as the FIRST
 # statement of every iteration and frees it after. Correctness comes from the
@@ -2132,7 +2146,7 @@ fn _zero(cs: inout C, t: string) -> string:
 
 fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
     if _is_fn(t):
-        # identity: same thunk and same env -- src/tychoc.c:11383
+        # identity: same thunk and same env -- src/tychoc.c:11603
         return "((" + a + ").call == (" + b + ").call && (" + a + ").env == (" + b + ").env)"
     if t == "string" or t == "bytes":
         # EQUALITY, not order: tycho_str_eq settles on the length headers and
@@ -2468,7 +2482,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 return ("(" + rc + ").data[" + ic + "]", et)
             return (_arrf(&cs, et, "_get") + "(" + rc + ", " + ic + ")", et)
         ast.Slice(l, hl, hh, k):
-            # src/tychoc.c:12443-12505 -- the block id is taken BEFORE the subject
+            # src/tychoc.c:12673-12735 -- the block id is taken BEFORE the subject
             # is generated, and one id serves whichever of the three branches runs.
             sid9 := _fresh(&cs, "")
             rc, rt := _ex(&cs, k[0])
@@ -2840,7 +2854,7 @@ fn _fchain(cs: inout C, ps: [string], n: int) -> string:
     return "({ " + pre + out + "); })"
 
 # --- function values --------------------------------------------------------
-# A fn value is the same 3-word FAT POINTER src/tychoc.c:14822 emits:
+# A fn value is the same 3-word FAT POINTER src/tychoc.c:15082 emits:
 # `{ void *env; RET (*call)(void*, Arena*, P...); void *(*copyenv)(Arena*, void*); }`.
 # A reference to a named function has env == 0; a capturing lambda allocates an
 # Env in the arena that owns the value and carries a copier so a returned
@@ -3265,6 +3279,7 @@ fn _subinline(cs: inout C, si: int, args: [ast.Expr], lv: bool) -> (string, stri
         push(cs.vtypes, at)
         push(cs.vcn, ac)
         push(cs.vown, "&_scope")
+        push(cs.vlocal, false)
     inner := cs.sube[si]
     match cs.sube[si]:
         ast.Addr(l, k): inner = k[0]
@@ -3280,6 +3295,7 @@ fn _subinline(cs: inout C, si: int, args: [ast.Expr], lv: bool) -> (string, stri
         pop(cs.vtypes)
         pop(cs.vcn)
         pop(cs.vown)
+        pop(cs.vlocal)
     return (rc, rt)
 
 fn _ufcs_name(cs: inout C, n: string, rt: string) -> string:
@@ -3426,9 +3442,12 @@ fn _retval(cs: inout C, e: ast.Expr) -> string:
     rt := cs.cur_ret
     if rt == "float" and t == "int":
         c = "(double)(" + c + ")"
-    # src/tychoc.c:13570@cv_in_parent -- a return-slot local already
+    # src/tychoc.c:13815@cv_in_parent -- a return-slot local already
     # lives in the caller's arena, so the copy would duplicate it.
-    if not tmpret and not _shares(&cs, e, rt, "_parent") and
+    projected := cs.ret_placed and _projection_fields(e, cs.ret_local) == cs.ret_fields
+    if projected and len(cs.ret_loop_bound) > 0:
+        c = "((" + cs.ret_loop_bound + " > 0) ? (" + c + ") : (" + _copy(&cs, c, rt, "_parent") + "))"
+    if not tmpret and not projected and not _shares(&cs, e, rt, "_parent") and
             not _inparent(&cs, e):
         c = _copy(&cs, c, rt, "_parent")
     return c
@@ -3808,7 +3827,7 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
         # makes this a machine instruction rather than a loop gcc may or may not
         # vectorise. int `/` and `%` fall back to a lane loop because the
         # LONG_MIN/-1 and divide-by-zero traps are a CALL, which cannot be
-        # applied to a whole vector -- src/tychoc.c:12218 does the same.
+        # applied to a whole vector -- src/tychoc.c:12448 does the same.
         # A broadcast scalar needs no splat and the operand order is preserved.
         if _is_vec(at) or _is_vec(bt):
             vt := at
@@ -3946,7 +3965,7 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
                     f = "tycho_umod"
             return ("(" + _cty(&cs, rt) + ")(" + f + "(" + a + ", " + b + "))", rt)
         if rt == "char":
-            # char is one byte, so its arithmetic stays 0..255 -- src/tychoc.c:12050
+            # char is one byte, so its arithmetic stays 0..255 -- src/tychoc.c:12270
             return ("((tycho_int)(unsigned char)((" + a + " " + op + " " + b + ")))", rt)
         if _is_sized(rt):
             return ("(" + _cty(&cs, rt) + ")((" + a + " " + op + " " + b + "))", rt)
@@ -4180,11 +4199,22 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
             # scratch a push had already selected for its value, so every
             # field of a per-iteration struct outlived the iteration
             # (bench/structarr_build.ty).
+            pa4 := cs.arena
+            path4 := cs.projection
+            cs.projection = []string
+            if len(path4) > 0 and cs.sds[si].fnames[i] == path4[0]:
+                if len(path4) == 1 and _heap(&cs, ft):
+                    cs.arena = "_parent"
+                    cs.ret_placed = true
+                elif _projection_ctor(&cs, args[i]):
+                    cs.projection = path4[1:]
             ac, at := _ex(&cs, args[i])
             cs.want = sw
             if _place(args[i]) and _heap(&cs, ft) and not _shares(&cs, args[i], ft, cs.arena) and
-                    not _canmove(&cs, args[i], cs.arena):
+                    not _take_rebuild_field(&cs, args[i]) and not _canmove(&cs, args[i], cs.arena):
                 ac = _copy(&cs, ac, ft, cs.arena)
+            cs.arena = pa4
+            cs.projection = path4
             if i > 0:
                 out = out + ", "
             out = out + ac
@@ -4595,6 +4625,8 @@ fn _expr_type(cs: inout C, e: ast.Expr) -> string:
 fn _argtypes(cs: inout C, args: [ast.Expr]) -> [string]:
     out := []string
     sw := cs.want
+    path := cs.projection
+    cs.projection = []string           # type probes do not place runtime values
     cs.want = ""
     for a in args:
         match a:
@@ -4611,6 +4643,7 @@ fn _argtypes(cs: inout C, args: [ast.Expr]) -> [string]:
             _:
                 push(out, _expr_type(&cs, a))
     cs.want = sw
+    cs.projection = path
     return out
 
 fn _addr_of(cs: inout C, e: ast.Expr) -> string:
@@ -4883,7 +4916,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         if _is_arr(t):
             # [int] -> bytes is a real conversion (each element & 0xFF);
-            # string -> bytes is the same buffer -- src/tychoc.c:11895
+            # string -> bytes is the same buffer -- src/tychoc.c:12115
             return ("tycho_bytes_from_intarr(" + cs.arena + ", " + c + ")", "bytes")
         if _is_struct(t):
             v := _fresh(&cs, "_pkv")
@@ -5101,7 +5134,7 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
 # read, not a slow program. Escape hatch: TYCHOC_NO_BOUNDS_ELISION=1.
 # The one reference refusal NOT ported is IS_BOUNDED: src/tychoc.c keeps a
 # bounded array in `.v`, where `.data[i]` would be wrong, while tychoc1 lowers
-# `bounded[N]T` to the dynamic array (compiler/emit/emit.ty:1298) whose storage
+# `bounded[N]T` to the dynamic array (compiler/emit/emit.ty:1310) whose storage
 # IS `.data`.
 fn _elision_on() -> bool:
     return len(getenv("TYCHOC_NO_BOUNDS_ELISION")) == 0
@@ -5359,6 +5392,86 @@ fn _creads_b(b: [ast.Stmt], nm: string) -> int:
         c += _creads_s(b[i], nm)
     return c
 
+# Disjoint fields of an owned local may survive its reconstruction. Collect
+# maximal projections only; ordinary calls/indices/closures keep copying.
+fn _rebuild_owned(cs: inout C, n: string, arena: string) -> bool:
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return i >= cs.fnbase and cs.vlocal[i] and cs.vown[i] == arena
+    return false
+
+fn _rebuild_path(e: ast.Expr, root: string) -> string:
+    match e:
+        ast.Field(l, k, f):
+            match k[0]:
+                ast.Name(l2, n):
+                    if n == root:
+                        return "." + f
+                _: pass
+            p := _rebuild_path(k[0], root)
+            if len(p) > 0:
+                return p + "." + f
+        _: pass
+    return ""
+
+# Follow the call dispatch before accepting a constructor: a local fn or UFCS
+# receiver can shadow a type name, and generic functions precede generic types.
+fn _rebuild_ctor(cs: inout C, q: string, n: string) -> bool:
+    if len(q) > 0:
+        if len(_vtype(&cs, q)) > 0 or not _ispkg(&cs, q):
+            return false
+        return _rebuild_ctor(&cs, "", _qpfx(&cs, q) + n)
+    if _is_fn(_vtype(&cs, n)) or _gfidx(&cs, n) >= 0:
+        return false
+    if n == "zero" or n == "size_of" or n == "from_bytes":
+        return false
+    return _gsidx(&cs, n) >= 0 or _sidx(&cs, n) >= 0
+
+fn _rebuild_reads(cs: inout C, e: ast.Expr, root: string, paths: inout [string]) -> bool:
+    match e:
+        ast.Field(l, k, f):
+            p := _rebuild_path(e, root)
+            if len(p) > 0:
+                push(paths, p)
+                return true
+            return _rebuild_reads(&cs, k[0], root, &paths)
+        ast.Name(l, n): return n != root
+        ast.IntLit(l, v): return true
+        ast.FloatLit(l, v): return true
+        ast.StrLit(l, v): return true
+        ast.CharLit(l, v): return true
+        ast.BoolLit(l, v): return true
+        ast.Binop(l, op, k): return _rebuild_list(&cs, k, root, &paths)
+        ast.Unop(l, op, k): return _rebuild_list(&cs, k, root, &paths)
+        ast.ArrLit(l, k): return _rebuild_list(&cs, k, root, &paths)
+        ast.Named(l, n, k): return _rebuild_list(&cs, k, root, &paths)
+        ast.Call(l, q, n, ts, k):
+            return _rebuild_ctor(&cs, q, n) and _rebuild_list(&cs, k, root, &paths)
+        _: return false
+    return false
+
+fn _rebuild_list(cs: inout C, es: [ast.Expr], root: string, paths: inout [string]) -> bool:
+    for e in es:
+        if not _rebuild_reads(&cs, e, root, &paths):
+            return false
+    return true
+
+fn _take_rebuild_field(cs: inout C, e: ast.Expr) -> bool:
+    if len(cs.rebuild_name) == 0:
+        return false
+    p := _rebuild_path(e, cs.rebuild_name)
+    if len(p) == 0:
+        return false
+    if not _rebuild_owned(&cs, cs.rebuild_name, cs.arena):
+        return false
+    hits := 0
+    for q in cs.rebuild_paths:
+        if q == p:
+            hits += 1
+        elif strings.starts_with(q, p + ".") or strings.starts_with(p, q + "."):
+            return false
+    return hits == 1
+
 # may `b := rhs` / `b = rhs` take rhs's buffer instead of deep-copying it, given
 # the destination lives in arena `owner`?
 fn _canmove(cs: inout C, e: ast.Expr, owner: string) -> bool:
@@ -5370,8 +5483,8 @@ fn _canmove(cs: inout C, e: ast.Expr, owner: string) -> bool:
         _: return false
     for i := len(cs.vnames) - 1; i >= 0; i -= 1:
         if cs.vnames[i] == n:
-            if i < cs.fnbase:
-                return false          # a parameter borrows the caller's buffer
+            if i < cs.fnbase or not cs.vlocal[i]:
+                return false          # parameters/pattern bindings may borrow
             if cs.vown[i] != owner:
                 return false
             return _creads_b(cs.pbody, n) == 1
@@ -5395,8 +5508,8 @@ fn _canmove_sink(cs: inout C, e: ast.Expr) -> bool:
         _: return false
     for i := len(cs.vnames) - 1; i >= 0; i -= 1:
         if cs.vnames[i] == n:
-            if i < cs.fnbase:
-                return false          # a parameter borrows the caller's buffer
+            if i < cs.fnbase or not cs.vlocal[i]:
+                return false          # parameters/pattern bindings may borrow
             return _creads_b(cs.pbody, n) == 1
     return false
 
@@ -5602,18 +5715,305 @@ fn _c_escape_path(p: string) -> string:
             out = out + chr(c)
     return out
 
+fn _projection_ctor(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Call(l, q, n, ts, k): return _rebuild_ctor(&cs, q, n)
+        _: return false
+    return false
+
+fn _projection_fields(e: ast.Expr, root: string) -> [string]:
+    match e:
+        ast.Field(l, k, f):
+            match k[0]:
+                ast.Name(l2, n):
+                    if n == root:
+                        return [f]
+                _: pass
+            p := _projection_fields(k[0], root)
+            if len(p) > 0:
+                push(p, f)
+                return p
+        _: pass
+    return []string
+
+fn _projection_proc(cs: inout C, q: string, n: string) -> bool:
+    if len(q) > 0:
+        if len(_vtype(&cs, q)) > 0 or not _ispkg(&cs, q):
+            return false
+        return _projection_proc(&cs, "", _qpfx(&cs, q) + n)
+    if _is_fn(_vtype(&cs, n)):
+        return false
+    gi := _gfidx(&cs, n)
+    if gi >= 0:
+        return not cs.gf[gi].is_extern
+    fi := _fidx(&cs, n)
+    return fi >= 0 and not _isext(&cs, cs.fds[fi].name) and
+        (not _shadowable(n) or (len(_pfx(&cs)) > 0 and cs.fds[fi].name == _pfx(&cs) + n))
+
+fn _projection_reads(cs: inout C, e: ast.Expr, root: string, fields: [string]) -> bool:
+    match e:
+        ast.Name(l, n): return n != root
+        ast.Field(l, k, f):
+            if _rootname(e) == root:
+                return _projection_fields(e, root) == fields
+        ast.Addr(l, k):
+            if _rootname(k[0]) == root:
+                return false
+        ast.Call(l, q, n, ts, k):
+            # Mutating builtins can return buffers in their operand's arena.
+            if q == root or not (_rebuild_ctor(&cs, q, n) or _projection_proc(&cs, q, n)):
+                return false
+        ast.CallVal(l, k): return false
+        ast.Lambda(l, ps, rt, k): return false
+        _: pass
+    for child in ast.kids(e):
+        if not _projection_reads(&cs, child, root, fields):
+            return false
+    return true
+
+# -1 invalid, 0 readonly, 1 selected-field replacement.
+fn _projection_step(cs: inout C, s: ast.Stmt, root: string, fields: [string]) -> int:
+    match s:
+        ast.PassS(l): return 0
+        ast.PlaceSet(l, k):
+            if len(k) == 2 and _projection_fields(k[0], root) == fields and
+                    not _hasorr(k[1]) and _projection_reads(&cs, k[1], root, fields):
+                return 1
+        ast.Decl(l, n, ann, rhs, vv):
+            if n != root and len(rhs) == 1 and len(vv) == 0 and not _hasorr(rhs[0]) and
+                    _projection_reads(&cs, rhs[0], root, fields):
+                return 0
+        _: pass
+    return -1
+
+fn _projection_no_addr(e: ast.Expr) -> bool:
+    match e:
+        ast.Addr(l, k): return false
+        ast.Lambda(l, ps, rt, k): return false
+        _: pass
+    for k in ast.kids(e):
+        if not _projection_no_addr(k):
+            return false
+    return true
+
+fn _projection_bound(cs: inout C, e: ast.Expr, scope: [ast.Stmt], builder: int) -> string:
+    match e:
+        ast.IntLit(l, v):
+            if v > 0:
+                return str(v)
+        ast.Name(l, n):
+            for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+                if cs.vnames[i] == n:
+                    if cs.vtypes[i] != "int" or strings.starts_with(cs.vcn[i], "(*"):
+                        return ""
+                    # Same-block initialized locals have private scalar storage.
+                    # Walk the suffix in place: slicing this AST would copy it.
+                    for j := builder - 1; j >= 0; j -= 1:
+                        match scope[j]:
+                            ast.Decl(l2, dn, ann, rhs, vv):
+                                if dn == n:
+                                    if not cs.vlocal[i] or len(rhs) != 1 or len(vv) > 0:
+                                        return ""
+                                    for k := j + 1; k < len(scope); k += 1:
+                                        if _uns_s(scope[k], n, n) or _mut_s(scope[k], n):
+                                            return ""
+                                    return cs.vcn[i]
+                            ast.MDecl(l2, decl, ns, rhs):
+                                if decl:
+                                    for dn in ns:
+                                        if dn == n:
+                                            return ""
+                            _: pass
+                    # Otherwise only a proven-stable value parameter qualifies.
+                    if i < cs.fnbase and not _uns_b(cs.pbody, n, n) and not _mut_b(cs.pbody, n):
+                        return cs.vcn[i]
+                    return ""
+        _: pass
+    return ""
+
+# -2 invalidates the proof; -1 is a valid sequence with no replacement.
+fn _projection_loop_body(cs: inout C, b: [ast.Stmt], root: string, fields: [string], iv: string, branches: bool) -> int:
+    last := -1
+    for i := 0; i < len(b); i += 1:
+        match b[i]:
+            ast.IfS(l, arms, no):
+                if not branches or len(arms) != 1 or len(arms[0].cond) != 1:
+                    return -2
+                c := arms[0].cond[0]
+                if _hasorr(c) or not _projection_no_addr(c) or not _projection_reads(&cs, c, root, fields):
+                    return -2
+                yes_last := _projection_loop_body(&cs, arms[0].body, root, fields, iv, false)
+                no_last := _projection_loop_body(&cs, no, root, fields, iv, false)
+                if yes_last < 0 or no_last < 0:
+                    return -2
+                last = i
+            _:
+                step := _projection_step(&cs, b[i], root, fields)
+                if step < 0:
+                    return -2
+                match b[i]:
+                    ast.Decl(l, n, ann, rhs, vv):
+                        if n == iv or not _projection_no_addr(rhs[0]):
+                            return -2
+                    ast.PlaceSet(l, k):
+                        if not _projection_no_addr(k[1]):
+                            return -2
+                    _: pass
+                if step == 1:
+                    last = i
+    return last
+
+fn _projection_last_store(b: [ast.Stmt]) -> int:
+    for i := len(b) - 1; i >= 0; i -= 1:
+        match b[i]:
+            ast.PlaceSet(l, k): return i
+            _: pass
+    return -1
+
+fn _projection_counted(cs: inout C, s: ast.Stmt, root: string, fields: [string], scope: [ast.Stmt], builder: int) -> (int, string, string):
+    match s:
+        ast.For3(l, ip, c, b):
+            if len(ip) != 2 or len(c) != 1:
+                return (-1, "", "")
+            iv := ""
+            match ip[0]:
+                ast.Decl(l2, n, ann, rhs, vv):
+                    if n == root or len(_vtype(&cs, n)) > 0 or len(rhs) != 1 or len(vv) > 0:
+                        return (-1, "", "")
+                    if len(ann) > 0 and _ty(&cs, ann[0]) != "int":
+                        return (-1, "", "")
+                    match rhs[0]:
+                        ast.IntLit(l3, v):
+                            if v == 0:
+                                iv = n
+                        _: pass
+                _: pass
+            if len(iv) == 0:
+                return (-1, "", "")
+            bound := ""
+            match c[0]:
+                ast.Binop(l2, op, k):
+                    if op == "<" and len(k) == 2:
+                        match k[0]:
+                            ast.Name(l3, n):
+                                if n == iv:
+                                    bound = _projection_bound(&cs, k[1], scope, builder)
+                            _: pass
+                _: pass
+            if len(bound) == 0:
+                return (-1, "", "")
+            post := false
+            match ip[1]:
+                ast.Assign(l2, n, k):
+                    if n == iv and len(k) == 1:
+                        match k[0]:
+                            ast.Binop(l3, op, es):
+                                if op == "+" and len(es) == 2:
+                                    match es[0]:
+                                        ast.Name(l4, n4):
+                                            if n4 == iv:
+                                                match es[1]:
+                                                    ast.IntLit(l5, v): post = v == 1
+                                                    _: pass
+                                        _: pass
+                            _: pass
+                _: pass
+            if not post:
+                return (-1, "", "")
+            last := _projection_loop_body(&cs, b, root, fields, iv, true)
+            return (last, iv, bound)
+        _: pass
+    return (-1, "", "")
+
+# -2 refuses an invalidating span; -1 means construction is the final write.
+fn _projection_span(cs: inout C, body: [ast.Stmt], start: int, root: string, fields: [string]) -> int:
+    update := -1
+    loop := false
+    for i := start + 1; i < len(body) - 1; i += 1:
+        match body[i]:
+            ast.For3(l, ip, c, b):
+                inner, iv, bound := _projection_counted(&cs, body[i], root, fields, body, start)
+                if update >= 0 or inner < 0:
+                    return -2
+                update = i
+                loop = true
+            _:
+                step := _projection_step(&cs, body[i], root, fields)
+                if step < 0 or (step == 1 and loop):
+                    return -2
+                if step == 1:
+                    update = i
+    return update
+
 fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
+    return _block_projection(&cs, body, ind, false, -1)
+
+fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, update: int) -> string:
     m := _mark(&cs)
+    oldlocal := cs.ret_local
+    oldfields := cs.ret_fields
+    oldplaced := cs.ret_placed
+    oldpath := cs.projection
+    oldupdate := cs.ret_update
+    oldstore := cs.ret_store
+    oldinner := cs.ret_loop_inner
+    oldiv := cs.ret_loop_iv
+    oldbound := cs.ret_loop_bound
+    if inherit:
+        cs.ret_update = update
+    else:
+        cs.ret_update = -1
+        cs.ret_local = ""
+        cs.ret_fields = []string
+        cs.ret_loop_inner = -1
+        cs.ret_loop_iv = ""
+        cs.ret_loop_bound = ""
+    cs.ret_store = false
+    cs.ret_placed = false
+    cs.projection = []string
     out := ""
-    for s in body:
-        # -g: src/tychoc.c:13168 puts a `#line` before every statement so a
+    for i := 0; i < len(body); i += 1:
+        s := body[i]
+        # Keep obsolete builder versions local; only the final write escapes.
+        if i < len(body) - 1 and len(cs.ret_local) == 0 and _heap(&cs, cs.cur_ret):
+            match s:
+                ast.Decl(l, n, ann, rhs, vv):
+                    if len(rhs) == 1 and len(vv) == 0 and not _hasorr(rhs[0]) and _projection_ctor(&cs, rhs[0]):
+                        match body[len(body) - 1]:
+                            ast.ReturnS(l2, k):
+                                if len(k) == 1:
+                                    fields := _projection_fields(k[0], n)
+                                    if len(fields) > 0:
+                                        update := _projection_span(&cs, body, i, n, fields)
+                                        if update >= -1:
+                                            cs.ret_local = n
+                                            cs.ret_fields = fields
+                                            cs.ret_update = update
+                                            if update >= 0:
+                                                inner, iv, bound := _projection_counted(&cs, body[update], n, fields, body, i)
+                                                cs.ret_loop_inner = inner
+                                                cs.ret_loop_iv = iv
+                                                cs.ret_loop_bound = bound
+                            _: pass
+                _: pass
+        # -g: src/tychoc.c:13400 puts a `#line` before every statement so a
         # debugger steps the .ty source rather than the generated C. The path
         # is C string syntax: escape backslashes and quotes like tychoc does.
         if len(cs.dbgfile) > 0:
             out = out + "#line " + str(ast.sline_of(s)) + " \"" + _c_escape_path(cs.dbgfile) + "\"\n"
+        cs.ret_store = i == cs.ret_update
         out = out + _stmt(&cs, s, ind)
     out = out + _finalizers(&cs, m, ind)
     _restore(&cs, m)
+    cs.ret_local = oldlocal
+    cs.ret_fields = oldfields
+    cs.ret_placed = oldplaced
+    cs.projection = oldpath
+    cs.ret_update = oldupdate
+    cs.ret_store = oldstore
+    cs.ret_loop_inner = oldinner
+    cs.ret_loop_iv = oldiv
+    cs.ret_loop_bound = oldbound
     return out
 
 # `parallel for i in lo..<hi:` -- the body is OUTLINED into a worker taking the
@@ -5667,7 +6067,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             _: pass
     # A DECLARED width is the programmer's, so it fails closed rather than
     # clamping silently; the bare form is ncpu() and clamps by design
-    # (src/tychoc.c:13126).
+    # (src/tychoc.c:13358).
     pkg := ""
     if len(w) == 1:
         pkg = "    if (_pk < 1 || _pk > 64) tycho_die(\"parallel width out of range 1..64\");\n"
@@ -5710,6 +6110,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             svc := cs.vcn
             svcaps := cs.vcaps
             svo := cs.vown
+            svlocal := cs.vlocal
             sva := cs.vacc
             sar := cs.arena
             scr := cs.cur_ret
@@ -5718,6 +6119,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             cs.vcn = []string
             cs.vcaps = []int
             cs.vown = []string
+            cs.vlocal = []bool
             cs.vacc = []string
             sas := cs.ascope
             cs.ascope = []string
@@ -5753,6 +6155,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             cs.vcn = svc
             cs.vcaps = svcaps
             cs.vown = svo
+            cs.vlocal = svlocal
             cs.vacc = sva
             cs.arena = sar
             cs.ascope = sas
@@ -5858,6 +6261,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     svc := cs.vcn
     svcaps := cs.vcaps
     svo := cs.vown
+    svlocal := cs.vlocal
     sva := cs.vacc
     sar := cs.arena
     scr := cs.cur_ret
@@ -5866,6 +6270,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vcn = []string
     cs.vcaps = []int
     cs.vown = []string
+    cs.vlocal = []bool
     cs.vacc = []string
     sas := cs.ascope
     cs.ascope = []string
@@ -5899,6 +6304,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vcn = svc
     cs.vcaps = svcaps
     cs.vown = svo
+    cs.vlocal = svlocal
     cs.vacc = sva
     cs.arena = sar
     cs.ascope = sas
@@ -5991,6 +6397,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     svc := cs.vcn
     svcaps := cs.vcaps
     svo := cs.vown
+    svlocal := cs.vlocal
     sva := cs.vacc
     sar := cs.arena
     scr := cs.cur_ret
@@ -5999,6 +6406,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vcn = []string
     cs.vcaps = []int
     cs.vown = []string
+    cs.vlocal = []bool
     cs.vacc = []string
     sas := cs.ascope
     cs.ascope = []string
@@ -6044,6 +6452,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vcn = svc
     cs.vcaps = svcaps
     cs.vown = svo
+    cs.vlocal = svlocal
     cs.vacc = sva
     cs.arena = sar
     cs.ascope = sas
@@ -6237,7 +6646,7 @@ fn _cunwrap(s: string) -> string:
 fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
     match s:
         ast.PassS(l):
-            return ""                  # src/tychoc.c:14025 -- the no-op emits none
+            return ""                  # src/tychoc.c:14285 -- the no-op emits none
         ast.ExprStmt(l, es):
             # src/tychoc.c@S_EXPR: a top-level statement's transients live in a
             # per-statement arena. Only at the proc top level, and never around
@@ -6271,6 +6680,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                     cs.vcaps[len(cs.vcaps) - 1] = _capof(&cs, ann[0])
                 slot := len(cs.vnames) - 1
                 body := _stmt(&cs, parse.rewrite_tails(vv[0], "assign", n, []ast.Expr), ind)
+                cs.vlocal[slot] = true
                 if cs.vtypes[slot] == "?":
                     _bad("a value-if/value-match with no value tail to type it")
                 state := _append_binding(&cs, n, cs.vtypes[slot], cn0, ind)
@@ -6309,7 +6719,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # something builds that call's transients in a per-statement arena.
             sav5 := cs.arena
             uset := sav5 == "&_scope" and _hascall(rhs[0]) and not _hasorr(rhs[0])
-            # src/tychoc.c:13199 -- the return-slot move. A local this function
+            # src/tychoc.c:13431 -- the return-slot move. A local this function
             # hands back by name is built in the caller's arena from birth, so
             # the return copies nothing. Top level only (_curown is still the
             # proc's own &_scope), never a loop or if-body scratch. The arena
@@ -6319,13 +6729,18 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # whole function: prongB dispatch kept every pass's closures alive,
             # 62 MB against ./tychoc's 1 MB. _push already records _curown.
             own5 := _curown(&cs)
-            if _curown(&cs) == "&_scope" and _heap(&cs, cs.cur_ret) and _isesc(&cs, n):
+            if _curown(&cs) == "&_scope" and _heap(&cs, cs.cur_ret) and _isesc(&cs, n) and cs.ret_local != n:
                 own5 = "_parent"
             if uset:
                 cs.arena = "&_t"
             elif own5 == "_parent":
                 cs.arena = "_parent"
+            path5 := cs.projection
+            cs.projection = []string
+            if cs.ret_local == n and cs.ret_update < 0:
+                cs.projection = cs.ret_fields
             c, t := _rhs3(&cs, rhs[0], want, own5, true)
+            cs.projection = path5
             cs.arena = sav5
             if len(want) > 0:
                 t = want
@@ -6334,7 +6749,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c = _sub_t(c, own5)
             if uset and not _uses_t(c):
                 uset = false
-            # src/tychoc.c:13243 -- `y := f(y)` must land in a temp declared
+            # src/tychoc.c:13475 -- `y := f(y)` must land in a temp declared
             # BEFORE the new C local, or the initialiser reads the inner
             # uninitialised one.
             # A place rooted in a CALL result -- `op := cur(ts, p).text` -- is the
@@ -6348,6 +6763,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # the initializer would make C resolve that call to the local.
             sh := _refslocal(rhs[0], n)
             cn := _push(&cs, n, t)
+            cs.vlocal[len(cs.vlocal) - 1] = true
             if len(ann) > 0:
                 cs.vcaps[len(cs.vcaps) - 1] = _capof(&cs, ann[0])
             if own5 == "_parent" and _heap(&cs, t):
@@ -6372,7 +6788,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                         "; arena_free(&_t); } " + _ctyz(&cs, t) + cn + " = _sh_" + n + ";\n"
             return out9 + _append_binding(&cs, n, t, cn, ind)
         ast.ConstS(l, n, k):
-            # src/tychoc.c:14024 -- a local const emits NO runtime storage; each
+            # src/tychoc.c:14284 -- a local const emits NO runtime storage; each
             # use folds to the literal. Binding the C "name" to the literal code
             # itself makes _vcname do the folding at every read.
             c, t := _ex(&cs, k[0])
@@ -6438,14 +6854,14 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                                 # intermediates die with the statement -- in the
                                 # function's arena they lived to the end of the
                                 # run (bench/json: 5.7 GiB).
-                                # src/tychoc.c:13407-13413 -- the appended terms
+                                # src/tychoc.c:13646-13652 -- the appended terms
                                 # are built in the ACCUMULATOR'S arena, one plain
                                 # statement each. The `_t` scratch this used was
                                 # an optimisation the reference does not have.
                                 ow9 := _ownerof(&cs, ast.Name(l, n))
                                 sav9 := cs.arena
                                 cs.arena = ow9
-                                # src/tychoc.c:13359-13401 -- two or more pieces
+                                # src/tychoc.c:13598-13640 -- two or more pieces
                                 # are pre-evaluated into `_ap<n>` temps against
                                 # the accumulator's ORIGINAL value, THEN appended
                                 # in source order. The first append grows the
@@ -6498,7 +6914,19 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # transient f() built alive for the rest of the function.
             if len(t) == 0 or _heap(&cs, t):
                 cs.arena = ow4
+            cs.rebuild_name = ""
+            cs.rebuild_paths = []string
+            if strings.starts_with(t, "S~") and _rebuild_owned(&cs, n, ow4):
+                match k[0]:
+                    ast.Call(l4, q4, ctor4, tas4, args4):
+                        paths4 := []string
+                        if _rebuild_reads(&cs, k[0], n, &paths4):
+                            cs.rebuild_name = n
+                            cs.rebuild_paths = paths4
+                    _: pass
             rc, rt := _rhs3(&cs, k[0], t, ow4, true)
+            cs.rebuild_name = ""
+            cs.rebuild_paths = []string
             cs.arena = sa4
             if len(t) == 0:
                 _vset(&cs, n, rt)
@@ -6588,6 +7016,11 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 _: pass
             lc, lt := _lvalue(&cs, k[0])
             ow := _ownerof(&cs, k[0])
+            if cs.ret_store:
+                if len(cs.ret_loop_bound) > 0:
+                    ow = "((" + _vcname(&cs, cs.ret_loop_iv) + " == (" + cs.ret_loop_bound + " - 1)) ? _parent : " + ow + ")"
+                else:
+                    ow = "_parent"
             rhs2 := k[1]
             oldpre := ""
             match rhs2:
@@ -6601,6 +7034,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             sav2 := cs.arena
             cs.arena = ow
             rc2, rt2 := _rhs2(&cs, rhs2, lt, ow)
+            if cs.ret_store:
+                cs.ret_placed = true
             cs.arena = sav2
             # The old value is read before the RHS for compound assignment; the
             # RHS is then materialized before forming the final place address.
@@ -6626,12 +7061,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # finalizers sit after this jump and never run.
             return ind + "{ " + _oneline(_lpfin(&cs)) + "break; }\n"
         ast.ContinueS(l):
-            # src/tychoc.c:14040 -- inside a three-clause `for` the post clause
+            # src/tychoc.c:14300 -- inside a three-clause `for` the post clause
             # sits at the body's end, so `continue` must jump TO it, not over it.
             if len(cs.lpost) > 0 and cs.lpost[len(cs.lpost) - 1] >= 0:
                 return ind + "{ " + _oneline(_lpfin(&cs)) + "goto _post" + str(cs.lpost[len(cs.lpost) - 1]) + "; }\n"
             return ind + "continue;\n"
         ast.IfS(l, arms, e):
+            projected_if := cs.ret_store and cs.ret_loop_inner >= 0
             pieces := []string
             for i := 0; i < len(arms); i += 1:
                 cc0, ct := _ex(&cs, arms[i].cond[0])
@@ -6640,17 +7076,23 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                     push(pieces, ind + "if (" + cc + ") {\n")
                 else:
                     push(pieces, " else if (" + cc + ") {\n")
-                push(pieces, _block(&cs, arms[i].body, ind + "    "))
+                update := -1
+                if projected_if:
+                    update = _projection_last_store(arms[i].body)
+                push(pieces, _block_projection(&cs, arms[i].body, ind + "    ", projected_if, update))
                 push(pieces, ind + "}")
             if len(e) > 0:
                 push(pieces, " else {\n")
-                push(pieces, _block(&cs, e, ind + "    "))
+                update := -1
+                if projected_if:
+                    update = _projection_last_store(e)
+                push(pieces, _block_projection(&cs, e, ind + "    ", projected_if, update))
                 push(pieces, ind + "}")
             push(pieces, "\n")
             return _join_code(pieces)
         ast.WhileS(l, c, b):
             # the condition is re-evaluated every iteration but belongs to the
-            # ENCLOSING arena, exactly as src/tychoc.c:14054 generates it
+            # ENCLOSING arena, exactly as src/tychoc.c:14314 generates it
             svw := cs.arena
             idw := _fresh(&cs, "_scr")
             lw := cs.lbl
@@ -6690,7 +7132,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             m := _mark(&cs)
             # init runs once and the loop variable is written by the post clause
             # and by the body, so its storage must NOT be the scratch a reset
-            # recycles -- src/tychoc.c:14072-14079 says exactly this.
+            # recycles -- src/tychoc.c:14332-14339 says exactly this.
             sv3 := cs.arena
             k3 := cs.tmp
             id3 := _fresh(&cs, "_scr")
@@ -6709,10 +7151,13 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if len(ea3) > 0:
                 push(cs.elv, ev3)
                 push(cs.ela, ea3)
-            # the post clause is the LAST statement of the body, not a C for
-            # header -- src/tychoc.c:14070-14104 -- and it is generated after it
+            # The post and continue target are in the loop scope, outside the
+            # body's C block, so body-local shadows cannot capture post reads.
             fo3, fn3 := _fuse_open(&cs, b, ind + "    ", c)
-            bd3 := _block(&cs, b, ind + "        ")
+            projected_loop := cs.ret_store and cs.ret_loop_inner >= 0
+            bd3 := _block_projection(&cs, b, ind + "            ", projected_loop, cs.ret_loop_inner)
+            if projected_loop:
+                cs.ret_placed = true
             post := _stmt(&cs, ip[1], ind + "        ")
             if len(ea3) > 0:
                 pop(cs.elv)
@@ -6742,7 +7187,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             fc3 := _fuse_close(&cs, fn3, ind + "    ")
             out := ind + "{\n" + ind + "    " + _trim_nl(init) + open3 + fo3 +
                 ind + "    while (" + cc + ") {\n" + res3 +
-                bd3 + lab3 + post + ind + "    }\n" + fc3 + clos3 + ind + "}\n"
+                ind + "        {\n" + bd3 + ind + "        }\n" + lab3 + post +
+                ind + "    }\n" + fc3 + clos3 + ind + "}\n"
             _restore(&cs, m)
             return out
         ast.ForIn(l, n, c, b, zpf):
@@ -7078,7 +7524,7 @@ fn _mut_es(k: [ast.Expr], nm: string) -> bool:
 
 fn _mut_arms(arms: [ast.Arm], nm: string) -> bool:
     for a in arms:
-        if _mut_b(a.body, nm):
+        if _mut_es(a.ch, nm) or _mut_b(a.body, nm):
             return true
     return false
 
@@ -7137,7 +7583,7 @@ fn _patv(cs: inout C, kind: string, v: int, nm: string) -> string:
         _bad("unknown name '" + nm + "' in a match pattern")
     return _ilit(v)
 
-# src/tychoc.c:13940 prints the arm's resolved value with %lld -- no suffix.
+# src/tychoc.c:14189 prints the arm's resolved value with %lld -- no suffix.
 fn _pats(cs: inout C, kind: string, v: int, nm: string) -> string:
     if kind == "name":
         return _patv(&cs, kind, v, nm)
@@ -7268,7 +7714,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             push(pats, ast.Pat("name", 0, 0, a.name, "", false))
         elif a.kind != "scalar":
             _bad("unsupported match arm on a scalar")
-        # src/tychoc.c:13939-13946 -- each piece is bare `_mN == K`, the
+        # src/tychoc.c:14188-14195 -- each piece is bare `_mN == K`, the
         # literal in plain decimal (the subject is already its own C type, so
         # the LL suffix an int expression carries is not written here), and the
         # pieces are joined by `||` with no parentheses at all.
@@ -7294,7 +7740,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     if hasdef2:
         out2 = out2 + ind + "    else {\n" + deflt2 + ind + "    }\n"
     else:
-        # src/tychoc.c:13964 -- unreachable, and emitted anyway so the generated
+        # src/tychoc.c:14213 -- unreachable, and emitted anyway so the generated
         # C provably returns on every path.
         out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n"
     return out2 + ind + "}\n"
@@ -7995,7 +8441,7 @@ fn _recycle_defs(cs: inout C) -> (string, string):
     return (proto, body)
 
 # A deep hash per hashable struct/tuple, folded FNV-style from the per-process
-# seed so that ==-equal values always hash equal (src/tychoc.c:15094).
+# seed so that ==-equal values always hash equal (src/tychoc.c:15354).
 fn _hash_defs(cs: inout C) -> (string, string):
     pr := ""
     fb := ""
@@ -8298,7 +8744,7 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                 else:
                     allbare = false
             # a fieldless enum is stored in a map's key table as its TAG, so keys()
-            # rebuilds the value through this table (src/tychoc.c:14915).
+            # rebuilds the value through this table (src/tychoc.c:15175).
             if allbare and len(cs.eds[i].vnames) > 0:
                 tab := "static E_" + n + " *const _sing_tab_" + n + "[] = {"
                 for t := 0; t < len(cs.eds[i].vnames); t += 1:
@@ -9075,7 +9521,7 @@ fn program_in(program: types.Program, dbgf: string) -> string:
     # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
     # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.
     # ./tychoc emits these INTERLEAVED with the ordinary prototypes (one loop
-    # over the whole proc list, src/tychoc.c:15695), so the block lands directly
+    # over the whole proc list, src/tychoc.c:15955), so the block lands directly
     # in front of them -- not up in the type header.
     xpro := ""
     for xi := 0; xi < len(cs.fds); xi += 1:

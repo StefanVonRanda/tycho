@@ -1,0 +1,169 @@
+struct Record:
+    payload: [int]
+    tick: int
+struct Pair:
+    left: [int]
+    right: [int]
+struct Inner:
+    data: [int]
+    count: int
+struct Nested:
+    inner: Inner
+    other: [int]
+    tick: int
+struct Overlap:
+    inner: Inner
+    data: [int]
+struct Wrapped:
+    whole: Inner
+    part: Record
+struct GenericInner($T):
+    data: $T
+    count: int
+struct GenericOuter($T):
+    inner: GenericInner($T)
+    tick: int
+enum Box:
+    Item(Record)
+
+fn assert(ok: bool):
+    if not ok:
+        die("field rebuild assertion failed")
+
+fn inner_builder(data: [int], count: int) -> Inner:
+    return Inner(data, count)
+
+fn value_step(r: Record) -> Record:
+    r = Record(r.payload, r.tick + 1)
+    r.payload[0] = 77
+    return r
+fn inout_step(r: inout Record):
+    r = Record(r.payload, r.tick + 1)
+    r.payload[0] = 88
+fn sink_change(r: sink Record):
+    r.payload[0] = 180
+fn change(r: inout Record) -> int:
+    r.payload[0] = 42
+    return 1
+
+fn main():
+    r := Record([1, 2], 0)
+    saved := r
+    for i := 0; i < 40; i += 1:
+        r = Record(r.payload, r.tick + 1)
+    r.payload[0] = 9
+    assert(saved.payload[0] == 1 and saved.tick == 0)
+    assert(r.payload[0] == 9 and r.tick == 40)
+    later := Record(r.payload, r.tick)
+    later.payload[0] = 10
+    assert(r.payload[0] == 9)
+
+    pair := Pair([1], [2])
+    pair = Pair(pair.right, pair.left)
+    pair.left[0] = 7
+    assert(pair.right[0] == 1)
+    pair = Pair(pair.right, pair.right)
+    pair.left[0] = 8
+    assert(pair.right[0] == 1)
+
+    nested := Nested(Inner([3], 4), [5], 0)
+    nsaved := nested
+    for i := 0; i < 20; i += 1:
+        nested = Nested(Inner(nested.inner.data, nested.inner.count + 1), nested.other, nested.tick + 1)
+    nested.inner.data[0] = 30
+    nested.other[0] = 50
+    assert(nsaved.inner.data[0] == 3 and nsaved.other[0] == 5)
+    assert(nested.tick == 20 and nested.inner.count == 24 and nsaved.inner.count == 4)
+    nested = Nested(inner_builder(nested.inner.data, nested.inner.count + 1), nested.other, nested.tick + 1)
+    assert(nested.inner.count == 25 and nsaved.inner.data[0] == 3)
+
+    generic := GenericOuter(GenericInner([21], 0), 0)
+    generic_saved := generic
+    for i := 0; i < 10; i += 1:
+        generic = GenericOuter(GenericInner(generic.inner.data, generic.inner.count + 1), generic.tick + 1)
+    generic.inner.data[0] = 210
+    assert(generic_saved.inner.data[0] == 21 and generic.inner.count == 10)
+
+    overlap := Overlap(Inner([6], 0), [0])
+    overlap = Overlap(overlap.inner, overlap.inner.data)
+    overlap.inner.data[0] = 60
+    assert(overlap.data[0] == 6)
+    overlap = Overlap(Inner(overlap.inner.data, overlap.inner.count + 1), overlap.inner.data)
+    overlap.inner.data[0] = 600
+    assert(overlap.data[0] == 60)
+    wrapped := Wrapped(Inner([22], 0), Record([0], 0))
+    wrapped = Wrapped(wrapped.whole, Record(wrapped.whole.data, wrapped.whole.count + 1))
+    wrapped.whole.data[0] = 220
+    assert(wrapped.part.payload[0] == 22)
+
+    input := Record([11], 0)
+    output := value_step(input)
+    assert(input.payload[0] == 11 and output.payload[0] == 77)
+    old := input
+    inout_step(&input)
+    assert(old.payload[0] == 11 and input.payload[0] == 88)
+
+    effect := Record([12], 0)
+    effect = Record(effect.payload, change(&effect))
+    assert(effect.payload[0] == 12 and effect.tick == 1)
+
+    records := [Record([13], 0)]
+    for item in records:
+        item = Record(item.payload, item.tick + 1)
+        item.payload[0] = 130
+    assert(records[0].payload[0] == 13)
+
+    box := Item(Record([14], 0))
+    match box:
+        Item(item):
+            item = Record(item.payload, item.tick + 1)
+            item.payload[0] = 140
+    match box:
+        Item(item): assert(item.payload[0] == 14)
+
+    borrowed_box := Item(Record([17], 0))
+    match borrowed_box:
+        Item(borrowed):
+            local := borrowed
+            local = Record(local.payload, local.tick + 1)
+            local.payload[0] = 170
+    match borrowed_box:
+        Item(check): assert(check.payload[0] == 17)
+    sink_box := Item(Record([18], 0))
+    match sink_box:
+        Item(sink_borrowed):
+            sink_local := sink_borrowed
+            sink_change(sink_local)
+    match sink_box:
+        Item(sink_check): assert(sink_check.payload[0] == 18)
+
+    shadow := Record([15], 0)
+    if true:
+        shadow := Record([16], 0)
+        shadow = Record(shadow.payload, shadow.tick + 1)
+        shadow.payload[0] = 160
+    assert(shadow.payload[0] == 15)
+    total := 0
+    parallel for i in 0..<4:
+        local := Record([i], 0)
+        local = Record(local.payload, local.tick + 1)
+        total += local.payload[0] + local.tick
+    assert(total == 10)
+    total = 0
+    values := [1, 2]
+    parallel for v in values:
+        local := Record([v], 0)
+        local = Record(local.payload, local.tick + 1)
+        total += local.payload[0] + local.tick
+    assert(total == 5)
+    ch := channel(int, 2)
+    send(ch, 3)
+    send(ch, 4)
+    close(ch)
+    total = 0
+    parallel for v in ch:
+        local := Record([v], 0)
+        local = Record(local.payload, local.tick + 1)
+        total += local.payload[0] + local.tick
+    assert(total == 9)
+    println("field rebuild ok")

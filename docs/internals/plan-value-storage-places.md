@@ -23,7 +23,7 @@ One 8 KB line in 64 B chunks (128 appends), `tychoc` and `tychoc1` agree:
 
 Verdict: copying dominates. Compiler-side reuse is warranted; `Place` stays gated on reuse failing. Probe programs under `/tmp/opencode/` (not checked in); no repo change made for the measurement.
 
-Pre-fix compiler shape (historical baseline): whole-value moves only — move-on-last-use `src/tychoc.c:10871`, `sink` adopt `src/tychoc.c:10892`, construction `arg_into` `src/tychoc.c:11244`, self-rebuild `src/tychoc.c:11348`, return-slot `src/tychoc.c:10976`, match-payload borrow `src/tychoc.c:10934`; syntactic in-place (`is_self_append` `src/tychoc.c:11068`, map `src/tychoc.c:11093`, array `do_recycle` `src/tychoc.c:13290`); lexical arenas + loop `_scr` reset + `arena_recycle` freelist (`runtime/tycho_rt.c:706`). No field/partial move (refused `src/tychoc.c:11258`), no COW, no mid-scope subarenas.
+Pre-fix compiler shape (historical baseline): whole-value moves only — move-on-last-use `src/tychoc.c:10871`, `sink` adopt `src/tychoc.c:10892`, construction `arg_into` `src/tychoc.c:11464`, self-rebuild `src/tychoc.c:11568`, return-slot `src/tychoc.c:10978`, match-payload borrow `src/tychoc.c:10934`; syntactic in-place (`is_self_append` `src/tychoc.c:11070`, map `src/tychoc.c:11095`, array `do_recycle` `src/tychoc.c:13529`); lexical arenas + loop `_scr` reset + `arena_recycle` freelist (`runtime/tycho_rt.c:706`). No field/partial move (refused `src/tychoc.c:11478`), no COW, no mid-scope subarenas.
 
 ## Immediate actions from the language investigation
 
@@ -97,8 +97,10 @@ liveness and projection-state persistence remain open.
 
 ## Phase 2 — field-sensitive optimization (High / Medium).
 
-Avoid copying whole aggregates when only part survives: move/reuse individual field buffers of dead sources, skip untouched fields on nested update/return construction. Internal only, no partial-move surface (`src/tychoc.c:11258` stays).
+Avoid copying whole aggregates when only part survives: move/reuse individual field buffers of dead sources, skip untouched fields on nested update/return construction. Internal only, no partial-move surface (`src/tychoc.c:11478` stays).
 Gate: targeted fixtures (nested update copies field count, not aggregate size); `make ci` green.
+
+Both emitters reuse uniquely read, non-overlapping fields through nested concrete, generic and package-qualified constructors. Fresh constructor declarations followed by proven straight-line field replacements and a direct field return place only the final selected version in `_parent`; earlier versions and temporary siblings stay local. Three-clause loops with zero origin, unit step, a positive literal or proven-unchanged integer bound (a value parameter or same-block local initialized before the builder) and a non-borrowing body likewise place only the final iteration’s final replacement in `_parent`. Simple `if/else` updates qualify when both flat arms provably replace the selected field; only the chosen arm’s final replacement escapes. Skipped-update paths, nested flow and early exits retain copying. Runtime-empty loops copy the initial selected field at return. Unproven or borrowed bounds, counter mutation, whole-record rebinding, mutable borrows, other control flow and calls with unproven result-arena behavior retain copying. `tests/field_rebuild.sh`, `tests/return_projection.sh`, self-host fixpoint and targeted sanitizers pass. Full local CI (`scripts/ci.sh 200`, 2026-10-17) passed on the dirty implementation tree with the reported platform-specific skips; all 200 differential fuzz seeds scored with zero failures, skips or timeouts. Small isolated calls may need an additional local arena block: copy/occupied-offset reductions are not universal capacity or RSS gains.
 
 ## Phase 3 — inferred temporary regions (High / Medium).
 

@@ -95,7 +95,7 @@ rejects anything outside the scalar/string/`ptr` table, failing closed:
 - Link line assembled in one `cc` call: `src/tychoc.c:10522-10549`. Each
   `extern "Lib"` adds `-lLib` (`:6600` `add_link`). `--link/--shim/--pkg`
   passthrough at `:10840-10844`. Auto-discovered `<pkg>_shim.c` + `deps`
-  pkg-config at `:10584-10587`, `:3772-3797`, `:11529-11539`.
+  pkg-config at `:10584-10587`, `:3772-3797`, `:11749-11759`.
 - String return is arena-copied so Tycho never holds a foreign pointer
   (`src/tychoc.c:7534-7541`, `tycho_str_from_c`, NULL→`""`).
 
@@ -146,7 +146,7 @@ The rule (`docs/reference/ffi.md:88-105`): a returned `string` is copied into th
 caller's arena; `NULL` becomes `""`. An optimization — the **read-once
 borrow** — skips the copy when the result is the *direct* argument of
 `len()`/`print()`/`println()` (`src/tychoc.c@is_extern_str_call`, applied at
-`src/tychoc.c:12031` for `len`, `:12166` and `:12173` for print/println). Footguns:
+`src/tychoc.c:12251` for `len`, `:12386` and `:12393` for print/println). Footguns:
 
 - `NULL → ""` silently erases the C/Tycho distinction between "no value" and
   "empty string". A caller that needs to detect absence cannot (the crypto

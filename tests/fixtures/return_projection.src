@@ -1,0 +1,431 @@
+struct Pair:
+    keep: [int]
+    discard: [int]
+struct Inner:
+    data: [int]
+    count: int
+struct Outer:
+    inner: Inner
+    discard: [int]
+struct Generic($T):
+    keep: $T
+    discard: [int]
+struct Rows:
+    keep: [[int]]
+    discard: [int]
+struct Texts:
+    keep: string
+    discard: [int]
+struct Maybe:
+    keep: Option([int])
+    discard: int
+
+fn check(ok: bool):
+    if not ok:
+        die("return projection assertion failed")
+fn flat(src: [int]) -> [int]:
+    r := Pair(src, [99])
+    return r.keep
+fn nested() -> [int]:
+    r := Outer(Inner([2, 3], 0), [99])
+    return r.inner.data
+fn named() -> [int]:
+    r := Pair(discard: [99], keep: [4])
+    return r.keep
+fn generic(src: [int]) -> [int]:
+    r := Generic(src, [99])
+    return r.keep
+fn parameter(r: Pair) -> [int]:
+    return r.keep
+fn make_inner() -> Inner:
+    return Inner([5], 0)
+fn intermediate_call() -> [int]:
+    r := Outer(make_inner(), [99])
+    return r.inner.data
+fn nonadjacent() -> [int]:
+    r := Pair([6], [99])
+    r.keep[0] += 1
+    return r.keep
+fn discarded() -> [int]:
+    println("discarded once")
+    return [99]
+fn effects() -> [int]:
+    r := Pair([8], discarded())
+    return r.keep
+fn branch(flag: bool) -> [int]:
+    if flag:
+        r := Outer(Inner([9], 0), [99])
+        return r.inner.data
+    r := Pair([10], [99])
+    return r.keep
+fn more(src: [int]) -> [int]:
+    return [src[0] + 1]
+fn finish(src: [int], before: [int], between: [int]) -> [int]:
+    check(before[0] == 20 and between[0] == 21 and src[0] == 21)
+    return [src[0] + 1]
+fn builder(src: [int]) -> [int]:
+    r := Pair(src, [99])
+    before := r.keep
+    r.keep = more(r.keep)
+    between := r.keep
+    r.keep = finish(r.keep, before, between)
+    return r.keep
+fn nested_builder() -> [int]:
+    r := Outer(make_inner(), [99])
+    r.inner.data = more(r.inner.data)
+    r.inner.data = more(r.inner.data)
+    return r.inner.data
+fn replace_all(r: inout Pair) -> [int]:
+    r = Pair([30], [99])
+    return [31]
+fn whole_borrow() -> [int]:
+    r := Pair([29], [99])
+    r.keep = replace_all(&r)
+    return r.keep
+fn rebind_builder() -> [int]:
+    r := Pair([32], [99])
+    r = Pair([33], [99])
+    r.keep = more(r.keep)
+    return r.keep
+fn loop_finish(src: [int], previous: [int], original: [int], i: int) -> [int]:
+    check(original[0] == 20 and previous[0] == 20 + 2 * i and src[0] == 21 + 2 * i)
+    return more(src)
+fn loop_builder(src: [int]) -> [int]:
+    r := Pair(src, [99])
+    original := r.keep
+    for i := 0; i < 4; i += 1:
+        previous := r.keep
+        r.keep = more(r.keep)
+        r.keep = loop_finish(r.keep, previous, original, i)
+    return r.keep
+fn zero_loop() -> [int]:
+    r := Pair([40], [99])
+    for i := 0; i < 0; i += 1:
+        r.keep = more(r.keep)
+    return r.keep
+fn dynamic_loop(n: int) -> [int]:
+    r := Pair([50], [99])
+    for i := 0; i < n; i += 1:
+        r.keep = more(r.keep)
+    return r.keep
+fn local_loop(n: int) -> [int]:
+    limit := n
+    r := Pair([120], [99])
+    for i := 0; i < limit; i += 1:
+        r.keep = more(r.keep)
+        r.keep = more(r.keep)
+    return r.keep
+fn count_items(items: [int], calls: inout int) -> int:
+    calls += 1
+    return len(items)
+fn local_length(src: [int], calls: inout int) -> [int]:
+    items := src
+    limit := count_items(items, &calls)
+    items = [99]
+    r := Pair([130 + items[0] - 99], [99])
+    for i := 0; i < limit; i += 1:
+        r.keep = more(r.keep)
+    return r.keep
+fn local_shadow(n: int) -> [int]:
+    limit := n
+    r := Pair([140], [99])
+    for i := 0; i < limit; i += 1:
+        limit := 0
+        r.keep = more(r.keep) + [limit]
+    return r.keep
+fn local_rebind(n: int) -> [int]:
+    limit := n
+    r := Pair([150], [99])
+    for i := 0; i < limit; i += 1:
+        r.keep = more(r.keep)
+        limit -= 1
+    return r.keep
+fn local_borrow(n: int) -> [int]:
+    limit := n
+    r := Pair([160], [99])
+    for i := 0; i < limit; i += 1:
+        r.keep = borrow_limit(r.keep, &limit)
+    return r.keep
+fn local_self_shadow(n: int) -> [int]:
+    limit := n
+    if true:
+        limit := limit
+        r := Pair([170], [99])
+        for i := 0; i < limit; i += 1:
+            r.keep = more(r.keep)
+        return r.keep
+    return [0]
+fn branch_finish(src: [int], previous: [int], original: [int], i: int) -> [int]:
+    check(previous[0] == 200 + 2 * i and original[0] == 200 and src[0] == 201 + 2 * i)
+    return more(src)
+fn branch_builder(src: [int], n: int) -> [int]:
+    r := Pair(src, [99])
+    original := r.keep
+    for i := 0; i < n; i += 1:
+        if i % 2 == 0:
+            previous := r.keep
+            r.keep = more(r.keep)
+            r.keep = branch_finish(r.keep, previous, original, i)
+        else:
+            previous := r.keep
+            r.keep = more(r.keep)
+            r.keep = branch_finish(r.keep, previous, original, i)
+    return r.keep
+fn pick_branch(i: int) -> bool:
+    println("branch condition")
+    return i % 2 == 0
+fn branch_trace(n: int) -> [int]:
+    r := Pair([220], [99])
+    for i := 0; i < n; i += 1:
+        if pick_branch(i):
+            r.keep = more(r.keep)
+        else:
+            r.keep = more(r.keep)
+            r.keep = more(r.keep)
+    return r.keep
+fn branch_skipped(n: int) -> [int]:
+    r := Pair([230], [99])
+    for i := 0; i < n; i += 1:
+        if i < n - 1:
+            r.keep = more(r.keep)
+    return r.keep
+fn branch_early(n: int) -> [int]:
+    r := Pair([240], [99])
+    for i := 0; i < n; i += 1:
+        if i % 2 == 0:
+            r.keep = more(r.keep)
+            break
+        else:
+            r.keep = more(r.keep)
+    return r.keep
+fn branch_shadow(n: int) -> [int]:
+    r := Pair([250], [99])
+    for i := 0; i < n; i += 1:
+        if i % 2 == 0:
+            i := 0
+            r.keep = more(r.keep) + [i]
+        else:
+            r.keep = more(r.keep)
+    return r.keep
+fn shrink_bound(n: inout int) -> bool:
+    n -= 1
+    return true
+fn branch_mutable(n: int) -> [int]:
+    r := Pair([260], [99])
+    for i := 0; i < n; i += 1:
+        if shrink_bound(&n):
+            r.keep = more(r.keep)
+        else:
+            r.keep = more(r.keep)
+    return r.keep
+fn more_rows(src: [[int]]) -> [[int]]:
+    return [[src[0][0] + 1]]
+fn dynamic_rows(n: int) -> [[int]]:
+    r := Rows([[10]], [99])
+    for i := 0; i < n; i += 1:
+        r.keep = more_rows(r.keep)
+    return r.keep
+fn more_inner(src: Inner) -> Inner:
+    return Inner([src.data[0] + 1], src.count + 1)
+fn dynamic_inner(n: int) -> Inner:
+    r := Outer(Inner([20], 0), [99])
+    for i := 0; i < n; i += 1:
+        r.inner = more_inner(r.inner)
+    return r.inner
+fn more_text(src: string) -> string:
+    return src + "x"
+fn dynamic_text(n: int) -> string:
+    r := Texts("a", [99])
+    for i := 0; i < n; i += 1:
+        r.keep = more_text(r.keep)
+    return r.keep
+fn borrow_limit(src: [int], n: inout int) -> [int]:
+    n -= 1
+    return more(src)
+fn borrowed_bound(n: int) -> [int]:
+    r := Pair([60], [99])
+    for i := 0; i < n; i += 1:
+        r.keep = borrow_limit(r.keep, &n)
+    return r.keep
+fn shadow_bound(n: int) -> [int]:
+    r := Pair([70], [99])
+    for i := 0; i < n; i += 1:
+        n := 0
+        r.keep = more(r.keep) + [n]
+    return r.keep
+fn inout_bound(n: inout int) -> [int]:
+    r := Pair([80], [99])
+    for i := 0; i < n; i += 1:
+        r.keep = more(r.keep)
+    return r.keep
+fn changed_bound(n: int) -> [int]:
+    r := Pair([90], [99])
+    for i := 0; i < n; i += 1:
+        r.keep = more(r.keep)
+        n -= 1
+    return r.keep
+fn tick(calls: inout int) -> [int]:
+    calls += 1
+    return [7]
+fn dynamic_effects(n: int, calls: inout int) -> [int]:
+    r := Pair(tick(&calls), [99])
+    for i := 0; i < n; i += 1:
+        r.keep = more(r.keep)
+    return r.keep
+fn break_loop(n: int) -> [int]:
+    r := Pair([60], [99])
+    for i := 0; i < n; i += 1:
+        r.keep = more(r.keep)
+        if i == 1:
+            break
+    return r.keep
+fn continue_loop(n: int) -> [int]:
+    r := Pair([70], [99])
+    for i := 0; i < n; i += 1:
+        if i == 3:
+            continue
+        r.keep = more(r.keep)
+    return r.keep
+fn changed_index_loop() -> [int]:
+    r := Pair([80], [99])
+    for i := 0; i < 4; i += 1:
+        r.keep = more(r.keep)
+        i += 1
+    return r.keep
+fn advance_index(src: [int], i: inout int) -> [int]:
+    i += 1
+    return more(src)
+fn borrowed_index_loop() -> [int]:
+    r := Pair([90], [99])
+    for i := 0; i < 4; i += 1:
+        r.keep = advance_index(r.keep, &i)
+    return r.keep
+fn after_loop() -> [int]:
+    r := Pair([100], [99])
+    for i := 0; i < 4; i += 1:
+        r.keep = more(r.keep)
+    r.keep = more(r.keep)
+    return r.keep
+fn shadowed_index_loop() -> [int]:
+    r := Pair([110], [99])
+    for i := 0; i < 4; i += 1:
+        i := 100
+        r.keep = more([i])
+    return r.keep
+fn builtin_operand() -> [[int]]:
+    xs := [[40]]
+    r := Rows([[0]], [99])
+    r.keep = [pop(xs)]
+    return r.keep
+fn condition(flag: bool) -> Option(int):
+    if flag:
+        return Some(0)
+    return None
+fn early(flag: bool) -> Option([int]):
+    r := Maybe(Some([11]), condition(flag) or_return)
+    return r.keep
+
+fn main():
+    src := [1]
+    a := flat(src)
+    a[0] = 100
+    check(src[0] == 1)
+    b := nested()
+    c := named()
+    d := generic(src)
+    src[0] = 101
+    check(a[0] == 100 and b[0] == 2 and c[0] == 4 and d[0] == 1)
+    p := Pair([12], [99])
+    e := parameter(p)
+    e[0] = 120
+    check(p.keep[0] == 12)
+    f := intermediate_call()
+    g := nonadjacent()
+    h := effects()
+    i := branch(true)
+    j := branch(false)
+    check(f[0] == 5 and g[0] == 7 and h[0] == 8 and i[0] == 9 and j[0] == 10)
+    input := [20]
+    built := builder(input)
+    built[0] = 220
+    check(input[0] == 20)
+    built_again := builder(input)
+    check(built_again[0] == 22 and built[0] == 220)
+    nb := nested_builder()
+    wb := whole_borrow()
+    rb := rebind_builder()
+    looped := loop_builder(input)
+    zero := zero_loop()
+    dynamic_zero := dynamic_loop(0)
+    dynamic_many := dynamic_loop(5)
+    dynamic_negative := dynamic_loop(-9223372036854775807 - 1)
+    local_many := local_loop(4)
+    local_zero := local_loop(0)
+    local_negative := local_loop(-9223372036854775807 - 1)
+    length_calls := 0
+    from_length := local_length([1, 2, 3, 4], &length_calls)
+    length_zero := local_length([], &length_calls)
+    local_shadowed := local_shadow(4)
+    local_changed := local_rebind(4)
+    local_borrowed := local_borrow(4)
+    self_shadowed := local_self_shadow(4)
+    branch_input := [200]
+    branch_even := branch_builder(branch_input, 4)
+    branch_odd := branch_builder(branch_input, 3)
+    branch_zero := branch_builder(branch_input, 0)
+    branch_negative := branch_builder(branch_input, -1)
+    branch_traced := branch_trace(4)
+    branch_empty := branch_trace(0)
+    skipped := branch_skipped(4)
+    early_branch := branch_early(4)
+    shadow_branch := branch_shadow(4)
+    mutable_branch := branch_mutable(4)
+    branch_again := branch_builder(branch_input, 1)
+    branch_again[0] = 999
+    rows_zero := dynamic_rows(0)
+    rows_many := dynamic_rows(4)
+    inner_zero := dynamic_inner(-1)
+    inner_many := dynamic_inner(3)
+    text_zero := dynamic_text(0)
+    text_many := dynamic_text(4)
+    borrowed_limit := borrowed_bound(4)
+    shadowed_limit := shadow_bound(4)
+    count := 4
+    inout_limit := inout_bound(&count)
+    changed_limit := changed_bound(4)
+    calls := 0
+    effect_zero := dynamic_effects(0, &calls)
+    effect_many := dynamic_effects(3, &calls)
+    broke := break_loop(4)
+    continued := continue_loop(4)
+    changed := changed_index_loop()
+    borrowed := borrowed_index_loop()
+    after := after_loop()
+    shadowed := shadowed_index_loop()
+    looped_again := loop_builder(input)
+    looped_again[0] = 999
+    check(input[0] == 20 and looped[0] == 28 and zero[0] == 40)
+    check(dynamic_zero[0] == 50 and dynamic_many[0] == 55 and broke[0] == 62)
+    check(dynamic_negative[0] == 50 and rows_zero[0][0] == 10 and rows_many[0][0] == 14)
+    check(local_many[0] == 128 and local_zero[0] == 120 and local_negative[0] == 120)
+    check(from_length[0] == 134 and length_zero[0] == 130 and length_calls == 2)
+    check(local_shadowed[0] == 144 and local_changed[0] == 152 and local_borrowed[0] == 162)
+    check(self_shadowed[0] == 174)
+    check(branch_input[0] == 200 and branch_even[0] == 208 and branch_odd[0] == 206)
+    check(branch_zero[0] == 200 and branch_negative[0] == 200 and branch_traced[0] == 226 and branch_empty[0] == 220)
+    check(skipped[0] == 233 and early_branch[0] == 241 and shadow_branch[0] == 254 and mutable_branch[0] == 262)
+    check(inner_zero.data[0] == 20 and inner_many.data[0] == 23 and inner_many.count == 3)
+    check(text_zero == "a" and text_many == "axxxx")
+    check(borrowed_limit[0] == 62 and shadowed_limit[0] == 74 and inout_limit[0] == 84 and count == 4)
+    check(changed_limit[0] == 92 and calls == 2 and effect_zero[0] == 7 and effect_many[0] == 10)
+    check(continued[0] == 73 and changed[0] == 82 and borrowed[0] == 92)
+    check(after[0] == 105 and shadowed[0] == 101)
+    rows := builtin_operand()
+    check(nb[0] == 7 and wb[0] == 31 and rb[0] == 34 and rows[0][0] == 40)
+    match early(false):
+        Some(x): die("early return was lost")
+        None: pass
+    match early(true):
+        Some(x): check(x[0] == 11)
+        None: die("successful return was lost")
+    println("return projection ok")

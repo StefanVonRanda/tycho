@@ -196,6 +196,8 @@ test: tychoc tychoc1
 	@sh tests/accumulator_scope.sh
 	@sh tests/inout_append.sh
 	@sh tests/compiler_storage.sh
+	@sh tests/field_rebuild.sh
+	@sh tests/return_projection.sh
 	@sh tests/allocator_contract.sh
 	@python3 bench/allocator/directory.py
 	@sh tests/loop_temp_recycle.sh
@@ -547,7 +549,7 @@ fuzz-reject: tychoc1
 fuzz-leak: tychoc1
 	@python3 fuzz/run_leak.py $(N)
 
-.PHONY: allocator-contract allocator-baseline allocator-packing allocator-dual dir-packing allocator-directory allocator-callers allocator-peaks allocator-compiler compiler-storage
+.PHONY: allocator-contract allocator-baseline allocator-packing allocator-dual dir-packing allocator-directory allocator-callers allocator-peaks allocator-compiler compiler-storage field-rebuild return-projection
 allocator-contract:
 	@sh tests/allocator_contract.sh
 
@@ -579,6 +581,12 @@ allocator-compiler: tychoc1
 
 compiler-storage: tychoc tychoc1
 	@sh tests/compiler_storage.sh
+
+field-rebuild: tychoc tychoc1
+	@sh tests/field_rebuild.sh
+
+return-projection: tychoc tychoc1
+	@sh tests/return_projection.sh
 
 bench-guard: $(TYCHOC)
 	@TYCHOC=$(TYCHOC) sh bench/guard.sh

@@ -10944,8 +10944,10 @@ static int block_mutates(Stmt **body, int n, const char *nm) {
             return 1;
         if (block_mutates(s->body, s->nbody, nm)) return 1;
         if (block_mutates(s->els, s->nels, nm)) return 1;
-        for (int a = 0; a < s->narms; a++)
+        for (int a = 0; a < s->narms; a++) {
+            if (s->kind == S_SELECT && s->sel_ch && expr_mutates(s->sel_ch[a], nm)) return 1;
             if (block_mutates(s->arms[a].body, s->arms[a].nbody, nm)) return 1;
+        }
         if (s->ctrl && block_mutates(&s->ctrl, 1, nm)) return 1;   /* value if/match decl: a tail may pass &nm to an inout param */
     }
     return 0;
@@ -11213,7 +11215,174 @@ static int is_reinterpret_of_place(Expr *e) {
     return is_place(e->args[0]);
 }
 
+/* A proven final write before a projection return needs only that selected
+ * version in _parent. Earlier builder versions and siblings stay local. */
+typedef struct {
+    Stmt *decl, *update, *loop;
+    Expr *ctor, *ret;
+    int field;
+    const char *iv;
+    Expr *bound;
+} ReturnProjection;
+static ReturnProjection g_return_projection;
+static Expr *projection_ctor(Expr *init, Expr *base) {
+    if (base->kind == E_IDENT) return init->kind == E_STRUCTLIT ? init : NULL;
+    if (base->kind != E_FIELD) return NULL;
+    Expr *p = projection_ctor(init, base->lhs);
+    if (!p) return NULL;
+    StructDef *sd = &g_structs[STRUCT_ID(p->type)];
+    for (int i = 0; i < p->nargs; i++)
+        if (!strcmp(sd->fields[i].name, base->sval))
+            return p->args[i]->kind == E_STRUCTLIT ? p->args[i] : NULL;
+    return NULL;
+}
+static int rebuild_same(Expr *a, Expr *b);
+/* Updates may read the selected field, but not borrow/rebind its containing
+ * record. Unknown control flow keeps the ordinary arena/copy path. */
+static int projection_reads(Expr *e, Expr *ret, const char *root) {
+    if (!e) return 1;
+    if (e->kind == E_LAMBDA) return 0;
+    if (e->kind == E_CALL) {
+        Sig *cs = e->sval ? sig_find(e->sval) : NULL;
+        /* Builtins such as pop can return storage in their operand's arena,
+         * not the expression arena. Keep the final return copy for those. */
+        if (e->lhs || !cs || cs->builtin || cs->is_extern || shadows_builtin(e->sval)) return 0;
+    }
+    if (e->kind == E_IDENT) return strcmp(e->sval, root) != 0;
+    if (e->kind == E_ADDR && count_reads_e(e, root)) return 0;
+    if (e->kind == E_FIELD) {
+        const char *r = place_root(e);
+        if (r && !strcmp(r, root)) return rebuild_same(e, ret);
+    }
+    if (!projection_reads(e->lhs, ret, root) || !projection_reads(e->rhs, ret, root)) return 0;
+    for (int i = 0; i < e->nargs; i++)
+        if (!projection_reads(e->args[i], ret, root)) return 0;
+    return 1;
+}
+static int projection_no_addr(Expr *e) {
+    if (!e) return 1;
+    if (e->kind == E_ADDR || e->kind == E_LAMBDA) return 0;
+    if (!projection_no_addr(e->lhs) || !projection_no_addr(e->rhs)) return 0;
+    for (int i = 0; i < e->nargs; i++) if (!projection_no_addr(e->args[i])) return 0;
+    return 1;
+}
+static int projection_bound(Expr *e, Stmt **body, int n, int builder) {
+    if (e->kind == E_INT) return e->ival > 0;
+    if (e->kind != E_IDENT || e->type != T_INT || is_inout_param(e->sval)) return 0;
+    /* A same-block value declaration creates private scalar storage. Its
+     * initializer runs once, before the builder; only the suffix must be stable. */
+    for (int i = builder - 1; i >= 0; i--) {
+        Stmt *d = body[i];
+        if (d->kind == S_MDECL)
+            for (int j = 0; j < d->nnames; j++)
+                if (!strcmp(d->names[j], e->sval)) return 0;
+        if (d->kind != S_DECL || strcmp(d->name, e->sval)) continue;
+        return d->decl_type == T_INT && d->expr && !d->ctrl
+            && !stmts_unsafe(body + i + 1, n - i - 1, e->sval, e->sval)
+            && !block_mutates(body + i + 1, n - i - 1, e->sval);
+    }
+    /* Otherwise only an unmodified, unshadowed value parameter is known. */
+    return is_param(e->sval)
+        && !stmts_unsafe(g_proc_body, g_proc_nbody, e->sval, e->sval)
+        && !block_mutates(g_proc_body, g_proc_nbody, e->sval);
+}
+/* Validate a loop's write sequence. A simple if/else counts as a guaranteed
+ * write only when both flat arms replace the selected field. */
+static int projection_loop_steps(Stmt **body, int n, Expr *ret, const char *root,
+                                 const char *iv, int branches, Stmt **last) {
+    *last = NULL;
+    for (int i = 0; i < n; i++) {
+        Stmt *b = body[i];
+        if (b->kind == S_PASS) continue;
+        if (branches && b->kind == S_IF) {
+            Stmt *yes, *no;
+            if (expr_has_orreturn(b->expr) || !projection_reads(b->expr, ret, root)
+                || !projection_no_addr(b->expr)
+                || !projection_loop_steps(b->body, b->nbody, ret, root, iv, 0, &yes) || !yes
+                || !projection_loop_steps(b->els, b->nels, ret, root, iv, 0, &no) || !no) return 0;
+            *last = b;
+            continue;
+        }
+        if (b->kind == S_FIELDSET && rebuild_same(b->target, ret)) *last = b;
+        else if (b->kind != S_DECL || !b->expr || !strcmp(b->name, root)
+                 || !strcmp(b->name, iv)) return 0;
+        if (expr_has_orreturn(b->expr) || !projection_reads(b->expr, ret, root)
+            || !projection_no_addr(b->expr)) return 0;
+    }
+    return 1;
+}
+static Stmt *projection_last_store(Stmt **body, int n) {
+    for (int i = n - 1; i >= 0; i--)
+        if (body[i]->kind == S_FIELDSET) return body[i];
+    return NULL;
+}
+static int projection_is_update(Stmt *s) {
+    Stmt *u = g_return_projection.update;
+    if (s == u) return 1;
+    return u && u->kind == S_IF &&
+        (s == projection_last_store(u->body, u->nbody) || s == projection_last_store(u->els, u->nels));
+}
+/* A zero-origin unit-step loop with a stable bound. */
+static int projection_loop(Stmt *s, Expr *ret, const char *root, ReturnProjection *p,
+                           Stmt **body, int n, int builder) {
+    if (s->kind != S_FOR3 || s->nels != 1 || s->nbody < 2) return 0;
+    Stmt *init = s->els[0], *post = s->body[s->nbody-1];
+    if (init->kind != S_DECL || init->decl_type != T_INT || !init->expr
+        || init->expr->kind != E_INT || init->expr->ival != 0 || is_param(init->name)
+        || !strcmp(init->name, root)) return 0;
+    Expr *c = s->expr, *inc = post->expr;
+    if (!c || c->kind != E_BINOP || c->op != TK_LT || c->lhs->kind != E_IDENT
+        || strcmp(c->lhs->sval, init->name) || !projection_bound(c->rhs, body, n, builder)) return 0;
+    if (post->kind != S_ASSIGN || strcmp(post->name, init->name) || !inc
+        || inc->kind != E_BINOP || inc->op != TK_PLUS || inc->lhs->kind != E_IDENT
+        || strcmp(inc->lhs->sval, init->name) || inc->rhs->kind != E_INT || inc->rhs->ival != 1) return 0;
+    Stmt *last = NULL;
+    if (!projection_loop_steps(s->body, s->nbody - 1, ret, root, init->name, 1, &last) || !last) return 0;
+    p->loop = s; p->update = last; p->iv = init->name; p->bound = c->rhs;
+    return 1;
+}
+static ReturnProjection return_projection(Stmt **body, int n) {
+    ReturnProjection p = {0};
+    if (n < 2) return p;
+    Stmt *r = body[n-1];
+    if (r->kind != S_RETURN || !r->expr || r->expr->kind != E_FIELD
+        || !type_is_heap(r->expr->type)) return p;
+    Expr *root = r->expr;
+    while (root->kind == E_FIELD) root = root->lhs;
+    if (root->kind != E_IDENT) return p;
+    int start = n - 2;
+    while (start >= 0 && !(body[start]->kind == S_DECL && body[start]->name
+                           && !strcmp(body[start]->name, root->sval))) start--;
+    if (start < 0) return p;
+    Stmt *d = body[start], *update = NULL;
+    if (!d->expr || d->expr->kind != E_STRUCTLIT || expr_has_orreturn(d->expr)) return p;
+    for (int i = start + 1; i < n - 1; i++) {
+        Stmt *s = body[i];
+        if (s->kind == S_PASS) continue;
+        if (s->kind == S_FOR3) {
+            if (update || p.loop || !projection_loop(s, r->expr, root->sval, &p, body, n, start)) return (ReturnProjection){0};
+            continue;
+        }
+        if (s->kind == S_FIELDSET && rebuild_same(s->target, r->expr)) {
+            if (p.loop) return (ReturnProjection){0};
+            update = s;
+        }
+        else if (s->kind != S_DECL || !s->expr || !strcmp(s->name, root->sval)) return p;
+        if (expr_has_orreturn(s->expr) || !projection_reads(s->expr, r->expr, root->sval)) return p;
+    }
+    if (update || p.loop) { p.decl = d; if (update) p.update = update; p.ret = r->expr; return p; }
+    Expr *ctor = projection_ctor(d->expr, r->expr->lhs);
+    if (!ctor) return p;
+    StructDef *sd = &g_structs[STRUCT_ID(ctor->type)];
+    for (int i = 0; i < ctor->nargs; i++)
+        if (!strcmp(sd->fields[i].name, r->expr->sval)) {
+            p.decl = d; p.ctor = ctor; p.ret = r->expr; p.field = i;
+            break;
+        }
+    return p;
+}
 static int ret_must_copy(Expr *e) {
+    if (e == g_return_projection.ret) return 0;
     if (e->kind == E_IDENT) return !cv_in_parent(e->sval);
     /* see is_reinterpret_of_place: `return to_str(x)` is `return x` with a
      * different static type, so ask the same question of x (a _parent-owned
@@ -11241,12 +11410,63 @@ static int ret_must_copy(Expr *e) {
  * (self_rebuild_move) requires the name to occur exactly once in the RHS and
  * to be a same-arena local, so the move is unique and same-lifetime. */
 static const char *g_self_move_name = NULL;
+static Expr *g_field_rebuild = NULL;
+static const char *g_field_root = NULL;
+
+/* A reconstruction consumes only disjoint projections, never a visible part
+ * move. Keep the RHS pure so argument evaluation cannot invalidate a field. */
+static int rebuild_root(Expr *e) {
+    while (e && e->kind == E_FIELD) e = e->lhs;
+    return e && e->kind == E_IDENT && g_field_root && !strcmp(e->sval, g_field_root);
+}
+static int rebuild_same(Expr *a, Expr *b) {
+    if (!a || !b || a->kind != b->kind) return 0;
+    if (a->kind == E_IDENT) return !strcmp(a->sval, b->sval);
+    return a->kind == E_FIELD && !strcmp(a->sval, b->sval) && rebuild_same(a->lhs, b->lhs);
+}
+static int rebuild_overlap(Expr *a, Expr *b) {
+    for (Expr *p = a; p && p->kind == E_FIELD; p = p->lhs)
+        if (rebuild_same(p, b)) return 1;
+    for (Expr *p = b; p && p->kind == E_FIELD; p = p->lhs)
+        if (rebuild_same(p, a)) return 1;
+    return 0;
+}
+static int rebuild_scan(Expr *e, Expr *field, int *hits) {
+    if (!e) return 1;
+    switch (e->kind) {
+        case E_FIELD:
+            if (rebuild_root(e)) {
+                if (e == field) (*hits)++;
+                else if (rebuild_overlap(e, field)) return 0;
+                return 1;
+            }
+            return rebuild_scan(e->lhs, field, hits);
+        case E_IDENT: return !g_field_root || strcmp(e->sval, g_field_root);
+        case E_INT: case E_FLOAT: case E_STR: case E_CHAR: case E_BOOL: return 1;
+        case E_BINOP:
+            return rebuild_scan(e->lhs, field, hits) && rebuild_scan(e->rhs, field, hits);
+        case E_ARRLIT: case E_STRUCTLIT:
+            for (int i = 0; i < e->nargs; i++)
+                if (!rebuild_scan(e->args[i], field, hits)) return 0;
+            return 1;
+        default: return 0; /* calls, indexing and closures */
+    }
+}
+static int can_take_rebuild_field(Expr *arg, const char *arena) {
+    if (!g_field_rebuild || arg->kind != E_FIELD || !rebuild_root(arg)) return 0;
+    const char *owner = cv_arena(g_field_root);
+    if (!owner || strcmp(owner, arena)) return 0;
+    int hits = 0;
+    for (int i = 0; i < g_field_rebuild->nargs; i++)
+        if (!rebuild_scan(g_field_rebuild->args[i], arg, &hits)) return 0;
+    return hits == 1;
+}
 static char *arg_into(Type t, const char *arena, Expr *arg) {
     char *v = gen_expr(arg, arena);
     if (type_is_heap(t) && is_place(arg)) {
         int self_move = g_self_move_name && arg->kind == E_IDENT
             && !strcmp(arg->sval, g_self_move_name);
-        if (!self_move && !can_move_from(arg, arena)) {
+        if (!self_move && !can_take_rebuild_field(arg, arena) && !can_move_from(arg, arena)) {
             /* Val-style copy diagnostic: this deep copy is unavoidable AND
              * observable -- arg is a heap-bearing local still live after this
              * point (read again somewhere in the proc), so move-on-last-use
@@ -12181,6 +12401,16 @@ static int static_array_elem_type(Type t) {
 }
 
 static char *gen_expr(Expr *e, const char *arena) {
+    if (e == g_return_projection.ret && g_return_projection.loop) {
+        /* Only a nonempty loop performed the final caller-owned write.
+         * The projection is a pure field path; neither arm re-evaluates work. */
+        g_return_projection.ret = NULL;
+        char *v = gen_expr(e, arena);
+        g_return_projection.ret = e;
+        return sfmt("((%s > 0) ? (%s) : (%s))",
+                    gen_expr(g_return_projection.bound, arena), v,
+                    copy_into(e->type, "_parent", v));
+    }
     switch (e->kind) {
         case E_SPREAD:   /* unreachable: resolve rewrites/rejects every spread before codegen */
             die_at(e->line, "internal: spread `...` reached codegen");
@@ -12507,7 +12737,9 @@ static char *gen_expr(Expr *e, const char *arena) {
             StructDef *sd = &g_structs[STRUCT_ID(e->type)];
             char *out = sfmt("((S_%s){ ", sd->name);
             for (int i = 0; i < e->nargs; i++) {
-                char *a = alias_arg(sd->fields[i].type, arena, e->args[i], e->args, e->nargs);
+                const char *fa = !g_return_projection.update && e == g_return_projection.ctor && i == g_return_projection.field
+                    ? "_parent" : arena;
+                char *a = alias_arg(sd->fields[i].type, fa, e->args[i], e->args, e->nargs);
                 out = sfmt("%s%s%s", out, a, i + 1 < e->nargs ? ", " : "");
             }
             return sfmt("%s })", out);
@@ -13042,7 +13274,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * to function lifetime. */
             const char *owner = scope;
             if (!strcmp(scope, "&_scope") && type_is_heap(s->decl_type)
-                && name_escapes(s->name))
+                && name_escapes(s->name) && s != g_return_projection.decl)
                 owner = "_parent";
             if (!type_is_heap(s->decl_type) && !strcmp(scope, "&_scope")
                 && expr_has_call(s->expr) && !expr_has_orreturn(s->expr)) {
@@ -13253,7 +13485,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * target's (possibly outer-loop) arena. Build it in `scope`; the
              * scalar lands in the C variable and needs no arena. */
             const char *rhs_arena = type_is_heap(s->expr->type) ? owner : scope;
+            if (s->expr->kind == E_STRUCTLIT && !is_param(s->name)
+                && cv_arena(s->name) && !strcmp(cv_arena(s->name), rhs_arena)) {
+                g_field_rebuild = s->expr;
+                g_field_root = s->name;
+            }
             char *v = gen_expr(s->expr, rhs_arena);
+            g_field_rebuild = NULL;
+            g_field_root = NULL;
             g_self_move_name = NULL;
             /* a heap *place* is only an alias into some (possibly inner,
              * soon-to-collapse) scope; deep-copy it into the target's arena
@@ -13439,6 +13678,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             /* heap field's new bytes go in the struct's owning arena — the
              * carried _ina_ arena if the root is a heap inout param. */
             const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : scope;
+            if (projection_is_update(s)) {
+                if (g_return_projection.loop)
+                    owner = sfmt("((h_%s == (%s - 1)) ? _parent : %s)", g_return_projection.iv,
+                                 gen_expr(g_return_projection.bound, scope), owner);
+                else owner = "_parent";
+            }
             PlaceIndexSave *saved = NULL;
             int nsaved = 0, csaved = 0;
             stage_place_indices(s->target, o, ind, scope, &saved, &nsaved, &csaved);
@@ -13571,7 +13816,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     char *v = gen_expr(s->expr, "_parent");
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
                                             c_type(ret), v, rf);
-                } else if (is_place(s->expr)) {
+                } else if (ret_must_copy(s->expr)) {
                     char *v = gen_expr(s->expr, "&_scope");
                     indent(o, ind); fprintf(o, "{ %s_ret = %s; %s return _ret; }\n",
                                             c_type(ret), copy_into(ret, "_parent", v), rf);
@@ -13879,7 +14124,11 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 g_elide[g_nelide].arr = el_arr;
                 g_nelide++;
             }
-            gen_block(o, s->body, s->nbody - 1, ind + 2, ss, ret);
+            /* The post and its continue target belong to the loop scope,
+             * outside all body-local declarations (including shadows). */
+            indent(o, ind + 2); fprintf(o, "{\n");
+            gen_block(o, s->body, s->nbody - 1, ind + 3, ss, ret);
+            indent(o, ind + 2); fprintf(o, "}\n");
             if (body_continues(s->body, s->nbody - 1)) { indent(o, ind + 2); fprintf(o, "_post%d: ;\n", id); }
             gen_stmt(o, s->body[s->nbody - 1], ind + 2, ss, ret);   /* the post clause, every iteration */
             if (el_arr) g_nelide--;
@@ -14016,7 +14265,18 @@ static void gen_block(FILE *o, Stmt **body, int n, int ind,
                       const char *scope, Type ret) {
     int m = cv_mark();
     int tm = g_ntaskvars;
-    for (int i = 0; i < n; i++) gen_stmt(o, body[i], ind, scope, ret);
+    ReturnProjection saved_projection = g_return_projection;
+    ReturnProjection projection = return_projection(body, n);
+    int inherit_projection = saved_projection.loop &&
+        ((body == saved_projection.loop->body && n == saved_projection.loop->nbody - 1)
+         || (saved_projection.update->kind == S_IF &&
+             (body == saved_projection.update->body || body == saved_projection.update->els)));
+    g_return_projection = inherit_projection ? saved_projection : (ReturnProjection){0};
+    for (int i = 0; i < n; i++) {
+        if (body[i] == projection.decl) g_return_projection = projection;
+        gen_stmt(o, body[i], ind, scope, ret);
+    }
+    g_return_projection = saved_projection;
     if (g_ntaskvars > tm) {   /* CC-2 implicit join: tasks declared in this block die here
                                * (after a trailing return this is dead C -- the return path
                                * already finished them via return_frees) */

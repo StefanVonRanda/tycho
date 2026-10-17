@@ -60,3 +60,65 @@ fn main():
         tot = tot + 1
     println("outer_i=" + str(i))           # 99
     println("tot2=" + str(tot))            # 8
+
+    # Body-local shadows must never capture the loop-scope post clause.
+    shadows := 0
+    for j := 0; j < 4; j += 1:
+        j := 100
+        shadows += j
+    println("shadows=" + str(shadows))     # 400, not an infinite loop
+
+    continued := 0
+    for j := 0; j < 4; j += 1:
+        if j == 0:
+            continue                         # before the shadow exists
+        outer := j
+        j := 100
+        if outer == 2:
+            continue                         # after the shadow exists
+        continued += j
+    println("shadow_continue=" + str(continued))
+
+    step := 1
+    rhs := 0
+    for j := 0; j < 3; j += step:
+        step := "body"                       # a different type in post's RHS
+        rhs += len(step)
+    println("shadow_rhs=" + str(rhs))
+
+    text := ""
+    heap_sum := 0
+    for j := 0; j < 3; text = text + "x":
+        j += 1
+        text := [j]                          # post must append to the OUTER string
+        heap_sum += text[0]
+    println("shadow_heap=" + text + ":" + str(heap_sum))
+
+    cursor := 0
+    stopped := 0
+    for cursor = 0; cursor < 5; cursor += 1:
+        outer := cursor
+        cursor := 100
+        if outer == 2:
+            break
+        stopped += cursor
+    println("shadow_break=" + str(stopped) + ":" + str(cursor))
+
+    nested := 0
+    for a := 0; a < 2; a += 1:
+        outer := a
+        a := 10
+        for b := 0; b < 3; b += 1:
+            inner := b
+            b := 100
+            nested += a + b + outer + inner
+    println("shadow_nested=" + str(nested))
+
+    worker_sum := 0
+    parallel(2) for p in 0..<4:
+        local := p
+        for j := 0; j < 3; j += 1:
+            j := 100
+            local += j
+        worker_sum += local
+    println("shadow_workers=" + str(worker_sum))
