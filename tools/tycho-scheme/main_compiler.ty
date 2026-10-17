@@ -107,8 +107,9 @@ fn const_of(ctx: inout Ctx, s: string) -> int:
 # the five that have no lowering named so the failure is loud, not silent.
 
 fn is_primitive(name: string) -> bool:
-    for i := 0; i < len(prim_names()); i += 1:
-        if prim_names()[i] == name:
+    names := prim_names()
+    for i := 0; i < len(names); i += 1:
+        if names[i] == name:
             return true
     return false
 
