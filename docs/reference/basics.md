@@ -89,7 +89,7 @@ map entry (`m[k] += 1`).
 **Reserved words.** No name — variable, parameter, function or struct field — may be a keyword,
 and the type names are keywords: `int`, `float`, `bool`, `string`, `bytes`, `ptr`, `f32`, and
 the sized integers `u8`…`u64`, `i8`…`i64`. So `bytes: int` is not a legal field and `len := …`
-is (builtin names are not reserved). The full list of 42 is
+is (builtin names are not reserved). The full list of 43 is
 [appendix B](../spec/appendix-b-keywords.md#b1-reserved-words).
 
 ## Expressions
