@@ -41,3 +41,18 @@ Writing through a projection into a by-value parameter mutates that parameter's
 private copy, exactly like the spelled-out place. The usual mutability rules
 apply unchanged; the projection adds no new storage shape, only ergonomic
 traversal of the index-pool idiom.
+
+## Decided 2026-10-18 (update probe)
+
+- **No `inout` callbacks.** A function with an `inout` parameter is not a
+  value and lambdas cannot declare one, so the `update(g, id, fn(p))` shape
+  is a copy-back transformer plus a writeback through the projection. Kept
+  deliberately: the idiom is proven, and real `inout` captures would need
+  escape analysis the tree does not have. Revisit on a real program that
+  needs it, not on principle.
+- **Index-assign and the mutating builtins refuse subscript calls.**
+  `push(g.fr(0), v)` and `g.fr(0)[0] = v` die with the variable-or-field
+  rule even though the projection is a place. This is parity with the
+  reference compiler, kept by default: the owner states no preference for
+  or against subscript targets here, so the normative behavior stands.
+  Details in FRICTION 206.
