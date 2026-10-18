@@ -48,6 +48,7 @@ Rule: a program over ground already covered returns little — the 2026-08-19 ma
 | unicode | R8 `uni` |
 | layout and SIMD — `packed`, `align(N)`, `vector[N]T`, swizzling | [simd](probe-simd-2026-09-07.md), [layout](probe-layout-2026-09-21.md) |
 | **the compiler itself** | R8 `cli`, `huge`, `msgs` |
+| graphs as values, generational handles, exclusive update | [graph](probe-graph-2026-10-18.md), [handles](probe-handles-2026-10-18.md), [update](probe-update-2026-10-18.md) |
 
 **The last row paid best.** Rounds one to seven asked for programs and mostly found doc gaps and message quality; round eight pointed probes at tychoc's own CLI, at generated source, and at the diagnostics as a subject, and returned two real defects and a quadratic codegen path. When choosing where to aim, prefer a surface with no lane over one with no probe — `grep <feature> tests/run.sh` coming back empty is the strongest signal available.
 
