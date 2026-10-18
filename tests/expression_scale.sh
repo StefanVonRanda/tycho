@@ -14,10 +14,19 @@ python3 - "$tmp" <<'PY'
 import sys
 from pathlib import Path
 p = Path(sys.argv[1])
-for count, name in ((1400, "sum1400"), (256, "sum256"), (2101, "sum2101")):
+for count in (127, 128, 256, 1400, 2001, 2002, 2101):
+    name = f"sum{count}"
     (p / f"{name}.ty").write_text(
         "fn main():\n    x := 1\n    println(str(" + "+".join(["x"] * count) + "))\n"
     )
+(p / "sumcall128.ty").write_text(
+    "fn f() -> int:\n    return 3\nfn main():\n    x := 1\n    println(str(" +
+    "+".join(["x"] * 127 + ["f()"]) + "))\n"
+)
+(p / "sumu8_128.ty").write_text(
+    "fn take(n: u8) -> int:\n    return to_int(n)\nfn main():\n    x: u8 = 1\n    println(str(take(" +
+    "+".join(["x"] * 128) + ")))\n"
+)
 (p / "sub2101.ty").write_text(
     "fn main():\n    x := 1\n    println(str(" + "-".join(["x"] * 2101) + "))\n"
 )
@@ -36,17 +45,22 @@ for _ in range(257):
 )
 PY
 
-for compiler in ./tychoc ./tychoc1; do
-    exe="$tmp/$(basename "$compiler")-sum1400"
-    "$compiler" "$tmp/sum1400.ty" --cc cc -o "$exe"
-    got=$("$exe")
-    [ "$got" = 1400 ] || { echo "$compiler sum1400 printed '$got'"; exit 1; }
-    if "$compiler" "$tmp/sum2101.ty" --emit-c -o "$tmp/too-deep" >"$tmp/deep.err" 2>&1; then
-        echo "$compiler accepted a 2101-term integer expression"; exit 1
-    fi
-    grep -q "expression too deeply nested to type-check (max 2000)" "$tmp/deep.err" || {
-        echo "$compiler did not give the expression-depth diagnostic"; cat "$tmp/deep.err"; exit 1;
-    }
+for compiler in "${TYCHOC:-./tychoc}" "${TYCHOC1:-./tychoc1}"; do
+    for case in sum127:127 sum128:128 sum1400:1400 sumcall128:130 sumu8_128:128; do
+        name=${case%:*}; expected=${case#*:}
+        exe="$tmp/$(basename "$compiler")-$name"
+        "$compiler" "$tmp/$name.ty" --cc cc -o "$exe"
+        got=$("$exe")
+        [ "$got" = "$expected" ] || { echo "$compiler $name printed '$got'"; exit 1; }
+    done
+    for count in 2002 2101; do
+        if "$compiler" "$tmp/sum$count.ty" --emit-c -o "$tmp/too-deep" >"$tmp/deep.err" 2>&1; then
+            echo "$compiler accepted a $count-term integer expression"; exit 1
+        fi
+        grep -q "expression too deeply nested to type-check (max 2000)" "$tmp/deep.err" || {
+            echo "$compiler did not give the expression-depth diagnostic"; cat "$tmp/deep.err"; exit 1;
+        }
+    done
     if "$compiler" "$tmp/sub2101.ty" --emit-c -o "$tmp/sub-too-deep" >"$tmp/sub.err" 2>&1; then
         echo "$compiler accepted a 2101-term subtraction expression"; exit 1
     fi
@@ -76,4 +90,21 @@ for compiler in ./tychoc ./tychoc1; do
         [ "$got" = 259 ] || { echo "$compiler fstr130 length '$got'"; exit 1; }
     fi
 done
-echo "expression-scale: 1400-term sums and clang 256-sum/130-hole f-strings passed"
+# G1's flat-add limit counts operators, independently of surrounding calls;
+# the C bootstrap also counts ordinary resolver frames at this boundary.
+compiler=${TYCHOC1:-./tychoc1}
+exe="$tmp/sum2001"
+"$compiler" "$tmp/sum2001.ty" --cc cc -o "$exe"
+got=$("$exe")
+[ "$got" = 2001 ] || { echo "$compiler sum2001 printed '$got'"; exit 1; }
+# The traversal itself must not materialize owned Expr snapshots. Count only
+# these helpers: parsing this same source still has separate copy costs.
+TYCHO_THREADS=1 TYCHO_ARENA_STATS=full "$compiler" "$tmp/sum128.ty" --typecheck >"$tmp/scan.stats" 2>&1
+python3 - "$tmp/scan.stats" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+assert "[tycho arena stats]" in text, "missing allocation instrumentation"
+for name, count in re.findall(r"^\s*(types___(?:flat_int_add|int_add_depth|int_add_chain))\s+.*?\s+(\d+) allocs$", text, re.M):
+    assert int(count) == 0, f"owned AST scan allocations in {name}: {count}"
+PY
+echo "expression-scale: flattening thresholds, 2000-operator boundary, fallback types/calls, copy-free scan and clang depth passed"

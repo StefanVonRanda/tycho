@@ -10,6 +10,7 @@
 | fixed-capacity LRU as index pool (`bench/lru`) | ~2.8× memory, ~2× wall, ahead of Go | same pool idiom |
 | long-lived scope holding transients | arena/pool retains high-water storage | scope transients for reuse, not an RSS-drop guarantee (§2) |
 | rebuilding a long-lived value per edit (`tools/tycho-ed/`) | one full copy per operation | mutate in place; hold hot text as `[int]` (§2) |
+| read-only traversal with a reassigned subtree cursor | repeated copies of the remaining subtree | bounded read-only helper calls (§5) |
 
 Tycho's model — value semantics with no pointers, memory managed by implicit arenas — shapes
 how you represent data, and the shapes it rewards are not always the ones you'd reach for in C.
@@ -151,7 +152,7 @@ the OS — and eligible dead buffers can be reused incrementally. At supported
 reassignment sites the compiler checks that a buffer is dead and uniquely owned,
 then hands it back to
 the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted by the compiler at
-`src/tychoc.c:13541@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
+`src/tychoc.c:13544@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
 of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
 static value semantics. Supported churn patterns can reuse buffers rather than
 retain every intermediate; this is not a general bound for all transient churn.
@@ -180,7 +181,7 @@ exactly how far it reaches before concluding that a workload is doomed. There ar
 several supported paths:
 
 - **Loop-carried reassignment of a named array local** — `a = f(a)` inside a loop
-  (`src/tychoc.c:13533@do_recycle`). Narrow by design: it requires a *named
+  (`src/tychoc.c:13536@do_recycle`). Narrow by design: it requires a *named
   variable* (not an element or field store), a type for which `is_array` holds
   (`src/tychoc.c:1282@is_array` — note a `string` is **not** an array here), a
   loop, a non-`inout` non-accumulator target, and at least two reads in the
@@ -258,6 +259,17 @@ Named `string`/`bytes` append bindings also retain capacity through `inout` help
 calls, while projections without persistent metadata adopt storage afresh per
 call. See the [storage-reuse plan](plan-value-storage-places.md). Other edits,
 such as inserting in the middle of a string, can still rebuild the whole value.
+
+### 5. Read-only traversal with an owned cursor
+
+A cursor such as `cur := tree`, followed by `cur = child`, is an independent
+value, not a reference. Rebinding it can copy the remaining subtree on every
+step; collecting whole subtrees in a work array can also copy them. For a
+read-only walk, passing children to a read-only helper can use the existing
+parameter borrowing instead, without changing value semantics. Keep recursion
+bounded: the compiler's long-addition checker uses this pattern in
+`compiler/types/tcheck.ty@_int_add_depth`, retaining its 2000-operator guard.
+Returning or retaining a subtree still requires the normal ownership rules.
 
 ## Decision guide
 
