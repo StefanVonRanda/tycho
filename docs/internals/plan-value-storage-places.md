@@ -144,6 +144,19 @@ refused identically by both compilers (delete is map-only). Pinned by
 `tests/subscript.ty` legs (projection growth, writeback, place-to-place,
 compound assign, map-rooted subscript).
 
+Place-shape parity audit (2026-10-18): the reference's `is_lvalue` walks
+Field/Index/TupIdx only and never sees a call, because the four mutating
+builtins check the target before any inlining. `tychoc1` matches after
+FRICTION 206: `_root_ident` (Field/Index only) gates push, pop, reserve and
+index-assign, all four refusing Call/CallVal roots with the reference's
+exact messages (pinned by four `tests/reject/*_subscript_*` fixtures).
+General places (reads, writes, `inout` args, binding) inline in both
+compilers with byte-identical output including ASan/UBSan. One deliberate
+delta remains: tychoc1's `_place` does not see through subscript calls, so
+it copies where the reference (post-inline) could alias. That is the safe
+direction -- a missed move, never a dangling share -- and changing it is
+optimization work with its own gate, not a correctness fix.
+
 ## Phase 5 — values vs places experiment (gated).
 
 The trie combines two limitations, not one:
