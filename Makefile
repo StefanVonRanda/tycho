@@ -203,6 +203,7 @@ test: tychoc tychoc1
 	@sh tests/loop_temp_recycle.sh
 	@sh tests/recv_loop_scale.sh
 	@sh tests/map_overwrite_scale.sh
+	@sh tests/enum_recycle_size.sh
 	@sh tests/audit_runtime_guards.sh
 	@sh tests/http_header_guard.sh
 	@sh tests/run.sh

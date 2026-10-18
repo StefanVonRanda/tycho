@@ -1,0 +1,11 @@
+enum RecycleValue:
+    Vacant
+    Tiny(int)
+    Medium(int, int, int)
+    Wide([int], [int], [int])
+
+fn main():
+    values := []int: RecycleValue
+    values[0] = Tiny(1)
+    values[0] = Medium(1, 2, 3)
+    values[0] = Wide([1], [2], [3])
