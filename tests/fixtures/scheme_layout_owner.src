@@ -1,0 +1,31 @@
+package main
+
+fn main():
+    p := compile_scheme("(display 'original)")
+    original := encode(p)
+    snapshot := p
+    entry := [Ins(OP_CALL, 0, 2), Ins(OP_CALL, 0, 2), Ins(OP_HALT, 0, 0)]
+    fns := [FnCode(0, [Ins(OP_JMP, 1, 0), Ins(OP_JMP, 2, 0), Ins(OP_RET, 0, 0)], 1)]
+    calls := [CallPatch(-1, 0, 0, false), CallPatch(-1, 1, 0, true)]
+    layout(fns, entry, calls, &p.code)
+    if len(p.code) != 6:
+        die("layout did not replace code")
+    if p.code[0].a != 3 or p.code[1].a != 4 or p.code[4].a != 5:
+        die("layout did not patch checked/direct calls and jumps")
+    if entry[0].a != 0 or fns[0].code[1].a != 2:
+        die("layout changed its inputs")
+    entry[0].op = OP_NIL
+    fns[0].code[1].a = 99
+    if p.code[0].op != OP_CALL or p.code[4].a != 5:
+        die("layout output aliases its inputs")
+    if not list_has(p.consts, "original") or p.consts != snapshot.consts:
+        die("layout changed sibling constants")
+    p.consts[0] = "changed"
+    if encode(snapshot) != original:
+        die("program snapshot changed")
+    layout([]FnCode, [Ins(OP_HALT, 0, 0)], []CallPatch, &p.code)
+    if len(p.code) != 1 or p.code[0].op != OP_HALT:
+        die("repeated layout appended instead of replacing")
+    if encode(snapshot) != original:
+        die("repeated layout changed snapshot")
+    println("layout-owner: independent inputs, outputs, siblings and snapshots")

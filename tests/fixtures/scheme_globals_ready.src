@@ -1,0 +1,24 @@
+package main
+
+# Internal initialization eligibility oracle, separate from runtime error tests.
+fn check_ready(src: string, expected: bool):
+    forms := order_top_forms(parse_source(src))
+    names := []string
+    collect_globals(forms, &names)
+    ctx := Ctx([]string, []string: int, []string: int, false)
+    build_gdepth(names, &ctx)
+    infos := []FnInfo
+    analyze_forms(forms, &ctx, &infos)
+    if function_bodies_ready(forms, names, ctx) != expected:
+        die("incorrect function initialization eligibility: " + src)
+
+fn main():
+    check_ready("(define (a) (b)) (define (b) 1) (display (a))", true)
+    check_ready("(define (a) (b)) (define early (a)) (define (b) 1)", false)
+    check_ready("(define (a) (b)) (define (b) 1) (define late (a))", true)
+    check_ready("(define data '(lambda () (b))) (define (b) 1)", true)
+    check_ready("(define f (lambda () (b))) (define (b) 1)", true)
+    check_ready("(define early ((lambda () (b)))) (define (b) 1)", false)
+    check_ready("(define early (if #f (b) 0)) (define (b) 1)", false)
+    check_ready("(define early (begin (set! b (lambda () 1)) 0)) (define (b) 2)", true)
+    println("scheme globals readiness: ok")

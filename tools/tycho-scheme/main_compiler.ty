@@ -28,16 +28,19 @@ struct FnInfo:       # the ANALYSIS output: everything emission needs per lambda
 struct FnCode:
     tag: int
     code: [Ins]
+    init_guard: int  # checked-entry prefix; direct calls skip only this prefix
 
 struct CallPatch:    # a CALL whose target is a fn tag, patched at layout
     buf: int         # -1 = the entry buffer, else the fn's tag
     ins: int
     tag: int
+    direct: bool     # caller has proved/checked the immutable global is initialized
 
 struct Ctx:
     consts: [string]
     gdepth: [string: int]    # global name -> chain depth (0 = newest define)
-    gtag: [string: int]      # global name -> fn tag, or -1 for a plain value
+    gtag: [string: int]      # fn tag, -1 plain value, -2 rebound/mutated
+    functions_ready: bool   # all immutable functions precede any possible body execution
 
 const OP_PUSH = 0
 const OP_LOADK = 1
@@ -117,18 +120,13 @@ fn is_primitive(name: string) -> bool:
 
 # Stable partition: all top-level defines first, in order, then the rest.
 fn order_top_forms(forms: [Val]) -> [Val]:
-    defs := []Val
-    rest := []Val
+    out := []Val
     for i := 0; i < len(forms); i += 1:
         if is_define_form(forms[i]):
-            push(defs, forms[i])
-        else:
-            push(rest, forms[i])
-    out := []Val
-    for i := 0; i < len(defs); i += 1:
-        push(out, defs[i])
-    for i := 0; i < len(rest); i += 1:
-        push(out, rest[i])
+            push(out, forms[i])
+    for i := 0; i < len(forms); i += 1:
+        if not is_define_form(forms[i]):
+            push(out, forms[i])
     return out
 
 fn is_define_form(v: Val) -> bool:
@@ -164,7 +162,10 @@ fn build_gdepth(gnames: [string], ctx: inout Ctx):
     total := len(gnames)
     for i := 0; i < total; i += 1:
         ctx.gdepth[gnames[i]] = total - 1 - i
-        ctx.gtag[gnames[i]] = -1
+        if gnames[i] in ctx.gtag:
+            ctx.gtag[gnames[i]] = -2
+        else:
+            ctx.gtag[gnames[i]] = -1
 
 # ---- name resolution ----------------------------------------------------------
 
@@ -215,7 +216,8 @@ fn analyze_top(v: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [s
                         pop(scopes)
                         infos[idx].captures = caps
                         infos[idx].scope = own
-                        ctx.gtag[name] = idx
+                        if ctx.gtag[name] != -2:
+                            ctx.gtag[name] = idx
                         return
                     _:
                         analyze_expr(car(cdr(rest)), &ctx, &infos, &scopes)
@@ -286,6 +288,9 @@ fn analyze_expr(v: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [
                     if s == "set!":
                         match car(rest):
                             VSym(name):
+                                b := resolve(scopes, ctx, name)
+                                if b.kind == K_GLOBAL:
+                                    ctx.gtag[name] = -2
                                 analyze_expr(VSym(name), &ctx, &infos, &scopes)
                                 analyze_expr(car(cdr(rest)), &ctx, &infos, &scopes)
                                 return
@@ -373,6 +378,9 @@ fn walk_free(v: Val, ctx: inout Ctx, infos: inout [FnInfo], scopes: inout [ [str
                     if s == "set!":
                         match car(rest):
                             VSym(name):
+                                b := resolve(scopes, ctx, name)
+                                if b.kind == K_GLOBAL:
+                                    ctx.gtag[name] = -2
                                 walk_free(VSym(name), &ctx, &infos, &scopes, &free)
                                 walk_free(car(cdr(rest)), &ctx, &infos, &scopes, &free)
                                 return
@@ -407,6 +415,7 @@ struct Emit:
     entry: bool        # globals live in frame-0 slot 0, no env/globals params
     scope: [string: Bind]    # this fn's own scope (params + locals)
     caps: [string: Bind]     # this fn's captures: name -> env position
+    ready_depth: int        # immutable globals at >= this depth are initialized; -1 unknown
 
 fn e_push(em: inout Emit, imm: int):
     push(em.code, Ins(OP_PUSH, imm, 0))
@@ -451,15 +460,20 @@ fn resolve_emit(em: Emit, ctx: Ctx, name: string) -> Bind:
     die_c("unbound variable '" + name + "'")
     return Bind(K_GLOBAL, 0, false)
 
+# Global chain cells have fixed depths from entry. A cell contains nil until
+# defined, then a box holding the value; dereferencing nil traps an early read.
+fn emit_global_cell(depth: int, em: inout Emit):
+    e_load(&em, globals_slot(em))
+    for i := 0; i < depth; i += 1:
+        e_op(&em, OP_CDR)
+
 # push a boxed name's BOX (no deref) -- what a closure captures, so a
 # captured binding and its mutations are shared through the box
 fn emit_box_ref(b: Bind, em: inout Emit):
     if b.kind == K_PRIM:
         die_c("cannot pass a primitive as a value (wrap it in a lambda)")
     if b.kind == K_GLOBAL:
-        e_load(&em, globals_slot(em))
-        for i := 0; i < b.idx; i += 1:
-            e_op(&em, OP_CDR)
+        emit_global_cell(b.idx, &em)
         e_op(&em, OP_CAR)
         return
     if b.kind == K_LOCAL:
@@ -475,9 +489,7 @@ fn emit_ref(b: Bind, em: inout Emit):
     if b.kind == K_PRIM:
         die_c("cannot pass a primitive as a value (wrap it in a lambda)")
     if b.kind == K_GLOBAL:
-        e_load(&em, globals_slot(em))
-        for i := 0; i < b.idx; i += 1:
-            e_op(&em, OP_CDR)
+        emit_box_ref(b, &em)
         e_op(&em, OP_CAR)
         return
     if b.kind == K_LOCAL:
@@ -494,14 +506,15 @@ fn emit_ref(b: Bind, em: inout Emit):
 # ---- the driver ----------------------------------------------------------------
 
 fn compile_scheme(src: string) -> Program:
-    ctx := Ctx([]string, []string: int, []string: int)
+    ctx := Ctx([]string, []string: int, []string: int, false)
     fns := []FnCode
     calls := []CallPatch
     entry := []Ins
     emit_source(src, &ctx, &fns, &calls, &entry)
 
-    code := layout(fns, entry, calls)
-    return Program(ctx.consts, code)
+    p := Program(ctx.consts, []Ins)
+    layout(fns, entry, calls, &p.code)
+    return p
 
 # Return only forms; tokens and concatenated source die before analysis.
 fn parse_source(src: string) -> [Val]:
@@ -514,6 +527,46 @@ fn parse_source(src: string) -> [Val]:
 
 # Forms and analysis die before layout; only the caller-owned emission buffers
 # and context survive this phase.
+# Only native primitives and special forms can evaluate without entering a
+# Scheme function. Lambda/define bodies and quoted data are not evaluated here.
+fn initializer_may_call(v: Val) -> bool:
+    match v:
+        VPair(head, rest):
+            match head:
+                VSym(s):
+                    if s == "quote" or s == "lambda":
+                        return false
+                    if s == "define":
+                        match rest:
+                            VPair(ident, body):
+                                match ident:
+                                    VPair(_, _): return false
+                                    _: return initializer_may_call(car(body))
+                            _: return true
+                    if s != "if" and s != "begin" and s != "set!" and not is_primitive(s):
+                        return true
+                    a := rest
+                    for not is_nil(a):
+                        if initializer_may_call(car(a)):
+                            return true
+                        a = cdr(a)
+                    return false
+                _: return true
+        _: return false
+
+# order_top_forms puts one definition per gnames entry first. A possible call
+# after the LAST immutable function definition is safe too: later data bindings
+# may remain uninitialized, but their reads still go through emit_ref's checks.
+fn function_bodies_ready(forms: [Val], gnames: [string], ctx: Ctx) -> bool:
+    last_fn := -1
+    for i := 0; i < len(gnames); i += 1:
+        if ctx.gtag[gnames[i]] >= 0:
+            last_fn = i
+    for i := 0; i < last_fn; i += 1:
+        if initializer_may_call(forms[i]):
+            return false
+    return true
+
 fn emit_source(src: string, ctx: inout Ctx, fns: inout [FnCode], calls: inout [CallPatch], entry: inout [Ins]):
     forms := parse_source(src)
     forms = order_top_forms(forms)
@@ -523,12 +576,20 @@ fn emit_source(src: string, ctx: inout Ctx, fns: inout [FnCode], calls: inout [C
 
     infos := []FnInfo
     analyze_forms(forms, &ctx, &infos)
+    ctx.functions_ready = function_bodies_ready(forms, gnames, ctx)
     tagseq := 0
-    em := Emit([]Ins, -1, -1, 0, true, []string: Bind, []string: Bind)
+    em := Emit([]Ins, -1, -1, 0, true, []string: Bind, []string: Bind, len(gnames))
     e_op(&em, OP_NIL)
     e_store(&em, 0)                  # frame-0 slot 0 = the global chain
+    for i := 0; i < len(gnames); i += 1:
+        e_op(&em, OP_NIL)
+        e_load(&em, 0)
+        e_op(&em, OP_CONS)
+        e_store(&em, 0)
     for i := 0; i < len(forms); i += 1:
         emit_expr(forms[i], &ctx, &em, infos, &fns, &calls, &tagseq)
+        if is_define_form(forms[i]):
+            em.ready_depth = em.ready_depth - 1
         e_op(&em, OP_POP)            # a top-level form's value is discarded
     e_op(&em, OP_HALT)
     entry = em.code
@@ -581,9 +642,7 @@ fn emit_expr(v: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: inout
                                 # SET-CAR pops the VALUE (top) then the PAIR,
                                 # so the pair is pushed FIRST
                                 if b.kind == K_GLOBAL:
-                                    e_load(&em, globals_slot(em))
-                                    for i := 0; i < b.idx; i += 1:
-                                        e_op(&em, OP_CDR)
+                                    emit_box_ref(b, &em)
                                 elif b.kind == K_LOCAL:
                                     if b.boxed:
                                         e_load(&em, b.idx)
@@ -669,11 +728,11 @@ fn emit_define(target: Val, body: Val, ctx: inout Ctx, em: inout Emit, infos: [F
     match target:
         VSym(name):
             if em.entry:
-                # a global value: eval, cons onto the chain, store slot 0
+                emit_global_cell(ctx.gdepth[name], &em)
                 emit_expr(car(body), &ctx, &em, infos, &fns, &calls, &tagseq)
-                e_load(&em, 0)
+                e_op(&em, OP_NIL)
                 e_op(&em, OP_CONS)
-                e_store(&em, 0)
+                e_op(&em, OP_SETCAR)
                 e_op(&em, OP_NIL)          # define returns VNil
                 return
             b := em.scope[name]
@@ -700,13 +759,18 @@ fn emit_define(target: Val, body: Val, ctx: inout Ctx, em: inout Emit, infos: [F
             body2 := begin_of(body)
             info := infos[tagseq]
             mytag := tagseq
-            fncode := compile_fn_body(info, body2, &ctx, infos, &fns, &calls, &tagseq)
-            push(fns, FnCode(mytag, fncode))
+            init_depth := -1
+            if em.entry and ctx.gtag[fname] == mytag:
+                init_depth = ctx.gdepth[fname]
+            fncode := compile_fn_body(info, body2, init_depth, &ctx, infos, &fns, &calls, &tagseq)
+            push(fns, fncode)
+            if em.entry:
+                emit_global_cell(ctx.gdepth[fname], &em)
             emit_closure(info, &ctx, &em, mytag)
             if em.entry:
-                e_load(&em, 0)
+                e_op(&em, OP_NIL)
                 e_op(&em, OP_CONS)
-                e_store(&em, 0)
+                e_op(&em, OP_SETCAR)
                 e_op(&em, OP_NIL)          # define returns VNil
             else:
                 b := em.scope[fname]
@@ -728,8 +792,8 @@ fn emit_lambda(params_list: Val, body: Val, ctx: inout Ctx, em: inout Emit, info
     body2 := begin_of(body)
     info := infos[tagseq]
     mytag := tagseq
-    fncode := compile_fn_body(info, body2, &ctx, infos, &fns, &calls, &tagseq)
-    push(fns, FnCode(mytag, fncode))
+    fncode := compile_fn_body(info, body2, -1, &ctx, infos, &fns, &calls, &tagseq)
+    push(fns, fncode)
     emit_closure(info, &ctx, &em, mytag)
 
 # the closure VALUE: (tag . env) with env = the captures, in env order
@@ -742,12 +806,21 @@ fn emit_closure(info: FnInfo, ctx: inout Ctx, em: inout Emit, tag: int):
         e_op(&em, OP_CONS)
     e_op(&em, OP_CONS)          # pair the tag with the env -- even when empty
 
-# compile a lambda's body into a fresh buffer; returns the code
-fn compile_fn_body(info: FnInfo, body: Val, ctx: inout Ctx, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int) -> [Ins]:
+# A known immutable global has two entries: function-value calls check its
+# binding, while direct calls arrive after a caller-side proof/check. The latter
+# still run parameter boxing. Initialization is monotone in definition order.
+fn compile_fn_body(info: FnInfo, body: Val, init_depth: int, ctx: inout Ctx, infos: [FnInfo], fns: inout [FnCode], calls: inout [CallPatch], tagseq: inout int) -> FnCode:
     caps := []string: Bind
     for i := 0; i < len(info.captures); i += 1:
         caps[info.captures[i]] = Bind(K_CAPTURE, i, true)
-    em := Emit([]Ins, tagseq, len(info.params), 0, false, info.scope, caps)
+    ready_depth := init_depth
+    if ctx.functions_ready:
+        ready_depth = 0
+    em := Emit([]Ins, tagseq, len(info.params), 0, false, info.scope, caps, ready_depth)
+    if init_depth >= 0 and not ctx.functions_ready:
+        emit_ref(Bind(K_GLOBAL, init_depth, false), &em)
+        e_op(&em, OP_POP)
+    guard := len(em.code)
     # box the captured params at entry
     for i := 0; i < len(info.params); i += 1:
         if info.scope[info.params[i]].boxed:
@@ -764,7 +837,7 @@ fn compile_fn_body(info: FnInfo, body: Val, ctx: inout Ctx, infos: [FnInfo], fns
     emit_expr(body, &ctx, &em, infos, &fns, &calls, &inner)
     e_op(&em, OP_RET)
     tagseq = inner
-    return em.code
+    return FnCode(em.bufid, em.code, guard)
 
 # ---- applications ----------------------------------------------------------------
 
@@ -775,11 +848,15 @@ fn emit_apply_sym(s: string, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [
         return
     b := resolve_emit(em, ctx, s)
     if b.kind == K_GLOBAL and ctx.gtag[s] >= 0:
-        # a statically-known global function: a direct call
+        prim_arity(s, count_args(rest), len(infos[ctx.gtag[s]].params))
+        # Keep lookup before argument side effects when initialization is unknown.
+        if em.ready_depth < 0 or b.idx < em.ready_depth:
+            emit_ref(b, &em)
+            e_op(&em, OP_POP)
         nargs := emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)
         e_op(&em, OP_NIL)                    # the empty env
         e_load(&em, globals_slot(em))
-        emit_call(&em, &calls, ctx.gtag[s], nargs + 2)
+        emit_call(&em, &calls, ctx.gtag[s], nargs + 2, true)
         return
     # a function value: dispatch on the tag
     emit_dispatch(b, rest, &ctx, &em, infos, &fns, &calls, &tagseq)
@@ -795,8 +872,9 @@ fn emit_apply_expr(op: Val, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [F
                         body2 := begin_of(cdr(body))
                         info := infos[tagseq]
                         mytag := tagseq
-                        fncode := compile_fn_body(info, body2, &ctx, infos, &fns, &calls, &tagseq)
-                        push(fns, FnCode(mytag, fncode))
+                        prim_arity("lambda", count_args(rest), len(_params))
+                        fncode := compile_fn_body(info, body2, -1, &ctx, infos, &fns, &calls, &tagseq)
+                        push(fns, fncode)
                         nargs := emit_args(rest, &ctx, &em, infos, &fns, &calls, &tagseq)
                         for i := 0; i < len(info.captures); i += 1:
                             emit_ref(resolve_emit(em, ctx, info.captures[i]), &em)
@@ -804,7 +882,7 @@ fn emit_apply_expr(op: Val, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [F
                         for i := 0; i < len(info.captures); i += 1:
                             e_op(&em, OP_CONS)
                         e_load(&em, globals_slot(em))
-                        emit_call(&em, &calls, mytag, nargs + 2)
+                        emit_call(&em, &calls, mytag, nargs + 2, false)
                         return
                 _:
                     nop()
@@ -822,26 +900,26 @@ fn emit_dispatch(b: Bind, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [FnI
     e_op(&em, OP_CAR)                                          # [a1..an, f, tag]
     jnzs := []int
     for t := 0; t < ntags; t += 1:
-        e_op(&em, OP_DUP)                 # the tag must SURVIVE each compare
-        e_push(&em, t)
-        e_op(&em, OP_EQ)
-        push(jnzs, e_jump(&em, OP_JNZ))
+        if len(infos[t].params) == nargs:
+            e_op(&em, OP_DUP)             # the tag must SURVIVE each compare
+            e_push(&em, t)
+            e_op(&em, OP_EQ)
+            push(jnzs, e_jump(&em, OP_JNZ))
+        else:
+            push(jnzs, -1)
     e_loadk(&em, const_of(&ctx, "tycho-scheme: attempt to call a non-function"))
     e_op(&em, OP_DIE)
-    prologue_start := len(em.code)
+    exits := []int
     for t := 0; t < ntags; t += 1:
-        em.code[jnzs[t]].a = prologue_start + 5 * t
-        e_op(&em, OP_POP)                    # drop the tag copy
-        e_op(&em, OP_CDR)                    # [a1..an, env]
-        e_load(&em, globals_slot(em))        # [a1..an, env, globals]
-        emit_call(&em, &calls, t, nargs + 2)
-        e_jump(&em, OP_JMP)                  # skip the OTHER prologues: the
-                                             # CALL returns one instruction on
-    jmp_after := e_jump(&em, OP_JMP)         # ... and the prologues fall through
-    e_patch(&em, jmp_after)                  # (unused fall-through for the last)
-    # patch each prologue's trailing JMP to skip the whole region
-    for t := 0; t < ntags; t += 1:
-        em.code[prologue_start + 5 * t + 4].a = len(em.code)
+        if jnzs[t] >= 0:
+            e_patch(&em, jnzs[t])
+            e_op(&em, OP_POP)                # drop the tag copy
+            e_op(&em, OP_CDR)                # [a1..an, env]
+            e_load(&em, globals_slot(em))    # [a1..an, env, globals]
+            emit_call(&em, &calls, t, nargs + 2, false)
+            push(exits, e_jump(&em, OP_JMP))
+    for i := 0; i < len(exits); i += 1:
+        e_patch(&em, exits[i])
     return
 
 # A computed operator that is NOT a symbol cannot be emitted args-first (the
@@ -872,9 +950,9 @@ fn emit_args(lst: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInfo], fns: ino
         a = cdr(a)
     return n
 
-fn emit_call(em: inout Emit, calls: inout [CallPatch], tag: int, arity: int):
+fn emit_call(em: inout Emit, calls: inout [CallPatch], tag: int, arity: int, direct: bool):
     push(em.code, Ins(OP_CALL, 0, arity))
-    push(calls, CallPatch(em.bufid, len(em.code) - 1, tag))
+    push(calls, CallPatch(em.bufid, len(em.code) - 1, tag, direct))
 
 # ---- primitives -------------------------------------------------------------------
 
@@ -966,19 +1044,23 @@ fn emit_prim(s: string, rest: Val, ctx: inout Ctx, em: inout Emit, infos: [FnInf
         return
     die_c("primitive '" + s + "' is not compilable (no lowering)")
 
-fn layout(fns: [FnCode], entry: [Ins], calls: [CallPatch]) -> [Ins]:
+fn layout(fns: [FnCode], entry: [Ins], calls: [CallPatch], out: inout [Ins]):
     # the VM starts executing at pc 0, so the ENTRY comes first; the fn
     # bodies follow, and every CALL target is patched to its fn's start.
     entry_start := 0
     starts := []int
+    direct_starts := []int
     ntags := len(fns)
     for i := 0; i < ntags; i += 1:
         push(starts, 0)
+        push(direct_starts, 0)
     pos := len(entry)
     for i := 0; i < ntags; i += 1:
         starts[fns[i].tag] = pos
+        direct_starts[fns[i].tag] = pos + fns[i].init_guard
         pos = pos + len(fns[i].code)
-    out := []Ins
+    out = []Ins
+    reserve(out, pos)
     for j := 0; j < len(entry); j += 1:
         push(out, entry[j])
     for i := 0; i < ntags; i += 1:
@@ -998,8 +1080,10 @@ fn layout(fns: [FnCode], entry: [Ins], calls: [CallPatch]) -> [Ins]:
         base := entry_start
         if c.buf >= 0:
             base = starts[c.buf]
-        out[base + c.ins].a = starts[c.tag]
-    return out
+        if c.direct:
+            out[base + c.ins].a = direct_starts[c.tag]
+        else:
+            out[base + c.ins].a = starts[c.tag]
 
 
 # The .tyc wire records, the same three tools/tycho-vm/main.ty reads back. All

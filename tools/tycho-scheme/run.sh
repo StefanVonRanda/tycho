@@ -26,7 +26,7 @@ out="$T/all.out"
 
 # [1] + [2] the programs: interpreter (twice, deterministic, locked to the
 # golden), then compiled and run on the VM, byte-identical to the interpreter.
-for p in fib closures ho sort shadow eqsym; do
+for p in fib closures ho sort shadow eqsym globals; do
     if ! "$S" run "$progs/$p.scm" >"$T/$p.1" 2>"$T/$p.1.err"; then
         bad "$p first run failed"; sed 's/^/      /' "$T/$p.1.err"; continue
     fi
@@ -60,6 +60,44 @@ if ! cmp -s "$out" "$golden"; then
     diff "$golden" "$out" | head -10 | sed 's/^/      /'
 fi
 
+# Definitions are hoisted before expressions, preserving both groups' order.
+printf '%s\n' '(display 9)' '(define a (begin (display 1) 7))' '(display a)' \
+    '(define b (begin (display 2) 8))' '(display b)' '(newline)' > "$T/order.scm"
+printf '12978\n' > "$T/order.expected"
+if ! "$S" compile "$T/order.scm" -o "$T/order.tyc" >"$T/order.compile.err" 2>&1; then
+    bad "stable partition: compilation failed"
+elif ! "$V" run "$T/order.tyc" >"$T/order.out" 2>"$T/order.vm.err"; then
+    bad "stable partition: VM run failed"
+elif ! cmp -s "$T/order.expected" "$T/order.out"; then
+    bad "stable partition: definition or expression order changed"
+fi
+
+# Exercise the internal layout with a live Program snapshot and reused output.
+mkdir "$T/owners"
+awk '/^fn main\(\):$/ { sub(/main/, "scheme_cli_main"); n++ } { print }
+    END { if (n != 1) exit 1 }' tools/tycho-scheme/main.ty > "$T/owners/main.ty" || exit 1
+cp tools/tycho-scheme/main_compiler.ty "$T/owners/main_compiler.ty"
+cp tests/fixtures/scheme_layout_owner.src "$T/owners/owner.ty"
+if ! "$TYCHOC" "$T/owners/owner.ty" -o "$T/owners/check" >"$T/owners/build.log" 2>&1; then
+    bad "layout-owner: harness compilation failed"
+    sed 's/^/      /' "$T/owners/build.log"
+elif ! "$T/owners/check" >"$T/owners/out" 2>"$T/owners/err"; then
+    bad "layout-owner: harness failed"
+    sed 's/^/      /' "$T/owners/err"
+elif ! grep -qx 'layout-owner: independent inputs, outputs, siblings and snapshots' "$T/owners/out"; then
+    bad "layout-owner: unexpected output"
+fi
+cp tests/fixtures/scheme_globals_ready.src "$T/owners/owner.ty"
+if ! "$TYCHOC" "$T/owners/owner.ty" -o "$T/owners/ready" >"$T/owners/ready.build.log" 2>&1; then
+    bad "globals-ready: harness compilation failed"
+    sed 's/^/      /' "$T/owners/ready.build.log"
+elif ! "$T/owners/ready" >"$T/owners/ready.out" 2>"$T/owners/ready.err"; then
+    bad "globals-ready: harness failed"
+    sed 's/^/      /' "$T/owners/ready.err"
+elif ! grep -qx 'scheme globals readiness: ok' "$T/owners/ready.out"; then
+    bad "globals-ready: unexpected output"
+fi
+
 # [3] the compiler's compile-time rejections: die non-zero, nothing emitted.
 crej() {
     name="$1"; src="$2"
@@ -76,6 +114,44 @@ crej "unbound"        '(display undefined-symbol)'
 crej "not-compilable" '(define (f x) (pair? x))'
 crej "prim-shadow"    '(define + 5)'
 crej "arity"          '(define (f a b) (- a))'
+crej "known-fn-arity" '(define (f x) x) (f)'
+crej "literal-arity"  '((lambda (x) x))'
+
+# Uninitialized bindings must trap, not silently become the legitimate '().
+globalerr() {
+    name="$1"; src="$2"
+    printf '%s\n' "$src" > "$T/globalerr.scm"
+    if "$S" run "$T/globalerr.scm" >"$T/globalerr.interp" 2>"$T/globalerr.err"; then
+        bad "global-error $name: interpreter accepted it"
+    elif [ -s "$T/globalerr.interp" ]; then
+        bad "global-error $name: interpreter stdout not empty"
+    elif [ "$(wc -l < "$T/globalerr.err")" -ne 1 ] || ! grep -Eq "^tycho-scheme: ((set! on )?unbound variable '[^']+'|attempt to call a non-function|expected [0-9]+ argument\(s\), got [0-9]+)$" "$T/globalerr.err"; then
+        bad "global-error $name: unexpected interpreter error"
+    fi
+    if ! "$S" compile "$T/globalerr.scm" -o "$T/globalerr.tyc" >"$T/globalerr.compile.err" 2>&1; then
+        bad "global-error $name: compilation failed"
+    elif "$V" run "$T/globalerr.tyc" >"$T/globalerr.vm" 2>"$T/globalerr.vm.err"; then
+        bad "global-error $name: VM accepted it"
+    elif [ -s "$T/globalerr.vm" ]; then
+        bad "global-error $name: VM stdout not empty"
+    elif [ "$(wc -l < "$T/globalerr.vm.err")" -ne 1 ] || ! grep -Eq '^pc [0-9]+: (car/cdr of a non-pair|set-car! on a non-pair|tycho-scheme: attempt to call a non-function)$' "$T/globalerr.vm.err"; then
+        bad "global-error $name: unexpected VM error"
+    fi
+}
+globalerr "forward-value" '(define a b) (define b 1)'
+globalerr "self-value" '(define a a)'
+globalerr "forward-set" '(define a (begin (set! b 2) 0)) (define b 1)'
+globalerr "forward-call" '(define a (f)) (define (f) 1)'
+globalerr "nested-forward-call" '(define (f) (g)) (define a (f)) (define (g) 1)'
+globalerr "mutated-call" '(define (f) 1) (set! f 2) (f)'
+globalerr "redefined-call" '(define (f) 1) (define f 2) (f)'
+globalerr "forward-call-args" '(define a (f (begin (display 9) 0))) (define (f x) x)'
+globalerr "early-lambda-call" '(define early ((lambda () (f)))) (define (f) 1)'
+# The prelude has 11 function tags. A forged pair must not enter an immutable
+# global's body before its binding is initialized, even if the body is a leaf.
+globalerr "checked-entry" '(define fake (cons 11 (quote ()))) (define early (fake 0)) (define (target n) 42)'
+globalerr "alias-arity" '(define f (lambda (x) x)) (f)'
+globalerr "global-alias-arity" '(define (f x) x) (define alias f) (alias)'
 
 # [4] the interpreter's runtime error cases: die non-zero, stdout EMPTY.
 errcase() {
@@ -96,4 +172,4 @@ if [ "$fail" -eq 1 ]; then
     echo "tycho-scheme: FAIL"
     exit 1
 fi
-echo "tycho-scheme: green (6 programs byte-identical interpreter-vs-VM-compiled; interpreter golden locked on two runs; 4 compile-time rejections; 5 interpreter error cases die with empty stdout)"
+echo "tycho-scheme: green (7 programs byte-identical interpreter-vs-VM-compiled; interpreter golden locked on two runs; 6 compile-time rejections; 12 global binding error cases; 5 interpreter error cases die with empty stdout)"
