@@ -1,0 +1,27 @@
+struct Person:
+    name: string
+    age: int
+
+fn main():
+    m : [int: Person] = []
+    m[1] = Person("ann", 3)
+    # A missing key reads the value type's zero, never traps: scalar 0,
+    # composite a deep copy of the zero (empty name, zero age).
+    s : [int: int] = []
+    s[1] = 7
+    println("scalar=" + str(s[99]))
+    println("name=[" + m[99].name + "]")
+    println("age=" + str(m[99].age))
+    println("eq=" + str(m[99] == m[98]))
+    println("str=" + str(m[99]))
+    # A place write to a missing key inserts the zero first, then updates.
+    m[5].age += 1
+    println("inserted=" + str(m[5]))
+    println("eq-ne=" + str(m[5] == m[6]))
+    delete m[5]
+    println("len=" + str(len(m)))
+    # Nested composite values behave the same.
+    n : [int: [int]] = []
+    push(n[3], 9)
+    println("nested=" + str(n[3]))
+    println("nested-miss=" + str(n[4]))

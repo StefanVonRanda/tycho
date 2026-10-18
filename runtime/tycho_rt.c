@@ -1458,6 +1458,12 @@ static const struct { tycho_int n; char z[8]; } ty_str_empty = { 0, { 0 } };
  * two halves rather than reading past the end, so nothing outside [s, s+n) is
  * touched. */
 char *tycho_str_copy(Arena *a, const char *s) {
+    /* A C-zero composite (notably a map-miss `(V){0}` default or a slotptr-inserted
+     * zero) carries NULL string members; NULL is the empty string here, sharing the
+     * immortal object exactly as a zero-length copy does below -- the same fail-open
+     * shape tycho_str_recycle already accepts. Without this, copying a missing
+     * composite map value dereferences NULL reading the length header. */
+    if (!s) return (char *)ty_str_empty.z;
     tycho_int n = ((const tycho_int *)s)[-1];   /* header length: a value-semantic copy of a Tycho string preserves every byte */
     /* 87% of the 13.5M copies compiling compiler/main.ty are <= 7 bytes (measured),
      * where tycho_mcpy's branch tree costs more than the move. A string sits in

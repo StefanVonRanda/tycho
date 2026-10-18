@@ -105,7 +105,7 @@ EXPECT_MSG_RUNTIME = {
     r"tycho: [string:float] map exceeds 2^31 entries\n",
     r"tycho: [string:int] map exceeds 2^31 entries\n",
     # Both from `51dcb45b` (packed): from_bytes() validates the layout at RUN
-    # time rather than reinterpreting the bytes. runtime/tycho_rt.c:1962@width, runtime/tycho_rt.c:1962@sum.
+    # time rather than reinterpreting the bytes. runtime/tycho_rt.c:1968@width, runtime/tycho_rt.c:1968@sum.
     r"tycho: a packed field width is not 1, 2, 4 or 8",
     r"tycho: a packed struct's field widths do not sum to its size",
     r"tycho: channel already closed\n",

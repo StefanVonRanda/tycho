@@ -1,0 +1,10 @@
+scalar=0
+name=[]
+age=0
+eq=true
+str=Person(, 0)
+inserted=Person(, 1)
+eq-ne=false
+len=1
+nested=[9]
+nested-miss=[]

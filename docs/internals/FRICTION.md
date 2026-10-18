@@ -9637,3 +9637,26 @@ falling back to a builtin, matching native resolution. Package-collision advice
 states that local calls select the package function and external calls should be
 qualified. The regression defines `lib.pow`, checks the warning and verifies the
 result is `3.0` under both compilers.
+
+### 204. A missing composite map read segfaulted instead of returning the zero — **FIXED 2026-10-18**
+
+> Pinned-by: sh tests/run.sh --one tests/map_missing_composite.ty
+
+Found by the 2026-10-18 graph probe: `m[99].name` on `[int: Person]` with no
+key 99 exited 139 with no output, on both compilers, contradicting
+`docs/reference/maps.md`, which promises a deep copy of the value type's zero.
+Scalar misses were fine (they desugar to `map_get` with a literal zero); only
+composites crashed. The miss default is emitted as a raw C `(V){0}`, but C-zero
+is not Tycho-zero: its string members are NULL, and `tycho_str_copy`
+dereferences the length header unconditionally. The UBSan leg reports a
+non-zero offset applied to a null pointer. The place path shared the defect:
+`tycho_mapc%d_slotptr` inserts the same `(V){0}`, so `m[5].age += 1` stored a
+NULL name that later reads, comparisons and display could each trip on.
+
+The fix is one guard in the shared runtime (`runtime/tycho_rt.c`): a NULL
+input to `tycho_str_copy` returns the immortal empty, the same fail-open shape
+`tycho_str_recycle` already accepts. That makes C-zero composites behave as the
+language zero at every touchpoint -- copy, compare, display, delete -- with no
+codegen change in either compiler. The regression reads missing scalars and
+composites (field, whole-value, equality, display), exercises the
+slotptr-inserted zero, and checks a nested-array miss, under both compilers.
