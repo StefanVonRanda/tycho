@@ -90,3 +90,9 @@ fn main():
     println("mroot2=" + str(s2.entry(7).age))
     s2.entry(7).name = s2.entry(7).name + "!"
     println("mroot3=" + s2.entry(7).name)
+    for i := 0; i < 2; i += 1:                        # writeback in a loop and
+        c.member(i) = rename(c.member(i))             # self-assign: no aliasing,
+    c.member(0) = c.member(0)                         # no use-after-recycle
+    c.member(1) = c.member(0)
+    c.member(0).name = "q"
+    println("loop=" + c.member(0).name + c.member(1).name)
