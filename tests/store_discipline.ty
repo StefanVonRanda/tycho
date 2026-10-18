@@ -1,0 +1,29 @@
+# Store discipline matrix: every heap store lands its bytes in the owning
+# arena (no dangle once the RHS scope dies) and never aliases the source.
+# Scalar paths are unaffected; each leg below would print garbage or trap
+# under a scope-arena store. Both compilers must print this golden byte for
+# byte, including under ASan+UBSan (run.sh checks all three).
+struct Person:
+    name: string
+    age: int
+
+struct Wrap:
+    inner: Person
+
+fn mk() -> string:
+    return "x" + "y"
+
+fn main():
+    # Tuple element, heap value, temp-scope RHS.
+    t := (Person("a", 1), 7)
+    t.0 = Person(mk(), 2)
+    println("tup=" + t.0.name + str(t.0.age) + str(t.1))
+    # Struct field of a map-owned value, temp-scope RHS.
+    m : [int: Person] = []
+    m[1] = Person("q", 1)
+    m[1].name = mk()
+    println("field=" + m[1].name)
+    # Whole-struct field of a nested struct, temp-scope RHS.
+    w := Wrap(Person("n", 0))
+    w.inner = Person(mk(), 5)
+    println("wrap=" + w.inner.name + str(w.inner.age))

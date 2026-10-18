@@ -124,6 +124,26 @@ Five permanent `tests/*.ty` fixtures (golden-locked via `tests/run.sh`, both com
 
 No Stage B work until all five are green and pinned. Existing partial coverage (`tests/borrow_alias.ty`, `tests/elem_recycle.ty`, `tests/projections.ty`, `tests/place_store_order.sh`) does not substitute for this named set.
 
+### Store-owner discipline audit (2026-10-18) — no new gaps
+
+Audited every heap store path in both emitters for (a) bytes landed in the
+owning arena and (b) no aliasing of dead or call-temporary storage, each cell
+run under `./tychoc`, `./tychoc1` and ASan+UBSan with byte-identical output:
+missing-key composite reads, slotptr-inserted zeros, `inout` through
+array-typed and struct-typed subscript projections, direct reads, struct
+writebacks, place-to-place copies, compound assignment, map-rooted
+subscripts, tuple-index heap stores, temp-scope RHS into map-owned and
+nested structs. Two historical gaps surfaced and were fixed separately
+before this audit closed (FRICTION 204, map-miss segfault; FRICTION 205,
+subscript inout/writeback arenas). The remaining raw stores (struct fields,
+tuple elements, map put/insert paths) match the reference: RHS materialized
+in the owner arena, copy iff the RHS aliases, old value retained to scope
+exit by arena design rather than recycled. `delete` through a subscript is
+refused identically by both compilers (delete is map-only). Pinned by
+`tests/store_discipline.ty` (tuple-index, temp-RHS field stores) and the
+`tests/subscript.ty` legs (projection growth, writeback, place-to-place,
+compound assign, map-rooted subscript).
+
 ## Phase 5 — values vs places experiment (gated).
 
 The trie combines two limitations, not one:
