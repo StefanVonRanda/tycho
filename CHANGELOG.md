@@ -12,7 +12,7 @@ gate (`make ci`); `FRICTION n` is entry n in the defect log
 (`docs/internals/FRICTION.md`); a *probe* is a small program written against the
 docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
-## [Unreleased]
+## [0.8.7] — 2026-10-18
 
 ### Breaking
 

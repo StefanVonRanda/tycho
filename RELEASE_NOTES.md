@@ -9,121 +9,91 @@ Build one tarball per platform (there is no hosted CI); attach them all to the r
 Name the version in the globs: dist/ still holds the previous release's tarballs.
 -->
 
-Tycho 0.8.6 — pre-1.0, no stability guarantees (see the [README](README.md) for
+Tycho 0.8.7 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
-**This release refuses programs 0.8.5 accepted, and removes 136 functions from
-the public corelib surface.** The list is below under *Programs now refused*.
-Every refusal names the rule it enforces. Most of them are programs that were
-already wrong: they failed later inside `cc`, leaked or double-freed a resource,
-or read freed memory. Three are plain API changes: `or_else` is now a keyword,
-the corelib helpers are private, and `io.open_lines` returns a `Result`.
-
-## macOS on Apple silicon
-
-**A `darwin-arm64` archive is attached for the first time.** Both compilers
-build native Mach-O arm64 with no source change. The full `make ci` gate has
-been green on macOS arm64 since 2026-09-19, and this archive is built twice and
-compared byte for byte (`make release-check`), then extracted and checked
-(`make release-content`).
-
-Running the gate on macOS for the first time found defects that were not
-macOS-specific. It was the first platform to show them:
-
-- **Every Tycho server refused connections under a burst on macOS.**
-  `net.listen` asked for a backlog of 16. When the accept queue is full, Linux
-  drops the SYN and the client retries, while macOS and the BSDs reset the
-  connection. The backlog is `SOMAXCONN` now.
-- **A server could hang on shutdown**, about one run in eight, because a worker
-  blocked in `accept()` never saw SIGTERM.
-- **Floating point could round differently on ARM.** The emitted C left fused
-  multiply-add (FMA) contraction to the C compiler. It fuses `a*b + c` on aarch64 and cannot on
-  baseline x86-64, so the same program printed `0.30000000000000006` on one and
-  `...004` on the other. Contraction is off now, so a program rounds as its
-  source says on every host.
-
-The binaries are **not notarized** by Apple. If macOS refuses to start them
-after a browser download, clear the quarantine flag on the unpacked directory
-with `xattr -dr com.apple.quarantine tycho-v0.8.6-darwin-arm64`.
-
-## New in the language
-
-- **`or_else`: an early return that maps the error.**
-
-  ```text
-  cfg := load(path) or_else e: Err(ConfigErr(e))
-  ok := parse(s) or_else _: false
-  ```
-
-  On `Ok`/`Some` the expression is the payload, as with `or_return`. On `Err(e)`
-  the function **returns** the handler. The handler has the enclosing
-  function's return type, which need not be a `Result`. It replaces the
-  four-line `match` that unwraps a value or returns a wrapped error. It is
-  refused in a function that returns nothing, because there is no value to
-  return; use `or_return` or a `match` there. Spec §14.6.1. The tree's own code
-  moved to it at 79 call sites.
-- **`size_of$(T)` accepts an `align(N)` struct**, so `align` can be observed
-  from inside the language. The size is implementation-defined and is
-  guaranteed to be a multiple of `N`.
-- **`math.min`, `math.max` and `math.clamp` work lane by lane on a
-  `vector[N]T`**, as one compare and blend.
-
-The layout and SIMD surface itself (`vector[N]T`, `align(N)`, `packed`,
-swizzling) shipped in 0.8.5. This release adds its first in-tree user,
-`tools/tycho-grade`.
+**This is a correctness release: it refuses programs 0.8.6 accepted, and
+closes the 90-finding defect hunt of 2026-09-25.** Every refusal names the
+rule it enforces, and almost all of them are programs that were already wrong:
+they wrapped a value silently, emitted C that did not build, or read memory
+they should not have. There are no language features and no surface removals;
+`surface.lock` moved by addition only (seven corelib functions joined it).
 
 ## Programs now refused
 
-- **`or_else` as an identifier.** It is a keyword.
-- **A call to a corelib internal helper.** 136 functions such as
-  `json.parse_value` and `bignum.mag_cmp` were public only because their names
-  lacked a leading underscore. They are package-private now, and the error
-  names the private spelling. Every function found being called from outside its
-  package stayed public. The corelib surface is 423 functions, down from 559.
-- **`io.open_lines` returning a nullable `ptr`.** It returns
-  `Result(LineReader, IoErr)`. The null check becomes the `Err` arm.
-  `CHANGELOG.md` shows the migration.
-- **`reserve` or `pop` on a fixed-size `[N]T` or `vector[N]T`.** The reference
-  compiler emitted C that did not build. The shipped compiler accepted `pop` on
-  a `[4]int` and silently shortened it.
-- **Four misuses of a `handle`:**
-  - a use after a `close(h)` that closes it on every path;
-  - `close(h)` on a handle parameter, which freed the resource twice;
-  - an opener whose result is not bound directly to a variable, which leaked it
-    for the life of the process;
-  - a `free:` that does not name an `extern fn` taking that handle type.
-- **An import one file declares and only a sibling file uses.** It is reported
-  as unused in the file that declares it.
+- **An out-of-range literal wherever it adapts.** `x + 300` at a `u8`, a `300`
+  passed to a variadic or UFCS parameter, a lambda body, a `m.get` default, a
+  subscript assignment, a value `match` arm, a `send`, or the broadcast scalar
+  of a sized-int array wrapped silently and printed the wrapped value. Every
+  site now says `300 does not fit u8 (its range is 0..255)`.
+- **An empty literal `[]` for a `[N]T` or `vector[N]T`.** The reference
+  compiler emitted an uninitialised C aggregate; the self-hosted one built a
+  length-0 "fixed" array. Now: `a fixed-size array of length 2 needs 2
+  elements, got 0`.
+- **A `[N]T` whose `N` is an `int` const losing its length** in the
+  self-hosted compiler: wrong-arity literals, `push` onto it, zero or negative
+  `N`, and mismatched fixed-array arguments all compiled and ran with the
+  wrong `len`.
+- **An f-string hole holding more than one expression.** `f"{price:.2f}"`
+  parsed the first expression, discarded the rest, and printed the bare value.
+- **The identifier prefix `Ztycho_`.** Compiler temporaries shared the user
+  namespace, so a local named `_fc0` was silently replaced by the compiler's
+  own and the program printed a wrong answer. The prefix is reserved now.
+- **A handle `free:` destructor returning an aggregate**, which passed the
+  check and failed later inside `cc`.
+- **An empty `-o ""` or a trailing bare `-L`/`-I` on the compiler command
+  line.**
 
 ## Fixed
 
-- **The shipped compiler returned freed memory** in two shapes. An
-  `or_return`/`or_else` payload returned straight to the caller was built in an
-  arena the return had just freed. `to_bytes(local)` kept inside a returned
-  value pointed into the freed scope; in `core:httpd` this corrupted a request
-  body.
-- **The shipped compiler crashed on `x[a:b]` over a struct or enum**, with an
-  internal message and no line. It is a type error now.
-- **A local `bounded[N]T` grew past its capacity.** It now traps on the push
-  that overflows it.
-- **`core:tls` did not guard an interior NUL in the host name.** A string like
-  `"good.example.com\0anything"` connected to, announced and verified
-  `good.example.com`, while the caller's own checks saw the whole string. It
-  fails closed now.
-- **`core:os` refuses to spawn a `.bat` or `.cmd` on Windows.** `cmd.exe`
-  re-parses the command line and defeats the argument quoting. A PATH-resolved
-  name with no extension is not caught.
-- **Subnormal float literals became `0.0` on aarch64 Windows**, through mingw's
-  `printf`.
-- **The vector-width lint gave x86-64 advice on ARM**, a flag `cc` then refused.
-  It now suggests a narrower vector first.
-- **A generic instantiation error names the whole chain of calls**, starting
-  from the outermost one, which is the line you own.
-- Every build importing `core:strings` drew two `-Wunused-value` warnings from
-  the reference compiler.
-- The build failed to link on Fedora with gcc 16: `-static-pie` needs `-fPIE`
-  beside it.
+- **The defect hunt is closed: 90 findings, all fixed.** Eleven finder agents
+  on one surface each, every finding handed to a verifier told to refute it.
+  The ledger is
+  [`docs/internals/audit-2026-09-25.md`](docs/internals/audit-2026-09-25.md).
+  Beyond the refusals above, the compiler half:
+  - **Division by zero traps cleanly** in the self-hosted compiler instead of
+    SIGFPE/SIGILL, on every sized integer and element-wise array arithmetic.
+  - **An `if`/`elif` chain and a long `+` chain emit flat.** The self-hosted
+    compiler needed 5.3 GB for 800 arms and died at 1250; the reference
+    compiler segfaulted near 7000 arms and clang refuses 256 bracket levels.
+    A 1400-term sum now emits at depth 4 from both compilers.
+  - **Compile time on nested calls is no longer exponential**: nested generic
+    method chains, 900-struct `program_in` copies, one long f-string, lambdas
+    among many locals, and the reference front end's quadratic lookup.
+  - **A constant array literal is a static table plus `memcpy`**, not one
+    store per element — a 15,625-element table took gcc 21 s.
+  - **Enum variants named `EOF`, `NULL`, `default` or `while` build**, under
+    prefixed C names.
+  - **A `packed` field passed as `inout` goes through an aligned local** in
+    both emitters, and no longer draws a `-Wunused-value` warning in the
+    user's build.
+  - **Composite float map keys hash `+0.0` and `-0.0` alike**; a map held two
+    `==`-equal keys.
+  - **The reference compiler's heap use-after-free on nested generic
+    instantiation is gone**, with `read_file` on pipes, the error-recovery
+    depth counter, `__` type names, `clamp` naming, `--symbols` on invalid
+    programs, and cross-package suggestions fixed alongside.
+- **Appending through an `inout string` in a helper no longer falls back to
+  quadratic concatenation.** Both emitters pass a per-binding append state
+  that grows in the owner's arena (`tests/inout_append.sh` bounds the growth).
+  The self-hosted compiler's redundant AST staging is gone with it.
+- **Size arithmetic on untrusted counts is checked before it allocates**:
+  `reserve` on composite arrays and `channel(T, cap)` with a huge capacity
+  could wrap to a tiny allocation and write past it. Both abort by name now.
+- **Overwriting a heap value in a long-lived map reclaims the old value.**
+  `tycho-kvsrv` grew ~1 KB of RSS per `PUT` to the same key without limit.
+- **Enum payloads recycle at their exact size**, not `sizeof(*v)`, in both
+  emitters.
+- **Negative literals adapt like positive ones** in the self-hosted compiler
+  (`x: f32 = -0.5` compiled under one compiler and not the other); float
+  `to_u8`..`to_i64` are total; a `u64` shift past 2^63 is zero per spec.
+- **The shipped compiler calls itself `tychoc`** instead of `tychoc1`, says
+  `cannot open <path>` for a missing source, and writes `--emit-c` output to
+  stdout with no `-o`.
+- **`core:tls` verifies the hostname with `X509_VERIFY_PARAM_set1_host`**
+  rather than the deprecated call, and `core:datetime` bounds the libc TZ
+  fallback on macOS.
 
 ## Install
 
@@ -166,9 +136,13 @@ Two things are unverified, and you may hit them:
   that has been shut down, and whether a blocked `accept` is released. Expect
   wind-down within the 100 ms poll tick. Treat anything faster as unproven.
 
+The binaries are **not notarized** by Apple. If macOS refuses to start them
+after a browser download, clear the quarantine flag on the unpacked directory
+with `xattr -dr com.apple.quarantine tycho-v0.8.7-darwin-arm64`.
+
 ## Status
 
-0.8.6 is pre-1.0 and there are **no stability guarantees**: anything here may
+0.8.7 is pre-1.0 and there are **no stability guarantees**: anything here may
 change. [ROADMAP.md](ROADMAP.md#what-10-requires) lists what 1.0 requires, and
 the blocking item is not engineering. Nobody outside this repo has written a
 real program in Tycho yet. If you write one, the friction you hit is the most
