@@ -123,22 +123,22 @@ willing to be one.
 
 Two things are unverified, and you may hit them:
 
-- **This Windows archive has been run under Wine, not on Windows.** Its
-  content gate passed under Wine 10 on x86-64 Linux: every `.exe` starts, and a
-  real program is emitted, linked and run from a foreign directory. The
-  toolchain itself has passed its suite on real Windows guests, 289/289 on both
-  windows-x86_64 and windows-arm64 (`make platform-check`), but that was an
-  earlier build, not this tarball.
+- **This Windows archive has been run under Wine, not on Windows.** In a
+  `debian:trixie` container, the staged `tychoc.exe` started under Wine and
+  emitted C for a program using `core:strings` found beside the binary. That
+  is the whole Windows verification: the 23-leg content gate ran over the
+  native Linux archive only. The toolchain itself has passed its suite on real
+  Windows guests, 289/289 on both windows-x86_64 and windows-arm64
+  (`make platform-check`), but that was an earlier build, not this tarball.
 - **Server shutdown on Windows has never been observed on Windows.** The code
   reads sound: a worker re-reads the shutdown flag at least ten times a second,
   and the console handler shuts down the listener and every registered
   connection. What is untested is whether `WSAPoll` returns early on a socket
   that has been shut down, and whether a blocked `accept` is released. Expect
   wind-down within the 100 ms poll tick. Treat anything faster as unproven.
-
-The binaries are **not notarized** by Apple. If macOS refuses to start them
-after a browser download, clear the quarantine flag on the unpacked directory
-with `xattr -dr com.apple.quarantine tycho-v0.8.7-darwin-arm64`.
+- **There is no `darwin-arm64` archive this time.** The 0.8.6 Mac archive
+  stands; this release attaches Linux and Windows only, both built from the
+  tagged tree. A Mac build needs a Mac.
 
 ## Status
 
