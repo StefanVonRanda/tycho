@@ -1,4 +1,4 @@
-# src/tychoc.c:7881
+# src/tychoc.c:7884
 # expect: keys(m) takes one argument
 fn main():
     m := []string: int

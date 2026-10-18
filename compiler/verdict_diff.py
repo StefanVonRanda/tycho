@@ -69,7 +69,7 @@ EXPECT = 1495          # +1 bench/allocator/readers.ty; +1 existing tools/tycho-
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:16072@declaration, src/tychoc.c:16076@declares) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:16075@declaration, src/tychoc.c:16079@declares) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
@@ -93,11 +93,11 @@ KNOWN_TYPE_MISS = set()
 # GENERIC_RECUR_GROW left this list on 2026-09-05: `_inst_body`'s depth guard
 # bailed silently, so a recursion at a growing type was never reported.
 # THE PENDING-TYPE RULES left this list when src/tychoc.c's B-3 grounding
-# walk (src/tychoc.c:6622@use, src/tychoc.c:6960@inferred, src/tychoc.c:9917@grounding) was ported to compiler/types/tcheck.ty as a
+# walk (src/tychoc.c:6625@use, src/tychoc.c:6963@inferred, src/tychoc.c:9920@grounding) was ported to compiler/types/tcheck.ty as a
 # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
 # SET R21f-11 built could carry none of the three.
 # THE CONCURRENCY RULES left this list under R21c, which ported the five
-# spawn legs (src/tychoc.c:6830-6840) and wait's argument (src/tychoc.c:7712@wait) into
+# spawn legs (src/tychoc.c:6833-6843) and wait's argument (src/tychoc.c:7715@wait) into
 # compiler/types/tcheck.ty in the bootstrap's own order.
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 

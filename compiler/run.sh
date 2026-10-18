@@ -149,7 +149,7 @@ tr=0; tm=0; ta=0; tw=0
 # B-3 grounding analysis was ported into compiler/types/tcheck.ty@_pend_ground:
 # both are refused by their OWN rule now, byte for byte with ./tychoc.
 # infer_bare_empty LEFT it earlier, when `declared and not used` became fatal --
-# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9917@grounding) that refuses it today.
+# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9920@grounding) that refuses it today.
 # len_scalar LEFT it too, when the f-string interpolation holes became real
 # expressions: the `len` rule was always here, the hole was simply never walked.
 KNOWN_TYPE_MISS=""
@@ -349,7 +349,7 @@ fn main():
     print(str(frexp(8.0, &n)))
 EOF
 # The accepting subscript twin is also the only place either corpus writes
-# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4782).
+# THROUGH a subscript, which is the `g.at(0) = 5` place form (src/tychoc.c:4785).
 pr ok_subscript <<'EOF'
 package main
 struct G:
@@ -377,8 +377,8 @@ echo "leg4  declaration rules: refused=$nref/5 accepted=$nacc/5"
 
 # [4b] -- the two package-member formats, which NO verdict leg can see: both
 # spellings are a refusal, so leg2b/5/6/8 are green either way and the wording
-# is decoration until Phase 9 pins message text. src/tychoc.c:7144 answers
-# `pkg.Name` written with NO call; src/tychoc.c:7503 answers `pkg.name(...)`.
+# is decoration until Phase 9 pins message text. src/tychoc.c:7147 answers
+# `pkg.Name` written with NO call; src/tychoc.c:7506 answers `pkg.name(...)`.
 # Both measured against ./tychoc 2026-08-23. The accepting twin is required for
 # the usual reason: two refusals alone are satisfied by refusing everything.
 pr r3_field <<'EOF'

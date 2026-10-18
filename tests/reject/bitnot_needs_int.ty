@@ -1,4 +1,4 @@
-# src/tychoc.c:8189 -- `~` is a bit operator; a bool is not an integer here.
+# src/tychoc.c:8192 -- `~` is a bit operator; a bool is not an integer here.
 # expect: unary `~` needs an integer
 fn main():
     b := true
