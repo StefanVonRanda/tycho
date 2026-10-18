@@ -17,6 +17,33 @@ subscript edge(g: Graph, i: int) -> inout Node:      # composite-value projectio
 subscript at(r: Row, i: int) -> inout int:           # scalar-value projection
     yield &r.cells[i]
 
+struct Person:
+    name: string
+    age: int
+
+struct Club:
+    members: [Person]
+    friends: [[int]]
+
+subscript member(c: Club, i: int) -> inout Person:   # struct projection, heap member
+    yield &c.members[i]
+
+subscript pals(c: Club, i: int) -> inout [int]:      # array projection
+    yield &c.friends[i]
+
+fn grow(xs: inout [int], v: int):                     # push must go through a
+    push(xs, v)                                       # helper's inout param
+
+fn befriend(c: inout Club, a: int, b: int):          # push through the projection
+    grow(&c.pals(a), b)
+
+fn rename(p: Person) -> Person:
+    p.name = p.name + "!"
+    return p
+
+fn set_member(c: inout Club, id: int, f: fn(Person) -> Person):
+    c.member(id) = f(c.member(id))
+
 fn bump(n: inout int):
     n = n + 100
 
@@ -34,3 +61,11 @@ fn main():
     r.at(0) = 11                                      # scalar element write
     r.at(1) = r.at(1) + r.at(0)                       # scalar read + write (20+11)
     println("r=" + str(r.at(0)) + "," + str(r.at(1)) + "," + str(r.at(2)))   # 11,31,30
+
+    c := Club([Person("ann", 3)], [[]int, []int])
+    befriend(&c, 0, 1)                                # push through an array-typed
+    befriend(&c, 1, 0)                                # projection: grows the buffer
+    befriend(&c, 1, 1)                                # in the club's own arena
+    println("f=" + str(c.pals(0)) + str(c.pals(1)))   # [1] [0,1]
+    set_member(&c, 0, rename)                         # whole-struct writeback with
+    println("n=" + c.member(0).name)                  # a heap member -> ann!

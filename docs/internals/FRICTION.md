@@ -9660,3 +9660,30 @@ language zero at every touchpoint -- copy, compare, display, delete -- with no
 codegen change in either compiler. The regression reads missing scalars and
 composites (field, whole-value, equality, display), exercises the
 slotptr-inserted zero, and checks a nested-array miss, under both compilers.
+
+### 205. Self-hosted inout through an array-typed subscript grew into a freed scope, and subscript writeback neither copied nor recycled — **FIXED 2026-10-18**
+
+> Pinned-by: sh tests/run.sh --one tests/subscript.ty
+
+Found by the 2026-10-18 update probe: `add(&g.friends_of(a), b)` under
+`tychoc1` printed garbage (`[1, 91]` for `[0, 2]`) and the full program died
+with `tycho: out of memory`; the reference compiler was correct throughout.
+Two defects, one shape. First, the call-site arena comes from
+`_ownerof(&args[i])`, but a subscript call wraps the root (`Addr(CallVal)` or
+`Addr(Call)`), whose root `_rootname` could not see through, so the call got
+`"&_scope"` instead of the owner's `_ina_` arena and a `push` through the
+projection grew a buffer that was freed on return. Second, whole-value stores
+through a subscript place (`g.person(id) = f(...)`) emitted a raw C
+assignment: no deep copy into the owner's arena (dangling when the RHS died
+with the caller's scope -- the rename printed a previous error string) and no
+recycle of the displaced value (leak).
+
+The fix mirrors what the reference does by inlining subscripts at resolve:
+`_rootname` sees through `CallVal` to the receiver, the call site unwraps
+`Addr(Call)` the way the lvalue path builds `ua2` (receiver `q`, else first
+argument), `_subinline` binds the parameter to the argument's owner instead
+of `"&_scope"`, and heap subscript stores copy into the owner and recycle the
+old value, exactly like the `_set` family the direct index path uses.
+`tests/subscript.ty` gains the array-projection growth and heap-member
+writeback legs; both compilers print them identically, ASan/UBSan clean.
+Census goldens move only by the added fixture lines; no counts are lost.

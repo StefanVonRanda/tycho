@@ -155,7 +155,7 @@ for TYCHOC in ./tychoc ./tychoc1; do
     #     compiler -- `align(N) struct`, refused above 8 by the parser
     #     (src/tychoc.c@parse_struct, compiler/parse/parse.ty@structd), and
     #     `vector[N]T`, pinned at `packed, aligned(8)` (src/tychoc.c:14732,
-    #     compiler/emit/emit.ty:8110). So the invariant is checked where it is
+    #     compiler/emit/emit.ty:8191). So the invariant is checked where it is
     #     established, over every user type the emitted TU defines, rather than
     #     at the arena_alloc sites -- which the two emitters have 61 of between
     #     them, all of them templates instantiated per monomorphisation.

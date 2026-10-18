@@ -1599,6 +1599,20 @@ fn _rootname(e: ast.Expr) -> string:
         ast.Index(l, k): return _rootname(k[0])
         ast.TupIdx(l, k, i): return _rootname(k[0])
         ast.Addr(l, k): return _rootname(k[0])
+        ast.CallVal(l, k):
+            # A subscript call is rooted in its receiver: `g.edge(1)` lives
+            # in `g`, exactly as if the subscript had been inlined (the
+            # reference inlines subscripts at resolve; at emit the wrapper
+            # is still present). Without this, `_ownerof(&g.friends_of(a))`
+            # answers `"&_scope"`, so an inout push through the projection
+            # grew into the caller's scope arena and died on return.
+            if len(k) > 0:
+                match k[0]:
+                    ast.Field(l6, r6, f6):
+                        if len(r6) > 0:
+                            return _rootname(r6[0])
+                    _: pass
+            return ""
         _: return ""
     return ""
 
@@ -3271,6 +3285,17 @@ fn _subinline(cs: inout C, si: int, args: [ast.Expr], lv: bool) -> (string, stri
     for i := 0; i < len(ps); i += 1:
         ac := ""
         at := ""
+        # Resolve the owner BEFORE pushing this parameter: the push shadows
+        # the caller's binding under the same name, and looking the argument
+        # up after it would match the shadow itself while `vown` is still
+        # one entry short. The parameter aliases the caller's place, so it
+        # carries the ARGUMENT's owner -- not this function's `_scope`.
+        # Inlining `&g.friends[i]` for `&g.friends_of(a)` with `"&_scope"`
+        # here made `_ownerof` hand the caller's scope to the inout call,
+        # so a `push` through the projection grew into an arena freed on
+        # return (use after free, then garbage, then OOM). Fresh (non-place)
+        # arguments keep the old fallback: `_ownerof` answers `"&_scope"`.
+        owx := _ownerof(&cs, args[i])
         if lv and _place(args[i]):
             ac, at = _lvalue(&cs, args[i])
         else:
@@ -3278,7 +3303,7 @@ fn _subinline(cs: inout C, si: int, args: [ast.Expr], lv: bool) -> (string, stri
         push(cs.vnames, ps[i].name)
         push(cs.vtypes, at)
         push(cs.vcn, ac)
-        push(cs.vown, "&_scope")
+        push(cs.vown, owx)
         push(cs.vlocal, false)
     inner := cs.sube[si]
     match cs.sube[si]:
@@ -4273,7 +4298,29 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
                 else:
                     out2 = out2 + ", " + _addr_of(&cs, args[i])
                 if _heap(&cs, pt):
-                    out2 = out2 + ", " + _ownerof(&cs, args[i])
+                    # The arena is the root's owner. A subscript call wraps
+                    # the root (`&g.friends_of(a)` is Addr(Call)), so look
+                    # through it exactly as the lvalue path does when it
+                    # builds `ua2`: the receiver is `q` when qualified, else
+                    # the first call argument. Without this the wrapper's
+                    # root is unresolvable and the call gets `"&_scope"`,
+                    # so a push through the projection grew into an arena
+                    # freed on return. Method-style `g.edge(1)` (CallVal)
+                    # is covered by `_rootname`'s CallVal arm instead.
+                    ow8 := _ownerof(&cs, args[i])
+                    match args[i]:
+                        ast.Addr(la, ka):
+                            if len(ka) > 0:
+                                match ka[0]:
+                                    ast.Call(lc, qc, nc, tc, ac):
+                                        if _subidx(&cs, nc) >= 0:
+                                            if len(qc) > 0:
+                                                ow8 = _ownerof(&cs, ast.Name(lc, qc))
+                                            elif len(ac) > 0:
+                                                ow8 = _ownerof(&cs, ac[0])
+                                    _: pass
+                        _: pass
+                    out2 = out2 + ", " + ow8
                 if not xtn and (pt == "string" or pt == "bytes"):
                     out2 = out2 + ", " + _append_arg(&cs, args[i])
                 continue
@@ -7016,6 +7063,28 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 _: pass
             lc, lt := _lvalue(&cs, k[0])
             ow := _ownerof(&cs, k[0])
+            # A subscript call as the target is rooted in its receiver, but
+            # `_ownerof` sees only the wrapper (`Addr(Call(...)))`), whose
+            # root is unresolvable. Resolve it the way the lvalue path builds
+            # `ua2`: the receiver is `q` when qualified, else the first call
+            # argument. (Bare `CallVal` method calls are already covered by
+            # `_rootname`'s CallVal arm.)
+            subown := false
+            match k[0]:
+                ast.Call(sbl, sbq, sbn, sbt, sba):
+                    if _subidx(&cs, sbn) >= 0:
+                        subown = true
+                        if len(sbq) > 0:
+                            ow = _ownerof(&cs, ast.Name(sbl, sbq))
+                        elif len(sba) > 0:
+                            ow = _ownerof(&cs, sba[0])
+                ast.CallVal(sbl, sbk):
+                    # A method-style subscript survived `_lvalue` above, so
+                    # it resolved; anything else (a fn-value call) fails
+                    # there. A resolvable receiver root means subscript.
+                    if len(_rootname(k[0])) > 0:
+                        subown = true
+                _: pass
             if cs.ret_store:
                 if len(cs.ret_loop_bound) > 0:
                     ow = "((" + _vcname(&cs, cs.ret_loop_iv) + " == (" + cs.ret_loop_bound + " - 1)) ? _parent : " + ow + ")"
@@ -7041,6 +7110,18 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             # RHS is then materialized before forming the final place address.
             # An inout call can grow/re-hash the container between those steps.
             tmp3 := _fresh(&cs, "_ps")
+            if subown and _heap(&cs, lt) and not cs.ret_store:
+                # A heap value stored through a subscript place must be
+                # deep-copied into the owner's arena with the displaced
+                # value recycled -- exactly what the direct-index path gets
+                # from the `_set` family. A raw `lc = tmp3` aliases buffers
+                # that die with the caller's scope (use after free, then
+                # garbage) and leaks the old value.
+                old3 := _fresh(&cs, "_po")
+                return pre + oldpre + ind + _cty(&cs, lt) + " " + tmp3 + " = " + rc2 + ";\n" +
+                    ind + _cty(&cs, lt) + " " + old3 + " = " + lc + ";\n" +
+                    ind + lc + " = " + _copy(&cs, tmp3, lt, ow) + ";\n" +
+                    ind + _recycle_call(&cs, ow, old3, lt) + "\n"
             return pre + oldpre + ind + _cty(&cs, lt) + " " + tmp3 + " = " + rc2 + ";\n" +
                 ind + lc + " = " + tmp3 + ";\n"
         ast.ReturnS(l, k):
