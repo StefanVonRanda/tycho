@@ -30,6 +30,15 @@ the arguments substituted (`g.nodes[i]`), and the surrounding read or write uses
 directly. There is **no runtime object** — a subscript behaves exactly like the built-in
 `&m[k]`.
 
+Array-typed projections have one restriction that struct-typed ones do not:
+`push` through the projection and element index-assign through it are refused
+(`push's first argument must be an array variable or field`; `can only
+index-assign an array or map variable or field`). Only the built-in array and
+map places grow in place or assign by index. To grow through a projection,
+pass `&g.items(i)` as an `inout` argument to a helper that pushes; to replace
+a whole projected value, assign the place directly (`g.item(i) = v`), which
+deep-copies into the owner's arena.
+
 ## Form
 
 ```text

@@ -214,7 +214,8 @@ Like `None`, a bare `Ok(v)` or `Err(e)` fixes only one of the two type parameter
 other comes from context (a return type, an annotation, an assignment target, or an
 argument); a bare `x := Ok(1)` is a compile error. Both `T` and `E` may be any type,
 including heap ones such as `Result([int], string)`. Two `Result` values compare with `==`,
-recursing through `T` and `E`.
+recursing through `T` and `E`. The payload may be `void`: `Ok()` is a value and
+`Ok():` is its match arm, for procedures that report only success or failure.
 
 ## `or_return` — propagating errors without boilerplate
 

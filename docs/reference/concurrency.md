@@ -25,7 +25,13 @@ the C side's thread-safety. The analysis behind this rule is in
 ## `spawn` and `wait`
 
 Rule: `spawn f(args)` starts the call as a task and returns a `Task(T)` handle.
-The argument list is the capture list — explicit and by value:
+The argument list is the capture list — explicit and by value.
+
+`spawn` (like `wait` and the other task words) is a reserved word, not a
+name: a function or variable cannot be called `spawn`. The full list is
+[appendix B](../spec/appendix-b-keywords.md#b1-reserved-words) (a few words
+there, such as `pass`, are contextual rather than reserved and stay usable
+as names).
 
 ```tycho
 fn count(path: string) -> int:

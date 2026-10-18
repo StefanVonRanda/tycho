@@ -175,3 +175,42 @@ fn main():
 Why this way: it reads like a pointer and stores like an index — the
 ergonomics of references over the representation that fits the model. See
 [subscripts](reference/subscripts.md).
+
+## Updates: transform, then write back
+
+A callback cannot take `inout`: a function with an `inout` parameter is not
+a value, and a lambda cannot declare one. So an update passed into a helper
+is a pure transformer — it receives a copy, returns the new value, and the
+caller writes it back through a `subscript` place. Confinement is preserved
+(the callback never touches the aggregate's memory), and the writeback is a
+single checked line.
+
+```tycho
+struct Person:
+    name: string
+    age: int
+struct Club:
+    members: [Person]
+
+subscript member(c: Club, i: int) -> inout Person:
+    yield &c.members[i]
+
+fn birthday(p: Person) -> Person:
+    p.age = p.age + 1
+    return p
+
+fn update(c: inout Club, id: int, f: fn(Person) -> Person) -> bool:
+    if id < 0 or id >= len(c.members):
+        return false
+    c.member(id) = f(c.member(id))
+    return true
+
+fn main():
+    c := Club([Person("ann", 30)])
+    update(&c, 0, birthday)
+    println(c.member(0).name + " is " + str(c.member(0).age))   # ann is 31
+```
+
+Why this way: the borrow shape (`fn(p: inout Person)`) does not exist, so
+the copy boundary is explicit instead of implicit — the transformer cannot
+leak access, and the writeback goes through the same place reads use.
