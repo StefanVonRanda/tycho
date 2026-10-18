@@ -144,7 +144,7 @@ corpus_census() {
     # Plus the 2 handle-destructor fixtures (2026-09-21): `free:` naming a
     # function that is not a declared `extern fn`, and one declared at the wrong
     # parameter type. Both SEMANTIC and word-for-word in both compilers.
-    [ "$cc_exp" -eq 657 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=657"   # +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit; +2: value_if_one_line, fstr_hole_escaped_quote; +1: array_div_lit_zero; +7: fixed/vector empty and const-sized array cases (2026-09-26); +10: D06 literal-fit coverage (variadic, UFCS, lambda, map default, send, subscript, value-match, broadcast and f32 arrays/vectors)
+    [ "$cc_exp" -eq 661 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=661"   # +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit; +2: value_if_one_line, fstr_hole_escaped_quote; +1: array_div_lit_zero; +7: fixed/vector empty and const-sized array cases (2026-09-26); +10: D06 literal-fit coverage (variadic, UFCS, lambda, map default, send, subscript, value-match, broadcast and f32 arrays/vectors); +4: subscript-place root-rule rejects (2026-10-18)
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

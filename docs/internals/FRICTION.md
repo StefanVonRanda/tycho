@@ -9683,7 +9683,36 @@ The fix mirrors what the reference does by inlining subscripts at resolve:
 `Addr(Call)` the way the lvalue path builds `ua2` (receiver `q`, else first
 argument), `_subinline` binds the parameter to the argument's owner instead
 of `"&_scope"`, and heap subscript stores copy into the owner and recycle the
-old value, exactly like the `_set` family the direct index path uses.
+old value, exactly like the `_set` family the direct index path uses (the
+reference's own root walks for push, pop, reserve and index-assign live at
+src/tychoc.c:7929, src/tychoc.c:7964, src/tychoc.c:7987 and
+src/tychoc.c:9798).
 `tests/subscript.ty` gains the array-projection growth and heap-member
 writeback legs; both compilers print them identically, ASan/UBSan clean.
 Census goldens move only by the added fixture lines; no counts are lost.
+
+
+### 206. Self-hosted push/pop/reserve/index-assign through a subscript accepted what the reference refuses — **FIXED 2026-10-18**
+
+> Pinned-by: test -f tests/reject/push_subscript_place.ty
+> Pinned-by: test -f tests/reject/pop_subscript_place.ty
+> Pinned-by: test -f tests/reject/reserve_subscript_place.ty
+> Pinned-by: test -f tests/reject/index_subscript_place.ty
+
+Found while verifying the probe-update writeups: `push(g.fr(0), 1)` under
+`tychoc1` sailed through the type checker and died in the C compiler
+(`lvalue required`), because `_is_place` accepts any declared subscript call
+while the reference's root walk stops at calls. In the other direction,
+`g.fr(0)[0] = 9` compiled and ran correctly under `tychoc1` while the
+reference refuses it -- a quiet divergence either way.
+
+The port mirrors the reference's root walks (src/tychoc.c:7929 for push,
+src/tychoc.c:7964 for pop, src/tychoc.c:7987 for reserve, src/tychoc.c:9798
+for index-assign) exactly: a `_root_ident` walk descends Field/Index only to a bare Name (deliberately narrower than the
+borrow rule's `_root_name`, which also descends TupIdx and Addr), and the four
+call sites refuse anything else with the reference's own messages. The
+writeback path in FRICTION 205 already routes subscript stores through the
+owner arena with copy and recycle, so the newly refused programs are exactly
+the ones no golden covered. Four reject fixtures pin the four rules; the
+classifier table, the split counts (TYPE 189, SEMANTIC 320), the corpus pins
+and the census goldens were re-recorded with dated history.

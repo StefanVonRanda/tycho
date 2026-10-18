@@ -288,6 +288,7 @@ tests/reject/index_assign_string_elem.ty	SEMANTIC	9806	cannot index-assign throu
 tests/reject/index_elem_type.ty	TYPE	9832	assignment type mismatch: cannot assign string to a int element
 tests/reject/index_key_not_int.ty	SEMANTIC	7102	index must be int
 tests/reject/index_not_indexable.ty	SEMANTIC	7117	can only index an array, a string, bytes, or a map (as a place)
+tests/reject/index_subscript_place.ty	TYPE	9798	can only index-assign an array or map variable or field
 tests/reject/infer_bare_empty.ty	SEMANTIC	9920	could not infer the type of 'xs' -- no grounding use in its block (annotate: xs : [T] = [] / Option(T) = None)
 tests/reject/infer_lambda_param.ty	SEMANTIC	6824	lambda parameter 'x' needs a type here -- no expected fn type supplies it (annotate: fn(x: T))
 tests/reject/infer_use_before_ground.ty	SEMANTIC	6963	'xs' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration
@@ -464,11 +465,13 @@ tests/reject/place_call_receiver_field.ty	TYPE	9845	cannot assign to a field of 
 tests/reject/pop_bounded.ty	SEMANTIC	7971	pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild
 tests/reject/pop_not_array.ty	SEMANTIC	7969	pop's first argument must be an array or soa
 tests/reject/pop_not_place.ty	SEMANTIC	7964	pop's first argument must be an array variable or field
+tests/reject/pop_subscript_place.ty	SEMANTIC	7964	pop's first argument must be an array variable or field
 tests/reject/print_arity_zero.ty	TYPE	8094	'print' takes 1 argument(s), got 0
 tests/reject/println_arity_many.ty	TYPE	8094	'println' takes 1 argument(s), got 2
 tests/reject/push_borrowed_param.ty	SEMANTIC	7952	cannot mutate parameter 'xs' (it is borrowed read-only; copy it with `y := xs` first)
 tests/reject/push_one_arg.ty	SEMANTIC	7921	push(arr, value) takes two arguments
 tests/reject/push_scalar.ty	TYPE	7939	push's first argument must be an array or soa
+tests/reject/push_subscript_place.ty	TYPE	7929	push's first argument must be an array variable or field
 tests/reject/push_target_not_place.ty	TYPE	7929	push's first argument must be an array variable or field
 tests/reject/range_removed.ty	SYNTAX	4588	`range()` was removed: write `for i := 0; i < N; i += 1:` to count, or `parallel for i in 0..<N:` to count in parallel
 tests/reject/rawstring_unterminated.ty	SYNTAX	858	unterminated raw string literal
@@ -480,6 +483,7 @@ tests/reject/reserve_bounded.ty	SEMANTIC	7994	reserve does not apply to a bounde
 tests/reject/reserve_cap_not_int.ty	SEMANTIC	8010	reserve's capacity must be int
 tests/reject/reserve_not_array.ty	SEMANTIC	7992	reserve's first argument must be an array or a map
 tests/reject/reserve_not_place.ty	SEMANTIC	7987	reserve's first argument must be an array variable or field
+tests/reject/reserve_subscript_place.ty	SEMANTIC	7987	reserve's first argument must be an array variable or field
 tests/reject/result_arm_wrong_name.ty	SEMANTIC	9573	a Result's arms are Ok(x), Err(e), and _, not 'Some'
 tests/reject/result_bare_decl.ty	SEMANTIC	9399	cannot infer the Result type of Ok(...) — annotate it (x : Result(T, E) = Ok(...))
 tests/reject/result_compare_bare_variant.ty	TYPE	8304	cannot compare Ok(...) with Err(...)

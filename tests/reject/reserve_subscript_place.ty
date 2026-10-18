@@ -1,0 +1,17 @@
+# src/tychoc.c:7987 -- reserve's first argument must be rooted at a variable;
+# a subscript call is not unrolled by the root walk, so a projection is
+# refused even though it names a place.
+# tychoc1 ACCEPTED this until the root walk was ported into
+# compiler/types/tcheck.ty (_root_ident: Field/Index only); both now word it
+# identically.
+# expect: reserve's first argument must be an array variable or field
+struct C:
+    fs: [[int]]
+
+subscript fr(c: C, i: int) -> inout [int]:
+    yield &c.fs[i]
+
+fn main():
+    g := C([[1]])
+    reserve(g.fr(0), 8)
+    println("x")

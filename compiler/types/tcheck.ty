@@ -2766,7 +2766,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     if n == "push":
         if not _arity(&cs, n, args, 2, "push(arr, value) takes two arguments"):
             return "void"
-        if not _is_place(&cs, args[0]):
+        if not _is_place(&cs, args[0]) or len(_root_ident(args[0])) == 0:
             _cerr(&cs, "push's first argument must be an array variable or field")
             return "void"
         if known(b0) and not (_is_arr(b0) or _head(b0) == "soa"):
@@ -2789,7 +2789,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     if n == "pop":
         if not _arity(&cs, n, args, 1, "pop(arr) takes one argument"):
             return "?"
-        if not _is_place(&cs, args[0]):
+        if not _is_place(&cs, args[0]) or len(_root_ident(args[0])) == 0:
             _cerr(&cs, "pop's first argument must be an array variable or field")
             return "?"
         if known(b0) and not (_is_arr(b0) or _head(b0) == "soa"):
@@ -2809,7 +2809,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     if n == "reserve":
         if not _arity(&cs, n, args, 2, "reserve(arr, n) takes two arguments"):
             return "void"
-        if not _is_place(&cs, args[0]):
+        if not _is_place(&cs, args[0]) or len(_root_ident(args[0])) == 0:
             _cerr(&cs, "reserve's first argument must be an array variable or field")
             return "void"
         if known(b0) and not (_is_arr(b0) or _head(b0) == "map"):
@@ -3432,6 +3432,22 @@ fn _root_name(e: ast.Expr) -> string:
         _: return ""
     return ""
 
+# The mutating builtins' root rule (src/tychoc.c:7929, src/tychoc.c:7964,
+# src/tychoc.c:7987 and src/tychoc.c:9798): walk Field/Index ONLY to a bare
+# Name. A call stays a call, so a subscript projection is refused even though
+# `_is_place` accepts it as a place -- the reference inlines subscripts too
+# late for these checks to see through, and the pending-grounding and owner
+# logic below keys on the root variable. `_root_name` above is the borrow
+# rule's walk (it also descends TupIdx and Addr); this one is deliberately
+# narrower, matching the reference exactly.
+fn _root_ident(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, k, f): return _root_ident(k[0])
+        ast.Index(l, k): return _root_ident(k[0])
+        _: return ""
+    return ""
+
 # src/tychoc.c:9786 tests `s->expr->lhs == s->target` by POINTER, which the
 # desugar at compiler/parse/parse.ty:1448 guarantees for `place op= v`. There is
 # no pointer identity here, so the two places are compared structurally instead
@@ -3692,6 +3708,18 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             cs.line = l
             _assign_check(&cs, name, t)
         ast.PlaceSet(l, k):
+            match k[0]:
+                ast.Index(lx, kx):
+                    # src/tychoc.c:9798 -- the root walk is Field/Index only, so
+                    # a subscript call is refused even though `_is_place`
+                    # accepts it. Gated on `_is_place` (pure) so an
+                    # already-failing target keeps its single diagnostic.
+                    # `_is_lvalue` is deliberately NOT consulted: it evaluates
+                    # the base through `_ex`, whose census notes would then
+                    # count every indexed store twice.
+                    if _is_place(&cs, k[0]) and len(_root_ident(k[0])) == 0:
+                        _cerr(&cs, "can only index-assign an array or map variable or field")
+                _: pass
             pt := _place_ty(&cs, k[0])
             _map_compound(&cs, l, k[0], k[1], pt)   # src/tychoc.c:9785
             vt := _ex2(&cs, k[1], pt)

@@ -1,0 +1,17 @@
+# src/tychoc.c:9798 -- an index-assign target must bottom out at a variable or
+# field; a subscript call is not unrolled by the root walk, so assignment
+# through a projection is refused even though reads and inout through it work.
+# tychoc1 ACCEPTED this until the root walk was ported into
+# compiler/types/tcheck.ty (_root_ident: Field/Index only); both now word it
+# identically.
+# expect: can only index-assign an array or map variable or field
+struct C:
+    fs: [[int]]
+
+subscript fr(c: C, i: int) -> inout [int]:
+    yield &c.fs[i]
+
+fn main():
+    g := C([[1]])
+    g.fr(0)[0] = 9
+    println("x")
