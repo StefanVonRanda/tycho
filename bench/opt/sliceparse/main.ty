@@ -1,0 +1,15 @@
+package main
+
+import "core:strings"
+
+# O4: each in-scope slice is consumed by `len` and discarded. The view path
+# stores a (parent, length) header; the control copies the whole field.
+fn count(s: string, rounds: int) -> int:
+    total := 0
+    for i := 0; i < rounds; i += 1:
+        total += len(s[0:len(s)])
+    return total
+
+fn main():
+    s := strings.repeat("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx ", 100000)
+    println(str(count(s, 100)))

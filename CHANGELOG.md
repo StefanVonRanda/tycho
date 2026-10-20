@@ -84,10 +84,18 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `bench/opt/movebuild` (500,000 four-string loop locals): **91 ms → 79 ms**
   in `tychoc1` and **96 ms → 87 ms** in `./tychoc`, same RSS.
   `tests/move_loop_local.ty` covers both the adopt and the cross-arena copy.
+- **O4: borrowed in-scope slices.** A string slice used as a call argument is a
+  16-byte `TychoStrView` (tagged pointer) in the call arena instead of a copy
+  of the field. `println`, `len`, user calls and `substr` accept views;
+  binding, return, `push`, map keys and FFI materialize through
+  `tycho_str_copy`/`tycho_str_cstr`. `TYCHOC_NO_SLICE_VIEW=1` restores the
+  copy path. On 100 slices of a 12.8 MB string: **33 ms / 42.9 MB → 7 ms /
+  30.6 MB** in `tychoc1`, and **32 ms / 43.0 MB → 6 ms / 30.7 MB** in
+  `./tychoc`. `tests/pkg/slice_view` covers both paths.
 - `ROADMAP.md` now carries O1–O7 for widening the domain without adding
   references: O1 above, read-only pointer parameters, last-use moves, borrowed
   string/bytes slices, destination passing, conservative CoW, and SROA/bounds
-  elimination. O1–O3 are in 0.8.9; O4–O7 are next.
+  elimination. O1–O4 are in 0.8.9; O5–O7 are next.
 
 ## [0.8.7] — 2026-10-18
 

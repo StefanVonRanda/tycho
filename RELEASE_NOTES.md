@@ -68,9 +68,9 @@ marks `m` as escaping in both compilers, so a mutated map/array local returned
 through a zero-cost newtype no longer keeps its storage in a scope that is
 freed on the way out. `tests/newtype_agg` is the regression.
 
-The roadmap also carries O4–O7: borrowed string/bytes slices, destination
-passing, conservative CoW, and SROA/bounds elimination. They are next in the
-same 0.8.9 cycle; O1 was the prerequisite for O4 and O6.
+The roadmap also carries O5–O7: destination passing, conservative CoW, and
+SROA/bounds elimination. They are next in the same 0.8.9 cycle; O1 was the
+prerequisite for O6.
 
 **O2: read-only pass-by-pointer in the reference compiler.** It passes
 non-heap fixed arrays of four or more elements as `const T*` on direct calls.
@@ -94,10 +94,17 @@ same relaxation. A local from outside the loop, or a push into a caller-owned
 locals): `tychoc1` **91 ms → 79 ms**, `./tychoc` **96 ms → 87 ms**, same RSS.
 `tests/move_loop_local.ty` is the regression for both sides of the boundary.
 
+**O4: borrowed in-scope slices.** A string slice used as a call argument is a
+16-byte `(parent, length)` view instead of a copy. Binding, returning, `push`,
+map keys and FFI still materialize through the copy seam. On 100 slices of a
+12.8 MB string: `tychoc1` **33 ms / 42.9 MB → 7 ms / 30.6 MB**, `./tychoc`
+**32 ms / 43.0 MB → 6 ms / 30.7 MB**. `tests/pkg/slice_view` covers both the
+view and the materialization sides.
+
 ## Verification
 
-`make ci N=0` — CI GREEN (823s). `make test` — 1157 passed, 0 failed.
-`make corelib` — 46 ok. `make parse-check` — all green, 1507 files.
+`make ci N=0` — CI GREEN (993s). `make test` — 1158 passed, 0 failed.
+`make corelib` — 46 ok. `make parse-check` — all green, 1509 files.
 `make bench` — all benchmarks within bounds. The fuzz lanes were run
 separately at 60 seeds each: differential, reject and leak all green.
 

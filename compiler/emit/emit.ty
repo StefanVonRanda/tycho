@@ -149,9 +149,10 @@ struct C:
     ret_loop_bound: string             # stable integer bound's C expression, or empty
     vloop: [int]                       # lexical loop depth where the binding was declared (O3)
     concat_scratch: string             # O3: operands of a promoted declaration's binops
+    slice_view: bool                   # O4: emit a string slice as a TychoStrView
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "")
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false)
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -2521,6 +2522,12 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 ssn := "_ss" + sid9
                 if len(hi) == 0:
                     hi = "tycho_str_len(" + ssn + ")"
+                if cs.slice_view and rt == "string" and len(getenv("TYCHOC_NO_SLICE_VIEW")) == 0:
+                    if hh:
+                        return ("({ const char *" + ssn + " = " + rc + "; tycho_str_view_alloc(" +
+                            cs.arena + ", " + ssn + ", " + lo + ", " + hi + "); })", rt)
+                    return ("({ const char *" + ssn + " = " + rc + "; tycho_str_view_alloc_auto(" +
+                        cs.arena + ", " + ssn + ", " + lo + "); })", rt)
                 return ("({ const char *" + ssn + " = " + rc + "; tycho_str_substr(" +
                     cs.arena + ", " + ssn + ", " + lo + ", " + hi + "); })", rt)
             # A soa slice offsets EVERY field pointer by lo and carries cap 0,
@@ -3472,7 +3479,7 @@ fn _retval(cs: inout C, e: ast.Expr) -> string:
     rt := cs.cur_ret
     if rt == "float" and t == "int":
         c = "(double)(" + c + ")"
-    # src/tychoc.c:13973@cv_in_parent -- a return-slot local already
+    # src/tychoc.c:13997@cv_in_parent -- a return-slot local already
     # lives in the caller's arena, so the copy would duplicate it.
     projected := cs.ret_placed and _projection_fields(e, cs.ret_local) == cs.ret_fields
     if projected and len(cs.ret_loop_bound) > 0:
@@ -4341,8 +4348,15 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
                 continue
             sw := cs.want
             cs.want = pt
-            ac, at := _ex(&cs, args[i])
+            ac := ""
+            at := ""
+            if not xtn and pt == "string":
+                ac, at = _ex_view(&cs, args[i])
+            else:
+                ac, at = _ex(&cs, args[i])
             cs.want = sw
+            if xtn and pt == "string":
+                ac = "tycho_str_cstr(" + cs.arena + ", " + ac + ")"
             if pt == "float" and at == "int":
                 ac = "(double)(" + ac + ")"
             # An extern's `bytes` PARAMETER crosses as two C arguments -- the
@@ -4806,7 +4820,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         return (_tostr(&cs, c, t), "string")
     if n == "len" and len(args) == 1:
-        c, t := _ex(&cs, args[0])
+        c, t := _ex_view(&cs, args[0])
         if t == "string" or t == "bytes":
             return ("tycho_str_len(" + c + ")", "int")
         if _is_vec(t):
@@ -4816,10 +4830,10 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             return ("((" + c + ").len)", "int")
         _bad("len() of unsupported type '" + t + "'")
     if n == "print" and len(args) == 1:
-        c, t := _ex(&cs, args[0])
+        c, t := _ex_view(&cs, args[0])
         return ("tycho_print_s(" + c + ")", "void")
     if n == "println" and len(args) == 1:
-        c, t := _ex(&cs, args[0])
+        c, t := _ex_view(&cs, args[0])
         return ("(tycho_print_s(" + c + "), tycho_print(\"\\n\"))", "void")
     if n == "eprint" and len(args) == 1:
         c, t := _ex(&cs, args[0])
@@ -5035,6 +5049,8 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         c, t := _ex(&cs, args[0])
         ac, at := _ex(&cs, args[1])
         bc, bt := _ex(&cs, args[2])
+        if cs.slice_view and len(getenv("TYCHOC_NO_SLICE_VIEW")) == 0:
+            return ("tycho_str_view_alloc(" + cs.arena + ", " + c + ", " + ac + ", " + bc + ")", "string")
         return ("tycho_str_substr(" + cs.arena + ", " + c + ", " + ac + ", " + bc + ")", "string")
     if n == "input" and len(args) == 0:
         return ("tycho_input(" + cs.arena + ")", "string")
@@ -5661,6 +5677,13 @@ fn _push_decl_arena(cs: inout C, name: string) -> string:
                 return ""
             return cs.vown[i]
     return ""
+
+fn _ex_view(cs: inout C, e: ast.Expr) -> (string, string):
+    save := cs.slice_view
+    cs.slice_view = true
+    c, t := _ex(&cs, e)
+    cs.slice_view = save
+    return (c, t)
 
 fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, string):
     return _rhs3(&cs, e, want, arena, false)

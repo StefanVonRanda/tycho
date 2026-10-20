@@ -1321,6 +1321,21 @@ static char *tycho_str_alloc(Arena *a, tycho_int n) {
     return data;
 }
 
+/* O4: a non-escaping slice is a stack TychoStrView with the low pointer bit
+ * set. The view carries (parent data, length); no bytes are copied. It is only
+ * created for a call argument, so its stack lifetime covers the call. Any
+ * retention path calls tycho_str_copy, which materializes a normal string. */
+typedef struct { const char *data; tycho_int len; } TychoStrView;
+static inline int tycho_str_is_view(const char *s) {
+    return ((uintptr_t)s & (uintptr_t)1) != 0;
+}
+static inline const TychoStrView *tycho_str_view_of(const char *s) {
+    return (const TychoStrView *)((uintptr_t)s & ~(uintptr_t)1);
+}
+static inline const char *tycho_str_data(const char *s) {
+    return tycho_str_is_view(s) ? tycho_str_view_of(s)->data : s;
+}
+
 /* The short move every string builder here uses: at these sizes -- and a
  * compiler's pieces are almost all under 16 bytes -- the call into glibc's AVX
  * memcpy costs more than the move. The 8- and 4-byte forms OVERLAP their halves
@@ -1346,12 +1361,14 @@ static inline void tycho_mcpy(char *d, const char *s, tycho_int n) {
 }
 
 tycho_int tycho_str_len(const char *s);
+char *tycho_str_copy(Arena *a, const char *s);
 
 char *tycho_str_concat(Arena *a, const char *x, const char *y) {
-    tycho_int lx = tycho_str_len(x), ly = tycho_str_len(y);   /* header lengths: byte-safe (interior NUL preserved) */
+    const char *xd = tycho_str_data(x), *yd = tycho_str_data(y);
+    tycho_int lx = tycho_str_len(x), ly = tycho_str_len(y);
     char *r = tycho_str_alloc(a, lx + ly);
-    tycho_mcpy(r, x, lx);
-    tycho_mcpy(r + lx, y, ly);
+    tycho_mcpy(r, xd, lx);
+    tycho_mcpy(r + lx, yd, ly);
     return r;
 }
 
@@ -1362,26 +1379,30 @@ char *tycho_str_concat(Arena *a, const char *x, const char *y) {
 #define TYCHO_SLEN(s) tycho_str_len(s)
 char *tycho_str_concat3(Arena *a, const char *s0, const char *s1, const char *s2) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2);
+    const char *d0 = tycho_str_data(s0), *d1 = tycho_str_data(s1), *d2 = tycho_str_data(s2);
     char *r = tycho_str_alloc(a, n0 + n1 + n2), *p = r;
-    tycho_mcpy(p, s0, n0); p += n0; tycho_mcpy(p, s1, n1); p += n1; tycho_mcpy(p, s2, n2);
+    tycho_mcpy(p, d0, n0); p += n0; tycho_mcpy(p, d1, n1); p += n1; tycho_mcpy(p, d2, n2);
     return r;
 }
 char *tycho_str_concat4(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3);
+    const char *d0 = tycho_str_data(s0), *d1 = tycho_str_data(s1), *d2 = tycho_str_data(s2), *d3 = tycho_str_data(s3);
     char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3), *p = r;
-    tycho_mcpy(p, s0, n0); p += n0; tycho_mcpy(p, s1, n1); p += n1; tycho_mcpy(p, s2, n2); p += n2; tycho_mcpy(p, s3, n3);
+    tycho_mcpy(p, d0, n0); p += n0; tycho_mcpy(p, d1, n1); p += n1; tycho_mcpy(p, d2, n2); p += n2; tycho_mcpy(p, d3, n3);
     return r;
 }
 char *tycho_str_concat5(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3, const char *s4) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3), n4 = TYCHO_SLEN(s4);
+    const char *d0 = tycho_str_data(s0), *d1 = tycho_str_data(s1), *d2 = tycho_str_data(s2), *d3 = tycho_str_data(s3), *d4 = tycho_str_data(s4);
     char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3 + n4), *p = r;
-    tycho_mcpy(p, s0, n0); p += n0; tycho_mcpy(p, s1, n1); p += n1; tycho_mcpy(p, s2, n2); p += n2; tycho_mcpy(p, s3, n3); p += n3; tycho_mcpy(p, s4, n4);
+    tycho_mcpy(p, d0, n0); p += n0; tycho_mcpy(p, d1, n1); p += n1; tycho_mcpy(p, d2, n2); p += n2; tycho_mcpy(p, d3, n3); p += n3; tycho_mcpy(p, d4, n4);
     return r;
 }
 char *tycho_str_concat6(Arena *a, const char *s0, const char *s1, const char *s2, const char *s3, const char *s4, const char *s5) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2), n3 = TYCHO_SLEN(s3), n4 = TYCHO_SLEN(s4), n5 = TYCHO_SLEN(s5);
+    const char *d0 = tycho_str_data(s0), *d1 = tycho_str_data(s1), *d2 = tycho_str_data(s2), *d3 = tycho_str_data(s3), *d4 = tycho_str_data(s4), *d5 = tycho_str_data(s5);
     char *r = tycho_str_alloc(a, n0 + n1 + n2 + n3 + n4 + n5), *p = r;
-    tycho_mcpy(p, s0, n0); p += n0; tycho_mcpy(p, s1, n1); p += n1; tycho_mcpy(p, s2, n2); p += n2; tycho_mcpy(p, s3, n3); p += n3; tycho_mcpy(p, s4, n4); p += n4; tycho_mcpy(p, s5, n5);
+    tycho_mcpy(p, d0, n0); p += n0; tycho_mcpy(p, d1, n1); p += n1; tycho_mcpy(p, d2, n2); p += n2; tycho_mcpy(p, d3, n3); p += n3; tycho_mcpy(p, d4, n4); p += n4; tycho_mcpy(p, d5, n5);
     return r;
 }
 
@@ -1410,7 +1431,7 @@ static tycho_int tycho_str_append_room(Arena *a, char **s, TychoStrAppend *st, t
             nc *= 2;
         }
         char *nb = (char *)arena_alloc(a, (size_t)nc + 8u) + 8;
-        memcpy(nb, *s, (size_t)len);   /* the old buffer remains live for self-append */
+        memcpy(nb, tycho_str_data(*s), (size_t)len);   /* the old buffer remains live for self-append */
         *s = nb;
         st->data = nb;
         st->cap = nc;
@@ -1422,8 +1443,9 @@ static tycho_int tycho_str_append_room(Arena *a, char **s, TychoStrAppend *st, t
  * on growth the operand still points at the old, live arena allocation. */
 void tycho_str_append(Arena *a, char **s, TychoStrAppend *st, const char *e) {
     tycho_int el = tycho_str_len(e);
+    const char *ed = tycho_str_data(e);
     tycho_int len = tycho_str_append_room(a, s, st, el);
-    memmove(*s + len, e, (size_t)el);
+    memmove(*s + len, ed, (size_t)el);
     len += el;
     (*s)[len] = '\0';
     ((tycho_int *)*s)[-1] = len;
@@ -1433,8 +1455,9 @@ void tycho_str_append(Arena *a, char **s, TychoStrAppend *st, const char *e) {
  * a tycho_int (Tycho's char type). New buffer lives in arena `a` (cf. tycho_str_concat). */
 char *tycho_str_concat_char(Arena *a, const char *x, tycho_int c) {
     tycho_int lx = tycho_str_len(x);   /* header length: byte-safe */
+    const char *xd = tycho_str_data(x);
     char *r = tycho_str_alloc(a, lx + 1);
-    memcpy(r, x, (size_t)lx);
+    memcpy(r, xd, (size_t)lx);
     r[lx] = (char)c;
     return r;
 }
@@ -1466,6 +1489,13 @@ char *tycho_str_copy(Arena *a, const char *s) {
      * shape tycho_str_recycle already accepts. Without this, copying a missing
      * composite map value dereferences NULL reading the length header. */
     if (!s) return (char *)ty_str_empty.z;
+    if (tycho_str_is_view(s)) {
+        tycho_int vn = tycho_str_view_of(s)->len;
+        const char *vd = tycho_str_view_of(s)->data;
+        char *vr = tycho_str_alloc(a, vn);
+        if (vn > 0) tycho_mcpy(vr, vd, vn);
+        return vr;
+    }
     tycho_int raw = ((const tycho_int *)s)[-1];
     if (raw < 0) return (char *)s;   /* immortal literal: immutable, so sharing is value-identical */
     tycho_int n = raw;   /* header length: a value-semantic copy of a Tycho string preserves every byte */
@@ -1531,7 +1561,7 @@ char *tycho_bytes_from_c(Arena *a, unsigned char *p, tycho_int n) {
 }))
 
 void tycho_print(const char *s) { fputs(s, stdout); }   /* bare C string: codegen newline, FFI read-once borrow */
-void tycho_print_s(const char *s) { fwrite(s, 1, (size_t)tycho_str_len(s), stdout); }   /* a Tycho string: all bytes, incl. interior NUL */
+void tycho_print_s(const char *s) { fwrite(tycho_str_data(s), 1, (size_t)tycho_str_len(s), stdout); }   /* a Tycho string: all bytes, incl. interior NUL */
 void tycho_eprint(const char *s) { fputs(s, stderr); }   /* non-fatal stderr write (warnings) */
 
 /* --- string builtins ------------------------------------------------------
@@ -1540,8 +1570,47 @@ void tycho_eprint(const char *s) { fputs(s, stderr); }   /* non-fatal stderr wri
  * semantics, like everything else); its range is clamped Python-style. */
 
 tycho_int tycho_str_len(const char *s) {
+    if (tycho_str_is_view(s)) return tycho_str_view_of(s)->len;
     tycho_int n = ((const tycho_int *)s)[-1];
     return n < 0 ? ~n : n;   /* a negative header is an immortal literal */
+}
+
+/* Build a view of [start, end); bounds are clamped exactly as
+ * tycho_str_substr. The parent may itself be a view. Returning the struct lets
+ * codegen put it in a block-scope compound literal whose address is valid for
+ * the whole call expression (a statement-expression local would die first). */
+TychoStrView tycho_str_view_make(const char *s, tycho_int start, tycho_int end) {
+    const char *d = tycho_str_data(s);
+    tycho_int n = tycho_str_len(s);
+    if (start < 0) start = 0;
+    if (end > n) end = n;
+    if (end < start) end = start;
+    TychoStrView v = { d + start, end - start };
+    return v;
+}
+TychoStrView tycho_str_view_make_auto(const char *s, tycho_int start) {
+    return tycho_str_view_make(s, start, tycho_str_len(s));
+}
+/* The arena owns the 16-byte view; its lifetime covers the synchronous call.
+ * No payload bytes are copied. A retention path materializes the string. */
+char *tycho_str_view_alloc(Arena *a, const char *s, tycho_int start, tycho_int end) {
+    TychoStrView *v = (TychoStrView *)arena_alloc(a, sizeof(TychoStrView));
+    *v = tycho_str_view_make(s, start, end);
+    return (char *)((uintptr_t)v | (uintptr_t)1);
+}
+char *tycho_str_view_alloc_auto(Arena *a, const char *s, tycho_int start) {
+    TychoStrView *v = (TychoStrView *)arena_alloc(a, sizeof(TychoStrView));
+    *v = tycho_str_view_make_auto(s, start);
+    return (char *)((uintptr_t)v | (uintptr_t)1);
+}
+void tycho_str_view_init(TychoStrView *v, const char *s, tycho_int start, tycho_int end) {
+    *v = tycho_str_view_make(s, start, end);
+}
+
+/* FFI boundary: a C char* must be NUL-terminated, which a slice is not. A
+ * normal Tycho string already is; a view is materialized in the call arena. */
+char *tycho_str_cstr(Arena *a, const char *s) {
+    return tycho_str_is_view(s) ? tycho_str_copy(a, s) : (char *)s;
 }
 
 /* Byte-safe lexicographic compare: -1/0/1, using the length headers (NOT NUL
@@ -1558,24 +1627,23 @@ int tycho_str_eq(const char *a, const char *b) {
      * sit at a negative offset and cost two. Measured: length-first here was
      * 91.1e6 Ir on server/main.ty against 90.2e6 for str_cmp; byte-0-first is
      * what makes str_eq actually beat it. Byte 0 is readable even when empty. */
-    if (a[0] != b[0]) return 0;
+    const char *ad = tycho_str_data(a), *bd = tycho_str_data(b);
+    if (ad[0] != bd[0]) return 0;
     tycho_int la = tycho_str_len(a), lb = tycho_str_len(b);
     if (la != lb) return 0;
     if (la == 0 || a == b) return 1;
-    /* Short and equal-length is the parser's whole diet ("op", "kw", every
-     * operator): a byte loop beats the call into memcmp, whose own setup costs
-     * more than the comparison at these lengths. */
     if (la <= 8) {
-        for (tycho_int i = 1; i < la; i++) if (a[i] != b[i]) return 0;
+        for (tycho_int i = 1; i < la; i++) if (ad[i] != bd[i]) return 0;
         return 1;
     }
-    return memcmp(a + 1, b + 1, (size_t)(la - 1)) == 0;
+    return memcmp(ad + 1, bd + 1, (size_t)(la - 1)) == 0;
 }
 int tycho_str_cmp(const char *a, const char *b) {
     /* 75% of the 6.3M compares compiling compiler/main.ty are settled by byte 0
      * (measured), and byte 0 is readable even when empty: a NUL there orders an
      * empty string first, the same answer the general path below gives. */
-    unsigned char c0 = (unsigned char)a[0], d0 = (unsigned char)b[0];
+    const char *ad = tycho_str_data(a), *bd = tycho_str_data(b);
+    unsigned char c0 = (unsigned char)ad[0], d0 = (unsigned char)bd[0];
     if (c0 != d0) return c0 < d0 ? -1 : 1;
     tycho_int la = tycho_str_len(a), lb = tycho_str_len(b);
     tycho_int n = la < lb ? la : lb;
@@ -1585,12 +1653,12 @@ int tycho_str_cmp(const char *a, const char *b) {
      * because that is how memcmp orders and this must agree with it exactly. */
     if (n <= 8) {
         for (tycho_int i = 1; i < n; i++) {
-            unsigned char ca = (unsigned char)a[i], cb = (unsigned char)b[i];
+            unsigned char ca = (unsigned char)ad[i], cb = (unsigned char)bd[i];
             if (ca != cb) return ca < cb ? -1 : 1;
         }
         return la < lb ? -1 : (la > lb ? 1 : 0);
     }
-    int c = memcmp(a + 1, b + 1, (size_t)(n - 1));
+    int c = memcmp(ad + 1, bd + 1, (size_t)(n - 1));
     if (c != 0) return c < 0 ? -1 : 1;
     return la < lb ? -1 : (la > lb ? 1 : 0);
 }
@@ -1601,7 +1669,7 @@ tycho_int tycho_str_get(const char *s, tycho_int i) {
         fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
         exit(1);
     }
-    return (tycho_int)(unsigned char)s[i];   /* unsigned: 0..255, never negative */
+    return (tycho_int)(unsigned char)tycho_str_data(s)[i];   /* unsigned: 0..255, never negative */
 }
 
 /* Same bounds-checked byte read, but the caller passes the length — used when the
@@ -1613,28 +1681,30 @@ tycho_int tycho_str_get_n(const char *s, tycho_int i, tycho_int n) {
         fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
         exit(1);
     }
-    return (tycho_int)(unsigned char)s[i];
+    return (tycho_int)(unsigned char)tycho_str_data(s)[i];
 }
 
 /* substring [start, end); out-of-range bounds are clamped, not an error */
 char *tycho_str_substr(Arena *a, const char *s, tycho_int start, tycho_int end) {
     tycho_int n = tycho_str_len(s);   /* header length: byte-safe */
+    const char *sd = tycho_str_data(s);
     if (start < 0) start = 0;
     if (end > n) end = n;
     if (end < start) end = start;
     tycho_int m = end - start;
     char *r = tycho_str_alloc(a, m);
-    tycho_mcpy(r, s + start, m);
+    tycho_mcpy(r, sd + start, m);
     return r;
 }
 
 /* byte index of the first occurrence of sub in s, or -1 if absent. Byte-safe:
  * scans by the length headers, not NUL, so interior '\0' bytes are matched. */
 tycho_int tycho_str_find(const char *s, const char *sub) {
+    const char *sd = tycho_str_data(s), *pd = tycho_str_data(sub);
     tycho_int ls = tycho_str_len(s), lsub = tycho_str_len(sub);
     if (lsub == 0) return 0;
     for (tycho_int i = 0; i + lsub <= ls; i++)
-        if (memcmp(s + i, sub, (size_t)lsub) == 0) return i;
+        if (memcmp(sd + i, pd, (size_t)lsub) == 0) return i;
     return -1;
 }
 
@@ -1698,7 +1768,7 @@ tycho_int tycho_write_file(const char *path, const char *data) {
     FILE *f = fopen(path, "wb");
     if (!f) return 0;
     tycho_int n = tycho_str_len(data);
-    size_t w = fwrite(data, 1, (size_t)n, f);
+    size_t w = fwrite(tycho_str_data(data), 1, (size_t)n, f);
     /* fwrite lands in the stdio buffer; ENOSPC/EIO surface at the FLUSH, which
      * fclose performs. Ignoring its status reported a full disk as a success. */
     int ok = (w == (size_t)n) && ferror(f) == 0;
@@ -2295,7 +2365,7 @@ char **tycho_arr_str_ptr(TychoArrStr *xs, tycho_int i) {
 }
 
 void tycho_str_recycle(Arena *a, const char *s) {
-    if (s && ((const tycho_int *)s)[-1] >= 0 && arena_owns(a, s - 8))
+    if (s && !tycho_str_is_view(s) && ((const tycho_int *)s)[-1] >= 0 && arena_owns(a, s - 8))
         arena_recycle(a, (void *)(s - 8), (size_t)(8 + (size_t)tycho_str_len(s) + 1));
 }
 
@@ -2304,7 +2374,7 @@ void tycho_str_slot_set(Arena *a, char **slot, const char *v) {
      * the old string is dead and can be recycled if this arena owns it. */
     char *old = *slot;
     char *nw = tycho_str_copy(a, v);
-    if (old && arena_owns(a, old - 8)) {
+    if (old && !tycho_str_is_view(old) && arena_owns(a, old - 8)) {
         size_t on = ((size_t)(8 + (size_t)tycho_str_len(old) + 1) + 7u) & ~(size_t)7u;
         arena_recycle(a, old - 8, on);
     }
@@ -2353,6 +2423,7 @@ void tycho_arr_str_recycle(Arena *a, TychoArrStr xs) {
  * fields); an empty s yields one empty field. An empty separator has no
  * well-defined splitting, so fail closed rather than guess. */
 TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
+    const char *sd = tycho_str_data(s), *pd = tycho_str_data(sep);
     tycho_int sl = tycho_str_len(s), pl = tycho_str_len(sep);   /* byte-safe: header lengths, not strlen/strstr */
     if (pl == 0) {
         fprintf(stderr, "tycho: split with an empty separator\n");
@@ -2361,9 +2432,9 @@ TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
     TychoArrStr r = tycho_arr_str_with_cap(a, 4);
     tycho_int start = 0, i = 0;
     while (i + pl <= sl) {
-        if (memcmp(s + i, sep, (size_t)pl) == 0) {   /* field is [start, i) */
+        if (memcmp(sd + i, pd, (size_t)pl) == 0) {   /* field is [start, i) */
             char *field = tycho_str_alloc(a, i - start);
-            memcpy(field, s + start, (size_t)(i - start));
+            memcpy(field, sd + start, (size_t)(i - start));
             tycho_arr_str_push(a, &r, field);
             i += pl; start = i;
         } else {
@@ -2372,7 +2443,7 @@ TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
     }
     /* last field: [start, sl) -- byte-safe, no strlen on a tail that may hold a NUL */
     char *tail = tycho_str_alloc(a, sl - start);
-    memcpy(tail, s + start, (size_t)(sl - start));
+    memcpy(tail, sd + start, (size_t)(sl - start));
     tycho_arr_str_push(a, &r, tail);
     return r;
 }
@@ -2612,7 +2683,7 @@ static uint64_t tycho_siphash13(const unsigned char *in, uint64_t inlen, uint64_
 
 static uint64_t tycho_si_hash(const char *s) {        /* keyed SipHash-1-3 */
     tycho_int n = tycho_str_len(s);   /* hash the true bytes (header length), not up to a NUL */
-    return tycho_siphash13((const unsigned char *)s, (uint64_t)n, tycho_hash_k0, tycho_hash_k1);
+    return tycho_siphash13((const unsigned char *)tycho_str_data(s), (uint64_t)n, tycho_hash_k0, tycho_hash_k1);
 }
 /* Deterministic (cross-run stable) variants for the PUBLIC `hash(x)` builtin:
  * fixed keys/seed, never overwritten at startup, so the same value hashes the

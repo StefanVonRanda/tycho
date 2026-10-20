@@ -121,7 +121,37 @@ outside the loop still copies. `tests/move_loop_local.ty` covers the local
 adoption and the cross-arena `sink` push, which must copy because the caller's
 array outlives the callee's scratch.
 
-## O4–O7
+## O4 — borrowed in-scope slices (SHIPPED 0.8.9)
+
+Date: 2026-10-20. Host: Linux x86-64, AMD Ryzen 7 7735HS.
+
+Fixture: `bench/opt/sliceparse/main.ty` — a 12.8 MB string sliced 100 times
+with `s[0:len(s)]`; each slice is consumed by `len` and discarded. The control
+`TYCHOC_NO_SLICE_VIEW=1` copies the 12.8 MB field; the optimized path stores a
+16-byte `(parent, length)` view.
+
+```text
+./tychoc1 bench/opt/sliceparse/main.ty -o /tmp/sl_after
+TYCHOC_NO_SLICE_VIEW=1 ./tychoc1 bench/opt/sliceparse/main.ty -o /tmp/sl_before
+./tychoc  bench/opt/sliceparse/main.ty -o /tmp/slr_after
+TYCHOC_NO_SLICE_VIEW=1 ./tychoc bench/opt/sliceparse/main.ty -o /tmp/slr_before
+```
+
+| build | output | peak RSS (median of 5) | wall time (median of 5) |
+|---|---:|---:|---:|
+| `tychoc1`, copy | 1280000000 | 42.9 MB | 33 ms |
+| `tychoc1`, view | 1280000000 | **30.6 MB** | **7 ms** |
+| `./tychoc`, copy | 1280000000 | 43.0 MB | 32 ms |
+| `./tychoc`, view | 1280000000 | **30.7 MB** | **6 ms** |
+
+That is a **79% wall-time drop and 29% lower peak RSS** in the shipped
+compiler. The view itself is 16 bytes in the call arena; the 12.8 MB payload
+is never copied. A binding, return, `push`, map key or FFI call goes through
+`tycho_str_copy`, so it still copies. `tests/pkg/slice_view` covers both the
+view path (`println`, `len`, `strings.to_upper`) and the materialization path
+(binding, return, `push`).
+
+## O5–O7
 
 No measurements yet. Each phase adds its fixture and records the same table
 (copy/control vs optimized) before the phase is marked done.

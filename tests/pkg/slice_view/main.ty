@@ -1,0 +1,24 @@
+package main
+
+import "core:strings"
+
+# O4: in-scope slices passed to a call are views; a slice that is bound,
+# returned, pushed or handed to FFI must materialize.
+fn prefix(s: string) -> string:
+    return s[0:2]
+
+fn stash(s: string) -> [string]:
+    out: [string] = []
+    push(out, s)
+    return out
+
+fn main():
+    s := "hello world"
+    println(s[0:5])
+    println(str(len(s[2:7])))
+    println(strings.to_upper(s[0:5]))
+    t := s[0:5]
+    println(t)
+    println(prefix(s))
+    kept := stash(s[0:5])
+    println(kept[0])

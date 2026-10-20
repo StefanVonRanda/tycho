@@ -9050,7 +9050,7 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:10904@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:10907@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
      * required value, and it matches the lambda-lift twin at src/tychoc.c:6856@is_sink which sets
@@ -10760,6 +10760,9 @@ static const char *g_cur_scope = "&_scope";
  * destination arena. Without this the intermediate `str(i)` also survives in
  * the destination arena, which costs more than the copy the promotion saves. */
 static int g_promote_concat = 0;
+/* O4: when set, a string slice emits a stack TychoStrView instead of a copy.
+ * Only call-argument positions set it, so the view never outlives the call. */
+static int g_slice_view = 0;
 /* Depth of aggregate constructions nested inside a user-proc call's argument
  * expressions. A deep copy of a live heap local into such an aggregate is the
  * by-value call-argument copy -- the copy the Val-style diagnostic names. At a
@@ -11860,6 +11863,10 @@ static char *gen_extern_raw(Expr *e) {
             char *tv = sfmt("_xa%d", nb++);
             decls = sfmt("%s%s%s = %s; ", decls, c_type(at), tv, a);
             args = sfmt("%s%s(%s)%s.data, %s.len", args, emitted++ ? ", " : "", arrp, tv, tv);
+        } else if (at == T_STRING) {
+            char *tv = sfmt("_xc%d", nb++);
+            decls = sfmt("%schar *%s = tycho_str_cstr(%s, %s); ", decls, tv, g_cur_scope, a);
+            args = sfmt("%s%s%s", args, emitted++ ? ", " : "", tv);
         } else {
             args = sfmt("%s%s%s", args, emitted++ ? ", " : "", a);
         }
@@ -11919,8 +11926,10 @@ static char *gen_call(Expr *e, const char *arena) {
         char *g = sfmt("h_%s", e->sval);
         char *out = sfmt("%s.call(%s.env, %s", g, g, arena);
         g_call_arg_depth++;
+        int sv_ind = g_slice_view; g_slice_view = 1;
         for (int i = 0; i < e->nargs; i++)
             out = sfmt("%s, %s", out, gen_expr(e->args[i], g_cur_scope));
+        g_slice_view = sv_ind;
         g_call_arg_depth--;
         return sfmt("%s)", out);
     }
@@ -11946,7 +11955,9 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "len")) {
         if (is_extern_str_call(e->args[0]))   /* FFI: read the length of a C-owned string without copying it (read-once borrow) */
             return sfmt("({ const char *_x = %s; _x ? (tycho_int)strlen(_x) : 0L; })", gen_extern_raw(e->args[0]));
+        int sv_len = g_slice_view; g_slice_view = 1;
         char *a = gen_expr(e->args[0], arena);
+        g_slice_view = sv_len;
         if (e->args[0]->type == T_STRING || e->args[0]->type == T_BYTES)   /* bytes: same length-headered buffer */
             return sfmt("tycho_str_len(%s)", a);
         if (IS_FIXARR(e->args[0]->type))   /* [N]T: length is the compile-time N (no .len field) */
@@ -11992,6 +12003,8 @@ static char *gen_call(Expr *e, const char *arena) {
         char *s = gen_expr(e->args[0], arena);
         char *a = gen_expr(e->args[1], arena);
         char *b = gen_expr(e->args[2], arena);
+        if (g_slice_view && !getenv("TYCHOC_NO_SLICE_VIEW"))
+            return sfmt("tycho_str_view_alloc(%s, %s, %s, %s)", arena, s, a, b);
         return sfmt("tycho_str_substr(%s, %s, %s, %s)", arena, s, a, b);
     }
     if (!strcmp(e->sval, "find")) {
@@ -12079,7 +12092,9 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "print")) {
         if (is_extern_str_call(e->args[0]))   /* FFI: write a C-owned string without copying it (read-once borrow) */
             return sfmt("tycho_print(({ const char *_x = %s; _x ? _x : \"\"; }))", gen_extern_raw(e->args[0]));
+        int sv_print = g_slice_view; g_slice_view = 1;
         char *a = gen_expr(e->args[0], arena);
+        g_slice_view = sv_print;
         return sfmt("tycho_print_s(%s)", a);   /* a Tycho string: print all bytes via its length header */
     }
     if (!strcmp(e->sval, "eprint")) return sfmt("tycho_eprint(%s)", gen_expr(e->args[0], arena));   /* stderr, no newline, no exit */
@@ -12087,7 +12102,9 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "println")) {   /* print + a trailing newline */
         if (is_extern_str_call(e->args[0]))
             return sfmt("(tycho_print(({ const char *_x = %s; _x ? _x : \"\"; })), tycho_print(\"\\n\"))", gen_extern_raw(e->args[0]));
+        int sv_pl = g_slice_view; g_slice_view = 1;
         char *a = gen_expr(e->args[0], arena);
+        g_slice_view = sv_pl;
         return sfmt("(tycho_print_s(%s), tycho_print(\"\\n\"))", a);
     }
     if (!strcmp(e->sval, "input")) {
@@ -12311,6 +12328,7 @@ static char *gen_call(Expr *e, const char *arena) {
     char *packed_pre = "", *packed_post = "";
     int packed_count = 0;
     g_call_arg_depth++;
+    int sv_user = g_slice_view; g_slice_view = 1;
     for (int i = 0; i < e->nargs; i++) {
         /* arguments are transients (the callee's return value is independently
          * owned in _parent — never an alias of an arg), so build them in the
@@ -12371,6 +12389,7 @@ static char *gen_call(Expr *e, const char *arena) {
             out = sfmt("%s, %s", out, a);
         }
     }
+    g_slice_view = sv_user;
     g_call_arg_depth--;
     char *call = sfmt("%s)", out);
     if (!packed_count) return call;
@@ -12746,6 +12765,11 @@ static char *gen_expr(Expr *e, const char *arena) {
                 char *s  = gen_expr(e->lhs, arena);
                 char *lo = e->rhs ? gen_expr(e->rhs, arena) : sfmt("0L");
                 char *hi = e->nargs ? gen_expr(e->args[0], arena) : sfmt("tycho_str_len(_ss%d)", id);
+                if (g_slice_view && e->lhs->type == T_STRING && !getenv("TYCHOC_NO_SLICE_VIEW")) {
+                    if (e->nargs)
+                        return sfmt("tycho_str_view_alloc(%s, %s, %s, %s)", arena, s, lo, hi);
+                    return sfmt("tycho_str_view_alloc_auto(%s, %s, %s)", arena, s, lo);
+                }
                 return sfmt("({ const char *_ss%d = %s; tycho_str_substr(%s, _ss%d, %s, %s); })",
                             id, s, arena, id, lo, hi);
             }

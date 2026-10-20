@@ -391,7 +391,7 @@ fn _aff_reassign_check(cs: inout C, name: string, vt: string):
 # ------------------------------------------------------- generic instantiation
 #
 # src/tychoc.c@instantiate_generic and the Stage-2 deep clone at
-# src/tychoc.c:14790@Stage. What is reproduced here is the INFERENCE, not the clone: a call to a
+# src/tychoc.c:14814@Stage. What is reproduced here is the INFERENCE, not the clone: a call to a
 # generic binds each `$T` by unifying the written parameter pattern against the
 # argument's type, checks the `where` predicates against the bindings, and
 # answers the SUBSTITUTED return type instead of `?`.
@@ -1082,7 +1082,7 @@ fn _place_root(e: ast.Expr) -> string:
 # ------------------------------------------------- generic AGGREGATE instances
 #
 # src/tychoc.c@struct_instantiate / enum_instantiate, and the Stage-2 deep clone
-# at src/tychoc.c:14790@Stage. `subst_type` there rebuilds every field type FROM SCRATCH, which is
+# at src/tychoc.c:14814@Stage. `subst_type` there rebuilds every field type FROM SCRATCH, which is
 # the seam that lost `bounded` once (FRICTION #51-54): the instance is not the
 # template, and a rule checked on the template sees `$T`, never the type it was
 # bound to. So an instance here is stamped as a real TDecl whose field types are

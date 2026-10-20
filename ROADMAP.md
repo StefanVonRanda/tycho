@@ -186,10 +186,11 @@ in its text report with a golden update.
 
 > **Release scope:** 0.8.9 stays open until **O1–O7** are all in it. O1
 > (immortal allocation + literal lifetime elision), O2 (read-only
-> pass-by-pointer in the reference compiler) and O3 (last-use moves) are done,
-> with their before/after benchmarks. The packaged compiler already had O2's
-> descriptor form; O2 closes the bootstrap gap. O4–O7 are next. Nothing in this
-> section is claimed as shipped merely because it is written down.
+> pass-by-pointer in the reference compiler), O3 (last-use moves) and O4
+> (borrowed slices) are done, with their before/after benchmarks. The packaged
+> compiler already had O2's descriptor form; O2 closes the bootstrap gap.
+> O5–O7 are next. Nothing in this section is claimed as shipped merely because
+> it is written down.
 
 The goal is to expand the domains where Tycho competes by exploiting what value
 semantics already guarantees — uniqueness, read-only parameters, and the absence
@@ -286,16 +287,27 @@ fixture improves, and the copy case still copies. **All met.**
 
 ### O4 — Borrowed string/bytes slices
 
-**Status: planned.**
+**Status: DONE 2026-10-20 — shipped in 0.8.9.** The result is in
+[`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
 `substr` and `s[a:b]` copy today. Strings are immutable, so a slice can be a
 hidden `(pointer, length)` view while the parent is alive; if the slice escapes
-its parent's arena, the existing `copy_into` seam materializes it. This is a
-representation optimization, not a user-visible reference type.
+its parent's arena, the existing `copy_into` seam materializes it. The view is
+a 16-byte `TychoStrView` with the low pointer bit set, allocated in the call's
+arena: no payload bytes are copied, and the view dies with that arena. Only
+call-argument positions create views; a binding, return, `push`, map key or
+other retention path goes through `tycho_str_copy`, which materializes a normal
+string. FFI boundaries call `tycho_str_cstr`, which materializes a view because
+a C `char*` must be NUL-terminated.
 
-**Before/after fixture:** a lexer/JSON parser that slices fields and discards
-the line. **Done when:** in-scope slices allocate no bytes, escaping slices
-still copy, and the parser output/goldens are byte-identical.
+`TYCHOC_NO_SLICE_VIEW=1` restores the copy path for measurement. On
+`bench/opt/sliceparse` (100 in-scope slices of a 12.8 MB string): `tychoc1`
+**33 ms / 42.9 MB → 7 ms / 30.6 MB**; reference `./tychoc` **32 ms / 43.0 MB →
+6 ms / 30.7 MB**. `tests/pkg/slice_view` covers views, `len`, FFI, binding,
+return and `push` materialization. Byte output is identical.
+
+**Done when:** in-scope slices copy no payload bytes, escaping slices still
+copy, and the parser output/goldens are byte-identical. **All met.**
 
 ### O5 — Destination passing / automatic `inout`
 
