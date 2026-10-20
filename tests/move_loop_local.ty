@@ -1,0 +1,24 @@
+# O3: a loop-local built only to be pushed is adopted by the array instead of
+# copied. The sink case is the cross-arena control: `out` belongs to the
+# caller, so `x` must copy rather than hand the loop scratch to the caller.
+struct Item:
+    name: string
+    n: int
+
+fn build(n: int) -> int:
+    out: [Item] = []
+    for i := 0; i < n; i += 1:
+        x: Item = Item("item-" + str(i), i)
+        push(out, x)
+    return len(out)
+
+fn fill(out: sink [Item], n: int) -> int:
+    for i := 0; i < n; i += 1:
+        x: Item = Item("fill-" + str(i), i)
+        push(out, x)
+    return len(out)
+
+fn main():
+    println(str(build(4)))
+    out: [Item] = []
+    println(str(fill(out, 3)))

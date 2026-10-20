@@ -68,9 +68,9 @@ marks `m` as escaping in both compilers, so a mutated map/array local returned
 through a zero-cost newtype no longer keeps its storage in a scope that is
 freed on the way out. `tests/newtype_agg` is the regression.
 
-The roadmap also carries O3–O7: last-use moves, borrowed string/bytes slices,
-destination passing, conservative CoW, and SROA/bounds elimination. They are
-the 0.9 line; O1 was the prerequisite for O4 and O6.
+The roadmap also carries O4–O7: borrowed string/bytes slices, destination
+passing, conservative CoW, and SROA/bounds elimination. They are next in the
+same 0.8.9 cycle; O1 was the prerequisite for O4 and O6.
 
 **O2: read-only pass-by-pointer in the reference compiler.** It passes
 non-heap fixed arrays of four or more elements as `const T*` on direct calls.
@@ -84,6 +84,15 @@ the same fixture measures **10 ms** with the packaged compiler. O2 therefore
 closes the reference compiler's ABI-copy gap and brings `./tychoc` to the
 representation the shipped compiler already had; the packaged binary's
 performance is unchanged.
+
+**O3: last-use moves into `push`.** A loop-local declared at the current loop
+depth is a fresh buffer each iteration. When its only read is `push(dst, x)`,
+the declaration is promoted into the destination array's arena and the push
+stores it without a deep copy; a heap rebind and a direct `sink` call get the
+same relaxation. A local from outside the loop, or a push into a caller-owned
+`sink` array, still copies. On `bench/opt/movebuild` (500,000 four-string loop
+locals): `tychoc1` **91 ms → 79 ms**, `./tychoc` **96 ms → 87 ms**, same RSS.
+`tests/move_loop_local.ty` is the regression for both sides of the boundary.
 
 ## Verification
 

@@ -87,7 +87,41 @@ reference/bootstrap-compiler parity change: it removes the 2 KB copy from
 `./tychoc` and brings it to the representation the shipped compiler already
 had. The packaged binary's behavior and performance are unchanged.
 
-## O3–O7
+## O3 — last-use moves into `push` (SHIPPED 0.8.9)
+
+Date: 2026-10-20. Host: Linux x86-64, AMD Ryzen 7 7735HS.
+Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
+
+Fixture: `bench/opt/movebuild/main.ty` — 500,000 loop-local `Item`s with four
+128-byte strings each, built only to be pushed into an outer `[Item]`. The
+control `TYCHOC_NO_MOVE_PUSH=1` keeps the old allocation in the loop scratch
+and the deep copy into the array.
+
+```text
+./tychoc1 bench/opt/movebuild/main.ty -o /tmp/mv_after
+TYCHOC_NO_MOVE_PUSH=1 ./tychoc1 bench/opt/movebuild/main.ty -o /tmp/mv_before
+./tychoc bench/opt/movebuild/main.ty -o /tmp/mvr_after
+TYCHOC_NO_MOVE_PUSH=1 ./tychoc bench/opt/movebuild/main.ty -o /tmp/mvr_before
+```
+
+| build | output | peak RSS (median) | wall time (median) |
+|---|---:|---:|---:|
+| `tychoc1`, value copy | 500000 | 327,000 KB | 91 ms |
+| `tychoc1`, adopt | 500000 | 327,000 KB | **79 ms** |
+| `./tychoc`, value copy | 500000 | 327,000 KB | 96 ms |
+| `./tychoc`, adopt | 500000 | 327,000 KB | **87 ms** |
+
+That is **13% less wall time** in the shipped self-hosted compiler and **9%**
+in the reference compiler. RSS is unchanged: both builds retain the same final
+array; the copy is a transient in the loop scratch, so it costs bandwidth and
+allocator work rather than peak live memory.
+
+The loop-local gate is `declared at the current loop depth`; a local from
+outside the loop still copies. `tests/move_loop_local.ty` covers the local
+adoption and the cross-arena `sink` push, which must copy because the caller's
+array outlives the callee's scratch.
+
+## O4–O7
 
 No measurements yet. Each phase adds its fixture and records the same table
 (copy/control vs optimized) before the phase is marked done.

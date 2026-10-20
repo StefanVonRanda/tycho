@@ -30,13 +30,13 @@ checkout is not evidence of an optimization.
 |---|---|---|
 | O1 | [`bench/litarr_build.ty`](../litarr_build.ty) | literal pushes into a projected `[string]` |
 | O2 | [`bench/opt/bigparam/main.ty`](bigparam/main.ty) | large `[N]T` read-only parameters (reference ABI parity) |
-| O3 | `bench/opt/movebuild` (to add) | last-use moves into collections |
+| O3 | [`bench/opt/movebuild/main.ty`](movebuild/main.ty) | loop-local last-use moves into `push` |
 | O4 | `bench/opt/sliceparse` (to add) | borrowed string/bytes slices |
 | O5 | `bench/opt/treeupdate` (to add) | `t = insert(t, k)` destination passing |
 | O6 | `bench/trie` + path-copy fixture (to add) | conservative CoW |
 | O7 | `bench/prongB` array pipeline (to add) | SROA and bounds-check elimination |
 
-O1 is shipped in 0.8.9; O2 is shipped as reference/bootstrap parity, while the
-packaged self-hosted compiler already passes `[N]T` as a descriptor. Their
-before/after is in [`RESULTS.md`](RESULTS.md). O3–O7 are the 0.9 line and each
-adds its fixture when the phase starts.
+O1–O3 are shipped in 0.8.9; O2 is reference/bootstrap parity, while the packaged
+self-hosted compiler already passes `[N]T` as a descriptor. Their before/after
+is in [`RESULTS.md`](RESULTS.md). O4–O7 are next and each adds its fixture when
+the phase starts.

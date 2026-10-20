@@ -74,10 +74,20 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   The packaged `tychoc1` already lowers `[N]T` to a 24-byte descriptor and
   measures **10 ms** on the same fixture, so O2 is a bootstrap/reference
   parity change, not a change to the shipped binary's performance.
+- **O3: last-use moves into `push`.** A loop-local declared at the current loop
+  depth is a fresh buffer each iteration, so its single read can hand the value
+  over. When that read is `push(dst, x)`, the declaration is promoted into the
+  destination array's arena and the push stores it without a deep copy;
+  `TYCHOC_NO_MOVE_PUSH=1` restores the old copy path. The same relaxation
+  applies to heap rebinds and direct `sink` calls. A local declared outside the
+  loop, or a push into a caller-owned `sink` array, still copies. On
+  `bench/opt/movebuild` (500,000 four-string loop locals): **91 ms → 79 ms**
+  in `tychoc1` and **96 ms → 87 ms** in `./tychoc`, same RSS.
+  `tests/move_loop_local.ty` covers both the adopt and the cross-arena copy.
 - `ROADMAP.md` now carries O1–O7 for widening the domain without adding
   references: O1 above, read-only pointer parameters, last-use moves, borrowed
   string/bytes slices, destination passing, conservative CoW, and SROA/bounds
-  elimination. O1 and O2 are in 0.8.9; O3–O7 are the 0.9 line.
+  elimination. O1–O3 are in 0.8.9; O4–O7 are next.
 
 ## [0.8.7] — 2026-10-18
 

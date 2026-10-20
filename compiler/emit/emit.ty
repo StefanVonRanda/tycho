@@ -147,9 +147,11 @@ struct C:
     ret_loop_inner: int                # final write or guaranteed-writing if/else in a loop, or -1
     ret_loop_iv: string
     ret_loop_bound: string             # stable integer bound's C expression, or empty
+    vloop: [int]                       # lexical loop depth where the binding was declared (O3)
+    concat_scratch: string             # O3: operands of a promoted declaration's binops
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "")
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "")
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -1552,6 +1554,7 @@ fn _restore(cs: inout C, m: int):
         pop(cs.vcaps)
         pop(cs.vown)
         pop(cs.vlocal)
+        pop(cs.vloop)
         pop(cs.vacc)
 
 # src/tychoc.c@cv_push: a shadowing binding keeps the C name `h_<n>` and leans
@@ -1565,6 +1568,7 @@ fn _push(cs: inout C, n: string, t: string) -> string:
     push(cs.vcaps, 0)
     push(cs.vown, _curown(&cs))
     push(cs.vlocal, false)
+    push(cs.vloop, cs.loopdepth)
     push(cs.vacc, "")
     return cn
 
@@ -3305,6 +3309,7 @@ fn _subinline(cs: inout C, si: int, args: [ast.Expr], lv: bool) -> (string, stri
         push(cs.vcn, ac)
         push(cs.vown, owx)
         push(cs.vlocal, false)
+        push(cs.vloop, cs.loopdepth)
     inner := cs.sube[si]
     match cs.sube[si]:
         ast.Addr(l, k): inner = k[0]
@@ -3467,7 +3472,7 @@ fn _retval(cs: inout C, e: ast.Expr) -> string:
     rt := cs.cur_ret
     if rt == "float" and t == "int":
         c = "(double)(" + c + ")"
-    # src/tychoc.c:13866@cv_in_parent -- a return-slot local already
+    # src/tychoc.c:13973@cv_in_parent -- a return-slot local already
     # lives in the caller's arena, so the copy would duplicate it.
     projected := cs.ret_placed and _projection_fields(e, cs.ret_local) == cs.ret_fields
     if projected and len(cs.ret_loop_bound) > 0:
@@ -3823,8 +3828,12 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
         flat, ft := _flat_int_add(&cs, ea, eb)
         if len(ft) > 0:
             return (flat, ft)
+    savebin := cs.arena
+    if len(cs.concat_scratch) > 0:
+        cs.arena = cs.concat_scratch
     a, at := _ex(&cs, ea)
     b, bt := _ex(&cs, eb)
+    cs.arena = savebin
     if op == "in":
         if not _is_map(bt):
             _bad("`in` tests membership in a map")
@@ -3969,6 +3978,12 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
             if k > 2:
                 nm = nm + str(k)
             pre := nm + "(" + cs.arena + ", "
+            # A promoted declaration builds the inner piece in the loop scratch;
+            # fold it too, so the whole chain still writes the owner arena once.
+            pre2 := nm + "(" + cs.concat_scratch + ", "
+            if len(cs.concat_scratch) > 0 and not strings.starts_with(a, pre) and
+                    strings.starts_with(a, pre2):
+                pre = pre2
             if strings.starts_with(a, pre) and _one_call(a):
                 return ("tycho_str_concat" + str(k + 1) + "(" + cs.arena + ", " +
                     a[len(pre):len(a) - 1] + ", " + b + ")", "string")
@@ -4866,6 +4881,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         if et == "float" and vt == "int":
             vc = "(double)(" + vc + ")"
         ow := _ownerof(&cs, args[0])
+        mv := _canmove_push(&cs, args[0], args[1], et)
         # A CONSTRUCTED value needs the copy as much as a place does: its
         # interior strings/arrays were allocated in the caller's temporary
         # scope, and pushing the struct by value leaves them dangling once that
@@ -4890,7 +4906,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         helpercp := _apfx(&cs, et) == "tycho_arr_str" and fi9 < 0
         didcp := false
         if _heap(&cs, et) and (_place(args[1]) or ow != va) and
-                not _shares(&cs, args[1], et, ow) and not helpercp:
+                not _shares(&cs, args[1], et, ow) and not helpercp and not mv:
             vc = _copy(&cs, vc, et, ow)
             didcp = true
         if fi9 >= 0 and cap9 == 0:
@@ -4900,12 +4916,15 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             # `fd[l++] = v` raw drops that copy, so a string built in the loop
             # scratch was stored by pointer and dangled at the next reset --
             # corelib zip, tycho-ledger and tycho-snap, all string pushes.
-            if _apfx(&cs, et) == "tycho_arr_str" and not didcp:
+            if _apfx(&cs, et) == "tycho_arr_str" and not didcp and not mv:
                 vc = "tycho_str_copy(" + ow + ", " + vc + ")"
             return ("({ if (" + fdn + "l == " + fdn + "c) " + _arrf(&cs, et, "_grow") +
                 "(" + ow + ", &" + fdn + ", &" + fdn + "c, " + fdn + "l); " +
                 fdn + "[" + fdn + "l++] = " + vc + "; })", "void")
-        pc9 := _arrf(&cs, et, "_push") + "(" + ow + ", &(" + rc + "), " + vc + ")"
+        pfn := _arrf(&cs, et, "_push")
+        if et == "string" and mv:
+            pfn = _arrf(&cs, et, "_push_move")
+        pc9 := pfn + "(" + ow + ", &(" + rc + "), " + vc + ")"
         if cap9 > 0:
             # the capacity trap: a bounded array refuses the push that would
             # exceed its declared N (src/tychoc.c's per-capacity push helper)
@@ -5525,8 +5544,6 @@ fn _take_rebuild_field(cs: inout C, e: ast.Expr) -> bool:
 # may `b := rhs` / `b = rhs` take rhs's buffer instead of deep-copying it, given
 # the destination lives in arena `owner`?
 fn _canmove(cs: inout C, e: ast.Expr, owner: string) -> bool:
-    if cs.loopdepth != 0:
-        return false
     n := ""
     match e:
         ast.Name(l, nm): n = nm
@@ -5535,6 +5552,8 @@ fn _canmove(cs: inout C, e: ast.Expr, owner: string) -> bool:
         if cs.vnames[i] == n:
             if i < cs.fnbase or not cs.vlocal[i]:
                 return false          # parameters/pattern bindings may borrow
+            if cs.loopdepth != 0 and cs.vloop[i] != cs.loopdepth:
+                return false          # a local from outside this loop is reused each iteration
             if cs.vown[i] != owner:
                 return false
             return _creads_b(cs.pbody, n) == 1
@@ -5550,8 +5569,6 @@ fn _canmove(cs: inout C, e: ast.Expr, owner: string) -> bool:
 # value), a read inside a loop -- copies. src/tychoc.c's four die arms are not
 # repeated here: compiler/types/zsema.ty rejects those before emission.
 fn _canmove_sink(cs: inout C, e: ast.Expr) -> bool:
-    if cs.loopdepth != 0:
-        return false
     n := ""
     match e:
         ast.Name(l, nm): n = nm
@@ -5560,8 +5577,90 @@ fn _canmove_sink(cs: inout C, e: ast.Expr) -> bool:
         if cs.vnames[i] == n:
             if i < cs.fnbase or not cs.vlocal[i]:
                 return false          # parameters/pattern bindings may borrow
+            if cs.loopdepth != 0 and cs.vloop[i] != cs.loopdepth:
+                return false          # a local from outside this loop is reused each iteration
             return _creads_b(cs.pbody, n) == 1
     return false
+
+fn _canmove_push(cs: inout C, arr: ast.Expr, val: ast.Expr, et: string) -> bool:
+    if len(getenv("TYCHOC_NO_MOVE_PUSH")) > 0 or not _heap(&cs, et):
+        return false
+    n := ""
+    match val:
+        ast.Name(l, nm): n = nm
+        _: return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i < cs.fnbase or not cs.vlocal[i]:
+                return false
+            if cs.loopdepth != 0 and cs.vloop[i] != cs.loopdepth:
+                return false
+            src := cs.vown[i]
+            if len(src) == 0:
+                return false
+            root := _pname(arr)
+            if len(root) == 0 or root == n:
+                return false
+            for j := len(cs.vnames) - 1; j >= 0; j -= 1:
+                if cs.vnames[j] == root:
+                    if j < cs.fnbase or not cs.vlocal[j] or cs.vown[j] != src:
+                        return false
+                    return _creads_b(cs.pbody, n) == 1
+            return false
+    return false
+
+# O3: a loop-local built only to be pushed into an enclosing array is built in
+# that array's arena, so the push can adopt it instead of copying out of the
+# per-iteration scratch. Mirrors src/tychoc.c@push_decl_arena.
+fn _push_find_e(e: ast.Expr, name: string, arr: inout [ast.Expr], hits: inout int):
+    match e:
+        ast.Lambda(l, ps, r, b): return   # deferred: not this declaration's last use
+        ast.Call(l, q, n, ts, k):
+            if len(q) == 0 and n == "push" and len(k) >= 2:
+                match k[1]:
+                    ast.Name(l2, nm):
+                        if nm == name:
+                            push(arr, k[0])
+                            hits = hits + 1
+                    _: pass
+        _: pass
+    for c in ast.kids(e):
+        _push_find_e(c, name, &arr, &hits)
+
+fn _push_find_b(b: [ast.Stmt], name: string, arr: inout [ast.Expr], hits: inout int):
+    for st in b:
+        for e in _stmt_es(st):
+            _push_find_e(e, name, &arr, &hits)
+        for sb in _stmt_bs(st):
+            _push_find_b(sb, name, &arr, &hits)
+
+fn _pname(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, k, f): return _pname(k[0])
+        ast.Index(l, k): return _pname(k[0])
+        _: return ""
+    return ""
+
+fn _push_decl_arena(cs: inout C, name: string) -> string:
+    if len(getenv("TYCHOC_NO_MOVE_PUSH")) > 0 or cs.loopdepth == 0:
+        return ""
+    if _creads_b(cs.pbody, name) != 1:
+        return ""
+    arr := []ast.Expr
+    hits := 0
+    _push_find_b(cs.pbody, name, &arr, &hits)
+    if hits != 1 or len(arr) == 0:
+        return ""
+    root := _pname(arr[0])
+    if len(root) == 0 or root == name:
+        return ""
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == root:
+            if i < cs.fnbase or not cs.vlocal[i] or len(cs.vown[i]) == 0:
+                return ""
+            return cs.vown[i]
+    return ""
 
 fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, string):
     return _rhs3(&cs, e, want, arena, false)
@@ -6161,6 +6260,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             svcaps := cs.vcaps
             svo := cs.vown
             svlocal := cs.vlocal
+            svloop := cs.vloop
             sva := cs.vacc
             sar := cs.arena
             scr := cs.cur_ret
@@ -6170,6 +6270,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             cs.vcaps = []int
             cs.vown = []string
             cs.vlocal = []bool
+            cs.vloop = []int
             cs.vacc = []string
             sas := cs.ascope
             cs.ascope = []string
@@ -6206,6 +6307,7 @@ fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
             cs.vcaps = svcaps
             cs.vown = svo
             cs.vlocal = svlocal
+            cs.vloop = svloop
             cs.vacc = sva
             cs.arena = sar
             cs.ascope = sas
@@ -6312,6 +6414,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     svcaps := cs.vcaps
     svo := cs.vown
     svlocal := cs.vlocal
+    svloop := cs.vloop
     sva := cs.vacc
     sar := cs.arena
     scr := cs.cur_ret
@@ -6321,6 +6424,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vcaps = []int
     cs.vown = []string
     cs.vlocal = []bool
+    cs.vloop = []int
     cs.vacc = []string
     sas := cs.ascope
     cs.ascope = []string
@@ -6355,6 +6459,7 @@ fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind
     cs.vcaps = svcaps
     cs.vown = svo
     cs.vlocal = svlocal
+    cs.vloop = svloop
     cs.vacc = sva
     cs.arena = sar
     cs.ascope = sas
@@ -6448,6 +6553,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     svcaps := cs.vcaps
     svo := cs.vown
     svlocal := cs.vlocal
+    svloop := cs.vloop
     sva := cs.vacc
     sar := cs.arena
     scr := cs.cur_ret
@@ -6457,6 +6563,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vcaps = []int
     cs.vown = []string
     cs.vlocal = []bool
+    cs.vloop = []int
     cs.vacc = []string
     sas := cs.ascope
     cs.ascope = []string
@@ -6503,6 +6610,7 @@ fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], 
     cs.vcaps = svcaps
     cs.vown = svo
     cs.vlocal = svlocal
+    cs.vloop = svloop
     cs.vacc = sva
     cs.arena = sar
     cs.ascope = sas
@@ -6781,15 +6889,26 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             own5 := _curown(&cs)
             if _curown(&cs) == "&_scope" and _heap(&cs, cs.cur_ret) and _isesc(&cs, n) and cs.ret_local != n:
                 own5 = "_parent"
+            promoted := ""
+            if cs.loopdepth > 0 and len(want) > 0 and _heap(&cs, want):
+                promoted = _push_decl_arena(&cs, n)
+                if len(promoted) > 0:
+                    own5 = promoted
             if uset:
                 cs.arena = "&_t"
+            elif len(promoted) > 0:
+                cs.arena = promoted
             elif own5 == "_parent":
                 cs.arena = "_parent"
             path5 := cs.projection
             cs.projection = []string
             if cs.ret_local == n and cs.ret_update < 0:
                 cs.projection = cs.ret_fields
+            oldconcat := cs.concat_scratch
+            if len(promoted) > 0:
+                cs.concat_scratch = sav5
             c, t := _rhs3(&cs, rhs[0], want, own5, true)
+            cs.concat_scratch = oldconcat
             cs.projection = path5
             cs.arena = sav5
             if len(want) > 0:
@@ -6818,6 +6937,8 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 cs.vcaps[len(cs.vcaps) - 1] = _capof(&cs, ann[0])
             if own5 == "_parent" and _heap(&cs, t):
                 cs.vown[len(cs.vown) - 1] = "_parent"
+            elif len(promoted) > 0:
+                cs.vown[len(cs.vown) - 1] = promoted
             elif _place(rhs[0]) and _heap(&cs, t):
                 # A PLACE right-hand side lands in own5 whichever way _rhs3
                 # took it -- copied, shared, or moved, all three leave the value

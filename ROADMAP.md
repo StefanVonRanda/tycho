@@ -184,12 +184,12 @@ in its text report with a golden update.
 
 ## Compiler optimization phases: widening the domain (2026-10-19)
 
-> **Release scope:** 0.8.9 ships the friction phases above, **O1**
-> (immortal allocation + literal lifetime elision) and **O2** (read-only
-> pass-by-pointer in the reference compiler), with their before/after
-> benchmarks. The packaged compiler already had O2's descriptor form; O2
-> closes the bootstrap gap. O3–O7 are the 0.9 line. Nothing in this section is
-> claimed as shipped merely because it is written down.
+> **Release scope:** 0.8.9 stays open until **O1–O7** are all in it. O1
+> (immortal allocation + literal lifetime elision), O2 (read-only
+> pass-by-pointer in the reference compiler) and O3 (last-use moves) are done,
+> with their before/after benchmarks. The packaged compiler already had O2's
+> descriptor form; O2 closes the bootstrap gap. O4–O7 are next. Nothing in this
+> section is claimed as shipped merely because it is written down.
 
 The goal is to expand the domains where Tycho competes by exploiting what value
 semantics already guarantees — uniqueness, read-only parameters, and the absence
@@ -260,18 +260,29 @@ compiler; `tychoc1`'s lowering already avoids the copy.**
 
 ### O3 — Last-use moves / auto-sink
 
-**Status: planned.**
+**Status: DONE 2026-10-20 — shipped in 0.8.9.** The result is in
+[`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
-`push`, `send` and direct calls can adopt a dead local instead of deep-copying
-it. The existing `can_move_from` / `can_move_into_sink` predicates are the
-starting point; extend them to more element types and to last-use arguments at
-ordinary calls, while keeping the loop rule conservative. This is the
-collection/builder counterpart to the existing return-slot move.
+`push`, a direct `sink` call and a heap rebind can adopt a dead local instead
+of deep-copying it. A loop-local is movable when it was declared at the current
+loop depth: it is a fresh buffer each iteration, so its one textual read is one
+dynamic read. A local declared outside the loop is still refused.
 
-**Before/after fixture:** build a `[Tree]` / `[string]` collection from
-loop-local values, with a same-arena move and a cross-arena copy case.
+For `push`, the compiler also promotes a loop-local whose only read is the
+`push` into the destination array's arena. That is what makes the adoption
+possible: the old code built the value in the per-iteration scratch, then
+copied it into the long-lived array. `TYCHOC_NO_MOVE_PUSH=1` restores the copy
+path for measurement. A `push` into a caller-owned `sink` array remains a copy,
+because the source scratch dies before the caller's array does.
+
+On `bench/opt/movebuild` (500,000 loop-local four-string structs): `tychoc1`
+**91 ms → 79 ms**, reference `./tychoc` **96 ms → 87 ms** (median of ten and
+five respectively); RSS is unchanged because both builds retain the same final
+array. The move path is covered by `tests/move_loop_local.ty`, including the
+cross-arena `sink` copy case.
+
 **Done when:** the move path is selected only when uniqueness is proven, the
-fixture time/RSS improves, and the copy case still copies.
+fixture improves, and the copy case still copies. **All met.**
 
 ### O4 — Borrowed string/bytes slices
 

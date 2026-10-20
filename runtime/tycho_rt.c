@@ -2232,6 +2232,21 @@ void tycho_arr_str_push(Arena *a, TychoArrStr *xs, const char *v) {
     xs->data[xs->len++] = tycho_str_copy(a, v);   /* copy bytes into owner arena */
 }
 
+/* O3: the source is a dead local in the array's own arena, so the array can
+ * adopt its bytes instead of copying them. The compiler proves uniqueness and
+ * same-arena lifetime before emitting this call. */
+void tycho_arr_str_push_move(Arena *a, TychoArrStr *xs, const char *v) {
+    if (xs->len == xs->cap) {
+        tycho_int ncap = xs->cap ? xs->cap * 2 : 4;
+        char **nd = (char **)arena_alloc(a, (size_t)ncap * sizeof(char *));
+        if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(char *));
+        if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(char *));
+        xs->data = nd;
+        xs->cap = ncap;
+    }
+    xs->data[xs->len++] = (char *)v;
+}
+
 /* push-loop fusion grow hook (see tycho_arr_int_grow): regrows the SPINE (the
  * char* pointer buffer) in `a`; the strings it points to were already copied
  * into `a` at each fused store, so the shallow pointer memcpy keeps them. */

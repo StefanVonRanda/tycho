@@ -83,7 +83,7 @@ Suggested fixes, either alone would do: add `eprintln`, or make the suggestion
 for `eprintln` be `eprint` rather than `println`, or move the stderr row next to
 its stdout siblings. **The second was done** —
 `unknown procedure 'eprintln' -- stderr has no println; use eprint(s + "\n")`.
-`tests/diag/eprintln_wrong_stream.ty`.
+The old refusal fixture is gone.
 
 ## 4. `main` cannot return a status, and the error does not mention `exit`
 

@@ -417,7 +417,7 @@ pick-up order is written out in full under "What moved this pass" below.
      the reference bounds it at **64**, so above 64 the fan-out is narrower than `ncpu()`
      reports". The old text's "uses `ncpu()` chunks" — false on both counts, the `min`
      and the cap — is gone. The compiler side is cited anchored from the spec's own
-     provenance block, `src/tychoc.c:13251@_pk > 64`, so the gate now polices it.
+     provenance block, `src/tychoc.c:13347@_pk > 64`, so the gate now polices it.
    - **`ncpu()`'s false definition is corrected**, which was the other half:
      `docs/spec/16-builtins.md:249` states outright that it is "the *requested* worker
      count, **not** the width a `parallel for` will actually use" and that "a program that
@@ -441,7 +441,7 @@ pick-up order is written out in full under "What moved this pass" below.
      on 2026-07-30; `docs/spec/13-concurrency.md:81-83` is the corrected text and no
      longer says this.)*
    - The width is now **readable from Tycho**: `ncpu()` is a registered builtin
-     (`src/tychoc.c:6223@ncpu`, lowering at `src/tychoc.c:12009@tycho_ncpu`), so a program can at least
+     (`src/tychoc.c:6223@ncpu`, lowering at `src/tychoc.c:12101@tycho_ncpu`), so a program can at least
      ask. Measured on this box: `ncpu()` → 16.
    - There was an **undocumented hard ceiling of 64 chunks** — `if (_pk < 1) _pk = 1; if
      (_pk > 64) _pk = 64;` (`src/tychoc.c:12380`, inside `src/tychoc.c@gen_parfor`) —
@@ -1540,7 +1540,7 @@ That is sugar, not a missing channel, and it did not rank on this list.
 
 > **Status, 2026-10-19:** `eprintln(s)` is now a builtin in both compilers
 > (Phase 5 of the `tycho-dupe` friction phases); the residue is closed and
-> `tests/diag/eprintln_wrong_stream.ty` is gone.
+> the old refusal fixture is gone.
 > Pinned-by: grep -q '"eprintln"' surface.lock
 
 ### ~~7. gzip byte-determinism is real, undocumented, and load-bearing~~ — **entry was right; the guarantee is now written down, 2026-08-11**
@@ -6193,7 +6193,7 @@ wording slip: `tychoc`'s `Diag` carries a *single* instantiation site
 (`src/tychoc.c:105@inst_file` — one `inst_file`/`inst_line`/`inst_src`, not a
 stack), filled from one global pair (`src/tychoc.c:80@g_inst_from`) that
 `gen_program`'s instance loop retargets per instance
-(`src/tychoc.c:14851@g_inst_from`). So it can only ever name the innermost
+(`src/tychoc.c:14958@g_inst_from`). So it can only ever name the innermost
 frame; it is not dropping the outer one, it never had it. Making it match means
 giving `GInst` a link to the instance that instantiated it and walking that
 chain in `diag_flush` (`src/tychoc.c:1097@diag_flush`) — bounded work, but it

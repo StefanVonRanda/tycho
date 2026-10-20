@@ -9050,7 +9050,7 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:10892@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:10904@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
      * required value, and it matches the lambda-lift twin at src/tychoc.c:6856@is_sink which sets
@@ -10628,20 +10628,26 @@ static int g_blk = 0;   /* unique-name counter for block subarenas / literals */
  * so an assignment (or array push) can allocate in the *variable's* arena
  * rather than the current (possibly inner, soon-to-collapse) one. This is
  * what keeps the implicit model sound: a value never outlives its arena. */
-typedef struct { const char *name; const char *arena; const char *append; } CVar;
+typedef struct { const char *name; const char *arena; const char *append; int loop; } CVar;
 static CVar *g_cv;
 static int  g_ncv = 0, g_cv_cap = 0;
+static int  g_loop_depth;   /* lexical loop depth at codegen; defined with the move rules below */
 static int  cv_mark(void) { return g_ncv; }
 static void cv_restore(int m) { g_ncv = m; }
 static void cv_push(const char *name, const char *arena) {
     TBL_ENSURE(g_cv, g_ncv, g_cv_cap);
     g_cv[g_ncv].name = name; g_cv[g_ncv].arena = arena;
-    g_cv[g_ncv].append = NULL; g_ncv++;
+    g_cv[g_ncv].append = NULL; g_cv[g_ncv].loop = g_loop_depth; g_ncv++;
 }
 static const char *cv_arena(const char *name) {
     for (int i = g_ncv - 1; i >= 0; i--)
         if (!strcmp(g_cv[i].name, name)) return g_cv[i].arena;
     return NULL;
+}
+static int cv_loop(const char *name) {
+    for (int i = g_ncv - 1; i >= 0; i--)
+        if (!strcmp(g_cv[i].name, name)) return g_cv[i].loop;
+    return -1;
 }
 
 static const char *cv_append(const char *name) {
@@ -10740,7 +10746,8 @@ static char *owner_arena_of(const char *root) {
  * are never moved). Like the accumulator reuse, this is FBIP: reuse proven from
  * value semantics + lexical arenas, not reference counts. */
 static Stmt **g_proc_body; static int g_proc_nbody;   /* current proc body, for the read-count scan */
-static int g_loop_depth = 0;                           /* lexical loop nesting at the current codegen point */
+/* g_loop_depth is declared with CVar: a local's declaration depth lets a
+ * loop-local be moved once per iteration (O3). */
 /* The current statement's scope arena. A user function call's ARGUMENTS are
  * transients consumed by the callee — value semantics guarantees the call's
  * return value is freshly owned in _parent and never aliases an argument — so
@@ -10748,6 +10755,11 @@ static int g_loop_depth = 0;                           /* lexical loop nesting a
  * rather than in the result arena, which may live in an outer scope. Set at
  * the top of every gen_stmt; the result arena is still threaded explicitly. */
 static const char *g_cur_scope = "&_scope";
+/* O3: while generating a promoted loop-local declaration, string-concat
+ * operands are built in the loop scratch and only the result is built in the
+ * destination arena. Without this the intermediate `str(i)` also survives in
+ * the destination arena, which costs more than the copy the promotion saves. */
+static int g_promote_concat = 0;
 /* Depth of aggregate constructions nested inside a user-proc call's argument
  * expressions. A deep copy of a live heap local into such an aggregate is the
  * by-value call-argument copy -- the copy the Val-style diagnostic names. At a
@@ -10892,7 +10904,10 @@ static void fuse_close(FILE *o, int opened, int ind) {
 static int can_move_from(Expr *rhs, const char *owner) {
     if (rhs->kind != E_IDENT || !type_is_heap(rhs->type)) return 0;
     if (is_param(rhs->sval)) return 0;   /* never move a param's buffer (caller-owned) */
-    if (g_loop_depth != 0) return 0;
+    /* Inside a loop, only a local DECLARED in this same loop is safe: it is a
+     * fresh buffer each iteration, so the one textual read is one dynamic read.
+     * A local from outside the loop would be the same buffer N times. */
+    if (g_loop_depth != 0 && cv_loop(rhs->sval) != g_loop_depth) return 0;
     const char *a = cv_arena(rhs->sval);
     if (!a || strcmp(a, owner) != 0) return 0;        /* not a same-arena local (NULL = a param) */
     return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
@@ -10913,9 +10928,80 @@ static int can_move_from(Expr *rhs, const char *owner) {
 static int can_move_into_sink(Expr *rhs) {
     if (rhs->kind != E_IDENT || !type_is_heap(rhs->type)) return 0;
     if (is_param(rhs->sval)) return 0;          /* a param borrows the caller's buffer — never adopt */
-    if (g_loop_depth != 0) return 0;            /* one textual read must be one dynamic read */
+    /* A loop-local is fresh each iteration; a local from outside the loop is
+     * the same buffer on every dynamic read, so only the former can move. */
+    if (g_loop_depth != 0 && cv_loop(rhs->sval) != g_loop_depth) return 0;
     if (!cv_arena(rhs->sval)) return 0;         /* a tracked local: its arena encloses the call scope */
     return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
+}
+
+/* O3: `push(dst, src)` retains src, so unlike a sink argument it needs the
+ * source buffer to live as long as the destination. That is the same-arena
+ * case (or a loop-local created in the current iteration). A cross-arena push
+ * still copies; the control switch keeps the old path benchmarkable. */
+static int can_move_into_push(Expr *arr, Expr *val, Type elem) {
+    if (getenv("TYCHOC_NO_MOVE_PUSH")) return 0;
+    if (!type_is_heap(elem) || val->kind != E_IDENT) return 0;
+    if (is_param(val->sval)) return 0;
+    if (g_loop_depth != 0 && cv_loop(val->sval) != g_loop_depth) return 0;
+    const char *src = cv_arena(val->sval);
+    if (!src) return 0;
+    Expr *root = arr;
+    while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+    if (root->kind != E_IDENT || is_param(root->sval)) return 0;
+    if (!strcmp(root->sval, val->sval)) return 0;
+    const char *dst = cv_arena(root->sval);
+    if (!dst || strcmp(src, dst) != 0) return 0;
+    return count_reads_b(g_proc_body, g_proc_nbody, val->sval) == 1;
+}
+
+static void find_push_e(Expr *e, const char *name, Expr **arr, int *hits) {
+    if (!e) return;
+    if (e->kind == E_LAMBDA) return;   /* deferred: not this declaration's last use */
+    if (e->kind == E_CALL && e->sval && !strcmp(e->sval, "push")
+        && e->nargs >= 2 && e->args[1]->kind == E_IDENT
+        && !strcmp(e->args[1]->sval, name)) {
+        *arr = e->args[0]; (*hits)++;
+    }
+    find_push_e(e->lhs, name, arr, hits);
+    find_push_e(e->rhs, name, arr, hits);
+    for (int i = 0; i < e->nargs; i++) find_push_e(e->args[i], name, arr, hits);
+}
+static void find_push_b(Stmt **body, int n, const char *name, Expr **arr, int *hits) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        find_push_e(s->expr, name, arr, hits);
+        find_push_e(s->target, name, arr, hits);
+        find_push_e(s->r_start, name, arr, hits);
+        find_push_e(s->r_stop, name, arr, hits);
+        find_push_b(s->body, s->nbody, name, arr, hits);
+        find_push_b(s->els, s->nels, name, arr, hits);
+        for (int a = 0; a < s->narms; a++)
+            find_push_b(s->arms[a].body, s->arms[a].nbody, name, arr, hits);
+        if (s->ctrl) find_push_b(&s->ctrl, 1, name, arr, hits);
+        if (s->kind == S_SELECT && s->sel_ch)
+            for (int a = 0; a < s->narms; a++) find_push_e(s->sel_ch[a], name, arr, hits);
+    }
+}
+
+/* A loop-local that is built only to be pushed into an enclosing array should
+ * be built in THAT array's arena, not in the per-iteration scratch: the array
+ * outlives the iteration, so the old scratch allocation forced a copy. This
+ * returns the destination arena for `name`, or NULL when the declaration is
+ * not exactly a one-read `push(dst, name)`. */
+static const char *push_decl_arena(const char *name) {
+    if (getenv("TYCHOC_NO_MOVE_PUSH") || g_loop_depth == 0) return NULL;
+    if (count_reads_b(g_proc_body, g_proc_nbody, name) != 1) return NULL;
+    Expr *arr = NULL;
+    int hits = 0;
+    find_push_b(g_proc_body, g_proc_nbody, name, &arr, &hits);
+    if (hits != 1 || !arr) return NULL;
+    Expr *root = arr;
+    while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
+    if (root->kind != E_IDENT || is_param(root->sval)) return NULL;
+    const char *a = cv_arena(root->sval);
+    if (!a || !strcmp(a, name)) return NULL;
+    return a;
 }
 
 /* --- match-arm payload borrow (deep-copy elision) -----------------------
@@ -11568,11 +11654,11 @@ static char *sink_arg_into(Type t, const char *arena, Expr *arg) {
                 die_at(arg->line, "'%s' is a `sink` parameter and cannot be handed to another `sink` "
                                   "parameter: a parameter's buffer is never adopted, however it was "
                                   "declared. Copy it first (`y := %s`) and consume `y`", n, n);
-            else if (g_loop_depth != 0)
-                die_at(arg->line, "'%s' is consumed by a `sink` parameter inside a loop, where the next "
-                                  "iteration would consume it again; no named variable can be adopted "
-                                  "in a loop, a copy made in the loop included. Lift the call out of the "
-                                  "loop, or pass a fresh value (a literal, or a call's result)", n);
+            else if (g_loop_depth != 0 && cv_loop(n) != g_loop_depth)
+                die_at(arg->line, "'%s' is consumed by a `sink` parameter inside a loop but was declared "
+                                  "outside it, so the next iteration would consume the same buffer again. "
+                                  "Lift the call out of the loop, declare the value inside the loop, or "
+                                  "pass a fresh value (a literal, or a call's result)", n);
             else if (count_reads_b(g_proc_body, g_proc_nbody, n) != 1)
                 die_at(arg->line, "'%s' is consumed by a `sink` parameter but is mentioned %d times in "
                                   "this function: a sink argument must be the variable's ONLY mention. "
@@ -11938,7 +12024,9 @@ static char *gen_call(Expr *e, const char *arena) {
                  * deep-copy into the array's arena for str/struct/tuple/ARRC/... */
                 const char *gf = sfmt("tycho_arr_%s_grow", arr_fn(g_fuse[fi].ty));
                 const char *ow = owner_arena_of(e->args[0]->sval);
-                char *v = copy_into(arr_elem(g_fuse[fi].ty), ow, gen_expr(e->args[1], arena));
+                char *v = gen_expr(e->args[1], arena);
+                if (!can_move_into_push(e->args[0], e->args[1], arr_elem(g_fuse[fi].ty)))
+                    v = copy_into(arr_elem(g_fuse[fi].ty), ow, v);
                 return sfmt("({ if (_fl%d == _fc%d) %s(%s, &_fd%d, &_fc%d, _fl%d); _fd%d[_fl%d++] = %s; })",
                             id, id, gf, ow, id, id, id, id, id, v);
             }
@@ -11953,8 +12041,12 @@ static char *gen_call(Expr *e, const char *arena) {
         char *v = gen_expr(e->args[1], arena);
         if (IS_SOA(e->args[0]->type))   /* struct-of-arrays push: grow each field buffer + scatter */
             return sfmt("Soa%d_push(%s, &(%s), %s)", SOA_ID(e->args[0]->type), owner, arr, v);
-        /* push has the same (owner, &arr, v) shape for every element type */
-        return sfmt("tycho_arr_%s_push(%s, &(%s), %s)", arr_fn(e->args[0]->type), owner, arr, v);
+        int mv = can_move_into_push(e->args[0], e->args[1], arr_elem(e->args[0]->type));
+        /* push has the same (owner, &arr, v) shape for every element type. A
+         * move stores the dead source's buffer; the copy helper remains for
+         * live or cross-arena sources. */
+        return sfmt("tycho_arr_%s_%s(%s, &(%s), %s)",
+                    arr_fn(e->args[0]->type), mv ? "push_move" : "push", owner, arr, v);
     }
     if (!strcmp(e->sval, "pop")) {
         /* remove + return the last element. The result is deep-copied into the
@@ -12796,6 +12888,10 @@ static char *gen_expr(Expr *e, const char *arena) {
             return sfmt("%s })", out);
         }
         case E_BINOP: {
+            /* String operands are read once to build the result, so a promoted
+             * declaration can build them in the loop scratch; the result itself
+             * uses `arena` (the destination). */
+            const char *oa = g_promote_concat ? g_cur_scope : arena;
             if (e->op == TK_IS) {              /* `v is Variant` -> tag test (index stamped by resolve) */
                 Type lt = e->lhs->type;
                 if (IS_OPT(lt) || IS_RES(lt))  /* by-value struct: the same field `match` branches on */
@@ -12847,9 +12943,9 @@ static char *gen_expr(Expr *e, const char *arena) {
                 if (is_fstr) {
                     int id = g_forin_uid++;
                     char *v = sfmt("_fi%d", id);
-                    char *out = sfmt("({ char *%s = %s; ", v, gen_expr(pieces[np - 1], arena));
+                    char *out = sfmt("({ char *%s = %s; ", v, gen_expr(pieces[np - 1], oa));
                     for (int i = np - 2; i >= 0; i--) {
-                        char *piece = gen_expr(pieces[i], arena);
+                        char *piece = gen_expr(pieces[i], oa);
                         if (pieces[i]->type == T_CHAR)
                             out = sfmt("%s%s = tycho_str_concat_char(%s, %s, %s); ", out, v, arena, v, piece);
                         else
@@ -12878,7 +12974,7 @@ static char *gen_expr(Expr *e, const char *arena) {
                 if (ok && np >= 3) {
                     char *out = sfmt("tycho_str_concat%d(%s", np, arena), *pre = "";
                     for (int k = np - 1; k >= 0; k--) {   /* pieces are rightmost-first; emit leftmost first */
-                        char *p = gen_expr(pieces[k], arena);
+                        char *p = gen_expr(pieces[k], oa);
                         if (fseq && k > 0) {              /* k == 0 is the last piece: nothing follows it to order against */
                             int id = g_forin_uid++;
                             pre = sfmt("%schar *_fi%d = %s; ", pre, id, p);
@@ -12925,8 +13021,8 @@ static char *gen_expr(Expr *e, const char *arena) {
                     return sfmt("%s)", out);
                 }
             }
-            char *l = gen_expr(e->lhs, arena);
-            char *r = gen_expr(e->rhs, arena);
+            char *l = gen_expr(e->lhs, oa);
+            char *r = gen_expr(e->rhs, oa);
             /* and/or lower to C's short-circuiting && / || via op_str below */
             if (e->op == TK_PLUS && (e->lhs->type == T_STRING || e->lhs->type == T_BYTES)) {
                 if (fseq && e->lhs->type == T_STRING) {   /* two-piece f-string, or a chain outside the 3..6 fold */
@@ -13327,6 +13423,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             if (!strcmp(scope, "&_scope") && type_is_heap(s->decl_type)
                 && name_escapes(s->name) && s != g_return_projection.decl)
                 owner = "_parent";
+            /* O3: a loop-local built only to be pushed into an outer array is
+             * built in the array's arena, so the push can adopt it instead of
+             * copying from the per-iteration scratch. */
+            const char *promoted = NULL;
+            if (g_loop_depth > 0 && type_is_heap(s->decl_type)) {
+                const char *pa = push_decl_arena(s->name);
+                if (pa) { owner = pa; promoted = pa; }
+            }
             if (!type_is_heap(s->decl_type) && !strcmp(scope, "&_scope")
                 && expr_has_call(s->expr) && !expr_has_orreturn(s->expr)) {
                 g_cur_scope = "&_t";
@@ -13346,7 +13450,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 cv_push(s->name, scope);
                 break;
             }
+            int save_promote = g_promote_concat;
+            g_promote_concat = promoted && strcmp(promoted, scope) != 0;
             char *v = gen_expr(s->expr, owner);
+            g_promote_concat = save_promote;
             /* value semantics: binding from a heap *place* aliases its bytes,
              * so deep-copy into the owner arena. A literal/call/concat result
              * is already a freshly-owned value built in `owner` — no copy. And a
@@ -15071,6 +15178,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         const char *ct = c_type(g_arrtypes[i].elem);
         if (g_arrtypes[i].bnd == 1) {                  /* bounded[N]T: read/copy/eq like a fixarr, PLUS a trap-on-full push */
             fprintf(o, "static void tycho_arr_C%d_push(Arena*, TychoArrC%d*, %s);\n", i, i, ct);
+            fprintf(o, "static void tycho_arr_C%d_push_move(Arena*, TychoArrC%d*, %s);\n", i, i, ct);
             fprintf(o, "static %stycho_arr_C%d_get(TychoArrC%d, tycho_int);\n", ct, i, i);
             fprintf(o, "static %s*tycho_arr_C%d_ptr(TychoArrC%d*, tycho_int);\n", ct, i, i);
             fprintf(o, "static void tycho_arr_C%d_set(Arena*, TychoArrC%d*, tycho_int, %s);\n", i, i, ct);
@@ -15096,6 +15204,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         }
         fprintf(o, "static TychoArrC%d tycho_arr_C%d_with_cap(Arena*, tycho_int);\n", i, i);
         fprintf(o, "static void tycho_arr_C%d_push(Arena*, TychoArrC%d*, %s);\n", i, i, ct);
+        fprintf(o, "static void tycho_arr_C%d_push_move(Arena*, TychoArrC%d*, %s);\n", i, i, ct);
         fprintf(o, "static void tycho_arr_C%d_reserve(Arena*, TychoArrC%d*, tycho_int);\n", i, i);
         fprintf(o, "static void tycho_arr_C%d_grow(Arena*, %s**, tycho_int*, tycho_int);\n", i, ct);
         fprintf(o, "static %stycho_arr_C%d_pop(Arena*, TychoArrC%d*);\n", ct, i, i);
@@ -15226,6 +15335,11 @@ static void gen_program(FILE *o, ProcVec *prog) {
                 "static void tycho_arr_C%d_push(Arena *a, TychoArrC%d *xs, %sv) {\n"
                 "    if (xs->len >= %lld) { fprintf(stderr, \"tycho: push to a full bounded[%lld]\\n\"); exit(1); }\n"
                 "    xs->v[xs->len++] = %s;\n}\n", i, i, ct, (long long)n, (long long)n, copy_into(et, "a", "v"));
+            fprintf(o,   /* O3: the caller proved the source is dead and same-arena */
+                "static void tycho_arr_C%d_push_move(Arena *a, TychoArrC%d *xs, %sv) {\n"
+                "    (void)a;\n"
+                "    if (xs->len >= %lld) { fprintf(stderr, \"tycho: push to a full bounded[%lld]\\n\"); exit(1); }\n"
+                "    xs->v[xs->len++] = v;\n}\n", i, i, ct, (long long)n, (long long)n);
             fprintf(o,
                 "static %stycho_arr_C%d_get(TychoArrC%d xs, tycho_int i) {\n"
                 "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %%\" TY_PRId \" out of bounds (len %%\" TY_PRId \")\\n\", i, xs.len); exit(1); }\n"
@@ -15341,6 +15455,16 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "        xs->data = nd; xs->cap = nc;\n    }\n"
             "    xs->data[xs->len++] = %s;\n}\n",
             i, i, ct, ct, ct, ct, ct, copy_into(et, "a", "v"));
+        fprintf(o,   /* O3: caller proved the source is dead and same-arena */
+            "static void tycho_arr_C%d_push_move(Arena *a, TychoArrC%d *xs, %sv) {\n"
+            "    if (xs->len == xs->cap) {\n"
+            "        tycho_int nc = xs->cap ? xs->cap * 2 : 4;\n"
+            "        %s*nd = (%s*)arena_alloc(a, (size_t)nc * sizeof(%s));\n"
+            "        for (tycho_int i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n"
+            "        if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(%s));\n"
+            "        xs->data = nd; xs->cap = nc;\n    }\n"
+            "    xs->data[xs->len++] = v;\n}\n",
+            i, i, ct, ct, ct, ct, ct);
         fprintf(o,   /* capacity hint (reserve): grow the spine to n if larger; elements' heap lives on via nd (shallow spine copy, like push's regrow) */
             "static void tycho_arr_C%d_reserve(Arena *a, TychoArrC%d *xs, tycho_int n) {\n"
             "    tycho_cap_check(n, sizeof(%s));\n"

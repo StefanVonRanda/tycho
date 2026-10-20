@@ -145,11 +145,11 @@ EXPECT_MSG_RUNTIME = {
 # that triggers it. These are the entries the lane earns its keep on -- a codegen
 # arm that stops emitting its guard reddens here and nowhere else.
 EXPECT_MSG_CODEGEN = {
-    # src/tychoc.c:13212@exhaustive, src/tychoc.c:14089@exhaustive,
-    # src/tychoc.c:14089@exhaustive, src/tychoc.c:14089@exhaustive
+    # src/tychoc.c:13308@exhaustive, src/tychoc.c:14098@exhaustive,
+    # src/tychoc.c:14098@exhaustive, src/tychoc.c:14098@exhaustive
     r"tycho: non-exhaustive match\n",
-    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:15727@bounded (the [4] is surface.ty's Inline.slots)
-    # src/tychoc.c:12663@slice, src/tychoc.c:12663@slice
+    r"tycho: push to a full bounded[4]\n",  # src/tychoc.c:15851@bounded (the [4] is surface.ty's Inline.slots)
+    # src/tychoc.c:12755@slice, src/tychoc.c:12755@slice
     r"tycho: slice [%",
 }
 # REMOVED 2026-07-30 (the loops-cleanup plan): r"tycho: range step is zero\n".
