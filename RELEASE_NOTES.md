@@ -96,8 +96,8 @@ locals): `tychoc1` **91 ms → 79 ms**, `./tychoc` **96 ms → 87 ms**, same RSS
 
 ## Verification
 
-`make ci N=0` — CI GREEN (821s). `make test` — 1156 passed, 0 failed.
-`make corelib` — 46 ok. `make parse-check` — all green, 1505 files.
+`make ci N=0` — CI GREEN (823s). `make test` — 1157 passed, 0 failed.
+`make corelib` — 46 ok. `make parse-check` — all green, 1507 files.
 `make bench` — all benchmarks within bounds. The fuzz lanes were run
 separately at 60 seeds each: differential, reject and leak all green.
 
