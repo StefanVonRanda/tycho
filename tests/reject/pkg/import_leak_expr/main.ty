@@ -4,4 +4,4 @@ package main
 import "core:strings"
 
 fn main():
-    println(str(strings.parse_int("1") + helper("2")))
+    println(str(strings.parse_int_prefix("1") + helper("2")))

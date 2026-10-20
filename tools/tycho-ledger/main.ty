@@ -15,7 +15,7 @@ fn whole(tok: string) -> Result(int, string):
     for i := start; i < len(tok); i += 1:
         if tok[i] < 48 or tok[i] > 57:
             return Err("not an amount: " + tok)
-    return Ok(strings.parse_int(tok))
+    return Ok(strings.parse_int_prefix(tok))
 
 # The whole file, as (Account, Cents) pairs. Both element types are the foreign
 # package's newtypes, so nothing downstream can mix an account with a name or an

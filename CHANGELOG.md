@@ -12,6 +12,73 @@ gate (`make ci`); `FRICTION n` is entry n in the defect log
 (`docs/internals/FRICTION.md`); a *probe* is a small program written against the
 docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
+## [0.8.9] — 2026-10-20
+
+### Breaking
+
+- **`strings.parse_int` is now the strict parser.** It returns
+  `Result(int, IntErr)` and refuses empty input, trailing garbage and
+  out-of-range values. The fail-open prefix scanner was renamed
+  `strings.parse_int_prefix`; `parse_int_checked` is gone. Every call site,
+  test, example, tool and doc was updated, and the dangerous name is no longer
+  the obvious one.
+- **`eprintln(s)` is now a builtin.** It writes `s` and a trailing newline to
+  stderr; `eprint(s + "\n")` still works. The builtin has the same one-string
+  signature as `eprint`.
+- **`path.real` is now implemented through `real_checked`.** The old
+  fail-closed spelling and all its callers keep their behavior; a missing,
+  denied or over-long path is available as a named `PathErr` instead of a bare
+  `""`.
+
+### Core library
+
+- `core:io` gained `FileKind`, `Stat`, `stat`, `lstat` and `same_file`
+  (device + inode identity; handle identity on Windows), plus one-stat
+  `lstat`-based walking.
+- `core:path` gained `real_checked` (`NotFound` / `Denied` / `TooLong` /
+  `BadPath` / `Failed`) and `quote` (POSIX shell-safe single quoting for text
+  reports).
+- `surface.lock` is additive: 116 keywords, 42 builtins, 435 corelib functions.
+
+### Documentation
+
+- The parameter copy/borrow boundary is now explicit in
+  `reference/functions.md`, `reference/basics.md` and `spec/11-functions.md`,
+  including the full-copy cost of `[N]T`, `vector[N]T` and inline-array
+  structs.
+- `inout` forwarding (`bump(&n)` from an `inout` parameter) is documented with
+  a compiling example.
+- `tycho-dupe` (`tools/tycho-dupe`) is the duplicate-finder probe, with
+  `make dupe-check` and `FRICTION-OUTSIDE.md`.
+
+### Compiler optimizations
+
+- **O1 shipped: immortal allocation + literal lifetime elision.** `TYCHO_LIT`
+  stores a negative length header; `tycho_str_len` masks it, `tycho_str_copy`
+  returns an immortal literal unchanged, and `tycho_str_recycle` skips it.
+  Every copy/push/assign path inherits the elision without a compiler branch.
+  On 6,000,000 literal pushes into a `[string]` field: **207,460 KB / 61 ms →
+  114,056 KB / 28 ms** (median of five), byte-identical output. The result is
+  in `bench/opt/RESULTS.md`.
+- **Escape analysis now sees a zero-cost newtype wrap.** `return Env(m)` (and
+  the same shape through any single-argument return value) marks `m` as
+  escaping in both compilers. This fixes a latent use-after-free when a local
+  map/array was mutated and returned through a newtype; O1 exposed it as a
+  wrong count in `tests/newtype_agg`.
+- **O2: read-only pass-by-pointer in the reference compiler.** It passes
+  non-heap fixed arrays of four or more elements as `const T*` on direct calls,
+  instead of a full C value copy. Named-function values, lambdas and spawns
+  bridge the ABI; FFI, `inout` and `sink` are unchanged. On 5,000,000 calls
+  through `fn first(xs: [256]int)`: **140 ms → 66 ms** (median of ten,
+  `-O2 -fno-inline`), same RSS. `TYCHOC_NO_PTR_PARAMS` is the control.
+  The packaged `tychoc1` already lowers `[N]T` to a 24-byte descriptor and
+  measures **10 ms** on the same fixture, so O2 is a bootstrap/reference
+  parity change, not a change to the shipped binary's performance.
+- `ROADMAP.md` now carries O1–O7 for widening the domain without adding
+  references: O1 above, read-only pointer parameters, last-use moves, borrowed
+  string/bytes slices, destination passing, conservative CoW, and SROA/bounds
+  elimination. O1 and O2 are in 0.8.9; O3–O7 are the 0.9 line.
+
 ## [0.8.7] — 2026-10-18
 
 ### Breaking

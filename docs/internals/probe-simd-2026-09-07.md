@@ -28,7 +28,7 @@ Each was checked against `main` before being dismissed, per
 |---|---|
 | no ternary; `if` is an expression only in tail position | documented, and the agent quotes the section that says so |
 | `vector[N]T` elements limited to `int`/`float`/`f32` | documented with its rationale; the agent wanted `vector[4]u8` for byte work, which is a design objection |
-| `to_f32(u8)` "worked via implicit widening" against a doc that says `float` | **the agent misread the doc.** `docs/reference/builtins.md:121` says `numeric -> f32`, and `docs/spec/06-conversions.md:40` documents the conversion as **total** over any sized int/float. Re-run here: `to_f32` on a `u8` field gives `200.0`. Nothing undocumented occurred |
+| `to_f32(u8)` "worked via implicit widening" against a doc that says `float` | **the agent misread the doc.** `docs/reference/builtins.md:122` says `numeric -> f32`, and `docs/spec/06-conversions.md:40` documents the conversion as **total** over any sized int/float. Re-run here: `to_f32` on a `u8` field gives `200.0`. Nothing undocumented occurred |
 | no `range` in `for` | documented |
 | `println` is string-only | documented |
 

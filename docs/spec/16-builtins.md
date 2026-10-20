@@ -68,6 +68,7 @@ numeric-polymorphic like `str`.
 | `print(s)` | `string -> void` | Sig | Write `s`'s bytes to stdout; no implicit newline. |
 | `println(s)` | `string -> void` | Sig | `print(s)` followed by a single `"\n"`. String-only, like `print`; use `println(str(x))` for a non-string. |
 | `eprint(s)` | `string -> void` | Sig | Write `s`'s bytes to stderr; no newline, no exit. |
+| `eprintln(s)` | `string -> void` | Sig | Write `s`'s bytes and one trailing newline to stderr; no exit. |
 | `input()` | `-> string` | Sig | Read one line from stdin, with the trailing newline stripped. |
 | `read_all()` | `-> string` | Sig | Read all of stdin as one `string`. |
 | `args()` | `-> [string]` | Sig | The command-line arguments; `args()[0]` is the program name. |
@@ -75,7 +76,7 @@ numeric-polymorphic like `str`.
 | `die(msg)` | `string -> void` | Sig | Print `msg` to stderr and terminate the process with exit status `1`; never returns (§29.12). |
 | `exit(code)` | `int -> void` | Sig | Terminate the process with exit status `code`, printing nothing; never returns (§29.12). |
 
-`print`, `println`, and `eprint` accept a `string` only; they do not implicitly
+`print`, `println`, `eprint`, and `eprintln` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
 

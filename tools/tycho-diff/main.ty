@@ -17,7 +17,7 @@ fn main():
         a := av[i]
         if strings.starts_with(a, "--context="):
             rest := a[10:len(a)]
-            match strings.parse_int_checked(rest):
+            match strings.parse_int(rest):
                 Ok(v): ctx = v
                 _: fail("--context needs a number, got '" + rest + "'")
             if ctx < 0:

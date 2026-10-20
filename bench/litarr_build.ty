@@ -1,0 +1,13 @@
+# Literal pushes into a projected [string] field. The array is not a bare local,
+# so the push-loop fusion does not apply; this is the runtime push path that
+# copied every literal into the arena before literal lifetime elision.
+struct Bag:
+    tags: [string]
+
+fn main():
+    b := Bag([]string)
+    for i := 0; i < 2000000; i += 1:
+        push(b.tags, "alpha")
+        push(b.tags, "beta")
+        push(b.tags, "gamma")
+    println(str(len(b.tags)))

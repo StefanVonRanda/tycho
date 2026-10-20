@@ -1,4 +1,4 @@
-# src/tychoc.c:7929 -- push's first argument must bottom out at a variable, not
+# src/tychoc.c:7931 -- push's first argument must bottom out at a variable, not
 # at a subscript call: the reference never inlines subscripts before this
 # check, so a projection is refused even though it names a place.
 # tychoc1 ACCEPTED this until the root walk was ported into

@@ -91,7 +91,7 @@ Measured, on this tree:
 - [x] **Phase 4 — REJECT `&` outside an inout argument**
   - Found by phase 3's design. `&` parsed as unary `E_ADDR` everywhere
     (`src/tychoc.c:3457-3460`) and the resolver only validated it at call
-    sites (`src/tychoc.c:6875-6877`), so `r := &a` compiled to invalid C
+    sites (`src/tychoc.c:6877-6879`), so `r := &a` compiled to invalid C
     (`TychoArrInt h_r = &(h_a);` — cc: "invalid initializer") and `&a + 1`
     emitted garbage. The one valid use is the direct argument of an inout
     parameter.
@@ -113,7 +113,7 @@ Measured, on this tree:
   - Found by phase 3's design. The spec and reference said `inout` is
     copy-in/copy-out; that is the semantic contract, but it read as
     the implementation. The codegen is an in-place pointer pass with the owner arena carried
-    (`src/tychoc.c:10368-10376`); no aggregate is copied.
+    (`src/tychoc.c:10366-10374`); no aggregate is copied.
   - Scope: `docs/spec/07-memory-model.md` §11, `docs/reference/basics.md`,
     the stale "one big function" comment at `tools/tycho-vm/main.ty:475`.
   - Verify: the two doc gates, `make vm-check`. No build gate.

@@ -176,11 +176,11 @@ fn main():
         return
     host := cli.get(c, "host", DEF_HOST)
     port := 0
-    match strings.parse_int_checked(cli.get(c, "port", str(DEF_PORT))):
+    match strings.parse_int(cli.get(c, "port", str(DEF_PORT))):
         Ok(v): port = v
         Err(e): die("tycho-kvsrv: --port must be an integer")
     idle := 0
-    match strings.parse_int_checked(cli.get(c, "idle-ms", str(DEF_IDLE_MS))):
+    match strings.parse_int(cli.get(c, "idle-ms", str(DEF_IDLE_MS))):
         Ok(v): idle = v
         Err(e): die("tycho-kvsrv: --idle-ms must be an integer")
     if port < 0 or port > 65535:

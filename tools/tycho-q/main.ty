@@ -241,7 +241,7 @@ fn parse_primary(ts: [Tok], p: inout int) -> Result(Expr, PErr):
     t := cur(ts, p)
     if t.kind == T_INT:
         p = p + 1
-        return Ok(ELit(VInt(strings.parse_int(t.text))))
+        return Ok(ELit(VInt(strings.parse_int_prefix(t.text))))
     if t.kind == T_DEC:
         p = p + 1
         d := decimal.from_str_checked(t.text) or_else _: Err(PErr("a decimal literal", t.text, t.off))
@@ -416,7 +416,7 @@ fn parse_query(s: string) -> Result(Query, PErr):
         if t.kind != T_INT:
             return Err(oops(t, "a non-negative integer after `limit`"))
         p = p + 1
-        lim = Some(strings.parse_int(t.text))
+        lim = Some(strings.parse_int_prefix(t.text))
 
     # The trailing check is what makes a typo in a clause keyword land here
     # with the right token rather than being silently ignored. Without it,
@@ -812,7 +812,7 @@ fn classify(cell: string) -> Value:
     if sh == 0:
         return VStr(cell)
     if sh == 1:
-        n := strings.parse_int(cell)
+        n := strings.parse_int_prefix(cell)
         # THE ROUND TRIP. `007` renders as `7`, `-0` as `0`, and an integer too
         # large for `int` renders as its wrapped self -- none of them equal to
         # the cell, so none of them is taken.

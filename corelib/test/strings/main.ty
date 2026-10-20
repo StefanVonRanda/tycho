@@ -12,33 +12,33 @@ fn main():
     println(strings.repeat("ab", 3) + "|[" + strings.trim("   spaced text   ") + "]")  # ababab|[spaced text]
     bits := b2i(strings.starts_with("hello", "he")) * 4 + b2i(strings.ends_with("hello", "lo")) * 2 + b2i(strings.contains("hello", "ell"))
     miss := b2i(strings.starts_with("hi", "x")) + b2i(strings.contains("abc", "z"))
-    p1 := strings.parse_int("-42")
-    p2 := strings.parse_int("123stop")
+    p1 := strings.parse_int_prefix("-42")
+    p2 := strings.parse_int_prefix("123stop")
     println(f"bits={bits} miss={miss} p1={p1} p2={p2}")       # bits=7 miss=0 p1=-42 p2=123
-    # parse_int edges: int64 bounds parse exactly; overflow/empty/'-'/garbage -> 0
-    pmax := strings.parse_int("9223372036854775807")
-    pmin := strings.parse_int("-9223372036854775808")
+    # parse_int_prefix edges: int64 bounds parse exactly; overflow/empty/'-'/garbage -> 0
+    pmax := strings.parse_int_prefix("9223372036854775807")
+    pmin := strings.parse_int_prefix("-9223372036854775808")
     println(f"pmax={pmax} pmin={pmin}")                       # pmax=9223372036854775807 pmin=-9223372036854775808
-    ovf := strings.parse_int("12345678901234567890")
-    ovn := strings.parse_int("-9223372036854775809")
-    pe := strings.parse_int("")
-    pd := strings.parse_int("-")
-    pg := strings.parse_int("garbage")
-    # parse_int_checked: the STRICT one -- empty / garbage / overflow are Err
+    ovf := strings.parse_int_prefix("12345678901234567890")
+    ovn := strings.parse_int_prefix("-9223372036854775809")
+    pe := strings.parse_int_prefix("")
+    pd := strings.parse_int_prefix("-")
+    pg := strings.parse_int_prefix("garbage")
+    # parse_int: the STRICT one -- empty / garbage / overflow are Err
     # naming why, "0" is Ok(0), and the int64 bounds parse exactly.
-    c0 := strings.parse_int_checked("0")
-    cm := strings.parse_int_checked("-42")
-    cb := strings.parse_int_checked("9223372036854775807")
-    cmin := strings.parse_int_checked("-9223372036854775808")
-    ce := strings.parse_int_checked("")
-    cg := strings.parse_int_checked("1x4")
-    cd := strings.parse_int_checked("-")
-    cov := strings.parse_int_checked("12345678901234567890")
-    cow := strings.parse_int_checked("9223372036854775808")
+    c0 := strings.parse_int("0")
+    cm := strings.parse_int("-42")
+    cb := strings.parse_int("9223372036854775807")
+    cmin := strings.parse_int("-9223372036854775808")
+    ce := strings.parse_int("")
+    cg := strings.parse_int("1x4")
+    cd := strings.parse_int("-")
+    cov := strings.parse_int("12345678901234567890")
+    cow := strings.parse_int("9223372036854775808")
     println(f"c0={c0} cm={cm} cb={cb} cmin={cmin}")
     println(f"ce={ce} cg={cg} cd={cd} cov={cov} cow={cow}")
     println(f"ovf={ovf} ovn={ovn} pe={pe} pd={pd} pg={pg}")   # ovf=0 ovn=0 pe=0 pd=0 pg=0
-    # ---- parse_float: the strict opposite of parse_int, under a HOSTILE locale --
+    # ---- parse_float: the strict opposite of parse_int_prefix, under a HOSTILE locale --
     # Everything below runs with LC_NUMERIC switched to a comma-decimal locale, so
     # bare strtod("1.5") would return 1.0 and stop at the '.'. `hostile=1` is the
     # proof that switch took effect; a host with no such locale installed prints

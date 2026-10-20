@@ -142,11 +142,26 @@ fn serve(path: string, host: string, port: int) -> Result(void, string):
 # result indented -- so the two can be compared line for line. That is what
 # makes "the server answers what the CLI answers" an assertion rather than an
 # impression.
+fn parse_uint(s: string, what: string) -> Result(int, string):
+    match strings.parse_int(s):
+        Ok(v):
+            if v < 0:
+                return Err(what + " must be zero or more, got: " + s)
+            return Ok(v)
+        Err(e):
+            return Err(what + " needs a number, got: " + s)
+
 fn client(addr: string, script: string) -> Result(void, string):
     host, ps := strings.split_once(addr, ":")
     if host == "" or ps == "":
         return Err("--client wants HOST:PORT, got " + addr)
-    fd := srv.connect(host, strings.parse_int(ps)) or_else e: Err(srv.err_str(e))
+    port := 0
+    match parse_uint(ps, "--client port"):
+        Ok(v): port = v
+        Err(e): return Err(e)
+    if port > 65535:
+        return Err("--client port out of range: " + ps)
+    fd := srv.connect(host, port) or_else e: Err(srv.err_str(e))
     buf := ""
     bad := 0
     for line in io.read_lines(script):
@@ -187,13 +202,19 @@ fn main() -> Result(void, string):
     args: [string] = []
     for a in av:
         if strings.starts_with(a, "--crash-after="):
-            crash_after = strings.parse_int(a[14:len(a)])
+            match parse_uint(a[14:len(a)], "--crash-after"):
+                Ok(v): crash_after = v
+                Err(e): return Err(e)
         elif a == "--serve":
             serve_mode = true
         elif strings.starts_with(a, "--host="):
             host = a[7:len(a)]
         elif strings.starts_with(a, "--port="):
-            port = strings.parse_int(a[7:len(a)])
+            match parse_uint(a[7:len(a)], "--port"):
+                Ok(v): port = v
+                Err(e): return Err(e)
+            if port > 65535:
+                return Err("--port out of range: " + a[7:len(a)])
         elif strings.starts_with(a, "--client="):
             addr = a[9:len(a)]
         else:

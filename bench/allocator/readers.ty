@@ -12,7 +12,7 @@ extern fn caller_verify_line(line: string, size: int) -> int
 fn main():
     a := args()
     raw := read_file(a[2])
-    chunk := strings.parse_int(a[3])
+    chunk := strings.parse_int_prefix(a[3])
     fd := caller_open(to_bytes(raw), chunk)
     if fd < 0:
         die("reader fixture: socketpair failed")

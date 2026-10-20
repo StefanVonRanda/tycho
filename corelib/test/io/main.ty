@@ -87,6 +87,33 @@ fn vwhy(r: Result(void, io.IoErr)) -> string:
         Err(io.BadPath): return "BadPath"
         _: return "Failed"
 
+fn kname(k: io.FileKind) -> string:
+    match k:
+        io.KindFile: return "file"
+        io.KindDir: return "dir"
+        io.KindSymlink: return "symlink"
+        io.KindFifo: return "fifo"
+        io.KindSocket: return "socket"
+        io.KindDevice: return "device"
+        io.KindOther: return "other"
+
+fn stwhy(r: Result(io.Stat, io.IoErr)) -> string:
+    match r:
+        Ok(st): return kname(st.kind)
+        Err(io.NotFound): return "NotFound"
+        Err(io.BadPath): return "BadPath"
+        _: return "Failed"
+
+fn sfwhy(r: Result(bool, io.IoErr)) -> string:
+    match r:
+        Ok(b):
+            if b:
+                return "true"
+            return "false"
+        Err(io.NotFound): return "NotFound"
+        Err(io.BadPath): return "BadPath"
+        _: return "Failed"
+
 fn durable_write(p: string, b: bytes) -> Result(void, io.IoErr):
     io.write_bytes(p, b) or_return
     io.write_at(p, len(b), to_bytes("!")) or_return
@@ -408,6 +435,25 @@ fn main():
     szmiss := io.size("/tmp/tycho_corelib_io_absent.xyz")
     szdir := io.size("/tmp")
     println(f"size_missing={mwhy(szmiss)} size_dir={mwhy(szdir)}")
+
+    # ---- stat / lstat / same_file: one snapshot, and identity ----------------
+    # `rf` is 26 bytes written above. stat follows; lstat on a regular file is
+    # the same answer. A directory is Ok with size 0 (its st_size is the entry
+    # array, not a readable length). A missing path is NotFound; an interior NUL
+    # is BadPath before any syscall. same_file is the hard-link test: a path is
+    # the same file as itself and not the same file as an independent copy.
+    stf := io.stat(rf)
+    stl := io.lstat(rf)
+    std := io.stat("/tmp")
+    stm := io.stat("/tmp/tycho_corelib_io_absent.xyz")
+    stn := io.stat("/tmp/tycho_corelib_io_absent.xyz" + chr(0))
+    stv := result.unwrap_or(stf, io.Stat(io.KindOther, -1, 0, 0, 0))
+    println(f"stat_file={stwhy(stf)} lstat_file={stwhy(stl)} stat_dir={stwhy(std)} stat_missing={stwhy(stm)} stat_nul={stwhy(stn)}")
+    println(f"stat_size={stv.size} is26={b2i(stv.size == 26)}")
+    sfsame := io.same_file(rf, rf)
+    sfdiff := io.same_file(rf, ef)
+    sfmiss := io.same_file(rf, "/tmp/tycho_corelib_io_absent.xyz")
+    println(f"same_self={sfwhy(sfsame)} same_other={sfwhy(sfdiff)} same_missing={sfwhy(sfmiss)}")
 
     # read_text: read()'s content WITH the error channel read() lacks. read()
     # answers "" for a missing file, an unreadable one and a genuinely empty

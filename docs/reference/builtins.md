@@ -115,6 +115,7 @@ Supporting the [FFI boundary](ffi.md) and the sized numeric types; always availa
 | Builtin | Type | Meaning |
 | --- | --- | --- |
 | `eprint(s)` | `string -> void` | Write `s` to standard error (no newline, no exit). |
+| `eprintln(s)` | `string -> void` | Write `s` and a trailing newline to standard error. |
 | `is_null(p)` | `ptr -> bool`, `handle -> bool` | Test an opaque FFI `ptr`, or a typed handle, for null. On a handle: true when the opener failed, and true after `close(h)`. After a `close(h)` statement in the same block it is a compile error (it could only be `true`); after a `close` in a branch it cannot tell "closed" from "never opened". |
 | `to_ptr(n)` | `int -> ptr` | Make a sentinel `ptr` from an int (e.g. `(void*)-1`); Tycho never dereferences it. |
 | `to_i32(n)` | `int -> i32` | Explicitly narrow to the signed 32-bit integer type. |

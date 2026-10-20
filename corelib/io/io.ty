@@ -15,6 +15,22 @@ enum IoErr:
                        # has_nul. NOT Failed: nothing was attempted, so a retry
                        # or a permission fix is the wrong next move.
 
+enum FileKind:
+    KindFile
+    KindDir
+    KindSymlink
+    KindFifo
+    KindSocket
+    KindDevice
+    KindOther
+
+struct Stat:
+    kind: FileKind
+    size: int          # regular files; a POSIX symlink's target length under lstat
+    mtime: int         # whole seconds since the UNIX epoch
+    inode: int         # 0 where the platform does not expose one
+    device: int        # 0 where the platform does not expose one
+
 fn _has_nul(p: string) -> bool:
     for i := 0; i < len(p); i += 1:
         if p[i] == 0:
@@ -200,6 +216,9 @@ extern fn iox_set_mtime(path: string, mtime: int) -> int
 # io_shim.c for why the two calls differ on that, and why this is a sibling
 # rather than a second `inout` on iox_stat_mtime.
 extern fn iox_stat_size(path: string, size: inout int) -> int
+extern fn iox_stat_info(path: string, follow: int, kind: inout int, size: inout int,
+                        mtime: inout int, inode: inout int, device: inout int) -> int
+extern fn iox_same_file(a: string, b: string, same: inout int) -> int
 # mkdir(2) / remove(3), one entry each, in the same code space (plus FS_EXISTS).
 extern fn iox_make_dir(path: string) -> int
 extern fn iox_remove(path: string) -> int
@@ -343,6 +362,65 @@ fn size(p: string) -> Result(int, IoErr):
         return Err(NotFound)
     if k == RF_DIR:
         return Err(IsDir)
+    return Err(Failed)
+
+fn _kind_from_int(k: int) -> FileKind:
+    if k == 1:
+        return KindDir
+    if k == 2:
+        return KindSymlink
+    if k == 3:
+        return KindFifo
+    if k == 4:
+        return KindSocket
+    if k == 5:
+        return KindDevice
+    if k == 6:
+        return KindOther
+    return KindFile
+
+fn _stat_impl(p: string, follow: int) -> Result(Stat, IoErr):
+    if _has_nul(p):
+        return Err(BadPath)
+    kind := 0
+    n := 0
+    mt := 0
+    ino := 0
+    dev := 0
+    k := iox_stat_info(p, follow, &kind, &n, &mt, &ino, &dev)
+    if k == RF_OK:
+        return Ok(Stat(_kind_from_int(kind), n, mt, ino, dev))
+    if k == RF_MISS:
+        return Err(NotFound)
+    return Err(Failed)
+
+# A snapshot of `p` that follows symlinks. `kind` is the target's kind, `size`
+# is the target's length for a regular file, and `mtime` is whole epoch seconds.
+# A directory is Ok with size 0; a FIFO/socket/device is Ok with size 0. This is
+# the one-stat replacement for is_dir + size + mtime when a caller needs more
+# than one field.
+fn stat(p: string) -> Result(Stat, IoErr):
+    return _stat_impl(p, 1)
+
+# The lstat(2) sibling: `p` itself, not a symlink's target. On POSIX a symlink
+# has kind KindSymlink and size is the length of the link text. On Windows a
+# reparse point is reported as KindSymlink when `follow` is 0; the target's
+# size/mtime are not exposed there, so size is 0.
+fn lstat(p: string) -> Result(Stat, IoErr):
+    return _stat_impl(p, 0)
+
+# True when `a` and `b` name the same file (device + inode on POSIX; volume +
+# file index on Windows). This is the hard-link test a duplicate finder needs:
+# same_file(a, b) is true for two names of one inode, false for two copies.
+fn same_file(a: string, b: string) -> Result(bool, IoErr):
+    if _has_nul(a) or _has_nul(b):
+        return Err(BadPath)
+    same := 0
+    k := iox_same_file(a, b, &same)
+    if k == RF_OK:
+        return Ok(same != 0)
+    if k == RF_MISS:
+        return Err(NotFound)
     return Err(Failed)
 
 fn make_dir(p: string) -> Result(bool, IoErr):

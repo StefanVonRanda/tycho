@@ -106,7 +106,7 @@ module.exports = grammar({
       ),
 
     // An INTERPOLATION may contain a double-quoted string --
-    // `f"{io.append(ap, \"!\")}"` is valid Tycho and corelib/test/io/main.ty:487
+    // `f"{io.append(ap, \"!\")}"` is valid Tycho and corelib/test/io/main.ty:533
     // has one. The old rule ended the fstring at that inner quote, so the file
     // stopped parsing under this grammar while ./tychoc accepted it.
     fstring: ($) =>

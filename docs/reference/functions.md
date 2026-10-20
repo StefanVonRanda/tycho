@@ -11,16 +11,43 @@ position with `x.f(a)`, without classes.
 
 A parameter is passed in one of three modes ([spec §15.2](../spec/11-functions.md#152-parameter-passing-modes)):
 
-- **Default (by value).** A scalar is copied; a heap-bearing value (a `string`, array, map or
-  heap-bearing struct) is a **read-only borrow** — the callee may read it but not mutate it,
-  and mutating it is a compile error. The caller's value is unchanged either way, so this is
-  value semantics with the copy elided where nobody can tell.
+- **Default (read-only).** A scalar is copied. A heap-bearing value (a `string`, `bytes`, a
+  dynamic array `[T]`, a map or a heap-bearing struct) is a **read-only borrow** — the
+  descriptor is copied, the backing storage is shared, and mutating the parameter is a
+  compile error. A fixed array `[N]T`, a `vector[N]T`, or a struct that inlines one has no
+  heap descriptor: the whole value is copied. The caller's value is unchanged either way,
+  so this is value semantics with the copy elided where nobody can tell.
 - **`inout`** — an exclusive, call-scoped mutable borrow, written `&x` at the call site and
   equivalent to `x = f(x)`. The same variable may not be passed to two `inout` parameters of
   one call.
 - **`sink`** — the callee **owns and consumes** the argument. After passing a variable to a
   `sink` parameter the caller MUST NOT use it again; that is a compile error, not a silent
   copy. A fresh literal or a call's result is adopted with no copy.
+
+At a call site the cost is the size of the emitted value: `string`, `bytes`, `[T]` and map
+descriptors are a few words with shared backing storage, while `[N]T` and structs that inline
+one copy all N elements. `inout` and `sink` are the ways to avoid that copy. See
+[spec §15.2](../spec/11-functions.md#152-parameter-passing-modes) for the shape table.
+
+An `inout` parameter is forwarded to another `inout` parameter with `&` again at the nested
+call site:
+
+```tycho
+fn bump(n: inout int):
+    n += 1
+
+fn twice(n: inout int):
+    bump(&n)
+    bump(&n)
+
+fn main():
+    x := 0
+    twice(&x)
+    println(str(x))
+```
+```output
+2
+```
 
 A sink argument must be the variable's **only** mention in the function, and no named variable can be
 adopted inside a loop. So a consuming chain is written as nested calls —

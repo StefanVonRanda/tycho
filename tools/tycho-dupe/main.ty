@@ -1,0 +1,374 @@
+# tycho-dupe: find duplicate files by content.
+# Build: ./tychoc tools/tycho-dupe/main.ty -o tycho-dupe
+
+package main
+
+import "core:io"
+import "core:path"
+import "core:sha256"
+import "core:sort"
+import "core:strings"
+
+const CHUNK = 1048576
+
+struct File:
+    path: string
+    size: int
+
+struct Group:
+    hash: string
+    size: int
+    paths: [string]
+
+struct Scan:
+    files: [File]
+    seen: int
+    total: int
+    skipped: int
+    seen_files: [string: bool]
+    roots_seen: [string]
+
+fn fail(msg: string):
+    eprintln("tycho-dupe: " + msg)
+    exit(2)
+
+fn usage_text() -> string:
+    return "usage: tycho-dupe [--min-size N] [--top N] [--json] PATH...\n" +
+           "  --min-size N  ignore files smaller than N bytes (default 1)\n" +
+           "  --top N       show at most N duplicate sets (default all)\n" +
+           "  --json        emit machine-readable JSON instead of text\n" +
+           "  --help        show this message\n" +
+           "\n" +
+           "Duplicate sets are ordered by bytes reclaimable, then by hash.\n" +
+           "Exit 0 on a completed scan, 2 on bad usage or an uninspectable root."
+
+fn usage():
+    println(usage_text())
+
+fn usage_err():
+    eprintln(usage_text())
+
+fn human(n: int) -> string:
+    if n < 1024:
+        return str(n) + " B"
+    units := ["KiB", "MiB", "GiB", "TiB", "PiB"]
+    v := to_float(n)
+    u := 0
+    for v >= 1024.0 and u < len(units):
+        v = v / 1024.0
+        u += 1
+    scaled := to_int(v * 10.0 + 0.5)
+    if scaled % 10 == 0:
+        return str(scaled / 10) + " " + units[u - 1]
+    return str(scaled / 10) + "." + str(scaled % 10) + " " + units[u - 1]
+
+fn plural(n: int, one: string, many: string) -> string:
+    if n == 1:
+        return one
+    return many
+
+fn add_file(p: string, size: int, inode: int, device: int, min_size: int, scan: inout Scan):
+    # Two names of one inode are one file; counting both would claim space a
+    # delete cannot reclaim.
+    if inode != 0 or device != 0:
+        key := str(device) + ":" + str(inode)
+        if scan.seen_files.get(key, false):
+            return
+        scan.seen_files[key] = true
+    scan.seen += 1
+    scan.total += size
+    if size >= min_size:
+        push(scan.files, File(p, size))
+
+# One lstat per entry tells us the kind, size and identity together; symlinks,
+# FIFOs, sockets and devices are ignored instead of being followed or opened.
+fn walk_dir(root: string, min_size: int, scan: inout Scan):
+    dirs := []string
+    push(dirs, "")
+    i := 0
+    for i < len(dirs):
+        rel := dirs[i]
+        i += 1
+        abs := root
+        if rel != "":
+            abs = path.join(root, rel)
+        match io.list_checked(abs):
+            Ok(names):
+                for name in sort.asc(names):
+                    crel := name
+                    if rel != "":
+                        crel = rel + "/" + name
+                    full := path.join(root, crel)
+                    match io.lstat(full):
+                        Ok(st):
+                            if st.kind == io.KindDir:
+                                push(dirs, crel)
+                            elif st.kind == io.KindFile:
+                                add_file(full, st.size, st.inode, st.device, min_size, &scan)
+                            else:
+                                scan.skipped += 1
+                        Err(e):
+                            scan.skipped += 1
+            Err(e):
+                scan.skipped += 1
+
+fn scan_root(root: string, min_size: int, scan: inout Scan):
+    match path.real_checked(root):
+        Ok(_):
+            pass
+        Err(path.NotFound):
+            fail("no such path: " + root)
+        Err(path.Denied):
+            fail("permission denied: " + root)
+        Err(path.TooLong):
+            fail("path too long: " + root)
+        Err(path.BadPath):
+            fail("bad path: " + root)
+        Err(path.Failed):
+            fail("cannot resolve: " + root)
+    for prev in scan.roots_seen:
+        match io.same_file(root, prev):
+            Ok(same):
+                if same:
+                    return
+            Err(e):
+                pass
+    push(scan.roots_seen, root)
+    match io.is_dir(root):
+        Ok(isdir):
+            if isdir:
+                walk_dir(root, min_size, &scan)
+            else:
+                match io.stat(root):
+                    Ok(st):
+                        if st.kind == io.KindFile:
+                            add_file(root, st.size, st.inode, st.device, min_size, &scan)
+                        else:
+                            scan.skipped += 1
+                    Err(e):
+                        scan.skipped += 1
+        Err(e):
+            fail("cannot inspect " + root)
+
+# Stream in CHUNK-sized reads so memory is O(CHUNK), not O(size).
+fn hash_file(p: string, size: int) -> Result(string, io.IoErr):
+    st := sha256.init()
+    off := 0
+    for off < size:
+        n := size - off
+        if n > CHUNK:
+            n = CHUNK
+        match io.read_at(p, off, n):
+            Ok(b):
+                if len(b) != n:
+                    return Err(io.Failed)
+                sha256.update(&st, b)
+            Err(e):
+                return Err(e)
+        off += n
+    return Ok(sha256.final_hex(&st))
+
+fn file_cmp(a: File, b: File) -> int:
+    if a.size < b.size:
+        return -1
+    if a.size > b.size:
+        return 1
+    if a.path < b.path:
+        return -1
+    if a.path > b.path:
+        return 1
+    return 0
+
+fn group_waste(g: Group) -> int:
+    return g.size * (len(g.paths) - 1)
+
+fn group_cmp(a: Group, b: Group) -> int:
+    wa := group_waste(a)
+    wb := group_waste(b)
+    if wa > wb:
+        return -1
+    if wa < wb:
+        return 1
+    if a.hash < b.hash:
+        return -1
+    if a.hash > b.hash:
+        return 1
+    return 0
+
+# Only equal-size files can be duplicates; hash one size run at a time.
+fn find_duplicates(files: [File], scan: inout Scan) -> [Group]:
+    ordered := sort.sort_by(files, file_cmp)
+    by_hash := []string: int
+    groups := []Group
+    i := 0
+    for i < len(ordered):
+        j := i + 1
+        for j < len(ordered) and ordered[j].size == ordered[i].size:
+            j += 1
+        if j - i >= 2:
+            for k := i; k < j; k += 1:
+                match hash_file(ordered[k].path, ordered[k].size):
+                    Ok(h):
+                        at := by_hash.get(h, 0 - 1)
+                        if at >= 0:
+                            push(groups[at].paths, ordered[k].path)
+                        else:
+                            by_hash[h] = len(groups)
+                            push(groups, Group(h, ordered[k].size, [ordered[k].path]))
+                    Err(e):
+                        scan.skipped += 1
+        i = j
+    out := []Group
+    for g in groups:
+        if len(g.paths) > 1:
+            push(out, g)
+    return sort.sort_by(out, group_cmp)
+
+fn hex2(n: int) -> string:
+    digits := "0123456789abcdef"
+    return substr(digits, n / 16, n / 16 + 1) + substr(digits, n % 16, n % 16 + 1)
+
+fn json_escape(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 34:
+            out = out + "\\\""
+        elif c == 92:
+            out = out + "\\\\"
+        elif c == 10:
+            out = out + "\\n"
+        elif c == 9:
+            out = out + "\\t"
+        elif c == 13:
+            out = out + "\\r"
+        elif c < 32:
+            out = out + "\\u00" + hex2(c)
+        else:
+            out = out + chr(c)
+    return out
+
+fn print_json(groups: [Group], roots: [string], min_size: int, seen: int, total: int, skipped: int, top: int):
+    shown := len(groups)
+    if top > 0 and top < shown:
+        shown = top
+    println("{")
+    print("  \"roots\": [")
+    for i := 0; i < len(roots); i += 1:
+        if i > 0:
+            print(", ")
+        print("\"" + json_escape(roots[i]) + "\"")
+    println("],")
+    println("  \"min_size\": " + str(min_size) + ",")
+    println("  \"scanned\": {\"files\": " + str(seen) +
+            ", \"bytes\": " + str(total) +
+            ", \"skipped\": " + str(skipped) + "},")
+    print("  \"groups\": [")
+    for i := 0; i < shown; i += 1:
+        g := groups[i]
+        if i > 0:
+            print(",")
+        println("")
+        print("    {\"hash\": \"" + g.hash + "\", ")
+        print("\"size\": " + str(g.size) + ", ")
+        print("\"wasted\": " + str(group_waste(g)) + ", ")
+        print("\"files\": [")
+        for j := 0; j < len(g.paths); j += 1:
+            if j > 0:
+                print(", ")
+            print("\"" + json_escape(g.paths[j]) + "\"")
+        print("]}")
+    if shown > 0:
+        println("")
+    println("  ]")
+    println("}")
+
+fn print_text(groups: [Group], seen: int, total: int, skipped: int, top: int):
+    waste := 0
+    dup_files := 0
+    for g in groups:
+        waste += group_waste(g)
+        dup_files += len(g.paths)
+    if len(groups) == 0:
+        println("no duplicates")
+    else:
+        println(str(len(groups)) + " duplicate " + plural(len(groups), "set", "sets") +
+                ", " + human(waste) + " reclaimable across " + str(dup_files) + " files")
+        println("")
+    shown := len(groups)
+    if top > 0 and top < shown:
+        shown = top
+    for i := 0; i < shown; i += 1:
+        g := groups[i]
+        println(human(group_waste(g)) + "  " + str(len(g.paths)) + " files  (" +
+                human(g.size) + " each)  " + substr(g.hash, 0, 12))
+        for j := 0; j < len(g.paths); j += 1:
+            println("  " + path.quote(g.paths[j]))
+        if i + 1 < shown:
+            println("")
+    tail := ""
+    if skipped > 0:
+        tail = ", " + str(skipped) + " skipped"
+    println("")
+    println("scanned " + str(seen) + " " + plural(seen, "file", "files") + ", " + human(total) + tail)
+
+fn parse_number(flag: string, s: string) -> int:
+    match strings.parse_int(s):
+        Ok(v):
+            if v < 0:
+                fail(flag + " must be zero or more")
+            return v
+        Err(_):
+            fail(flag + " needs a number, got '" + s + "'")
+    return 0
+
+fn main():
+    av := args()
+    roots := []string
+    min_size := 1
+    top := 0
+    as_json := false
+    stop_opts := false
+    for i := 1; i < len(av); i += 1:
+        a := av[i]
+        if stop_opts:
+            push(roots, a)
+        elif a == "--":
+            stop_opts = true
+        elif a == "--help" or a == "-h":
+            usage()
+            exit(0)
+        elif a == "--json":
+            as_json = true
+        elif a == "--min-size" or a == "--top":
+            if i + 1 >= len(av):
+                fail(a + " needs a value")
+            i += 1
+            v := parse_number(a, av[i])
+            if a == "--min-size":
+                min_size = v
+            else:
+                top = v
+        elif strings.starts_with(a, "--min-size="):
+            min_size = parse_number("--min-size", a[11:len(a)])
+        elif strings.starts_with(a, "--top="):
+            top = parse_number("--top", a[6:len(a)])
+        elif strings.starts_with(a, "-"):
+            fail("unknown option: " + a)
+        else:
+            push(roots, a)
+
+    if len(roots) == 0:
+        usage_err()
+        exit(2)
+
+    scan := Scan([], 0, 0, 0, []string: bool, []string)
+    for root in roots:
+        scan_root(root, min_size, &scan)
+
+    groups := find_duplicates(scan.files, &scan)
+    if as_json:
+        print_json(groups, roots, min_size, scan.seen, scan.total, scan.skipped, top)
+    else:
+        print_text(groups, scan.seen, scan.total, scan.skipped, top)
+    exit(0)

@@ -40,7 +40,7 @@ during the draft.
    probe directory held no competing `.ty` files, so the import would have
    worked — but the underlying missing-builtin point stands.)
 2. `spawn` is a reserved keyword, met only as a compiler error when naming an
-   allocator. Stated in `docs/reference/basics.md:92` (points at appendix B),
+   allocator. Stated in `docs/reference/basics.md:94` (points at appendix B),
    so this is discoverability, not a gap: a reserved-word note on the
    concurrency page, the one place a newcomer meets `spawn`, would have
    prevented it.

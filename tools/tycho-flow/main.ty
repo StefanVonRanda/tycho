@@ -407,6 +407,16 @@ fn bench():
     println("  string   256 " + str(bench_strings(n, 256)) + " us")
     println("  string  4096 " + str(bench_strings(n, 4096)) + " us")
 
+fn positive_arg(s: string, flag: string) -> int:
+    match strings.parse_int(s):
+        Ok(v):
+            if v > 0:
+                return v
+            die("tycho-flow: " + flag + " wants a positive number, got: " + s)
+        Err(e):
+            die("tycho-flow: " + flag + " wants a number, got: " + s)
+    return 1
+
 fn main():
     a := args()
     if len(a) > 1 and a[1] == "--bench":
@@ -416,8 +426,8 @@ fn main():
         # `--race [N]`: N runs instead of 2000, so a gate can buy the same
         # claim at a fraction of the wall clock. 2000 is what the header quotes.
         r := 2000
-        if len(a) > 2 and strings.parse_int(a[2]) > 0:
-            r = strings.parse_int(a[2])
+        if len(a) > 2:
+            r = positive_arg(a[2], "--race")
         race(r)
         return
     if len(a) > 1 and a[1] == "--cancel":
@@ -425,8 +435,8 @@ fn main():
         # over N runs, plus the never-fails control. Both are races and neither
         # reaches the demo's output.
         r := 25
-        if len(a) > 2 and strings.parse_int(a[2]) > 0:
-            r = strings.parse_int(a[2])
+        if len(a) > 2:
+            r = positive_arg(a[2], "--cancel")
         cancels(r)
         return
     run_words()

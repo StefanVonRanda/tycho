@@ -1345,8 +1345,10 @@ static inline void tycho_mcpy(char *d, const char *s, tycho_int n) {
     memcpy(d, s, (size_t)n);
 }
 
+tycho_int tycho_str_len(const char *s);
+
 char *tycho_str_concat(Arena *a, const char *x, const char *y) {
-    tycho_int lx = ((const tycho_int *)x)[-1], ly = ((const tycho_int *)y)[-1];   /* header lengths: byte-safe (interior NUL preserved) */
+    tycho_int lx = tycho_str_len(x), ly = tycho_str_len(y);   /* header lengths: byte-safe (interior NUL preserved) */
     char *r = tycho_str_alloc(a, lx + ly);
     tycho_mcpy(r, x, lx);
     tycho_mcpy(r + lx, y, ly);
@@ -1357,7 +1359,7 @@ char *tycho_str_concat(Arena *a, const char *x, const char *y) {
  * chain to ONE of these instead of N-2 chained tycho_str_concat calls, so a
  * k-piece concat does ONE allocation + one copy per piece (no throwaway
  * intermediates, no re-copying the growing prefix). */
-#define TYCHO_SLEN(s) (((const tycho_int *)(s))[-1])
+#define TYCHO_SLEN(s) tycho_str_len(s)
 char *tycho_str_concat3(Arena *a, const char *s0, const char *s1, const char *s2) {
     tycho_int n0 = TYCHO_SLEN(s0), n1 = TYCHO_SLEN(s1), n2 = TYCHO_SLEN(s2);
     char *r = tycho_str_alloc(a, n0 + n1 + n2), *p = r;
@@ -1392,7 +1394,7 @@ char *tycho_str_concat6(Arena *a, const char *s0, const char *s1, const char *s2
 typedef struct { char *data; tycho_int cap; } TychoStrAppend;
 
 static tycho_int tycho_str_append_room(Arena *a, char **s, TychoStrAppend *st, tycho_int extra) {
-    tycho_int len = ((const tycho_int *)*s)[-1];
+    tycho_int len = tycho_str_len(*s);
     if (len < 0 || extra < 0 || len > INT64_MAX - extra - 1) tycho_oom();
     tycho_int need = len + extra + 1;
     size_t limit = SIZE_MAX - 8u;
@@ -1419,7 +1421,7 @@ static tycho_int tycho_str_append_room(Arena *a, char **s, TychoStrAppend *st, t
 /* Geometric growth in the binding's owner arena. memmove handles s = s + s;
  * on growth the operand still points at the old, live arena allocation. */
 void tycho_str_append(Arena *a, char **s, TychoStrAppend *st, const char *e) {
-    tycho_int el = ((const tycho_int *)e)[-1];
+    tycho_int el = tycho_str_len(e);
     tycho_int len = tycho_str_append_room(a, s, st, el);
     memmove(*s + len, e, (size_t)el);
     len += el;
@@ -1430,7 +1432,7 @@ void tycho_str_append(Arena *a, char **s, TychoStrAppend *st, const char *e) {
 /* string + char: one-byte append, no strlen/snprintf. `c` is a byte carried in
  * a tycho_int (Tycho's char type). New buffer lives in arena `a` (cf. tycho_str_concat). */
 char *tycho_str_concat_char(Arena *a, const char *x, tycho_int c) {
-    tycho_int lx = ((const tycho_int *)x)[-1];   /* header length: byte-safe */
+    tycho_int lx = tycho_str_len(x);   /* header length: byte-safe */
     char *r = tycho_str_alloc(a, lx + 1);
     memcpy(r, x, (size_t)lx);
     r[lx] = (char)c;
@@ -1464,7 +1466,9 @@ char *tycho_str_copy(Arena *a, const char *s) {
      * shape tycho_str_recycle already accepts. Without this, copying a missing
      * composite map value dereferences NULL reading the length header. */
     if (!s) return (char *)ty_str_empty.z;
-    tycho_int n = ((const tycho_int *)s)[-1];   /* header length: a value-semantic copy of a Tycho string preserves every byte */
+    tycho_int raw = ((const tycho_int *)s)[-1];
+    if (raw < 0) return (char *)s;   /* immortal literal: immutable, so sharing is value-identical */
+    tycho_int n = raw;   /* header length: a value-semantic copy of a Tycho string preserves every byte */
     /* 87% of the 13.5M copies compiling compiler/main.ty are <= 7 bytes (measured),
      * where tycho_mcpy's branch tree costs more than the move. A string sits in
      * round8(8 + n + 1) bytes -- exactly 16 here -- so 8 data bytes are addressable
@@ -1522,12 +1526,12 @@ char *tycho_bytes_from_c(Arena *a, unsigned char *p, tycho_int n) {
     static const struct { \
         tycho_int n; \
         char b[sizeof s]; \
-    } _l = { (tycho_int)(sizeof s - 1), s }; \
+    } _l = { ~(tycho_int)(sizeof s - 1), s }; \
     (char *)_l.b; \
 }))
 
 void tycho_print(const char *s) { fputs(s, stdout); }   /* bare C string: codegen newline, FFI read-once borrow */
-void tycho_print_s(const char *s) { fwrite(s, 1, (size_t)((const tycho_int *)s)[-1], stdout); }   /* a Tycho string: all bytes, incl. interior NUL */
+void tycho_print_s(const char *s) { fwrite(s, 1, (size_t)tycho_str_len(s), stdout); }   /* a Tycho string: all bytes, incl. interior NUL */
 void tycho_eprint(const char *s) { fputs(s, stderr); }   /* non-fatal stderr write (warnings) */
 
 /* --- string builtins ------------------------------------------------------
@@ -1535,7 +1539,10 @@ void tycho_eprint(const char *s) { fputs(s, stderr); }   /* non-fatal stderr wri
  * oriented. substr returns a fresh copy in the target arena (value
  * semantics, like everything else); its range is clamped Python-style. */
 
-tycho_int tycho_str_len(const char *s) { return ((const tycho_int *)s)[-1]; }   /* O(1): the length header */
+tycho_int tycho_str_len(const char *s) {
+    tycho_int n = ((const tycho_int *)s)[-1];
+    return n < 0 ? ~n : n;   /* a negative header is an immortal literal */
+}
 
 /* Byte-safe lexicographic compare: -1/0/1, using the length headers (NOT NUL
  * termination) so a string with an interior '\0' (e.g. from read_file of a binary
@@ -1552,7 +1559,7 @@ int tycho_str_eq(const char *a, const char *b) {
      * 91.1e6 Ir on server/main.ty against 90.2e6 for str_cmp; byte-0-first is
      * what makes str_eq actually beat it. Byte 0 is readable even when empty. */
     if (a[0] != b[0]) return 0;
-    tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
+    tycho_int la = tycho_str_len(a), lb = tycho_str_len(b);
     if (la != lb) return 0;
     if (la == 0 || a == b) return 1;
     /* Short and equal-length is the parser's whole diet ("op", "kw", every
@@ -1570,7 +1577,7 @@ int tycho_str_cmp(const char *a, const char *b) {
      * empty string first, the same answer the general path below gives. */
     unsigned char c0 = (unsigned char)a[0], d0 = (unsigned char)b[0];
     if (c0 != d0) return c0 < d0 ? -1 : 1;
-    tycho_int la = ((const tycho_int *)a)[-1], lb = ((const tycho_int *)b)[-1];
+    tycho_int la = tycho_str_len(a), lb = tycho_str_len(b);
     tycho_int n = la < lb ? la : lb;
     /* Same trade as tycho_str_eq above, and it applies to the ORDER too: an
      * order still has to compare the common prefix when the lengths differ, but
@@ -1589,7 +1596,7 @@ int tycho_str_cmp(const char *a, const char *b) {
 }
 
 tycho_int tycho_str_get(const char *s, tycho_int i) {
-    tycho_int n = ((const tycho_int *)s)[-1];
+    tycho_int n = tycho_str_len(s);
     if (i < 0 || i >= n) {
         fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
         exit(1);
@@ -1611,7 +1618,7 @@ tycho_int tycho_str_get_n(const char *s, tycho_int i, tycho_int n) {
 
 /* substring [start, end); out-of-range bounds are clamped, not an error */
 char *tycho_str_substr(Arena *a, const char *s, tycho_int start, tycho_int end) {
-    tycho_int n = ((const tycho_int *)s)[-1];   /* header length: byte-safe */
+    tycho_int n = tycho_str_len(s);   /* header length: byte-safe */
     if (start < 0) start = 0;
     if (end > n) end = n;
     if (end < start) end = start;
@@ -1624,7 +1631,7 @@ char *tycho_str_substr(Arena *a, const char *s, tycho_int start, tycho_int end) 
 /* byte index of the first occurrence of sub in s, or -1 if absent. Byte-safe:
  * scans by the length headers, not NUL, so interior '\0' bytes are matched. */
 tycho_int tycho_str_find(const char *s, const char *sub) {
-    tycho_int ls = ((const tycho_int *)s)[-1], lsub = ((const tycho_int *)sub)[-1];
+    tycho_int ls = tycho_str_len(s), lsub = tycho_str_len(sub);
     if (lsub == 0) return 0;
     for (tycho_int i = 0; i + lsub <= ls; i++)
         if (memcmp(s + i, sub, (size_t)lsub) == 0) return i;
@@ -2273,7 +2280,7 @@ char **tycho_arr_str_ptr(TychoArrStr *xs, tycho_int i) {
 }
 
 void tycho_str_recycle(Arena *a, const char *s) {
-    if (s && arena_owns(a, s - 8))
+    if (s && ((const tycho_int *)s)[-1] >= 0 && arena_owns(a, s - 8))
         arena_recycle(a, (void *)(s - 8), (size_t)(8 + (size_t)tycho_str_len(s) + 1));
 }
 
@@ -2331,7 +2338,7 @@ void tycho_arr_str_recycle(Arena *a, TychoArrStr xs) {
  * fields); an empty s yields one empty field. An empty separator has no
  * well-defined splitting, so fail closed rather than guess. */
 TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
-    tycho_int sl = ((const tycho_int *)s)[-1], pl = ((const tycho_int *)sep)[-1];   /* byte-safe: header lengths, not strlen/strstr */
+    tycho_int sl = tycho_str_len(s), pl = tycho_str_len(sep);   /* byte-safe: header lengths, not strlen/strstr */
     if (pl == 0) {
         fprintf(stderr, "tycho: split with an empty separator\n");
         exit(1);
@@ -2589,7 +2596,7 @@ static uint64_t tycho_siphash13(const unsigned char *in, uint64_t inlen, uint64_
 }
 
 static uint64_t tycho_si_hash(const char *s) {        /* keyed SipHash-1-3 */
-    tycho_int n = ((const tycho_int *)s)[-1];   /* hash the true bytes (header length), not up to a NUL */
+    tycho_int n = tycho_str_len(s);   /* hash the true bytes (header length), not up to a NUL */
     return tycho_siphash13((const unsigned char *)s, (uint64_t)n, tycho_hash_k0, tycho_hash_k1);
 }
 /* Deterministic (cross-run stable) variants for the PUBLIC `hash(x)` builtin:
@@ -2600,7 +2607,7 @@ static uint64_t tycho_si_hash(const char *s) {        /* keyed SipHash-1-3 */
 #define TYCHO_HASH_DET_K0 UINT64_C(0x736f6d6570736575)   /* the SipHash reference key */
 #define TYCHO_HASH_DET_K1 UINT64_C(0x646f72616e646f6d)
 static uint64_t tycho_si_hash_det(const char *s) {
-    tycho_int n = ((const tycho_int *)s)[-1];
+    tycho_int n = tycho_str_len(s);
     return tycho_siphash13((const unsigned char *)s, (uint64_t)n, TYCHO_HASH_DET_K0, TYCHO_HASH_DET_K1);
 }
 

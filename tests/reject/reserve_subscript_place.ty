@@ -1,4 +1,4 @@
-# src/tychoc.c:7987 -- reserve's first argument must be rooted at a variable;
+# src/tychoc.c:7989 -- reserve's first argument must be rooted at a variable;
 # a subscript call is not unrolled by the root walk, so a projection is
 # refused even though it names a place.
 # tychoc1 ACCEPTED this until the root walk was ported into

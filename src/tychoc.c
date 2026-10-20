@@ -59,7 +59,7 @@
 
 #include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */
 
-#define TYCHO_VERSION "0.8.7"
+#define TYCHO_VERSION "0.8.9"
 
 /* ------------------------------------------------------------------ util */
 
@@ -4886,7 +4886,7 @@ static int shadows_builtin(const char *n) {
         /* is_pure_builtin adds */
         "to_char", "hash",
         /* I/O and process, from the spec's builtin appendix */
-        "print", "println", "eprint", "input", "read_all",   /* no `eprintln`: not a builtin (FRICTION #6) */
+        "print", "println", "eprint", "eprintln", "input", "read_all",
         "write_file", "list_dir", "getenv", "args", "die", "now", "clock",
         "ncpu", "channel", "send", "recv", "close", 0 };     /* no `zero`: that is core:bignum's, not a builtin */
     for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
@@ -6215,6 +6215,7 @@ static void register_builtins(void) {
     g_sigs[g_nsigs++] = (Sig){ .name="print",  .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="println",.ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="eprint", .ret=T_VOID,         .params={ T_STRING },                .nparams=1, .builtin=1 };
+    g_sigs[g_nsigs++] = (Sig){ .name="eprintln",.ret=T_VOID,        .params={ T_STRING },                .nparams=1, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="input",  .ret=T_STRING,       .params={ 0 },                       .nparams=0, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="read_all",.ret=T_STRING,      .params={ 0 },                       .nparams=0, .builtin=1 };
     g_sigs[g_nsigs++] = (Sig){ .name="clock",  .ret=T_INT,          .params={ 0 },                       .nparams=0, .builtin=1 };   /* monotonic nanoseconds */
@@ -6701,7 +6702,7 @@ static int is_builtin_name(const char *n) {
     if (!n) return 0;
     static const char *bs[] = {
         "args", "channel", "char_at", "chr", "clock", "close",
-        "die", "eprint", "exit", "find", "get", "getenv",
+        "die", "eprint", "eprintln", "exit", "find", "get", "getenv",
         "hash", "input", "is_null", "len", "list_dir", "ncpu",
         "now", "pop", "print", "println", "push", "read_all",
         "read_file", "recv", "reserve", "send", "split", "sqrt",
@@ -8084,8 +8085,6 @@ static Type resolve_expr_inner(Expr *e) {
                 const char *cl = corelib_hint(e->sval, &cl_strong);   /* F8: a corelib package/function by this name? */
                 if (cl && cl_strong) die_at(e->line, "unknown procedure '%s' -- %s", nominal_name(e->sval), cl);   /* high-confidence stdlib match beats a weak local typo */
                 const char *sg = suggest_fn(e->sval);                 /* a user fn / builtin typo */
-                if (!strcmp(e->sval, "eprintln"))
-                    die_at(e->line, "unknown procedure 'eprintln' -- stderr has no println; use `eprint(s + \"\\n\")`");
                 if (sg) die_at(e->line, "unknown procedure '%s'; did you mean '%s'?", nominal_name(e->sval), sg);
                 if (cl) die_at(e->line, "unknown procedure '%s' -- %s", nominal_name(e->sval), cl);   /* weak stdlib guess, but nothing local matched */
                 die_at(e->line, "unknown procedure '%s'", nominal_name(e->sval));
@@ -8093,7 +8092,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7479 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7481 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -8735,7 +8734,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:9317). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:9315). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8758,10 +8757,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8649),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8647),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8939). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:8937). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -9051,10 +9050,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:10874@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:10892@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at src/tychoc.c:6855@is_sink which sets
+     * required value, and it matches the lambda-lift twin at src/tychoc.c:6856@is_sink which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
@@ -10673,6 +10672,25 @@ static int is_inout_param(const char *name) {
     return 0;
 }
 
+/* O2: large read-only fixed arrays cross a direct call as `const T *` instead
+ * of a whole-value copy. Only non-heap fixed arrays are eligible, so the
+ * callee has nothing to own and a pointer is a complete representation of the
+ * borrow. TYCHOC_NO_PTR_PARAMS is the benchmark control. */
+static const char *g_ptr_param[16];
+static int g_nptr_param = 0;
+static int is_ptr_param(const char *name) {
+    for (int i = 0; i < g_nptr_param; i++)
+        if (!strcmp(g_ptr_param[i], name)) return 1;
+    return 0;
+}
+static int ptr_param_type(Type t) {
+    if (getenv("TYCHOC_NO_PTR_PARAMS")) return 0;
+    if (!IS_ARRC(t)) return 0;
+    int id = ARRC_ID(t);
+    if (type_is_heap(g_arrtypes[id].elem)) return 0;
+    return g_arrtypes[id].bnd == 0 && g_arrtypes[id].size >= 4;
+}
+
 static const char *g_param[16];
 static int g_param_sink[16];   /* parallel: is g_param[i] a `sink` (owned) parameter? */
 static int g_nparam = 0;
@@ -10983,6 +11001,16 @@ static void collect_escapes(Stmt **body, int n) {
         Stmt *s = body[i];
         if (s->kind == S_RETURN && s->expr && s->expr->kind == E_IDENT) {
             TBL_ENSURE(g_esc, g_nesc, g_esc_cap); g_esc[g_nesc++] = s->expr->sval;
+        }
+        /* A zero-cost newtype wrap (`return Env(m)`, `return Meters(x)`) hands
+         * the wrapped local out just as `return m` does. Missing this promoted
+         * m to _parent only when the wrap was already recognized as an alias,
+         * so a mutated local returned through a newtype could keep its map/array
+         * storage in a scope that was freed on the way out. */
+        if (s->kind == S_RETURN && s->expr && s->expr->kind == E_CALL
+            && s->expr->op == TK_TYPE && s->expr->nargs == 1
+            && s->expr->args[0]->kind == E_IDENT) {
+            TBL_ENSURE(g_esc, g_nesc, g_esc_cap); g_esc[g_nesc++] = s->expr->args[0]->sval;
         }
         if (s->body) collect_escapes(s->body, s->nbody);   /* if/while/for body */
         if (s->els)  collect_escapes(s->els, s->nels);     /* else body */
@@ -11963,6 +11991,7 @@ static char *gen_call(Expr *e, const char *arena) {
         return sfmt("tycho_print_s(%s)", a);   /* a Tycho string: print all bytes via its length header */
     }
     if (!strcmp(e->sval, "eprint")) return sfmt("tycho_eprint(%s)", gen_expr(e->args[0], arena));   /* stderr, no newline, no exit */
+    if (!strcmp(e->sval, "eprintln")) return sfmt("(tycho_eprint(%s), tycho_eprint(\"\\n\"))", gen_expr(e->args[0], arena));   /* stderr + newline */
     if (!strcmp(e->sval, "println")) {   /* print + a trailing newline */
         if (is_extern_str_call(e->args[0]))
             return sfmt("(tycho_print(({ const char *_x = %s; _x ? _x : \"\"; })), tycho_print(\"\\n\"))", gen_extern_raw(e->args[0]));
@@ -12038,7 +12067,7 @@ static char *gen_call(Expr *e, const char *arena) {
     if (!strcmp(e->sval, "args")) {
         return sfmt("tycho_args(%s)", arena);
     }
-    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1454`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
+    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1456`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
         return sfmt(e->sval[0] == 'c' ? "tycho_chr(%s, %s)" : "((tycho_int)(unsigned char)tycho_chr(%s, %s)[0])", arena, gen_expr(e->args[0], arena));
     }
     if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */
@@ -12199,6 +12228,8 @@ static char *gen_call(Expr *e, const char *arena) {
          * value (no copy) and copies an otherwise-live place — exactly move-on-last-use
          * applied to the call boundary. (A borrowed param below just shares the buffer.) */
         int sink_arg = cs && i < cs->nparams && cs->sink[i] && type_is_heap(cs->params[i]);
+        int ptr_arg = cs && i < cs->nparams && !cs->inout[i] && !cs->sink[i]
+            && ptr_param_type(cs->params[i]);
         char *a;
         char *packed_place = NULL;
         if (cs && i < cs->nparams && cs->inout[i] && e->args[i]->kind == E_ADDR)
@@ -12213,6 +12244,22 @@ static char *gen_call(Expr *e, const char *arena) {
             a = sfmt("&%s", tmp);
             packed_post = sfmt("%s memcpy(%s, &%s, sizeof %s);", packed_post, ptr, tmp, tmp);
             packed_count++;
+        } else if (ptr_arg) {
+            if (e->args[i]->kind == E_IDENT && is_ptr_param(e->args[i]->sval))
+                a = sfmt("h_%s", e->args[i]->sval);      /* forward the borrow */
+            else if (is_place(e->args[i]))
+                a = sfmt("&(%s)", gen_lvalue(e->args[i], g_cur_scope));
+            else {
+                /* A non-place argument needs a stable lvalue for the borrow.
+                 * Declare it in the call's statement-expression prelude; taking
+                 * &_pv here is valid for the whole call. */
+                int pid = g_blk++;
+                packed_pre = sfmt("%s%s _pv%d = %s; ",
+                                  packed_pre, c_type(e->args[i]->type), pid,
+                                  gen_expr(e->args[i], g_cur_scope));
+                a = sfmt("&_pv%d", pid);
+                packed_count++;
+            }
         } else {
             a = sink_arg ? sink_arg_into(cs->params[i], g_cur_scope, e->args[i])
                          : gen_expr(e->args[i], g_cur_scope);
@@ -12527,7 +12574,8 @@ static char *gen_expr(Expr *e, const char *arena) {
             for (int i = 0; i < li->ncap; i++) {
                 const char *cn = li->proc->params[i].name;
                 Type ct = li->proc->params[i].type;
-                char *cv = is_inout_param(cn) ? sfmt("(*h_%s)", cn) : sfmt("h_%s", cn);
+                char *cv = (is_inout_param(cn) || is_ptr_param(cn))
+                    ? sfmt("(*h_%s)", cn) : sfmt("h_%s", cn);
                 if (type_is_heap(ct)) cv = copy_into(ct, arena, cv);   /* value semantics: own a deep copy in the env arena */
                 out = sfmt("%s _e->c%d = %s;", out, i, cv);
             }
@@ -12536,7 +12584,7 @@ static char *gen_expr(Expr *e, const char *arena) {
         case E_IDENT:
             if (e->op == TK_FN)   /* a function reference -> the fat value {0, <name>__clo, 0} (no env to re-home) */
                 return sfmt("(FnC%d){0, %s__clo, 0, 0}", FUNC_ID(e->type), e->sval);
-            return is_inout_param(e->sval) ? sfmt("(*h_%s)", e->sval)
+            return (is_inout_param(e->sval) || is_ptr_param(e->sval)) ? sfmt("(*h_%s)", e->sval)
                                            : sfmt("h_%s", e->sval);
         case E_ADDR: /* &place as an inout arg: address of the underlying
                       * lvalue. gen_lvalue derefs an inout root and projects an
@@ -14303,6 +14351,8 @@ static void gen_signature(FILE *o, Proc *pr) {
                     pr->params[i].name, c_type(pt), pr->params[i].name);
         else if (pr->params[i].is_inout)
             fprintf(o, ", %s*h_%s", c_type(pt), pr->params[i].name);
+        else if (!pr->params[i].is_sink && ptr_param_type(pt))
+            fprintf(o, ", const %s*h_%s", c_type(pt), pr->params[i].name);
         else
             fprintf(o, ", %sh_%s", c_type(pt), pr->params[i].name);
         if (pr->params[i].is_inout && appendable(pt))
@@ -14386,6 +14436,12 @@ static void gen_proc(FILE *o, Proc *pr) {
             if (type_is_heap(pr->params[i].type))
                 g_heap_inout[g_nheap_inout++] = pr->params[i].name;
         }
+    /* O2: read-only large fixed-array params are received as pointers too. */
+    g_nptr_param = 0;
+    for (int i = 0; i < pr->nparams; i++)
+        if (!pr->params[i].is_inout && !pr->params[i].is_sink
+            && ptr_param_type(pr->params[i].type))
+            g_ptr_param[g_nptr_param++] = pr->params[i].name;
     /* register ALL params so can_move_from never hands off a param's buffer */
     g_nparam = 0;
     for (int i = 0; i < pr->nparams && i < 16; i++) g_param_sink[i] = pr->params[i].is_sink;
@@ -15743,7 +15799,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, " } HSpawnA_%d;\n", i);
         fprintf(o, "static void *tycho_spawn_%d(void *_p) { HSpawnA_%d *_a = (HSpawnA_%d *)_p; "
                    "%s_r = h_%s(&_a->t->root", i, i, i, c_type(s->ret), s->name);
-        for (int j = 0; j < s->nparams; j++) fprintf(o, ", _a->a%d", j);
+        for (int j = 0; j < s->nparams; j++)
+            fprintf(o, ", %s_a->a%d",
+                    (!s->inout[j] && !s->sink[j] && ptr_param_type(s->params[j])) ? "&" : "", j);
         fprintf(o, "); %s*_s = (%s*)arena_alloc(&_a->t->root, sizeof(%s)); *_s = _r; "
                    "_a->t->ret = _s; tycho_pool_flush(); return 0; }\n",
                 c_type(s->ret), c_type(s->ret), c_type(s->ret));
@@ -15780,7 +15838,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static %s%s__clo(void *_e, Arena *_p", c_type(fs->ret), g_fnval[k]);
         for (int j = 0; j < fs->nparams; j++) fprintf(o, ", %sa%d", c_type(fs->params[j]), j);
         fprintf(o, ") { (void)_e; %sh_%s(_p", fs->ret == T_VOID ? "" : "return ", g_fnval[k]);
-        for (int j = 0; j < fs->nparams; j++) fprintf(o, ", a%d", j);
+        for (int j = 0; j < fs->nparams; j++)
+            fprintf(o, ", %s%d",
+                    (!fs->inout[j] && !fs->sink[j] && ptr_param_type(fs->params[j])) ? "&a" : "a", j);
         fprintf(o, "); }\n");
     }
     for (int i = 0; i < g_nlaminfo; i++) {   /* closure thunks: unpack the env, call the lifted proc */
@@ -15794,8 +15854,15 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (li->ncap > 0) fprintf(o, " Env_%d *_e = (Env_%d *)_env;", i, i);
         else fprintf(o, " (void)_env;");
         fprintf(o, " %sh___lam%d(_p", pr->ret == T_VOID ? "" : "return ", i);   /* gen_proc prefixes the proc name with h_ */
-        for (int j = 0; j < li->ncap; j++) fprintf(o, ", _e->c%d", j);
-        for (int j = 0; j < nlam; j++) fprintf(o, ", a%d", j);
+        for (int j = 0; j < li->ncap; j++)
+            fprintf(o, ", %s_e->c%d",
+                    (!pr->params[j].is_sink && !pr->params[j].is_inout
+                     && ptr_param_type(pr->params[j].type)) ? "&" : "", j);
+        for (int j = 0; j < nlam; j++)
+            fprintf(o, ", %s%d",
+                    (!pr->params[li->ncap + j].is_sink
+                     && !pr->params[li->ncap + j].is_inout
+                     && ptr_param_type(pr->params[li->ncap + j].type)) ? "&a" : "a", j);
         fprintf(o, "); }\n");
     }
     if (g_nfnval || g_nlaminfo) fputs("\n", o);

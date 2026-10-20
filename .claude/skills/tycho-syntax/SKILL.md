@@ -112,20 +112,22 @@ fn main():
     println(str(utf8.count(s)))     # 5 -- characters
 ```
 
-**A bare-value parser in corelib is lax by design.** `strings.parse_int("3x")`
-is `3`, not an error. `decimal.from_str("1.5x")` is `0.15` — a plausible wrong
-number, not zero. There is usually a `_checked` sibling returning a `Result`;
-reach for it for anything read from a file, a socket or a user.
+**The default integer parser is strict; the lax prefix scanner is explicit.**
+`strings.parse_int("3x")` is `Err(Garbage)`, not `3`. The fail-open scanner is
+`strings.parse_int_prefix("3x")` (3). `decimal.from_str("1.5x")` is still
+fail-open (`0.15` — a plausible wrong number, not zero); its strict sibling is
+`from_str_checked`. The general rule: anything read from a file, a socket or a
+user gets the fail-closed form.
 
 ```tycho
 package main
 import "core:strings"
 
 fn main():
-    println(str(strings.parse_int("3x")))            # 3 -- fails OPEN
-    match strings.parse_int_checked("3x"):
+    match strings.parse_int("3x"):
         Ok(v): println("ok " + str(v))
         Err(e): println("refused")                   # refused
+    println(str(strings.parse_int_prefix("3x")))     # 3 -- explicit prefix
 ```
 
 **`_` is an ordinary variable, not a discard.** `_ , b := f()` declares it and
@@ -147,9 +149,9 @@ says so). The order that works:
    an edge case.
 3. `docs/reference/corelib.md` is the catalogue: which package holds what.
 
-Names that are not where you would look: `strings.parse_int` (no bare builtin),
-`sort.asc` / `sort.desc` / `sort.by_key` (not `sort.strings`), `to_under(x)` to
-unwrap a newtype.
+Names that are not where you would look: `strings.parse_int` / `parse_int_prefix`
+(no bare builtin), `sort.asc` / `sort.desc` / `sort.by_key` (not
+`sort.strings`), `to_under(x)` to unwrap a newtype.
 
 ## Affine types: task, typed handle, channel
 

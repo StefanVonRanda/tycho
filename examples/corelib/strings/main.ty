@@ -8,5 +8,5 @@ fn main():
     println("replace         = " + strings.replace("a-b-c", "-", "/"))
     println("capitalize      = " + strings.capitalize("hello world"))
     println("pad_left        = [" + strings.pad_left("7", 4, "0") + "]")
-    println("parse_int('-42')= " + str(strings.parse_int("-42")))
+    println("parse_int_prefix('-42')= " + str(strings.parse_int_prefix("-42")))
     println("count('aXbXc')  = " + str(strings.count("aXbXc", "X")))

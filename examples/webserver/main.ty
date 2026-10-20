@@ -170,7 +170,9 @@ fn main():
         port := 8080
         pe := getenv("PORT")
         if pe != "":
-            port = strings.parse_int(pe)
+            match strings.parse_int(pe):
+                Ok(v): port = v
+                Err(e): die("webserver: PORT wants a number, got: " + pe)
         # core:net's TCP calls return Result(T, net.NetErr) and httpd.read_request
         # returns Result(Request, httpd.ReqErr). main() is void, so `or_return` is
         # unavailable here and core:result's combinators do the collapsing.

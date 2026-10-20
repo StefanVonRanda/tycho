@@ -170,13 +170,55 @@ fn safe_join(base: string, rel: string) -> string:
 # realpath(3): the absolute path with every symlink and ".." resolved, or "" if
 # the path does not exist, cannot be read, or does not fit. Fail-closed.
 extern fn pathx_real(p: string) -> string
+extern fn pathx_real_checked(p: string, status: inout int) -> string
 extern fn pathx_is_symlink(p: string) -> bool
 
-fn real(p: string) -> string:
+enum PathErr:
+    NotFound
+    Denied
+    TooLong
+    BadPath
+    Failed
+
+# The checked sibling of real(): Ok is the resolved path; Err names why the
+# resolution failed. The status codes mirror pathx_real_checked in the shim.
+fn real_checked(p: string) -> Result(string, PathErr):
     for i := 0; i < len(p); i += 1:
         if p[i] == 0:
-            return ""                          # a NUL truncates the C string
-    return pathx_real(p)
+            return Err(BadPath)
+    st := 0
+    r := pathx_real_checked(p, &st)
+    if st == 0:
+        return Ok(r)
+    if st == 1:
+        return Err(NotFound)
+    if st == 2:
+        return Err(Denied)
+    if st == 3:
+        return Err(TooLong)
+    if st == 4:
+        return Err(BadPath)
+    return Err(Failed)
+
+fn real(p: string) -> string:
+    match real_checked(p):
+        Ok(s):
+            return s
+        Err(_):
+            return ""
+
+# POSIX shell-safe single quoting for display: wrap in '...' and spell an
+# embedded quote as '\'' . The bytes are copied unchanged, so a path containing
+# spaces, tabs or a newline prints as one unambiguous shell word.
+fn quote(p: string) -> string:
+    out := "'"
+    for i := 0; i < len(p); i += 1:
+        c := p[i]
+        if c == 39:                              # '\''
+            out = out + chr(39) + chr(92) + chr(39) + chr(39)
+        else:
+            out = out + chr(c)
+    return out + "'"
 
 # True when `p` IS `root` or lies underneath it. Both must already be resolved:
 # this is the comparison, not the resolution.

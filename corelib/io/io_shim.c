@@ -414,6 +414,149 @@ tycho_int iox_stat_size(const char *path, tycho_int *size) {
     return TY_RF_OK;
 }
 
+/* The file-kind codes shared with core:io.FileKind. Keep them in the same
+ * order as the Tycho enum; the wrapper maps the integer once. */
+#define TY_KIND_FILE    0
+#define TY_KIND_DIR     1
+#define TY_KIND_SYMLINK 2
+#define TY_KIND_FIFO    3
+#define TY_KIND_SOCKET  4
+#define TY_KIND_DEVICE  5
+#define TY_KIND_OTHER   6
+
+#ifndef S_ISLNK
+#define S_ISLNK(m) 0
+#endif
+#ifndef S_ISFIFO
+#define S_ISFIFO(m) 0
+#endif
+#ifndef S_ISSOCK
+#define S_ISSOCK(m) 0
+#endif
+#ifndef S_ISCHR
+#define S_ISCHR(m) 0
+#endif
+#ifndef S_ISBLK
+#define S_ISBLK(m) 0
+#endif
+
+static tycho_int ty_kind_from_mode(unsigned int mode) {
+    if (S_ISREG(mode))  return TY_KIND_FILE;
+    if (S_ISDIR(mode))  return TY_KIND_DIR;
+    if (S_ISLNK(mode))  return TY_KIND_SYMLINK;
+    if (S_ISFIFO(mode)) return TY_KIND_FIFO;
+    if (S_ISSOCK(mode)) return TY_KIND_SOCKET;
+    if (S_ISCHR(mode) || S_ISBLK(mode)) return TY_KIND_DEVICE;
+    return TY_KIND_OTHER;
+}
+
+#ifdef _WIN32
+static tycho_int ty_win_attrs_handle(const char *path, HANDLE *out);
+#endif
+
+/* stat/lstat in one call: kind, size, mtime, inode and device. `follow` is 1
+ * for stat(2) and 0 for lstat(2); the caller is io.stat/lstat. Size is reported
+ * only for regular files (and, on POSIX, for a symlink's target length under
+ * lstat); a directory's st_size is its entry array, not a readable length. */
+tycho_int iox_stat_info(const char *path, tycho_int follow,
+                        tycho_int *kind, tycho_int *size, tycho_int *mtime,
+                        tycho_int *inode, tycho_int *device) {
+    struct stat st;
+    *kind = TY_KIND_FILE;
+    *size = 0; *mtime = 0; *inode = 0; *device = 0;
+    errno = 0;
+#ifdef _WIN32
+    if (stat(path, &st) != 0) return ty_rf_errno(path);
+    *kind = ty_kind_from_mode(st.st_mode);
+    if (!follow) {
+        DWORD attrs = GetFileAttributesA(path);
+        if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_REPARSE_POINT))
+            *kind = TY_KIND_SYMLINK;
+    }
+    if (*kind == TY_KIND_FILE) *size = (tycho_int)st.st_size;
+#else
+    if (follow ? stat(path, &st) : lstat(path, &st)) return ty_rf_errno(path);
+    *kind = ty_kind_from_mode(st.st_mode);
+    if (*kind == TY_KIND_FILE || *kind == TY_KIND_SYMLINK)
+        *size = (tycho_int)st.st_size;
+#endif
+    *mtime = (tycho_int)st.st_mtime;
+#ifndef _WIN32
+    *inode = (tycho_int)st.st_ino;
+    *device = (tycho_int)st.st_dev;
+#else
+    /* Windows' stat() reports local time and leaves st_ino/st_dev at 0; the UTC
+     * path is the one iox_stat_mtime already uses, and the identity comes from
+     * the open handle so io.stat/io.same_file agree on hard links. */
+    {
+        WIN32_FILE_ATTRIBUTE_DATA fad;
+        if (GetFileAttributesExA(path, GetFileExInfoStandard, &fad)) {
+            unsigned long long t =
+                ((unsigned long long)fad.ftLastWriteTime.dwHighDateTime << 32)
+                | fad.ftLastWriteTime.dwLowDateTime;
+            *mtime = (tycho_int)((long long)(t / 10000000ULL) - 11644473600LL);
+        }
+        HANDLE h = INVALID_HANDLE_VALUE;
+        if (ty_win_attrs_handle(path, &h) == TY_RF_OK) {
+            BY_HANDLE_FILE_INFORMATION fi;
+            if (GetFileInformationByHandle(h, &fi)) {
+                *device = (tycho_int)fi.dwVolumeSerialNumber;
+                *inode = (tycho_int)(((unsigned long long)fi.nFileIndexHigh << 32)
+                                     | fi.nFileIndexLow);
+            }
+            CloseHandle(h);
+        }
+    }
+#endif
+    return TY_RF_OK;
+}
+
+#ifdef _WIN32
+static tycho_int ty_win_attrs_handle(const char *path, HANDLE *out) {
+    *out = CreateFileA(path, FILE_READ_ATTRIBUTES,
+                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                       NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (*out != INVALID_HANDLE_VALUE) return TY_RF_OK;
+    {
+        DWORD e = GetLastError();
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return TY_RF_MISS;
+        return TY_RF_ERR;
+    }
+}
+#endif
+
+/* Do two paths name the same file? POSIX compares (st_dev, st_ino); Windows
+ * compares the volume serial and the 64-bit file index from the open handle.
+ * This is the hard-link answer a duplicate finder needs: same_file(a, b) is
+ * true for two names of one inode and false for two independent copies. */
+tycho_int iox_same_file(const char *a, const char *b, tycho_int *same) {
+    *same = 0;
+#ifdef _WIN32
+    HANDLE ha = INVALID_HANDLE_VALUE, hb = INVALID_HANDLE_VALUE;
+    tycho_int sa = ty_win_attrs_handle(a, &ha);
+    if (sa != TY_RF_OK) return sa;
+    tycho_int sb = ty_win_attrs_handle(b, &hb);
+    if (sb != TY_RF_OK) { CloseHandle(ha); return sb; }
+    BY_HANDLE_FILE_INFORMATION ia, ib;
+    int oa = GetFileInformationByHandle(ha, &ia);
+    int ob = GetFileInformationByHandle(hb, &ib);
+    CloseHandle(ha);
+    CloseHandle(hb);
+    if (!oa || !ob) return TY_RF_ERR;
+    *same = (ia.dwVolumeSerialNumber == ib.dwVolumeSerialNumber &&
+             ia.nFileIndexHigh == ib.nFileIndexHigh &&
+             ia.nFileIndexLow == ib.nFileIndexLow) ? 1 : 0;
+#else
+    struct stat sa, sb;
+    errno = 0;
+    if (stat(a, &sa) != 0) return ty_rf_errno(a);
+    errno = 0;
+    if (stat(b, &sb) != 0) return ty_rf_errno(b);
+    *same = (sa.st_dev == sb.st_dev && sa.st_ino == sb.st_ino) ? 1 : 0;
+#endif
+    return TY_RF_OK;
+}
+
 /* One code the read/stat space has no use for: the path is occupied by something
  * that is NOT a directory, so make_dir cannot have what it asked for. TY_RF_OK
  * cannot carry it -- OK already means "I did it" below. */

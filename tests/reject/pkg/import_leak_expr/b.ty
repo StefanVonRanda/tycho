@@ -1,4 +1,4 @@
 package main
 
 fn helper(s: string) -> int:
-    return strings.parse_int(s)
+    return strings.parse_int_prefix(s)

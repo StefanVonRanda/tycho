@@ -133,7 +133,7 @@ want a different tool, is
 **[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)**;
 [from `malloc` to arenas](docs/from-c-to-arenas.md) is the same ground from C.
 
-> **Status: 0.8.7 — pre-1.0. Expect breaking changes.** Until 1.0, the
+> **Status: 0.8.9 — pre-1.0. Expect breaking changes.** Until 1.0, the
 > language surface and the corelib API can change with a changelog entry
 > and no deprecation window. The [spec](docs/spec/) describes the current
 > behavior. Performance numbers, emitted C shape, and arena sizes are

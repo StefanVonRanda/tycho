@@ -327,7 +327,7 @@ fn parse_toks(toks: [Tok], pos: inout int) -> Val:
 
 # The strict int parse: a token that passed is_int_text is a well-formed int.
 fn int_of(t: string) -> int:
-    match strings.parse_int_checked(t):
+    match strings.parse_int(t):
         Ok(v):
             return v
         Err(e):

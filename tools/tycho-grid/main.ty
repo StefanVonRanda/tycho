@@ -59,11 +59,11 @@ fn coords(tok: string, want_value: bool) -> (int, int, int):
         if len(kv) != 2:
             die("tycho-grid: want r,c=v, got " + tok)
         body = kv[0]
-        v = strings.parse_int(kv[1])
+        v = strings.parse_int_prefix(kv[1])
     rc := split(body, ",")
     if len(rc) != 2:
         die("tycho-grid: want r,c, got " + tok)
-    return (strings.parse_int(rc[0]), strings.parse_int(rc[1]), v)
+    return (strings.parse_int_prefix(rc[0]), strings.parse_int_prefix(rc[1]), v)
 
 fn main():
     c := cli.Cli([], [], [], [], [], [])
@@ -72,8 +72,14 @@ fn main():
         Err(cli.Unknown(tok)): die("tycho-grid: unknown option " + tok)
         Err(cli.NoValue(tok)): die("tycho-grid: " + tok + " needs a value")
 
-    nrows := strings.parse_int(cli.get(c, "rows", "3"))
-    ncols := strings.parse_int(cli.get(c, "cols", "3"))
+    nrows := 3
+    ncols := 3
+    match strings.parse_int(cli.get(c, "rows", "3")):
+        Ok(v): nrows = v
+        Err(e): die("tycho-grid: --rows wants a number, got: " + cli.get(c, "rows", "3"))
+    match strings.parse_int(cli.get(c, "cols", "3")):
+        Ok(v): ncols = v
+        Err(e): die("tycho-grid: --cols wants a number, got: " + cli.get(c, "cols", "3"))
     if nrows < 1 or ncols < 1:
         die("tycho-grid: --rows and --cols must be positive")
 

@@ -91,9 +91,9 @@ n_lib=$(find corelib -name '*.ty' | wc -l | tr -d ' ')
 n_rej=$(ls tests/reject/*.ty | wc -l | tr -d ' ')
 n_tsv=$(wc -l < "$TSV" | tr -d ' ')
 n_new=$(find tools examples server bench -name '*.ty' | wc -l | tr -d ' ')
-[ "$n_acc" = 316 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 316"; rc=1; }   # +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106), tests/inline_arr_reassign_loop.ty (tychoc emitted .data on an inline array reassigned in a loop, found by tools/tycho-grade, 2026-09-24), tests/or_else.ty and tests/or_else_frees.ty (2026-09-25), tests/or_else_escape.ty (tychoc1 returned an or_else payload from a freed arena, 2026-09-25), tests/to_bytes_escape.ty (tychoc1 read to_bytes(local) as fresh, 2026-09-25), tests/neg_literal_adapt.ty (the two compilers disagreed on a negative literal at an adapting type), tests/emit_many_inferred_arrays.ty (emitter placeholder-prefix collision, 2026-09-26), tests/generic_ctor_realloc.ty (generic type-table realloc, 2026-09-26), tests/const_sized_arrays.ty (const fixed-array/vector sizes, 2026-09-26); +1 place-store sequencing, tuple adaptation, pow/SoA iteration, D24 f-string, D22 sized-float, D29/D30 map-key, D26 temp-namespace, D28 enum-C-name, D36 double-underscore and D21 packed-inout regressions; +4 accumulator/loop/map/receive lifetime probes and +1 D81 receive escape case (2026-09-27); +1 tests/map_missing_composite.ty (missing composite map read segfault, FRICTION 204, 2026-10-18); +1 tests/store_discipline.ty (store-owner discipline matrix, 2026-10-18)
+[ "$n_acc" = 318 ] || { echo "parse-check: tests/*.ty is $n_acc, expected 318"; rc=1; }   # +1: tests/ptr_param_abi.ty (2026-10-20). +1: tests/eprintln.ty (2026-10-19). +1 each: tests/packed_struct.ty (V2), tests/vector_type.ty (V3), tests/fixarr_iter.ty (V3a), tests/generic_recur_same.ty, tests/align_struct.ty (L1), tests/multi_assign.ty (L2), tests/swizzle.ty (L3), tests/vector_map_key.ty (composite map keys), tests/lane_names.ty (L4), tests/bounded_local_cap.ty (G9), tests/float_floor.ty (FRICTION 94, 0b385a24 -- the commit that turned this leg RED for a day because nothing runs parse-check; FRICTION 106), tests/inline_arr_reassign_loop.ty (tychoc emitted .data on an inline array reassigned in a loop, found by tools/tycho-grade, 2026-09-24), tests/or_else.ty and tests/or_else_frees.ty (2026-09-25), tests/or_else_escape.ty (tychoc1 returned an or_else payload from a freed arena, 2026-09-25), tests/to_bytes_escape.ty (tychoc1 read to_bytes(local) as fresh, 2026-09-25), tests/neg_literal_adapt.ty (the two compilers disagreed on a negative literal at an adapting type), tests/emit_many_inferred_arrays.ty (emitter placeholder-prefix collision, 2026-09-26), tests/generic_ctor_realloc.ty (generic type-table realloc, 2026-09-26), tests/const_sized_arrays.ty (const fixed-array/vector sizes, 2026-09-26); +1 place-store sequencing, tuple adaptation, pow/SoA iteration, D24 f-string, D22 sized-float, D29/D30 map-key, D26 temp-namespace, D28 enum-C-name, D36 double-underscore and D21 packed-inout regressions; +4 accumulator/loop/map/receive lifetime probes and +1 D81 receive escape case (2026-09-27); +1 tests/map_missing_composite.ty (missing composite map read segfault, FRICTION 204, 2026-10-18); +1 tests/store_discipline.ty (store-owner discipline matrix, 2026-10-18)
 [ "$n_lib" = 91 ]  || { echo "parse-check: corelib/**.ty is $n_lib, expected 91"; rc=1; }
-[ "$n_new" = 182 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 182"; rc=1; }   # +1: tools/tycho-grade/main.ty, the worked vector/swizzle user FRICTION 128 layout 4 asked for (2026-09-24). +1: tools/tycho-du/main.ty, the handle probe's program brought in tree (2026-09-22). -1 before that: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
+[ "$n_new" = 185 ] || { echo "parse-check: tools+examples+server+bench .ty is $n_new, expected 185"; rc=1; }   # +1: bench/opt/bigparam/main.ty, the O2 optimization fixture (2026-10-20). +1: bench/litarr_build.ty, the O1 optimization fixture (2026-10-19). +1: tools/tycho-dupe/main.ty, the duplicate-finder probe (2026-10-19). +1: tools/tycho-grade/main.ty, the worked vector/swizzle user FRICTION 128 layout 4 asked for (2026-09-24). +1: tools/tycho-du/main.ty, the handle probe's program brought in tree (2026-09-22). -1 before that: tools/tycho-rsa/ removed in 0888bf28, which left this literal at 179 and the lane red
 [ "$n_rej" = "$n_tsv" ] || { echo "parse-check: $n_rej reject fixtures but $n_tsv classified rows -- rerun scripts/classify_rejects.py"; rc=1; }
 
 # The same literals, read back out of this file and compared to the tree by
@@ -124,10 +124,10 @@ leg_accept() {
     echo "$1: files=$((ok+bad)) parse-ok=$ok fail=$bad"
     [ "$ok" = "$3" ] && [ "$bad" = 0 ] || { echo "parse-check: $1 expected $3 ok, 0 fail"; rc=1; }
 }
-# leg1 289 -> 290: tests/inline_arr_reassign_loop.ty; -> 292: tests/or_else{,_frees}.ty (2026-09-25); -> 293: tests/or_else_escape.ty; -> 294: tests/to_bytes_escape.ty; -> 295: tests/neg_literal_adapt.ty; -> 296: tests/emit_many_inferred_arrays.ty (emitter placeholder-prefix collision, 2026-09-26); -> 297: tests/generic_ctor_realloc.ty (generic type-table realloc, 2026-09-26); -> 298: tests/const_sized_arrays.ty (const fixed-array/vector sizes, 2026-09-26); leg1c 179 -> 180: tools/tycho-grade/main.ty (2026-09-24); -> 181: existing tools/tycho-docs/main.ty reconciled (2026-10-15); -> 182: bench/allocator/readers.ty, actual HTTP/DB lifetime fixture (2026-10-15)
-leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 316
+# leg1 289 -> 290: tests/inline_arr_reassign_loop.ty; -> 292: tests/or_else{,_frees}.ty (2026-09-25); -> 293: tests/or_else_escape.ty; -> 294: tests/to_bytes_escape.ty; -> 295: tests/neg_literal_adapt.ty; -> 296: tests/emit_many_inferred_arrays.ty (emitter placeholder-prefix collision, 2026-09-26); -> 297: tests/generic_ctor_realloc.ty (generic type-table realloc, 2026-09-26); -> 298: tests/const_sized_arrays.ty (const fixed-array/vector sizes, 2026-09-26); -> 317: tests/eprintln.ty (2026-10-19); -> 318: tests/ptr_param_abi.ty (2026-10-20); leg1c 179 -> 180: tools/tycho-grade/main.ty (2026-09-24); -> 181: existing tools/tycho-docs/main.ty reconciled (2026-10-15); -> 182: bench/allocator/readers.ty, actual HTTP/DB lifetime fixture (2026-10-15); -> 183: tools/tycho-dupe/main.ty (2026-10-19); -> 184: bench/litarr_build.ty (2026-10-19); -> 185: bench/opt/bigparam/main.ty (2026-10-20)
+leg_accept "leg1  tests/*.ty" "$(ls tests/*.ty)" 318
 leg_accept "leg1b corelib/**.ty" "$(find corelib -name '*.ty' | sort)" 91
-leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 182
+leg_accept "leg1c tools+examples+server+bench" "$(find tools examples server bench -name '*.ty' | sort)" 185
 
 # [2] -- the reject corpus, split. There is no exemption list: Phase 2b closed
 # the three literal-range misses this leg used to name, so every SYNTAX fixture
@@ -149,7 +149,7 @@ tr=0; tm=0; ta=0; tw=0
 # B-3 grounding analysis was ported into compiler/types/tcheck.ty@_pend_ground:
 # both are refused by their OWN rule now, byte for byte with ./tychoc.
 # infer_bare_empty LEFT it earlier, when `declared and not used` became fatal --
-# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9920@grounding) that refuses it today.
+# by THAT rule, not by grounding; it is the B-3 audit (src/tychoc.c:9919@grounding) that refuses it today.
 # len_scalar LEFT it too, when the f-string interpolation holes became real
 # expressions: the `len` rule was always here, the hole was simply never walked.
 KNOWN_TYPE_MISS=""
@@ -377,8 +377,8 @@ echo "leg4  declaration rules: refused=$nref/5 accepted=$nacc/5"
 
 # [4b] -- the two package-member formats, which NO verdict leg can see: both
 # spellings are a refusal, so leg2b/5/6/8 are green either way and the wording
-# is decoration until Phase 9 pins message text. src/tychoc.c:7147 answers
-# `pkg.Name` written with NO call; src/tychoc.c:7506 answers `pkg.name(...)`.
+# is decoration until Phase 9 pins message text. src/tychoc.c:7149 answers
+# `pkg.Name` written with NO call; src/tychoc.c:7508 answers `pkg.name(...)`.
 # Both measured against ./tychoc 2026-08-23. The accepting twin is required for
 # the usual reason: two refusals alone are satisfied by refusing everything.
 pr r3_field <<'EOF'

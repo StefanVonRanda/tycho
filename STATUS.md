@@ -53,7 +53,7 @@ about whether this is a language someone would choose to use.
 | **Self-hosting** | the compiler compiles itself and reaches a fixpoint | `make fixpoint-check` |
 | **Fixture corpus** | over 1,100 fixtures (see `sh tests/run.sh --count`), more than half of them refusals — what must *not* compile | `make test` |
 | **Corelib** | 45 packages shipped, each golden-locked (`corelib/test/` is the test tree, not a package) | `make corelib` |
-| **Real programs** | dozens of real programs in Tycho (~19,000 lines under `tools/`), 6 over 1,000 lines; `tycho-db` asserts crash recovery from a real `kill -9`, torn-record discard and a TCP server | `find tools -name '*.ty' \| xargs wc -l` |
+| **Real programs** | dozens of real programs in Tycho (~20,000 lines under `tools/`), 6 over 1,000 lines; `tycho-db` asserts crash recovery from a real `kill -9`, torn-record discard and a TCP server | `find tools -name '*.ty' \| xargs wc -l` |
 | **Normative spec** | 28 files, and the implementation is gated against them | `make spec-check` |
 | **The whole gate** | recorded passes under **gcc and clang** on x86-64 Linux and **clang on darwin-arm64**; rerun for the current tree/platform | `make ci` |
 | **Memory safety** | sanitizer lanes (ASan/UBSan/LSan/TSan) plus fuzz lanes, plus differential parity fuzzers | `make ci`, `make fuzz` |

@@ -1,0 +1,73 @@
+=== default
+4 duplicate sets, 3 MiB reclaimable across 10 files
+
+2 MiB  2 files  (2 MiB each)  5647f05ec189
+  'TMP/tree/big/one.bin'
+  'TMP/tree/big/two.bin'
+
+1 MiB  2 files  (1 MiB each)  30e14955ebf1
+  'TMP/tree/big/four.bin'
+  'TMP/tree/big/three.bin'
+
+18 B  4 files  (6 B each)  b6a98d9ce9a2
+  'TMP/tree/a/one.txt'
+  'TMP/tree/a/two.txt'
+  'TMP/tree/b/three.txt'
+  'TMP/tree/nested/deep/six.txt'
+
+5 B  2 files  (5 B each)  f2c82decdd71
+  'TMP/tree/b/four.txt'
+  'TMP/tree/c/five.txt'
+
+scanned 13 files, 6 MiB
+=== min-size 0
+5 duplicate sets, 3 MiB reclaimable across 12 files
+
+2 MiB  2 files  (2 MiB each)  5647f05ec189
+  'TMP/tree/big/one.bin'
+  'TMP/tree/big/two.bin'
+
+1 MiB  2 files  (1 MiB each)  30e14955ebf1
+  'TMP/tree/big/four.bin'
+  'TMP/tree/big/three.bin'
+
+18 B  4 files  (6 B each)  b6a98d9ce9a2
+  'TMP/tree/a/one.txt'
+  'TMP/tree/a/two.txt'
+  'TMP/tree/b/three.txt'
+  'TMP/tree/nested/deep/six.txt'
+
+5 B  2 files  (5 B each)  f2c82decdd71
+  'TMP/tree/b/four.txt'
+  'TMP/tree/c/five.txt'
+
+0 B  2 files  (0 B each)  e3b0c44298fc
+  'TMP/tree/empty1'
+  'TMP/tree/empty2'
+
+scanned 13 files, 6 MiB
+=== top 1
+4 duplicate sets, 3 MiB reclaimable across 10 files
+
+2 MiB  2 files  (2 MiB each)  5647f05ec189
+  'TMP/tree/big/one.bin'
+  'TMP/tree/big/two.bin'
+
+scanned 13 files, 6 MiB
+=== err no args
+usage: tycho-dupe [--min-size N] [--top N] [--json] PATH...
+  --min-size N  ignore files smaller than N bytes (default 1)
+  --top N       show at most N duplicate sets (default all)
+  --json        emit machine-readable JSON instead of text
+  --help        show this message
+
+Duplicate sets are ordered by bytes reclaimable, then by hash.
+Exit 0 on a completed scan, 2 on bad usage or an uninspectable root.
+=== err unknown option
+tycho-dupe: unknown option: --nope
+=== err bad top
+tycho-dupe: --top needs a number, got 'x'
+=== err bad min-size
+tycho-dupe: --min-size must be zero or more
+=== err missing root
+tycho-dupe: no such path: TMP/nope

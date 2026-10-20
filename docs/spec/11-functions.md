@@ -24,16 +24,34 @@ program entry point ([§27](15-program.md)).
 
 A parameter is passed in one of three modes:
 
-- **Default (by value).** For a scalar, the callee receives a copy. For a
-  heap-bearing value (a `string`, an array, a map, a heap-bearing struct), the
-  callee receives a **read-only borrow** — it may read but not mutate the value,
-  and mutating a borrowed parameter is a compile error. Because the caller's
-  value is unchanged, this is value semantics with a copy elided where the callee
-  cannot observe the difference. A value produced or returned from the callee is
-  copied into the appropriate storage as usual.
+- **Default (read-only).** A scalar is copied. A heap-bearing value — a
+  `string`, `bytes`, a dynamic array `[T]`, a map, or a struct containing one —
+  is passed as a **read-only descriptor**: the descriptor is copied, the backing
+  storage is shared, and mutating the parameter is a compile error. A fixed
+  array `[N]T`, a `vector[N]T`, or a struct that inlines one has no heap
+  descriptor to share: the whole value is copied. The caller's value is
+  unchanged either way. A value produced or returned by the callee is copied
+  into the appropriate storage as usual.
+
+  The call-site cost is the size of the emitted value: a descriptor is a fixed
+  few words, while `[N]T` and inline-array structs copy all N elements. Use
+  `inout` for a mutable borrow and `sink` to move ownership when that copy is
+  the cost you are trying to avoid. The table below is the boundary; "large
+  value" is not a separate rule.
+
+  | shape | what crosses the call | backing storage |
+  |---|---|---|
+  | `int`, `float`, `bool`, `char` | the value | — |
+  | `string`, `bytes`, `[T]`, map | descriptor | shared, read-only |
+  | struct/enum/newtype with heap fields | value with descriptors | shared, read-only |
+  | `[N]T`, `vector[N]T`, struct with an inline array | the whole value | copied |
+  | `inout T` | the caller's place | mutated in place |
+  | `sink T` | ownership | moved, no copy |
 - **`inout` (copy-in/copy-out borrow).** Specified in [§11](07-memory-model.md#11-inout):
   an exclusive, call-scoped mutable borrow written `&x` at the call site,
-  equivalent to `x = f(x)`, with the exclusivity rule of §11.2.
+  equivalent to `x = f(x)`, with the exclusivity rule of §11.2. An `inout`
+  parameter is forwarded to another `inout` parameter with `&` again at the
+  nested call site (`bump(&n)`); the exclusivity rule applies at each call.
 - **`sink` (owned, consuming).** The callee **owns and consumes** the argument
   and may mutate it in place. **On a heap-bearing type** the caller's argument is
   consumed: after passing a variable to a `sink` parameter, the caller MUST NOT

@@ -323,7 +323,7 @@ fn mi(s: inout Sess, mi_cmd: string, is_exec: bool) -> string:
             if strings.starts_with(line, "=thread-group-started"):
                 p := field(rec_fields(line), "pid")
                 if p != "":
-                    s.pid = strings.parse_int(p)   # the inferior pid, for Ctrl-C
+                    s.pid = strings.parse_int_prefix(p)   # the inferior pid, for Ctrl-C
             elif strings.starts_with(line, "=thread-group-exited"):
                 s.pid = 0
         elif kind == 94:                         # ^done / ^error / ^running
@@ -376,7 +376,7 @@ fn show_stopped(s: inout Sess, rec: string):
     ln := field(fparts, "line")
     if norm_sep(f) == norm_sep(s.src) or f == "":
         if ln != "":
-            s.cur = strings.parse_int(ln)
+            s.cur = strings.parse_int_prefix(ln)
         println("  at " + base_name(s.src) + ":" + ln + "  (" + strip_h(fn_) + ")")
     else:
         println("  at " + f + ":" + ln + "  (" + fn_ + ")")   # runtime glue: no .ty line

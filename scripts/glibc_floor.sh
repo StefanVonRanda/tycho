@@ -79,8 +79,8 @@ package main
 import "core:strings"
 
 fn main():
-    n := strings.parse_int("41")
-    c := strings.parse_int_checked("1234")
+    n := strings.parse_int_prefix("41")
+    c := strings.parse_int("1234")
     f := strings.parse_float("2.5")
     u := strings.to_upper("floor")
     println(f"{u} {n + 1} {c} {f}")

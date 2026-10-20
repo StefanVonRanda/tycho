@@ -1,0 +1,4 @@
+fn main():
+    eprintln("err one")
+    eprintln("err two")
+    println("out")

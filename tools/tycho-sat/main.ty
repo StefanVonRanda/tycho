@@ -428,7 +428,7 @@ fn parse_cnf(s: inout Solver, lines: [string], src: string) -> bool:
             else:
                 if tok != "":
                     v := 0
-                    match strings.parse_int_checked(tok):
+                    match strings.parse_int(tok):
                         Ok(n):
                             v = n
                         Err(e):
@@ -495,7 +495,9 @@ fn main():
     if av[0] == "--php":
         if len(av) < 2:
             die("tycho-sat: --php needs a hole count")
-        php_n = strings.parse_int(av[1])
+        match strings.parse_int(av[1]):
+            Ok(v): php_n = v
+            Err(e): die("tycho-sat: --php wants a number, got: " + av[1])
         nvars = (php_n + 1) * php_n
     elif av[0] == "solve":
         if len(av) < 2:
@@ -517,7 +519,7 @@ fn main():
                         sp = k
                         break
                     k = k + 1
-                match strings.parse_int_checked(rest[:sp]):
+                match strings.parse_int(rest[:sp]):
                     Ok(n):
                         nvars = n
                     Err(e):

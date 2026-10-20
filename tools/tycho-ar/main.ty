@@ -144,7 +144,7 @@ struct Entry:
 
 fn parse_uint(s: string) -> int:
     n := 0
-    match strings.parse_int_checked(s):
+    match strings.parse_int(s):
         Ok(v): n = v
         _: return -1
     if n < 0:                                # "-5" parses; a length field cannot be negative

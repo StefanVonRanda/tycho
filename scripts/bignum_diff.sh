@@ -32,7 +32,7 @@ fn main():
             if parts[2] == "1":
                 md = decimal.TOWARD_ZERO
             match decimal.div(decimal.from_str(astr), decimal.from_str(parts[0]),
-                              strings.parse_int(parts[1]), md):
+                              strings.parse_int_prefix(parts[1]), md):
                 Ok(q): println(decimal.to_str(q))
                 Err(e): println("ERR")
         elif op == "d+":                     # the decimal ops share the driver

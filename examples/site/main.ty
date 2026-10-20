@@ -322,7 +322,7 @@ fn build(site_dir: string, out_dir: string):
             # page looks finished and the date is a lie.
             draw := fm.get("date", "0")
             pdate := 0
-            match strings.parse_int_checked(draw):
+            match strings.parse_int(draw):
                 Ok(v): pdate = v
                 Err(e): die("site: " + fname + ": `date:` wants a unix timestamp, got: " + draw)
             pauthor := authors.get(fm.get("author", ""), "unknown")

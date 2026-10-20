@@ -79,7 +79,7 @@ fn main():
         a := av[i]
         if strings.starts_with(a, "--width="):
             rest := a[8:len(a)]
-            match strings.parse_int_checked(rest):
+            match strings.parse_int(rest):
                 Ok(v): w = v
                 _: fail("--width needs a number, got '" + rest + "'")
             if w < 1:

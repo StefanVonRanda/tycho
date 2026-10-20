@@ -33,7 +33,7 @@ fn main():
         println("usage: tycho-agg --csv FILE --by COLUMN [--min N]")
         exit(2)
     minimum := 1
-    match strings.parse_int_checked(cli.get(c, "min", "1")):
+    match strings.parse_int(cli.get(c, "min", "1")):
         Ok(v): minimum = v
         Err(e):
             println("--min wants an integer")

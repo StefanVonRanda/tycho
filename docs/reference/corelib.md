@@ -60,16 +60,19 @@ expression-bodied; pass a named function where you need a multi-line body.
   `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a
   digit), `hex_val` (0..15 or −1).
 - **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
-  `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `is_space`, `lines` (splits on
-  `\n`, drops one trailing `\r` per line, trailing newline adds no empty line), `replace`
+  `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `parse_int_prefix`,
+  `is_space`, `lines` (splits on `\n`, drops one trailing `\r` per line, trailing
+  newline adds no empty line), `replace`
   (non-overlapping, left to right; empty `old` returns the input unchanged), `count(s, sub)`,
   `strip_prefix`/`strip_suffix`, `pad_left`/`pad_right(s, width, pad)` (pad is one byte),
   `reverse`, `capitalize`, `split_once(s, sep) -> (before, after)` (`(s, "")` if absent).
   (`split`/`find`/`substr`/`len`/`chr` are builtins.)
-  **On untrusted input, reach for the checked siblings:**
-  `parse_int_checked(s) -> Result(int, IntErr)` and
-  `parse_float(s) -> Result(float, FloatErr)` — the bare `parse_int` **fails open**
-  (`"3x"` is `3`, not an error). `slice_str(s, start, stop) -> Result(string, SliceErr)`
+  **The integer parser is fail-closed by default:**
+  `parse_int(s) -> Result(int, IntErr)` and
+  `parse_float(s) -> Result(float, FloatErr)` refuse an empty string, trailing
+  garbage and out-of-range input. `parse_int_prefix(s) -> int` is the explicit
+  fail-open scanner (`"3x"` is `3`), for grammars that consume a numeric prefix;
+  do not use it on a file, a socket or a user. `slice_str(s, start, stop) -> Result(string, SliceErr)`
   and `slice_bytes(b, start, stop)` — a plain slice **clamps** rather than
   bounds-checking (`b[1:99]` on three bytes gives two and no trap), so these are
   the forms that refuse an out-of-range window instead of narrowing it.
@@ -83,15 +86,20 @@ expression-bodied; pass a named function where you need a multi-line body.
   `split_path(p) -> (dir, base)` (the inverse of `join`), and `clean` (lexical
   normalize: collapse `//`, drop `.`, resolve `..` but never above the root or
   past a leading `..`). `last_slash(s)` is the shared scan helper (index of
-  the last `/`, or -1). `safe_join(base, rel)` is the lexical containment
+  the last `/`, or -1). `quote(p)` is POSIX shell-safe single quoting for
+  display (`'a b'`, and an embedded quote as `'\''`), so a text report can print
+  an arbitrary path as one unambiguous word. `safe_join(base, rel)` is the lexical containment
   prefilter: the cleaned join when an untrusted `rel` stays under `base`, `""`
   when it is absolute, escapes via `..`, or carries a backslash or an `X:` drive
   prefix.
 
-  **The filesystem fence.** A lexical check cannot see a symlink, so three
-  functions make a real syscall, and all three fail closed — `""` is a refusal
-  and callers must treat it as one before using the path.
+  **The filesystem fence.** A lexical check cannot see a symlink, so four
+  functions make a real syscall, and all fail closed — `""` is a refusal and
+  callers must treat it as one before using the path.
 
+  - `real_checked(p)` — the checked sibling: `Ok(resolved)` or
+    `Err(NotFound / Denied / TooLong / BadPath / Failed)`. Use this when the
+    caller has to report *why* a path could not be resolved.
   - `real(p)` — the absolute path with every symlink and `..` resolved, or `""`
     if the path does not exist, cannot be read, contains a NUL, or does not fit.
   - `under(root, p)` — true when `p` **is** `root` or lies underneath it. The
@@ -421,6 +429,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   only succeed or fail** — `write_bytes(p, b)`, `write_at(p, off, b)`, `set_mtime(p, secs)`,
   `rename(src, dst)` and `sync(p)` — return `Result(void, io.IoErr)`, so
   `io.write_bytes(p, b) or_return` is a statement and a `match` arm is `Ok():`.
+  `stat(p)` and `lstat(p)` return `Result(Stat, io.IoErr)` with `kind: FileKind`
+  (`KindFile` / `KindDir` / `KindSymlink` / `KindFifo` / `KindSocket` / `KindDevice` /
+  `KindOther`), `size`, `mtime`, `inode` and `device`; `stat` follows symlinks and
+  `lstat` does not. `same_file(a, b) -> Result(bool, io.IoErr)` compares device +
+  inode (volume + file index on Windows), so two names of one hard link answer `true`.
   Nothing aborts.
 - **`os`** — `is_windows()` reports the host family at runtime — run external commands via
   a **libc-only FFI shim** (no `deps`, nothing to install). `os.system(cmd)` runs `cmd`

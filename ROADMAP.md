@@ -1,6 +1,6 @@
 # Roadmap
 
-Tycho is **0.8.7 — pre-1.0**, and this file is a direction, not a promise of
+Tycho is **0.8.9 — pre-1.0**, and this file is a direction, not a promise of
 dates. Day-to-day work is tracked in [GitHub
 issues](https://github.com/StefanVonRanda/tycho/issues); this file is the
 high-level shape. What 1.0 now requires is [below](#what-10-requires).
@@ -78,6 +78,254 @@ Foundation before feature breadth. In rough priority:
    and gated against recorded goldens before shipping. Ongoing, not a milestone.
 3. **Overloading — open, demand-gated.** A name may have exactly one definition.
    The trigger is a real program that needs it, not a design impulse.
+
+## Friction phases from the `tycho-dupe` probe (2026-10-19)
+
+> **Status, 2026-10-19: all seven phases are DONE and gated.** The probe record
+> is [`tools/tycho-dupe/FRICTION-OUTSIDE.md`](tools/tycho-dupe/FRICTION-OUTSIDE.md);
+> the gate is `make dupe-check` (CI step `[4c2/37]`).
+
+The duplicate-finder probe in [`tools/tycho-dupe`](tools/tycho-dupe) found seven
+places where a real CLI fought the language or the corelib. Each phase lands
+with its own gate; the record is
+[`FRICTION-OUTSIDE.md`](tools/tycho-dupe/FRICTION-OUTSIDE.md).
+
+### Phase 1 — `core:io.stat` / `lstat` / `same_file`
+
+**Status: DONE 2026-10-19.**
+
+Add a `Stat` value with `FileKind`, size, mtime, inode and device, plus
+`io.stat` (follows symlinks), `io.lstat` (does not) and `io.same_file(a, b)`
+(device + inode). This removes the C shim a filesystem tool otherwise needs for
+symlink, hard-link and special-file identity, and collapses three syscalls per
+entry into one.
+
+**Done when:** the shim functions exist on POSIX and Windows, the Tycho wrappers
+and docs are in `surface.lock`, `corelib/test/io` covers a regular file, a
+directory and a missing path plus `same_file` self/different, and the
+`tycho-dupe` gate covers symlink, symlink-cycle and hard-link identity.
+
+### Phase 2 — `path.real_checked`
+
+**Status: DONE 2026-10-19.**
+
+Add `real_checked(p) -> Result(string, PathErr)` with at least `NotFound`,
+`Denied`, `TooLong` and `BadPath`; keep `real` as the fail-closed convenience.
+Follow the `io.read_text` / `io.read` precedent so a tool can say why a path
+could not be resolved.
+
+**Done when:** the checked function is tested against a missing path, a
+permission-denied path and a normal path, is in `surface.lock` and the corelib
+catalogue, and `tools/tycho-dupe` uses it.
+
+### Phase 3 — pin the read-only parameter copy boundary
+
+**Status: DONE 2026-10-19.**
+
+Make `reference/functions.md`, `reference/basics.md` and the normative
+`spec/11-functions.md` say exactly which values are copied and which are
+borrowed: scalars copy; heap-bearing values (`[T]`, maps, strings, structs
+holding them) pass a read-only descriptor with shared backing storage; fixed
+arrays `[N]T` and structs that inline them copy the whole value; `inout` and
+`sink` are the explicit mutation/consume modes. Add a table with one example
+per shape.
+
+**Done when:** the three pages agree, the table is present in the spec, and the
+fixed-array copy is named as a cost rather than hidden under "large values."
+
+### Phase 4 — document `inout` forwarding
+
+**Status: DONE 2026-10-19.**
+
+Show that an `inout` parameter is forwarded with `&` at the second call site
+(`fn twice(n: inout int): bump(&n)`), in both the reference and the spec. The
+behavior already exists and is exercised by `tests/calc.ty`; the gap is that the
+docs only show `&` from an ordinary variable.
+
+**Done when:** the reference and spec examples compile and run under
+`make docs-fences`.
+
+### Phase 5 — `eprintln`
+
+**Status: DONE 2026-10-19.**
+
+Add `eprintln(s)` as a builtin in both compilers, with the same one-`string`
+signature as `eprint` and a trailing newline. This removes `eprint(s + "\n")`
+from every CLI error path.
+
+**Done when:** both compilers emit it, `surface.lock` records it, the builtin
+reference and spec list it, `tests/eprintln.ty` plus the tool's error-path golden
+prove stdout/stderr separation, and `tools/tycho-dupe` uses it.
+
+### Phase 6 — make the checked integer parser the default
+
+**Status: DONE 2026-10-19.**
+
+Rename `strings.parse_int` (lax, prefix-parsing) to `parse_int_prefix`, and
+`parse_int_checked` (strict, `Result`) to `parse_int`. Update every call site,
+test, example, tool and doc — including the `tycho-syntax` correction layer —
+and keep the behavior of each site deliberate rather than mechanical.
+
+**Done when:** the corelib tests cover both policies under the new names, every
+call site compiles under both compilers, `surface.lock` is recorded, and the
+docs no longer describe the dangerous name as the obvious one.
+
+### Phase 7 — path quoting
+
+**Status: DONE 2026-10-19.**
+
+Add `path.quote(p)` (POSIX shell-safe single quoting, with an embedded quote
+spelled `'\''`) so a text report can print an arbitrary path unambiguously.
+Keep `--json` as the machine-readable form.
+
+**Done when:** the helper is tested against spaces, quotes, tabs and newlines,
+is in `surface.lock` and the corelib catalogue, and `tools/tycho-dupe` uses it
+in its text report with a golden update.
+
+## Compiler optimization phases: widening the domain (2026-10-19)
+
+> **Release scope:** 0.8.9 ships the friction phases above, **O1**
+> (immortal allocation + literal lifetime elision) and **O2** (read-only
+> pass-by-pointer in the reference compiler), with their before/after
+> benchmarks. The packaged compiler already had O2's descriptor form; O2
+> closes the bootstrap gap. O3–O7 are the 0.9 line. Nothing in this section is
+> claimed as shipped merely because it is written down.
+
+The goal is to expand the domains where Tycho competes by exploiting what value
+semantics already guarantees — uniqueness, read-only parameters, and the absence
+of pointer identity — **without adding a reference type, an escape hatch, or a
+new surface feature**. These are codegen/runtime phases; `surface.lock` is not
+touched.
+
+Every phase uses the same evidence rule:
+
+- one fixture under `bench/opt/`, with byte-identical output before and after;
+- peak RSS and wall time from `bench/peakrss.c`, 5 runs, median reported;
+- a `TYCHOC_NO_<OPT>` control that disables the optimization in the same
+  compiler, so the comparison is not a different tree or a different machine;
+- both compilers (`tychoc` and `tychoc1`) must agree on output, and the full
+  `make test`, `make corelib`, `make parse-check` and sanitizer lanes must stay
+  green;
+- a phase is not done until the benchmark shows a gain on at least one target
+  workload and no regression on the others.
+
+### O1 — Immortal allocation marking + literal lifetime elision
+
+**Status: DONE 2026-10-20 — shipped in 0.8.9.** The numbers are in
+[`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
+
+A `[string]` push copies the bytes unless the source is a string literal. A
+literal lives in `.rodata` for the whole process, so its header is now marked
+**immortal** (a negative length); `tycho_str_len` masks the marker, `tycho_str_copy`
+returns an immortal pointer unchanged, and `tycho_str_recycle` leaves it alone.
+The compiler needed no special branch: every copy site inherits the elision.
+
+On 6,000,000 literal pushes into a `[string]` field:
+
+| | peak RSS (median of 5) | time (median of 5) |
+|---|---:|---:|
+| copy before | 207,460 KB | 61 ms |
+| immortal pointer | **114,056 KB** | **28 ms** |
+
+That is **45% less peak RSS and 54% less wall time**. Both compilers emit the
+same output; `make test`, `make corelib`, `make parse-check` and the full gate
+are green.
+
+**Done when:** a string/bytes allocation can be marked immortal; copy, recycle,
+equality and mutation paths respect it; the `bench/litarr_build.ty` before/after
+shows the gain above; both compilers and the full gate are green. **All met.**
+
+### O2 — Read-only pass-by-pointer for large value parameters
+
+**Status: DONE 2026-10-20 — reference/bootstrap parity in 0.8.9.** The result is
+in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
+
+A default parameter is read-only, so a large fixed array can cross a direct call
+as a `const T*` instead of a full C value. The callee cannot mutate it, and any
+return/capture still copies, so the source semantics are unchanged. The
+reference compiler applies this to non-heap fixed arrays of at least four
+elements; `TYCHOC_NO_PTR_PARAMS` is the control. The packaged `tychoc1` already
+lowers `[N]T` to a 24-byte dynamic-array descriptor, so it has no 2 KB inline
+copy to elide.
+
+On `bench/opt/bigparam` (5,000,000 calls, `-O2 -fno-inline` to isolate the ABI):
+reference **140 ms → 66 ms** median, same RSS; packaged `tychoc1` **10 ms**.
+O2 closes the reference gap to the representation the shipped compiler already
+had, so the packaged binary's performance is unchanged.
+
+**Done when:** the pointer ABI is used for direct calls, function values and
+spawn trampolines bridge it, the fixture improves, and the existing
+`[N]T`/function-value/spawn tests are byte-identical. **All met on the reference
+compiler; `tychoc1`'s lowering already avoids the copy.**
+
+### O3 — Last-use moves / auto-sink
+
+**Status: planned.**
+
+`push`, `send` and direct calls can adopt a dead local instead of deep-copying
+it. The existing `can_move_from` / `can_move_into_sink` predicates are the
+starting point; extend them to more element types and to last-use arguments at
+ordinary calls, while keeping the loop rule conservative. This is the
+collection/builder counterpart to the existing return-slot move.
+
+**Before/after fixture:** build a `[Tree]` / `[string]` collection from
+loop-local values, with a same-arena move and a cross-arena copy case.
+**Done when:** the move path is selected only when uniqueness is proven, the
+fixture time/RSS improves, and the copy case still copies.
+
+### O4 — Borrowed string/bytes slices
+
+**Status: planned.**
+
+`substr` and `s[a:b]` copy today. Strings are immutable, so a slice can be a
+hidden `(pointer, length)` view while the parent is alive; if the slice escapes
+its parent's arena, the existing `copy_into` seam materializes it. This is a
+representation optimization, not a user-visible reference type.
+
+**Before/after fixture:** a lexer/JSON parser that slices fields and discards
+the line. **Done when:** in-scope slices allocate no bytes, escaping slices
+still copy, and the parser output/goldens are byte-identical.
+
+### O5 — Destination passing / automatic `inout`
+
+**Status: planned; the largest phase.**
+
+For `t = f(t, ...)` where `t` is uniquely owned and dead after the call,
+specialize `f` with a destination/`inout` convention. This turns the
+rebuild-per-operation wall (§4c) into in-place updates for ASTs, editors,
+caches and server state. The existing `sink` and `inout` place machinery
+(`&b.asks`, `&g.items(i)`) is the prototype; the missing piece is a sound
+uniqueness proof and an interprocedural reuse summary.
+
+**Before/after fixture:** `t = insert(t, k)` over a tree, and a long-lived
+editor-buffer update. **Done when:** unique calls mutate in place, shared calls
+still copy, and the fixture shows the path-copy/allocation drop with identical
+output.
+
+### O6 — Conservative shared-bit CoW / path copying
+
+**Status: research; only if O1–O5 leave a measured gap.**
+
+A single conservative “shared” bit per heap allocation would let `b := a` share
+until a write, and nested trees share untouched subtrees (path copying). It is
+not reference counting: a stale bit can over-copy, never under-copy. It is also
+the one phase that conflicts with the project’s “no CoW/RC” non-goal as a
+*model*; it is admissible only as a shape-gated implementation optimization.
+The before/after fixture is `bench/trie` + a path-copying update; the gate must
+show a real RSS/time gain and no mutation regression before this is considered.
+
+### O7 — SROA and bounds-check elimination
+
+**Status: planned; orthogonal to value semantics.**
+
+Non-escaping small arrays/maps/structs can be scalar-replaced or stack-allocated
+instead of arena-allocated, and monotone loop indices can drop redundant bounds
+checks. These are not copy-elision phases, but they address the measured
+`array-pipeline` gap that the model itself does not cause.
+
+**Before/after fixture:** `bench/array-pipeline` and a tight small-map loop.
+**Done when:** the checks/allocs disappear only where proven redundant, and the
+fixture improves without changing any golden.
 
 ## What 1.0 requires
 

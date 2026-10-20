@@ -229,13 +229,13 @@ fn main():
         exit(0)
 
     top := 10
-    match strings.parse_int_checked(cli.get(c, "top", "10")):
+    match strings.parse_int(cli.get(c, "top", "10")):
         Ok(n):
             top = n
         Err(_):
             die("tycho-du: --top wants a number")
     maxdepth := 64
-    match strings.parse_int_checked(cli.get(c, "depth", "64")):
+    match strings.parse_int(cli.get(c, "depth", "64")):
         Ok(n):
             maxdepth = n
         Err(_):
@@ -248,7 +248,7 @@ fn main():
         if len(roots) != 1:
             die("tycho-du: --selftest N wants exactly one path")
         n := 200
-        match strings.parse_int_checked(cli.get(c, "selftest", "200")):
+        match strings.parse_int(cli.get(c, "selftest", "200")):
             Ok(v):
                 n = v
             Err(_):

@@ -418,7 +418,7 @@ fn _parse_number(t: string) -> Result(Value, string):
                 return Err("bad base-" + str(base) + " integer: " + t)
             # Accumulate NEGATIVE so INT_MIN is reachable, and refuse rather than
             # wrap -- `0xFFFFFFFFFFFFFFFFFF` read back as -1 before this. Same
-            # guard as strings.parse_int_checked, generalised to the base.
+            # guard as strings.parse_int, generalised to the base.
             if v < (TOML_INT_MIN + d) / base:
                 return Err("integer out of range: " + t)
             v = v * base - d
@@ -459,9 +459,9 @@ fn _parse_number(t: string) -> Result(Value, string):
                 return Err("float underflows to zero: " + t)
             Err(e):
                 return Err("bad float: " + t)
-    if len(clean) > 0 and clean[0] == 43:      # parse_int_checked takes '-' only
+    if len(clean) > 0 and clean[0] == 43:      # parse_int takes '-' only
         clean = clean[1:len(clean)]
-    match strings.parse_int_checked(clean):
+    match strings.parse_int(clean):
         Ok(iv):
             return Ok(TInt(iv))
         Err(strings.OutOfRange):

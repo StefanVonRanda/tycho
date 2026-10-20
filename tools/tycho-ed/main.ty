@@ -107,7 +107,7 @@ fn run_cmd(b: inout buf.Buf, line: string) -> Result(void, buf.BufErr):
         buf.line_end(&b)
     elif verb == "goto":
         a, c := strings.split_once(rest, " ")
-        return buf.goto(&b, strings.parse_int(a), strings.parse_int(c))
+        return buf.goto(&b, strings.parse_int_prefix(a), strings.parse_int_prefix(c))
     elif verb == "dump":
         dump(&b)
     elif verb == "hex":
@@ -196,7 +196,7 @@ fn main() -> Result(void, string):
         if strings.starts_with(a, "--script="):
             path = a[9:len(a)]
         elif strings.starts_with(a, "--stress="):
-            n = strings.parse_int(a[9:len(a)])
+            n = strings.parse_int_prefix(a[9:len(a)])
         elif a == "--snapshot":
             snapshot = true
         elif a == "--backend=gap":

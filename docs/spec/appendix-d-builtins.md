@@ -15,6 +15,7 @@ alphabetical locator only.
 | `close` | concurrency / handle | §29 / [§25](14-ffi.md#25-typed-handles) |
 | `die` | termination | §29 / [§14.8](10-statements.md#148-die-exit-and-termination) |
 | `eprint` | I/O | §29 |
+| `eprintln` | I/O | §29 |
 | `find` | string | §29 |
 | `floor`, `fabs` | math (libm) | §29 |
 | `getenv` | process | §29 |

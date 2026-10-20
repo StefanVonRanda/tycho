@@ -141,7 +141,7 @@ The only place in all of `docs/` that says a handle can be null-tested is
 Everywhere normative it is typed `ptr`-only:
 
 - `docs/reference/builtins.md`: `` `is_null(p)` | `ptr -> bool` | Test an opaque FFI `ptr` for null. ``
-- `docs/spec/16-builtins.md:110`: `` `is_null(p)` | `ptr -> bool`: test an opaque FFI pointer for `NULL` ``
+- `docs/spec/16-builtins.md:111`: `` `is_null(p)` | `ptr -> bool`: test an opaque FFI pointer for `NULL` ``
 - `docs/spec/14-ffi.md:58` (§24.1, the crossable-types list): "an opaque `void*`
   Tycho never dereferences; the `null` literal and `is_null(p)` apply" — said of
   `ptr`; the `handle` bullet immediately below it says nothing.
@@ -285,7 +285,7 @@ behaviour and did not test that rule.
 
 `docs/reference/builtins.md` lists `close` once, under **Concurrency**:
 `` `close(ch)` | `Channel(T) -> void` ``. The handle form is only in
-`docs/spec/16-builtins.md:264` ("Also `close(h)` on a **handle** variable
+`docs/spec/16-builtins.md:265` ("Also `close(h)` on a **handle** variable
 (`[§25](14-ffi.md)`)") and in the ffi pages. Since `docs/README.md` says
 "**`[reference/](reference/)`** is the single answer layer", looking up `close`
 where the docs tell you to look gives you the wrong answer.

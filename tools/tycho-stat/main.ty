@@ -15,7 +15,7 @@ fn field(tok_in: string) -> Result(int, string):
     for i := start; i < len(tok); i += 1:
         if tok[i] < 48 or tok[i] > 57:
             return Err("not a number: " + tok)
-    return Ok(strings.parse_int(tok))
+    return Ok(strings.parse_int_prefix(tok))
 
 fn parse_all(fields: [string]) -> [int]:
     out := []int

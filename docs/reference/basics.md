@@ -26,11 +26,13 @@ A `fn` with no `-> type` returns nothing. Blocks are indentation-based (tabs or 
 don't mix the two within one line's indentation), every block header ends with `:`, and `#`
 starts a comment — like Python's layout.
 
-Parameters come in three kinds. By default a parameter is a **copy** — for
-large values (arrays, maps, structs holding them) the callee instead gets a
-read-only look that costs nothing. An `inout` parameter is mutated in place:
-the callee writes back into the caller's variable, marked with `&` at the
-call site.
+Parameters come in three kinds. A scalar is copied. A heap-bearing value
+(`string`, `bytes`, `[T]`, a map, or a struct holding one) is a **read-only
+borrow**: the descriptor is copied, the backing storage is shared, and mutation
+is a compile error. A fixed array `[N]T`, a `vector[N]T`, or a struct that
+inlines one is copied whole. An `inout` parameter is mutated in place: the
+callee writes back into the caller's variable, marked with `&` at the call
+site. The full shape table is in [functions](functions.md#parameter-passing-modes).
 
 ```tycho
 fn incr(n: inout int):

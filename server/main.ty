@@ -198,7 +198,7 @@ fn parse_pos(s: string) -> int:
     digits := s[i:len(s)]
     if len(digits) > 15:
         return HUGE_POS
-    return strings.parse_int(digits)
+    return strings.parse_int_prefix(digits)
 
 fn parse_range(v: string, flen: int) -> Rng:
     if flen < 0:
@@ -872,7 +872,7 @@ fn usage() -> string:
 fn as_uint(s: string, what: string) -> int:
     if not is_digits(s):
         die("tycho-httpd: " + what + " wants a non-negative integer, got: " + s + "\n")
-    return strings.parse_int(s)
+    return strings.parse_int_prefix(s)
 
 fn parse_args(av: [string]) -> Config:
     # the whole schema: names that take a value, and names that are booleans.

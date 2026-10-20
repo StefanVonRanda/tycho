@@ -76,7 +76,7 @@ fn parse_line(line: string) -> Rec:
     # distinction the bare parse could not make.
     nbytes := 0
     if bytes_s != "-":
-        nbytes = strings.parse_int_checked(bytes_s) or_else _: bad
+        nbytes = strings.parse_int(bytes_s) or_else _: bad
     return Rec(true, ip, datehour, path, sclass, nbytes)
 
 # keys of a [string:int] map ordered by value descending (stable -> deterministic)
@@ -118,7 +118,7 @@ fn main():
     c := cli.parse(cli.argv())
     files := cli.positionals(c)
     topk := 5
-    match strings.parse_int_checked(cli.get(c, "top", "5")):
+    match strings.parse_int(cli.get(c, "top", "5")):
         Ok(v): topk = v
         Err(e): topk = 5
     if topk < 1:

@@ -207,10 +207,10 @@ fn main() -> Result(void, string):
             mode = "stale"
         elif strings.starts_with(a, "--sweep="):
             mode = "sweep"
-            n = strings.parse_int(a[8:len(a)])
+            n = strings.parse_int_prefix(a[8:len(a)])
         elif strings.starts_with(a, "--sim="):
             mode = "sim"
-            n = strings.parse_int(a[6:len(a)])
+            n = strings.parse_int_prefix(a[6:len(a)])
         elif strings.starts_with(a, "--order="):
             ord = commas(a[8:len(a)])
         elif strings.starts_with(a, "--off="):

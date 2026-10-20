@@ -23,7 +23,7 @@ the code beside it.
 | §3 `s[a:b]` out of range | a **clamped** slice, no trap | `strings.slice_str` / `slice_bytes` → `Result` |
 | §4 `a + b` past the integer range | **wraparound**, never a trap | check the operands before the operation |
 | §5 `c + n` on a `char` | **wraps to a byte** (`0..255`) | treat `char` as a byte, because it is one |
-| §6 `strings.parse_int("3x")` | `3` — stops at the garbage | `strings.parse_int_checked` → `Result` |
+| §6 `strings.parse_int_prefix("3x")` | `3` — stops at the garbage | `strings.parse_int` → `Result` |
 | §7 `_` | an **ordinary variable**, not a discard | call the function as a statement |
 
 Everything else in the language that can go wrong **aborts** — a real bounds
@@ -191,55 +191,56 @@ fn main():
 `65 + 255` is `320`, which wraps to `64` — `@`. For anything that is arithmetic
 rather than character stepping, convert to `int` first.
 
-## 6. The bare corelib parsers fail open
+## 6. The explicit prefix parsers fail open
 
-`strings.parse_int` stops at the first character it cannot use and returns what
-it had, with no way to tell that from a clean parse.
+`strings.parse_int_prefix` stops at the first character it cannot use and returns
+what it had, with no way to tell that from a clean parse. The default
+`strings.parse_int` is strict and returns a `Result`.
 
 ```tycho
 package main
 import "core:strings"
 
 fn show(s: string):
-    match strings.parse_int_checked(s):
-        Ok(v): println("  checked -> ok " + str(v))
-        Err(EmptyInput): println("  checked -> EmptyInput")
-        Err(Garbage): println("  checked -> Garbage")
-        Err(OutOfRange): println("  checked -> OutOfRange")
+    match strings.parse_int(s):
+        Ok(v): println("  parse_int -> ok " + str(v))
+        Err(EmptyInput): println("  parse_int -> EmptyInput")
+        Err(Garbage): println("  parse_int -> Garbage")
+        Err(OutOfRange): println("  parse_int -> OutOfRange")
 
 fn main():
-    println("[3x]  lax -> " + str(strings.parse_int("3x")))
+    println("[3x]  prefix -> " + str(strings.parse_int_prefix("3x")))
     show("3x")
-    println("[]    lax -> " + str(strings.parse_int("")))
+    println("[]    prefix -> " + str(strings.parse_int_prefix("")))
     show("")
-    println("[ 7]  lax -> " + str(strings.parse_int(" 7")))
+    println("[ 7]  prefix -> " + str(strings.parse_int_prefix(" 7")))
     show(" 7")
 ```
 
 ```output
-[3x]  lax -> 3
-  checked -> Garbage
-[]    lax -> 0
-  checked -> EmptyInput
-[ 7]  lax -> 0
-  checked -> Garbage
+[3x]  prefix -> 3
+  parse_int -> Garbage
+[]    prefix -> 0
+  parse_int -> EmptyInput
+[ 7]  prefix -> 0
+  parse_int -> Garbage
 ```
 
-Note the third row: a leading space is not tolerated either, so `parse_int` on
-`" 7"` is `0` — indistinguishable from the `0` you get for an absent option.
+Note the third row: a leading space is not tolerated either, so
+`parse_int_prefix` on `" 7"` is `0` — indistinguishable from the `0` you get for
+an absent option.
 
-The lax form exists for one case: a missing option, where `0` is a
-sensible default and a `Result` would be noise. For anything else —
-especially data from a file, a socket, or a user — a partial parse
-like `"1x4"` becoming `1` silently gives you the wrong value.
+The prefix form exists for one case: a grammar that consumes a numeric prefix
+and deliberately ignores the rest. For anything else — especially data from a
+file, a socket, or a user — `parse_int`'s `Result` is the default.
 
 **The rule: anything that came from a file, a socket, or a user gets the
-`_checked` sibling.** They exist across the corelib and return a `Result` with a
+fail-closed form.** They exist across the corelib and return a `Result` with a
 named error:
 
-| Lax | Fail-closed |
+| Fail-open | Fail-closed |
 |---|---|
-| `strings.parse_int` | `strings.parse_int_checked` |
+| `strings.parse_int_prefix` | `strings.parse_int` |
 | `decimal.from_str` | `decimal.from_str_checked` |
 | `json.parse` | `json.parse_checked` |
 | `cli.parse` | `cli.parse_checked` |

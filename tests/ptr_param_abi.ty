@@ -1,0 +1,27 @@
+# O2: a large read-only fixed array crosses a direct call as a pointer. The
+# same ABI must be bridged at function values, lambda captures and spawns, and
+# must NOT apply to `sink` parameters (they keep by-value adoption).
+fn first(xs: [16]int) -> int:
+    return xs[0] + xs[15]
+
+fn take_sink(xs: sink [4]int) -> int:
+    xs[0] = 9
+    return xs[0]
+
+fn via_lambda(xs: [16]int) -> int:
+    f := fn() -> int: xs[0]
+    return f()
+
+fn via_spawn(xs: [16]int) -> int:
+    t := spawn first(xs)
+    return wait(t)
+
+fn main():
+    xs: [16]int = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    println(str(first(xs)))
+    f := first
+    println(str(f(xs)))
+    println(str(via_lambda(xs)))
+    println(str(via_spawn(xs)))
+    a: [4]int = [1, 2, 3, 4]
+    println(str(take_sink(a)))

@@ -6,6 +6,15 @@ fn b2i(b: bool) -> int:
         return 1
     return 0
 
+fn prwhy(r: Result(string, path.PathErr)) -> string:
+    match r:
+        Ok(s): return "Ok"
+        Err(path.NotFound): return "NotFound"
+        Err(path.Denied): return "Denied"
+        Err(path.TooLong): return "TooLong"
+        Err(path.BadPath): return "BadPath"
+        Err(path.Failed): return "Failed"
+
 fn main():
     # ---- base: trailing slashes ignored; "."/"/" sentinels ----
     be := path.base("")
@@ -91,3 +100,18 @@ fn main():
     sj8 := path.safe_join("/srv/data", "a\\b.txt")
     sj9 := path.safe_join("/srv/data", "C:/Windows/win.ini")
     println(f"safe_join bsdotdot=[{sj7}] bsplain=[{sj8}] drive=[{sj9}]")
+
+    # ---- real_checked: the reason real() used to collapse into "" ----
+    rk := path.real_checked("corelib/test/path/main.ty")
+    rmiss := path.real_checked("/tmp/tycho_corelib_path_absent.xyz")
+    rnul := path.real_checked("x" + chr(0))
+    println(f"real_checked ok={prwhy(rk)} missing={prwhy(rmiss)} nul={prwhy(rnul)} real_missing_len={len(path.real("/tmp/tycho_corelib_path_absent.xyz"))}")
+
+    # ---- quote: a path is arbitrary bytes; text output needs one shell word ----
+    q1 := path.quote("a b")
+    q2 := path.quote("a'b")
+    q3 := path.quote("")
+    q4 := path.quote("a" + chr(9) + "b")
+    q5 := path.quote("a" + chr(10) + "b")
+    println(f"quote space=[{q1}] quote=[{q2}] empty=[{q3}] tab=[{q4}]")
+    println(f"quote newline_len={len(q5)} wrapped={b2i(q5[0] == 39 and q5[len(q5) - 1] == 39)}")

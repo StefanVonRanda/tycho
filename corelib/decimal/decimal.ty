@@ -34,8 +34,8 @@ fn from_str(s: string) -> Decimal:
     return _parse_unchecked(s)
 
 # Why from_str_checked refused. from_str above stays LAX and unchanged, so no
-# caller moves -- the same split core:strings has between parse_int and
-# parse_int_checked.
+# caller moves -- the same split core:strings has between parse_int_prefix and
+# parse_int.
 enum DecErr:
     Empty                  # ""
     NoDigits               # a sign or a point with no digit: "-", ".", "+."

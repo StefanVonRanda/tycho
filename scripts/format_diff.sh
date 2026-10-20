@@ -86,7 +86,7 @@ fn main():
     for line in io.read_lines(args()[1]):
         if line == "":
             continue
-        dt := datetime.from_unix(strings.parse_int(line))
+        dt := datetime.from_unix(strings.parse_int_prefix(line))
         wd := datetime.weekday(dt.year, dt.month, dt.day)
         out := datetime.format_iso(dt)
         out = out + " " + datetime.weekday_name(wd)
@@ -117,7 +117,7 @@ fn main():
             continue
         xs := []int
         for p in split(line, ","):
-            push(xs, strings.parse_int(strings.trim(p)))
+            push(xs, strings.parse_int_prefix(strings.trim(p)))
         out := joini(sort.asc(xs))
         out = out + "|" + joini(sort.desc(xs))
         out = out + "|" + joini(sort.argsort(xs))
@@ -215,7 +215,7 @@ fn main():
         if line == "":
             continue
         parts := split(line, "\t")
-        n := strings.parse_int(parts[0])
+        n := strings.parse_int_prefix(parts[0])
         av := []string
         for i := 1; i <= n; i += 1:
             push(av, parts[i])

@@ -71,7 +71,7 @@ NAME_SITES = [
     "unknown variable '%s'",
     "assignment to unknown variable",
     "unknown procedure '%s'",
-    # The hard-coded sibling of the line above (src/tychoc.c:8058). It reached
+    # The hard-coded sibling of the line above (src/tychoc.c:8060). It reached
     # NAME only once load_sites() stopped mangling the `\n` inside its message;
     # before that it matched no site at all and fell through to SEMANTIC.
     "unknown procedure 'eprintln'",
@@ -81,7 +81,7 @@ NAME_SITES = [
     "is not a discard",
     "duplicate parameter",
     # A duplicate BINDING, decided by the scope stack alone: tychoc1 refuses it in
-    # its resolver (compiler/types/resolve.ty:997), so SEMANTIC
+    # its resolver (compiler/types/resolve.ty:992), so SEMANTIC
     # would redden parse-check's leg2b by construction.
     "duplicate name '%s' in the destructuring list",
     "cannot assign to constant",
@@ -244,10 +244,10 @@ FALLBACK = [
     ("no 'main' procedure", "NAME"),                   # whole-program, but the Sig table alone decides it
     ("unclosed '(' or '['", "SYNTAX"),                 # the lexer, message built by snprintf
     ("must declare its own package first", "NAME"),    # the package header, an fprintf after parsing
-    # report_unused_locals (src/tychoc.c:6323) is an fprintf loop, not a die_at, so
+    # report_unused_locals (src/tychoc.c:6325) is an fprintf loop, not a die_at, so
     # load_sites cannot see it. SEMANTIC, not NAME: it is a whole-program pass run
     # AFTER name resolution in both compilers, and the NAME class means "the
-    # resolver refuses it" (compiler/verdict_diff.py:180).
+    # resolver refuses it" (compiler/verdict_diff.py:181).
     ("declared and not used", "SEMANTIC"),
     # report_unused_imports (src/tychoc.c@report_unused_imports) is the sibling of
     # the line above and invisible to load_sites for the same reason: an fprintf
@@ -255,7 +255,7 @@ FALLBACK = [
     # tests/reject/pkg/import_unused/main.ty -- ./tychoc1 --parse rc=0,
     # --resolve rc=0, --typecheck rc=1, which is exactly the SEMANTIC contract.
     ("imported and not used in this file", "SEMANTIC"),
-    # merge_pkg's two package-header checks (src/tychoc.c:16075@declaration, src/tychoc.c:16079@declares) are
+    # merge_pkg's two package-header checks (src/tychoc.c:16142@declaration, src/tychoc.c:16146@declares) are
     # fprintf+exit in the package LOADER, so load_sites cannot see them either.
     # NAME, on the same measurement as "must declare its own package first"
     # above: ./tychoc1 --parse rc=0, --resolve rc=1, which is the NAME contract

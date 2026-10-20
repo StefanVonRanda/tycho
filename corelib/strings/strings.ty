@@ -1,10 +1,11 @@
 # corelib: string utilities. Import with `import "core:strings"`, use `strings.trim(s)`.
 # (split/find/substr/len/chr are builtins; these build on them.)
 #
-# TWO PARSERS, OPPOSITE POLICIES. `parse_int` FAILS OPEN -- "" and "garbage" are
-# both 0, "123stop" is 123 -- and `parse_float` FAILS CLOSED, returning a
-# Result and refusing anything the whole of which is not a number. They sit
-# together below and the block above `parse_float` says which to reach for.
+# TWO PARSERS, OPPOSITE POLICIES. `parse_int` FAILS CLOSED -- it returns a
+# Result and refuses "" / "garbage" / "123stop" -- and `parse_int_prefix` is the
+# explicit fail-open prefix scanner (`"123stop"` is 123). `parse_float` also
+# fails closed. Reach for `parse_int` for anything read from a file, socket or
+# user; use `parse_int_prefix` only when a numeric prefix is the grammar.
 package strings
 
 fn is_space(c: int) -> bool:                 # ASCII whitespace: space \t \n \v \f \r
@@ -65,7 +66,7 @@ fn trim(s: string) -> string:                # strip leading/trailing ASCII whit
         hi = hi - 1
     return substr(s, lo, hi)
 
-fn parse_int(s: string) -> int:              # decimal int, optional leading '-'; stops at first non-digit
+fn parse_int_prefix(s: string) -> int:        # decimal int, optional leading '-'; stops at first non-digit
     if len(s) == 0:
         return 0
     neg := false
@@ -92,7 +93,7 @@ enum IntErr:
     Garbage            # a non-digit anywhere
     OutOfRange         # outside [-9223372036854775808, 9223372036854775807]
 
-fn parse_int_checked(s: string) -> Result(int, IntErr):
+fn parse_int(s: string) -> Result(int, IntErr):
     if len(s) == 0:
         return Err(EmptyInput)
     neg := false

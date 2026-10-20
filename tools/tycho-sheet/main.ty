@@ -32,7 +32,7 @@ fn cmd_get(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
 # So A1 must come out as exactly n, which is a single number that proves the
 # whole chain was ordered and evaluated rather than partly skipped.
 fn cmd_chain(sh: inout sheet.Sheet, rest: string) -> Result(void, string):
-    n := strings.parse_int(strings.trim(rest))
+    n := strings.parse_int_prefix(strings.trim(rest))
     if n < 2:
         return Err("chain needs a length of at least 2")
     for i := 1; i < n; i += 1:

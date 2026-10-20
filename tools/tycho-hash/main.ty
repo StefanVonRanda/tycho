@@ -96,7 +96,7 @@ fn main():
         a := av[i]
         if strings.starts_with(a, "--workers="):
             rest := a[10:len(a)]
-            match strings.parse_int_checked(rest):
+            match strings.parse_int(rest):
                 Ok(v): nw = v
                 _: fail("--workers needs a number, got '" + rest + "'")
             if nw < 1 or nw > 8:
