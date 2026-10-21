@@ -153,7 +153,8 @@ fn screen_tri(fb: inout [int], zbuf: inout [float], a: SVert, b: SVert, c: SVert
             else:
                 if e0 > 0.0 or e1 > 0.0 or e2 > 0.0:
                     continue
-            invz := (e0 * a.invz + e1 * b.invz + e2 * c.invz) * inv_area
+            # e0 is opposite A (edge AB), e1 opposite B, e2 opposite C.
+            invz := (e1 * a.invz + e2 * b.invz + e0 * c.invz) * inv_area
             idx := base + px
             if invz > zbuf[idx]:
                 zbuf[idx] = invz
