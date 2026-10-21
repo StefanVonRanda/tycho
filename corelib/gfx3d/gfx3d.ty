@@ -29,6 +29,22 @@ struct SVert:
     invz: float
     ok: bool
 
+struct Tri:
+    a: Vec3
+    b: Vec3
+    c: Vec3
+    color: int
+
+struct Mesh:
+    tris: [Tri]
+
+struct Place:
+    origin: Vec3
+    right: Vec3
+    up: Vec3
+    forward: Vec3
+    scale: float
+
 fn _vsub(a: Vec3, b: Vec3) -> Vec3:
     return Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
 
@@ -232,6 +248,50 @@ fn draw_box(fb: inout [int], zbuf: inout [float], target: Target, cam: Camera, c
               Vec3(x0, y1, z1), Vec3(x0, y1, z0), side)
     draw_quad(&fb, &zbuf, target, cam, Vec3(x1, y0, z1), Vec3(x1, y0, z0),
               Vec3(x1, y1, z0), Vec3(x1, y1, z1), side)
+
+fn mesh() -> Mesh:
+    tris := []Tri
+    return Mesh(tris)
+
+fn add_tri(m: inout Mesh, a: Vec3, b: Vec3, c: Vec3, color: int):
+    push(m.tris, Tri(a, b, c, color))
+
+fn add_quad(m: inout Mesh, a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: int):
+    add_tri(&m, a, b, c, color)
+    add_tri(&m, a, c, d, color)
+
+fn add_box(m: inout Mesh, cx: float, cy: float, cz: float, sx: float, sy: float, sz: float, color: int):
+    x0 := cx - sx * 0.5
+    x1 := cx + sx * 0.5
+    y0 := cy - sy * 0.5
+    y1 := cy + sy * 0.5
+    z0 := cz - sz * 0.5
+    z1 := cz + sz * 0.5
+    top := _shade(color, 1.0)
+    front := _shade(color, 0.78)
+    side := _shade(color, 0.62)
+    back := _shade(color, 0.45)
+    add_quad(&m, Vec3(x0, y1, z0), Vec3(x0, y1, z1),
+             Vec3(x1, y1, z1), Vec3(x1, y1, z0), top)
+    add_quad(&m, Vec3(x0, y0, z1), Vec3(x1, y0, z1),
+             Vec3(x1, y1, z1), Vec3(x0, y1, z1), front)
+    add_quad(&m, Vec3(x1, y0, z0), Vec3(x0, y0, z0),
+             Vec3(x0, y1, z0), Vec3(x1, y1, z0), back)
+    add_quad(&m, Vec3(x0, y0, z0), Vec3(x0, y0, z1),
+             Vec3(x0, y1, z1), Vec3(x0, y1, z0), side)
+    add_quad(&m, Vec3(x1, y0, z1), Vec3(x1, y0, z0),
+             Vec3(x1, y1, z0), Vec3(x1, y1, z1), side)
+
+fn _place_point(p: Place, v: Vec3) -> Vec3:
+    return Vec3(p.origin.x + (p.right.x * v.x + p.up.x * v.y + p.forward.x * v.z) * p.scale,
+                p.origin.y + (p.right.y * v.x + p.up.y * v.y + p.forward.y * v.z) * p.scale,
+                p.origin.z + (p.right.z * v.x + p.up.z * v.y + p.forward.z * v.z) * p.scale)
+
+fn draw_mesh(fb: inout [int], zbuf: inout [float], target: Target, cam: Camera, m: inout Mesh, p: Place):
+    for i := 0; i < len(m.tris); i += 1:
+        t := m.tris[i]
+        draw_tri(&fb, &zbuf, target, cam, _place_point(p, t.a),
+                 _place_point(p, t.b), _place_point(p, t.c), t.color)
 
 fn clear(fb: inout [int], zbuf: inout [float], target: Target, color: int):
     n := target.w * target.h

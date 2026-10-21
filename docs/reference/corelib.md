@@ -76,13 +76,17 @@ expression-bodied; pass a named function where you need a multi-line body.
   installed and selected with `--pkg sdl3`. The boundary rule is recorded in
   [design-gfx](../internals/design-gfx.md): values and affine handles only, no
   public `ptr`, callbacks or unions.
-- **`gfx3d`** — a pure software 3D camera and flat-shaded triangle rasterizer.
-  Types `Vec3`, `Camera`, `Target`, `SVert`; functions `look_at`, `project`,
-  `draw_tri`, `draw_quad`, `draw_box`, `clear`. There is no SDL, handle or
-  pointer in this package: the caller owns the framebuffer, depth buffer,
-  target dimensions and ARGB colours. `draw_tri` clips against the near plane
-  and interpolates inverse depth with the corrected barycentric weights.
-  `examples/gfx/3d` and `examples/gfx/orbit` are its two callers.
+- **`gfx3d`** — a pure software 3D camera, mesh and flat-shaded triangle
+  rasterizer. Types `Vec3`, `Camera`, `Target`, `SVert`, `Tri`, `Mesh`,
+  `Place`; functions `look_at`, `project`, `draw_tri`, `draw_quad`, `draw_box`,
+  `clear`, `mesh`, `add_tri`, `add_quad`, `add_box`, `draw_mesh`. There is no
+  SDL, handle or pointer in this package: the caller owns the framebuffer,
+  depth buffer, target dimensions and ARGB colours. `draw_tri` clips against the
+  near plane and interpolates inverse depth with the corrected barycentric
+  weights. `Mesh` holds local-space triangles; `Place` applies a caller-built
+  right/up/forward basis, origin and uniform scale without copying the mesh.
+  `examples/gfx/3d`, `examples/gfx/orbit` and `examples/gfx/rotor` are its
+  callers.
 - **`char`** — byte/char classification & conversion over int byte values (what
   `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
   `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a

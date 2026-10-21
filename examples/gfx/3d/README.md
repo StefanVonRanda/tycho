@@ -68,7 +68,8 @@ the depth mapping and near-plane clip numerically.
 - The existing `View`, font atlas, audio stream and resource handles are used
   unchanged; no public `ptr`, callback or union is introduced.
 
-The second caller is `examples/gfx/orbit`: a gallery with an orbit camera, which
-is what justified extracting the shared renderer. Flat-shaded triangles are the
-current library contract; textures, meshes, lighting and a GPU backend remain
-out of scope until another caller needs them.
+The second caller is `examples/gfx/orbit`: a gallery with an orbit camera. The
+third is `examples/gfx/rotor`: a third-person drone game using `Mesh`/`Place`.
+Together they justified extracting the shared renderer and mesh layer.
+Flat-shaded triangles are the current library contract; textures, lighting and a
+GPU backend remain out of scope until another caller needs them.

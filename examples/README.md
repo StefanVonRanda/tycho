@@ -60,6 +60,7 @@ Each subdirectory is a multi-file program with its own README or `run.sh`.
 | [`gfx/pong/`](gfx/pong) | Second caller for the shared engine: Pong, same shim and font atlas. |
 | [`gfx/3d/`](gfx/3d) | Software 3D first-person game: z-buffered triangle renderer over the gfx framebuffer, scaled with `View`. |
 | [`gfx/orbit/`](gfx/orbit) | Second `core:gfx3d` caller: orbit camera and gallery scene. |
+| [`gfx/rotor/`](gfx/rotor) | Third `core:gfx3d` caller: third-person game with `Mesh`/`Place` drone model and spinning rotor. |
 
 ## Core library
 

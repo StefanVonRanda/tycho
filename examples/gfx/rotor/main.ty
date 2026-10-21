@@ -1,0 +1,361 @@
+package main
+
+import "core:gfx"
+import "core:gfx3d"
+import "core:strings"
+import "core:time"
+
+extern "m" fn sin(x: float) -> float
+extern "m" fn cos(x: float) -> float
+
+extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
+extern fn gfx_audio_open(rate: int, channels: int) -> gfx.Audio
+extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
+
+const RW = 480
+const RH = 270
+const WIN_W = 960
+const WIN_H = 540
+const FOCAL = 300.0
+const STEP_MS = 16
+const MOVE_STEP = 0.065
+const TURN_STEP = 0.045
+const ARENA = 10.0
+
+const MODE_MENU = 0
+const MODE_PLAY = 1
+const MODE_PAUSE = 2
+const MODE_WIN = 3
+
+struct Player:
+    x: float
+    z: float
+    yaw: float
+
+struct Pickup:
+    x: float
+    z: float
+    taken: bool
+
+fn build_body() -> gfx3d.Mesh:
+    m := gfx3d.mesh()
+    gfx3d.add_box(&m, 0.0, 0.65, 0.0, 1.1, 0.5, 1.5, gfx.rgb(45, 120, 170))
+    gfx3d.add_box(&m, -0.95, 0.68, 0.0, 0.75, 0.12, 0.85, gfx.rgb(70, 180, 205))
+    gfx3d.add_box(&m, 0.95, 0.68, 0.0, 0.75, 0.12, 0.85, gfx.rgb(70, 180, 205))
+    gfx3d.add_box(&m, 0.0, 0.95, -0.25, 0.45, 0.3, 0.55, gfx.rgb(190, 230, 255))
+    return m
+
+fn build_rotor() -> gfx3d.Mesh:
+    m := gfx3d.mesh()
+    gfx3d.add_box(&m, 0.0, 0.0, 0.0, 3.0, 0.07, 0.18, gfx.rgb(235, 225, 150))
+    gfx3d.add_box(&m, 0.0, 0.0, 0.0, 0.18, 0.07, 3.0, gfx.rgb(235, 225, 150))
+    gfx3d.add_box(&m, 0.0, 0.0, 0.0, 0.35, 0.12, 0.35, gfx.rgb(255, 250, 210))
+    return m
+
+fn draw_floor(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+              target: gfx3d.Target):
+    n := 10
+    for iz := 0; iz < n; iz += 1:
+        z0 := 0.0 - ARENA + to_float(iz) * 2.0
+        z1 := z0 + 2.0
+        for ix := 0; ix < n; ix += 1:
+            x0 := 0.0 - ARENA + to_float(ix) * 2.0
+            x1 := x0 + 2.0
+            col := gfx.rgb(20, 44, 51)
+            if (ix + iz) % 2 == 0:
+                col = gfx.rgb(27, 57, 65)
+            gfx3d.draw_quad(&fb, &zbuf, target, cam,
+                            gfx3d.Vec3(x0, 0.0, z0), gfx3d.Vec3(x0, 0.0, z1),
+                            gfx3d.Vec3(x1, 0.0, z1), gfx3d.Vec3(x1, 0.0, z0), col)
+
+fn draw_pillars(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+                target: gfx3d.Target):
+    gfx3d.draw_box(&fb, &zbuf, target, cam, -3.0, 1.0, 2.0, 1.5, 2.0, 1.5, gfx.rgb(64, 86, 105))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 3.0, 1.0, -3.0, 1.5, 2.0, 1.5, gfx.rgb(78, 78, 112))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 0.0, 1.0, 6.0, 1.5, 2.0, 1.5, gfx.rgb(62, 104, 92))
+
+fn draw_pickups(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+                target: gfx3d.Target, pickups: [Pickup], anim_ms: int):
+    for i := 0; i < len(pickups); i += 1:
+        if not pickups[i].taken:
+            bob := sin(to_float(anim_ms) * 0.004 + to_float(i) * 0.9) * 0.16
+            gfx3d.draw_box(&fb, &zbuf, target, cam, pickups[i].x, 1.0 + bob,
+                           pickups[i].z, 0.5, 0.5, 0.5, gfx.rgb(255, 180, 40))
+            gfx3d.draw_box(&fb, &zbuf, target, cam, pickups[i].x, 1.0 + bob,
+                           pickups[i].z, 0.24, 0.24, 0.24, gfx.rgb(255, 240, 170))
+
+fn draw_player(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+               target: gfx3d.Target, p: Player, body: inout gfx3d.Mesh,
+               rotor: inout gfx3d.Mesh, anim_ms: int):
+    sy := sin(p.yaw)
+    cy := cos(p.yaw)
+    right := gfx3d.Vec3(cy, 0.0, 0.0 - sy)
+    forward := gfx3d.Vec3(sy, 0.0, cy)
+    up := gfx3d.Vec3(0.0, 1.0, 0.0)
+    place := gfx3d.Place(gfx3d.Vec3(p.x, 0.0, p.z), right, up, forward, 1.0)
+    gfx3d.draw_mesh(&fb, &zbuf, target, cam, &body, place)
+
+    spin := to_float(anim_ms) * 0.004
+    sy2 := sin(p.yaw + spin)
+    cy2 := cos(p.yaw + spin)
+    right2 := gfx3d.Vec3(cy2, 0.0, 0.0 - sy2)
+    forward2 := gfx3d.Vec3(sy2, 0.0, cy2)
+    rotor_place := gfx3d.Place(gfx3d.Vec3(p.x, 1.28, p.z), right2, up, forward2, 1.0)
+    gfx3d.draw_mesh(&fb, &zbuf, target, cam, &rotor, rotor_place)
+
+fn draw_scene(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+              target: gfx3d.Target, p: Player, pickups: [Pickup], anim_ms: int,
+              body: inout gfx3d.Mesh, rotor: inout gfx3d.Mesh):
+    gfx3d.clear(&fb, &zbuf, target, gfx.rgb(6, 10, 18))
+    draw_floor(&fb, &zbuf, cam, target)
+    draw_pillars(&fb, &zbuf, cam, target)
+    draw_pickups(&fb, &zbuf, cam, target, pickups, anim_ms)
+    draw_player(&fb, &zbuf, cam, target, p, &body, &rotor, anim_ms)
+
+fn blocked(x: float, z: float) -> bool:
+    if x < 0.0 - ARENA + 0.75 or x > ARENA - 0.75:
+        return true
+    if z < 0.0 - ARENA + 0.75 or z > ARENA - 0.75:
+        return true
+    if fabs(x + 3.0) < 1.3 and fabs(z - 2.0) < 1.3:
+        return true
+    if fabs(x - 3.0) < 1.3 and fabs(z + 3.0) < 1.3:
+        return true
+    if fabs(x) < 1.3 and fabs(z - 6.0) < 1.3:
+        return true
+    return false
+
+fn move(p: inout Player, dx: float, dz: float):
+    nx := p.x + dx
+    if not blocked(nx, p.z):
+        p.x = nx
+    nz := p.z + dz
+    if not blocked(p.x, nz):
+        p.z = nz
+
+fn fresh_pickups() -> [Pickup]:
+    ps := []Pickup
+    push(ps, Pickup(-6.0, -1.0, false))
+    push(ps, Pickup(6.0, 0.0, false))
+    push(ps, Pickup(-5.0, 5.0, false))
+    push(ps, Pickup(5.0, 4.0, false))
+    push(ps, Pickup(0.0, 7.0, false))
+    push(ps, Pickup(-2.0, -4.0, false))
+    return ps
+
+fn reset_game(p: inout Player, pickups: inout [Pickup],
+              collected: inout int, play_ms: inout int):
+    p = Player(0.0, -3.5, 0.0)
+    pickups = fresh_pickups()
+    collected = 0
+    play_ms = 0
+
+fn step_game(p: inout Player, pickups: inout [Pickup],
+             fwd: bool, back: bool, turn_l: bool, turn_r: bool,
+             play_ms: inout int) -> int:
+    if turn_l:
+        p.yaw = p.yaw - TURN_STEP
+    if turn_r:
+        p.yaw = p.yaw + TURN_STEP
+    sy := sin(p.yaw)
+    cy := cos(p.yaw)
+    dx := 0.0
+    dz := 0.0
+    if fwd:
+        dx = dx + sy * MOVE_STEP
+        dz = dz + cy * MOVE_STEP
+    if back:
+        dx = dx - sy * MOVE_STEP
+        dz = dz - cy * MOVE_STEP
+    if dx != 0.0 or dz != 0.0:
+        move(&p, dx, dz)
+
+    picked := 0
+    for i := 0; i < len(pickups); i += 1:
+        if not pickups[i].taken:
+            ddx := p.x - pickups[i].x
+            ddz := p.z - pickups[i].z
+            if ddx * ddx + ddz * ddz < 0.81:
+                q := pickups[i]
+                q.taken = true
+                pickups[i] = q
+                picked = picked + 1
+    play_ms = play_ms + STEP_MS
+    return picked
+
+fn main():
+    a := args()
+    frames := 0
+    snap := ""
+    headless := false
+    for i := 1; i < len(a); i += 1:
+        if a[i] == "--headless":
+            headless = true
+        if a[i] == "--frames" and i + 1 < len(a):
+            match strings.parse_int(a[i + 1]):
+                Ok(v): frames = v
+                Err(e): pass
+        if a[i] == "--snapshot" and i + 1 < len(a):
+            snap = a[i + 1]
+    if headless and frames == 0:
+        frames = 240
+
+    win := gfx_open(WIN_W, WIN_H, "Tycho Rotor Run")
+    if is_null(win):
+        eprintln("rotor: could not open a window (SDL3 required)")
+        return
+    win_w := gfx.window_width(win)
+    win_h := gfx.window_height(win)
+
+    texset := gfx_texset_open(win)
+    font_id := 0 - 1
+    if not is_null(texset):
+        font_id = gfx.load_texture(texset, "../assets/font.png")
+
+    audio := gfx_audio_open(22050, 1)
+    pickup_beep := gfx.make_beep(22050, 900, 65)
+    win_beep := gfx.make_beep(22050, 1320, 220)
+
+    fb := []int
+    zbuf := []float
+    reserve(fb, RW * RH)
+    reserve(zbuf, RW * RH)
+    for i := 0; i < RW * RH; i += 1:
+        push(fb, 0)
+        push(zbuf, 0.0)
+
+    target := gfx3d.Target(RW, RH)
+    body := build_body()
+    rotor := build_rotor()
+    player := Player(0.0, -3.5, 0.0)
+    pickups := fresh_pickups()
+    collected := 0
+    play_ms := 0
+    mode := MODE_MENU
+    if headless:
+        mode = MODE_PLAY
+    fwd := false
+    back := false
+    turn_l := false
+    turn_r := false
+    play_frame := 0
+
+    for frame := 0; frames == 0 or frame < frames; frame += 1:
+        ev := gfx.poll_event(win)
+        quit := false
+        for ev.kind != 0:
+            if ev.kind == 1:
+                quit = true
+            if ev.kind == 5:
+                win_w = gfx.window_width(win)
+                win_h = gfx.window_height(win)
+            if ev.kind == 2 or ev.kind == 6:
+                down := ev.kind == 2
+                k := ev.key
+                if down:
+                    if k == 27:
+                        quit = true
+                    if k == 32:
+                        if mode == MODE_MENU or mode == MODE_WIN:
+                            reset_game(&player, &pickups, &collected, &play_ms)
+                            mode = MODE_PLAY
+                            play_frame = 0
+                            gfx.set_title(win, "Tycho Rotor Run")
+                        elif mode == MODE_PAUSE:
+                            mode = MODE_PLAY
+                    if k == 114:
+                        reset_game(&player, &pickups, &collected, &play_ms)
+                        mode = MODE_PLAY
+                        play_frame = 0
+                        gfx.set_title(win, "Tycho Rotor Run")
+                    if k == 112:
+                        if mode == MODE_PLAY:
+                            mode = MODE_PAUSE
+                        elif mode == MODE_PAUSE:
+                            mode = MODE_PLAY
+                if k == 1:
+                    fwd = down
+                if k == 3:
+                    back = down
+                if k == 4:
+                    turn_l = down
+                if k == 2:
+                    turn_r = down
+            ev = gfx.poll_event(win)
+        if quit:
+            break
+
+        if mode == MODE_PLAY:
+            picked := step_game(&player, &pickups, fwd, back, turn_l, turn_r, &play_ms)
+            if picked > 0:
+                collected = collected + picked
+                gfx.play_beep(audio, pickup_beep)
+                gfx.set_title(win, "Tycho Rotor Run - cells " + str(collected))
+            if collected == len(pickups):
+                mode = MODE_WIN
+                gfx.play_beep(audio, win_beep)
+                gfx.set_title(win, "Tycho Rotor Run - cleared")
+            play_frame = play_frame + 1
+
+        eye := gfx3d.Vec3(player.x - sin(player.yaw) * 5.2, 3.1,
+                          player.z - cos(player.yaw) * 5.2)
+        look := gfx3d.Vec3(player.x, 0.85, player.z)
+        cam := gfx3d.look_at(eye, look, gfx3d.Vec3(0.0, 1.0, 0.0), FOCAL)
+        draw_scene(&fb, &zbuf, cam, target, player, pickups, play_frame * STEP_MS,
+                   &body, &rotor)
+
+        if mode == MODE_MENU:
+            gfx.fill_rect(&fb, RW, 55, 32, RW - 55, RH - 42, gfx.rgb(5, 9, 16))
+        if mode == MODE_PAUSE:
+            gfx.fill_rect(&fb, RW, 82, 98, RW - 82, 190, gfx.rgb(5, 9, 16))
+        if mode == MODE_WIN:
+            gfx.fill_rect(&fb, RW, 82, 78, RW - 82, 208, gfx.rgb(5, 9, 16))
+
+        view := gfx.fit_view(RW, RH, win_w, win_h)
+        dst := gfx.view_rect(view, 0, 0, RW, RH)
+        rc := gfx.begin(win)
+        if rc == 0:
+            rc = gfx.draw_fb(win, fb, RW, RH, dst)
+        if rc == 0 and font_id >= 0:
+            if mode == MODE_MENU:
+                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 42,
+                                            "ROTOR RUN", 38, 95, 235, 200)
+                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 92,
+                                            "COLLECT 6 CELLS IN THE DRONE YARD", 11, 190, 220, 225)
+                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 120,
+                                            "SPACE TO START", 20, 255, 205, 75)
+                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 154,
+                                            "W/S FLY   A/D TURN", 11, 160, 195, 205)
+                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 174,
+                                            "P PAUSE   R RESTART   ESC QUIT", 10, 150, 180, 190)
+            elif mode == MODE_PLAY or mode == MODE_PAUSE:
+                cells := "CELLS " + str(collected) + "/" + str(len(pickups))
+                timer := "TIME " + str(play_ms / 1000) + "S"
+                gfx.draw_text_view(view, texset, font_id, 8, 6, cells, 12, 170, 245, 190)
+                tw := gfx.text_width(timer, 12)
+                gfx.draw_text_view(view, texset, font_id, RW - 8 - tw, 6, timer, 12, 170, 245, 190)
+                if mode == MODE_PAUSE:
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 112,
+                                                "PAUSED", 30, 255, 205, 75)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 154,
+                                                "SPACE RESUME   R RESTART   ESC QUIT", 10, 170, 200, 210)
+            elif mode == MODE_WIN:
+                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 94,
+                                            "YARD CLEARED", 30, 95, 235, 200)
+                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 136,
+                                            "TIME " + str(play_ms / 1000) + "S", 18, 255, 205, 75)
+                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 172,
+                                            "SPACE OR R TO FLY AGAIN", 10, 170, 200, 210)
+        if rc == 0:
+            rc = gfx.present(win)
+        if rc != 0:
+            eprintln("rotor: frame failed: " + str(rc))
+            break
+        if not headless:
+            time.sleep_ms(16)
+
+    if snap != "":
+        gfx.save_bmp(snap, fb, RW, RH)
+    close(texset)
+    close(audio)
+    close(win)
