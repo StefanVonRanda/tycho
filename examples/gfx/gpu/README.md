@@ -16,7 +16,7 @@ sh scripts/build-shadercross.sh
 The script writes `build/shadercross/env.sh` with the build and runtime paths.
 Source it from the repository root:
 
-```sh
+```text
 . build/shadercross/env.sh
 ```
 
