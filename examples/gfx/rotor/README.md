@@ -17,6 +17,8 @@ GPU path, build/install SDL_shadercross first and source its environment (see
 `../gpu/README.md`; Linux also needs `libvkd3d-utils` for texture download):
 
 ```text
+. build/shadercross/env.sh
+cd examples/gfx/rotor
 ../../../tychoc1 main.ty --pkg sdl3 -o /tmp/rotor
 /tmp/rotor
 ```
