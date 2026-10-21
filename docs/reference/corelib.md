@@ -66,6 +66,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   `play_loop`, `load_manifest`, `load_texture`, `draw_atlas_text`,
   `draw_text_view`, `draw_text_centered`, `draw_text_centered_view`,
   `text_width`, `fill_rect`, `rgb`, `make_beep`, `play_beep`, `save_bmp`.
+  `draw_fb` accepts a framebuffer whose width/height may be smaller than the
+  window; the shim uploads it at source resolution and scales it into `dst`
+  (the software-3D example renders at 480×270 and scales to the window). Event
+  `kind` values are: 0 none, 1 quit, 2 key down, 3 mouse move, 4 mouse button,
+  5 resize, 6 key up.
   A `TexSet` owns its textures and is
   scope-freed; SDL3 must be
   installed and selected with `--pkg sdl3`. The boundary rule is recorded in

@@ -51,7 +51,7 @@ struct Mixer:
     samples: [int]
 
 struct Event:
-    kind: i32    # 0 none, 1 quit, 2 key, 3 mouse move, 4 mouse button, 5 resize
+    kind: i32    # 0 none, 1 quit, 2 key down, 3 mouse move, 4 mouse button, 5 resize, 6 key up
     key: i32
     x: i32
     y: i32
@@ -154,6 +154,8 @@ fn begin(w: Window) -> int:
     return gfx_begin(w)
 
 fn draw_fb(w: Window, fb: [int], width: int, height: int, dst: FRect) -> int:
+    # The source framebuffer may be smaller than the window; the shim uploads it
+    # at its own resolution and lets the renderer scale it into `dst`.
     return gfx_draw_fb(w, fb, width, height, dst)
 
 fn draw_lines(w: Window, clip: IRect, pts: [FVec], r: int, gc: int, b: int) -> int:

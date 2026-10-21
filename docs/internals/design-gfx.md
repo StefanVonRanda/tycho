@@ -32,6 +32,15 @@ against this rule, not around it.
   buffer. `audio_queue` copies PCM into the SDL stream. `[int]`, `bytes`,
   `string` and `[FVec]` arguments are borrowed only for the duration of a call.
 
+## Framebuffer resolution
+
+`draw_fb` does not require `width × height` to equal the window. The shim keeps a
+streaming texture at the source size and draws it into the destination `FRect`,
+so a software renderer can run at a lower internal resolution and let the GPU
+scale it. The texture is recreated only when the source dimensions change; the
+pixel buffer grows only when a larger source arrives. The 3D example uses
+480×270 for its z-buffered scene and a `View`-scaled destination at the window.
+
 ## Threads
 
 Handles are not shared across tasks. The window, renderer, event pump and audio

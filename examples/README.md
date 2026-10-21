@@ -58,6 +58,7 @@ Each subdirectory is a multi-file program with its own README or `run.sh`.
 | [`life/`](life) / [`snake/`](snake) / [`minesweeper/`](minesweeper) | Games dogfooding recursion and mutable grids over the arena model. |
 | [`gfx/`](gfx) | Shared gfx engine + windowed Snake: Tycho RGBA framebuffer, SDL3 shim, fonts, textures, audio; headless BMP test. |
 | [`gfx/pong/`](gfx/pong) | Second caller for the shared engine: Pong, same shim and font atlas. |
+| [`gfx/3d/`](gfx/3d) | Software 3D first-person game: z-buffered triangle renderer over the gfx framebuffer, scaled with `View`. |
 
 ## Core library
 

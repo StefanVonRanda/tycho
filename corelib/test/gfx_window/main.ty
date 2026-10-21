@@ -36,6 +36,13 @@ fn main():
     if rc == 0:
         rc = gfx.draw_fb(win, fb, 64, 64, dst)
     if rc == 0:
+        # A source framebuffer smaller than the window is scaled into dst.
+        small := []int
+        reserve(small, 32 * 32)
+        for i := 0; i < 32 * 32; i += 1:
+            push(small, 0)
+        rc = gfx.draw_fb(win, small, 32, 32, dst)
+    if rc == 0:
         rc = gfx.tex_draw(texset, id, src, sprite, 255, 255, 255)
     if rc == 0:
         rc = gfx.present(win)

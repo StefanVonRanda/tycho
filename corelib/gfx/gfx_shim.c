@@ -9,7 +9,9 @@ typedef struct {
     SDL_Renderer *renderer;
     SDL_Texture *texture;
     uint32_t *pixels;
+    size_t pixels_cap;
     int w, h;
+    int tex_w, tex_h;
 } Gfx;
 
 typedef struct {
@@ -170,6 +172,9 @@ void *gfx_open(int64_t w, int64_t h, const char *title) {
         return NULL;
     }
     SDL_SetTextureScaleMode(g->texture, SDL_SCALEMODE_NEAREST);
+    g->tex_w = g->w;
+    g->tex_h = g->h;
+    g->pixels_cap = (size_t)g->w * (size_t)g->h;
     fprintf(stderr, "gfx: video=%s renderer=%s\n",
             SDL_GetCurrentVideoDriver(), SDL_GetRendererName(g->renderer));
     g->pixels = (uint32_t *)malloc((size_t)g->w * (size_t)g->h * sizeof(uint32_t));
@@ -193,10 +198,32 @@ int64_t gfx_begin(void *handle) {
 int64_t gfx_draw_fb(void *handle, const int64_t *fb, int64_t len, int64_t w, int64_t h,
                     SDL_FRect dst) {
     Gfx *g = (Gfx *)handle;
-    if (!g || !fb || w != g->w || h != g->h || len < w * h) return -1;
+    if (!g || !fb || w <= 0 || h <= 0 || w > 16384 || h > 16384) return -1;
     int64_t n = w * h;
+    if (len < n) return -1;
+
+    /* The source may be a low-resolution software framebuffer scaled up by the
+       renderer. Recreate only when its dimensions change, then keep the same
+       streaming texture for every frame. */
+    if (g->tex_w != (int)w || g->tex_h != (int)h) {
+        SDL_Texture *nt = SDL_CreateTexture(g->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                            SDL_TEXTUREACCESS_STREAMING, (int)w, (int)h);
+        if (!nt) return -4;
+        SDL_SetTextureScaleMode(nt, SDL_SCALEMODE_NEAREST);
+        SDL_DestroyTexture(g->texture);
+        g->texture = nt;
+        g->tex_w = (int)w;
+        g->tex_h = (int)h;
+    }
+    size_t need = (size_t)n;
+    if (need > g->pixels_cap) {
+        uint32_t *np = (uint32_t *)realloc(g->pixels, need * sizeof(uint32_t));
+        if (!np) return -5;
+        g->pixels = np;
+        g->pixels_cap = need;
+    }
     for (int64_t i = 0; i < n; i++) g->pixels[i] = (uint32_t)fb[i];
-    if (!SDL_UpdateTexture(g->texture, NULL, g->pixels, g->w * 4)) return -2;
+    if (!SDL_UpdateTexture(g->texture, NULL, g->pixels, (int)(w * 4))) return -2;
     if (!SDL_RenderTexture(g->renderer, g->texture, NULL, &dst)) return -3;
     return 0;
 }
@@ -224,7 +251,7 @@ int64_t gfx_present(void *handle) {
 }
 
 typedef struct {
-    int32_t kind;       /* 0 none, 1 quit, 2 key, 3 mouse move, 4 mouse button, 5 resize */
+    int32_t kind;       /* 0 none, 1 quit, 2 key down, 3 mouse move, 4 mouse button, 5 resize, 6 key up */
     int32_t key;        /* 1..4 direction, 27 quit, otherwise the SDL keycode */
     int32_t x, y;       /* mouse coordinates for kinds 3/4 */
     int32_t button;     /* SDL mouse button for kind 4 */
@@ -256,6 +283,11 @@ Event gfx_poll_event(void *handle) {
         }
         if (e.type == SDL_EVENT_KEY_DOWN) {
             out.kind = 2;
+            out.key = event_key(e.key.key);
+            return out;
+        }
+        if (e.type == SDL_EVENT_KEY_UP) {
+            out.kind = 6;
             out.key = event_key(e.key.key);
             return out;
         }
