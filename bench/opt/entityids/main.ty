@@ -1,0 +1,47 @@
+package main
+
+# Raw indices vs core:pool handles. This is the experiment behind the
+# "typed generation IDs" lesson: pool handles are a Tycho value (int) with an
+# index and generation, so a stale handle is rejected rather than aliasing a
+# reused slot.
+import "core:pool"
+
+struct Entity:
+    hp: int
+    x: int
+    y: int
+
+const N = 200000
+const PASSES = 12
+
+fn raw_checksum() -> int:
+    es := []Entity
+    for i := 0; i < N; i += 1:
+        push(es, Entity(i % 100, i, i * 2))
+    s := 0
+    for p := 0; p < PASSES; p += 1:
+        for i := 0; i < N; i += 1:
+            e := es[i]
+            s = s + e.hp + e.x + e.y
+    return s
+
+fn pool_checksum() -> int:
+    p := pool.Pool([]pool.Slot(Entity), []int)
+    hs := []pool.Handle
+    for i := 0; i < N; i += 1:
+        push(hs, pool.add(&p, Entity(i % 100, i, i * 2)))
+    s := 0
+    for pass := 0; pass < PASSES; pass += 1:
+        for i := 0; i < N; i += 1:
+            e := pool.get(p, hs[i])
+            s = s + e.hp + e.x + e.y
+    return s
+
+fn main():
+    mode := args()[1]
+    if mode == "raw":
+        println("raw=" + str(raw_checksum()))
+    elif mode == "pool":
+        println("pool=" + str(pool_checksum()))
+    else:
+        eprintln("usage: entityids raw|pool")

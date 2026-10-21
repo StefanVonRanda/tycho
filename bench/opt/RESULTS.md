@@ -308,3 +308,67 @@ would need a second map representation; the small-map loop is already flat and
 the demand gate does not justify it. O7 ships the allocation presizing only,
 where the loop bound proves an upper bound and over-reserving is safe.
 `tests/presize_loop.ty` pins both shapes.
+
+
+## Game-data experiments (post-0.8.9, not shipped)
+
+These are the first checks for the Goose-inspired game-data work. They are
+observations, not language changes.
+
+Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395). Compiler:
+`tychoc1 0.8.9`. Commands:
+
+```text
+./tychoc1 bench/opt/entityids/main.ty -o /tmp/entityids
+./tychoc1 bench/opt/layouts/main.ty -o /tmp/layouts
+cc -O2 -o /tmp/peakrss bench/peakrss.c
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/entityids raw; done
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/entityids pool; done
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/layouts aos; done
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/layouts soa; done
+```
+
+`core:pool` is already present and packs index plus generation into a stable
+handle. It is not a raw-index replacement for a hot loop:
+
+| 200k entities, 12 passes | peak RSS (median) | wall time (median) |
+|---|---:|---:|
+| raw array index | 12,956 KB | 4 ms |
+| `core:pool` handle + `get` | 23,508 KB | 10 ms |
+
+The generation check is the cost. **Decision:** keep the pool for sparse
+lifetimes, entity graphs and editor/UI selection; use raw indices or handles
+only at boundaries in the per-frame hot loop. Do not make generation checks
+implicit in array indexing.
+
+For a full-field particle update, contiguous AoS beat SoA:
+
+| 200k particles, 24 steps | peak RSS (median) | wall time (median) |
+|---|---:|---:|
+| `[Particle]` (AoS) | 23,712 KB | 6 ms |
+| `soa [Particle]` | 23,448 KB | 11 ms |
+
+**Decision:** do not change Tycho's default layout or add a language-level
+inline record/SoA mode from these numbers. SoA is a tool for field-selective
+systems; the existing explicit `soa` syntax is enough. The AoS default stays.
+
+The package item is implemented as `make shadercross`, which runs the pinned
+translator build. It is a build-dependency convenience, not a benchmark.
+
+### What stuck
+
+- **Typed generation IDs: conditional.** `core:pool` already implements the
+  index+generation handle. Keep it for sparse lifetimes, graphs, editor/UI
+  selection and boundaries; keep raw indices in the per-frame entity hot loop.
+  No implicit generation check on arrays.
+- **A Goose-style layout change: no.** The full-field update benchmark favors
+  the existing AoS default. Explicit `soa` remains available for field-selective
+  systems; no language-level inline/variable-record mode is justified by this
+  evidence.
+- **Package automation: yes.** `make shadercross` builds and installs the pinned
+  SDL_shadercross runtime; this removes the manual setup step for `core:gfxgpu`.
+
+Items 4–5 are deliberately not shipped. A fourth caller is only useful if a
+physics or UI requirement forces a shared package; the current three software
+callers and two GPU callers do not. References or inline variable-size records
+are a language-model change, and the game-data measurements do not support one.

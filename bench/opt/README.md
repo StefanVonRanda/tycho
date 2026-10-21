@@ -36,6 +36,8 @@ checkout is not evidence of an optimization.
 | O5 | [`bench/opt/editorupdate/main.ty`](editorupdate/main.ty) | long-lived editor rope updated through `t = set(t, i, v)` |
 | O6 | [`bench/trie/path/main.ty`](../trie/path/main.ty) | conservative shared-bit CoW / path copying |
 | O7 | [`bench/prongB/arr_pipeline.ty`](../prongB/arr_pipeline.ty) + [`bench/opt/smallmap/main.ty`](smallmap/main.ty) | loop-grown array and map-literal presizing (SROA evaluated) |
+| experiment | [`bench/opt/entityids/main.ty`](entityids/main.ty) | raw index vs `core:pool` index+generation handles |
+| experiment | [`bench/opt/layouts/main.ty`](layouts/main.ty) | AoS vs SoA for an all-field entity update |
 
 O1–O7 are shipped in 0.8.8; O2 is reference/bootstrap parity, while the
 packaged self-hosted compiler already passes `[N]T` as a descriptor. Their
