@@ -20,6 +20,8 @@ measurements, and they assume you already know the codebase.
 - [`design-enums.md`](design-enums.md) — enum payloads and error operators.
 - [`design-functions.md`](design-functions.md) — closure capture and `sink` adoption.
 - [`design-scalar-match.md`](design-scalar-match.md) — scalar patterns in `match`.
+- [`goose-review.md`](goose-review.md) — which Goose design ideas transfer to
+  Tycho, with the incompatible ones named.
 
 ## Records
 
