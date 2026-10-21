@@ -5,11 +5,16 @@ renderer. It uses the `Mesh` and `Place` layer in `core:gfx3d` for a multi-part
 drone model and a spinning rotor, with a follow camera rather than Vector
 Vault's first-person camera or Orbit's gallery camera.
 
-The renderer runs at 480×270 and scales through `core:gfx.draw_fb`.
+The renderer runs at 480×270. With `core:gfxgpu` available, the scene is
+submitted as a GPU triangle mesh with a depth target, then downloaded into the
+existing gfx framebuffer for the HUD and presentation. Without a GPU device it
+falls back to the software path automatically.
 
 ## Build and play
 
-The shared font atlas is one directory up, so run from this directory:
+The shared font atlas is one directory up, so run from this directory. For the
+GPU path, build/install SDL_shadercross first and source its environment (see
+`../gpu/README.md`; Linux also needs `libvkd3d-utils` for texture download):
 
 ```text
 ../../../tychoc1 main.ty --pkg sdl3 -o /tmp/rotor

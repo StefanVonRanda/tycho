@@ -2,6 +2,7 @@ package main
 
 import "core:gfx"
 import "core:gfx3d"
+import "core:gfxgpu"
 import "core:strings"
 import "core:time"
 
@@ -11,6 +12,8 @@ extern "m" fn cos(x: float) -> float
 extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
 extern fn gfx_audio_open(rate: int, channels: int) -> gfx.Audio
 extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
+extern fn gfxgpu_open_offscreen(w: int, h: int) -> gfxgpu.Gpu
+extern fn gfxgpu_render_mesh(g: gfxgpu.Gpu, verts: [float]) -> bytes
 
 const RW = 480
 const RH = 270
@@ -183,6 +186,130 @@ fn step_game(p: inout Player, pickups: inout [Pickup],
     play_ms = play_ms + STEP_MS
     return picked
 
+fn build_static() -> gfx3d.Mesh:
+    m := gfx3d.mesh()
+    n := 10
+    for iz := 0; iz < n; iz += 1:
+        z0 := 0.0 - ARENA + to_float(iz) * 2.0
+        z1 := z0 + 2.0
+        for ix := 0; ix < n; ix += 1:
+            x0 := 0.0 - ARENA + to_float(ix) * 2.0
+            x1 := x0 + 2.0
+            col := gfx.rgb(20, 44, 51)
+            if (ix + iz) % 2 == 0:
+                col = gfx.rgb(27, 57, 65)
+            gfx3d.add_quad(&m, gfx3d.Vec3(x0, 0.0, z0), gfx3d.Vec3(x0, 0.0, z1),
+                           gfx3d.Vec3(x1, 0.0, z1), gfx3d.Vec3(x1, 0.0, z0), col)
+    gfx3d.add_box(&m, -3.0, 1.0, 2.0, 1.5, 2.0, 1.5, gfx.rgb(64, 86, 105))
+    gfx3d.add_box(&m, 3.0, 1.0, -3.0, 1.5, 2.0, 1.5, gfx.rgb(78, 78, 112))
+    gfx3d.add_box(&m, 0.0, 1.0, 6.0, 1.5, 2.0, 1.5, gfx.rgb(62, 104, 92))
+    return m
+
+fn build_pickups(pickups: [Pickup], anim_ms: int) -> gfx3d.Mesh:
+    m := gfx3d.mesh()
+    for i := 0; i < len(pickups); i += 1:
+        if not pickups[i].taken:
+            bob := sin(to_float(anim_ms) * 0.004 + to_float(i) * 0.9) * 0.16
+            gfx3d.add_box(&m, pickups[i].x, 1.0 + bob, pickups[i].z,
+                          0.5, 0.5, 0.5, gfx.rgb(255, 180, 40))
+            gfx3d.add_box(&m, pickups[i].x, 1.0 + bob, pickups[i].z,
+                          0.24, 0.24, 0.24, gfx.rgb(255, 240, 170))
+    return m
+
+fn place_of(p: Player) -> gfx3d.Place:
+    sy := sin(p.yaw)
+    cy := cos(p.yaw)
+    return gfx3d.Place(gfx3d.Vec3(p.x, 0.0, p.z),
+                       gfx3d.Vec3(cy, 0.0, 0.0 - sy),
+                       gfx3d.Vec3(0.0, 1.0, 0.0),
+                       gfx3d.Vec3(sy, 0.0, cy), 1.0)
+
+fn transform(p: gfx3d.Place, v: gfx3d.Vec3) -> gfx3d.Vec3:
+    return gfx3d.Vec3(p.origin.x + (p.right.x * v.x + p.up.x * v.y + p.forward.x * v.z) * p.scale,
+                      p.origin.y + (p.right.y * v.x + p.up.y * v.y + p.forward.y * v.z) * p.scale,
+                      p.origin.z + (p.right.z * v.x + p.up.z * v.y + p.forward.z * v.z) * p.scale)
+
+fn push_gpu_tri(verts: inout [float], cam: gfx3d.Camera, target: gfx3d.Target,
+                a: gfx3d.Vec3, b: gfx3d.Vec3, c: gfx3d.Vec3, color: int):
+    pa := gfx3d.project(cam, target, a)
+    pb := gfx3d.project(cam, target, b)
+    pc := gfx3d.project(cam, target, c)
+    if not pa.ok or not pb.ok or not pc.ok:
+        return
+    rr := to_float((color / 65536) % 256) / 255.0
+    gg := to_float((color / 256) % 256) / 255.0
+    bb := to_float(color % 256) / 255.0
+    # screen -> NDC; 1/invz is monotone in camera depth.
+    za := 1.0 / (pa.invz * 32.0)
+    zb := 1.0 / (pb.invz * 32.0)
+    zc := 1.0 / (pc.invz * 32.0)
+    if za < 0.0:
+        za = 0.0
+    if zb < 0.0:
+        zb = 0.0
+    if zc < 0.0:
+        zc = 0.0
+    if za > 1.0:
+        za = 1.0
+    if zb > 1.0:
+        zb = 1.0
+    if zc > 1.0:
+        zc = 1.0
+    xa := 2.0 * pa.x / to_float(target.w) - 1.0
+    xb := 2.0 * pb.x / to_float(target.w) - 1.0
+    xc := 2.0 * pc.x / to_float(target.w) - 1.0
+    ya := 1.0 - 2.0 * pa.y / to_float(target.h)
+    yb := 1.0 - 2.0 * pb.y / to_float(target.h)
+    yc := 1.0 - 2.0 * pc.y / to_float(target.h)
+    push(verts, xa)
+    push(verts, ya)
+    push(verts, za)
+    push(verts, rr)
+    push(verts, gg)
+    push(verts, bb)
+    push(verts, xb)
+    push(verts, yb)
+    push(verts, zb)
+    push(verts, rr)
+    push(verts, gg)
+    push(verts, bb)
+    push(verts, xc)
+    push(verts, yc)
+    push(verts, zc)
+    push(verts, rr)
+    push(verts, gg)
+    push(verts, bb)
+
+fn append_mesh(verts: inout [float], m: gfx3d.Mesh, p: gfx3d.Place,
+               cam: gfx3d.Camera, target: gfx3d.Target):
+    for i := 0; i < len(m.tris); i += 1:
+        t := m.tris[i]
+        push_gpu_tri(&verts, cam, target, transform(p, t.a), transform(p, t.b),
+                     transform(p, t.c), t.color)
+
+fn gpu_vertices(static_mesh: gfx3d.Mesh, p: Player, pickups: [Pickup],
+                body: gfx3d.Mesh, rotor: gfx3d.Mesh, cam: gfx3d.Camera,
+                target: gfx3d.Target, anim_ms: int) -> [float]:
+    verts := []float
+    identity := gfx3d.Place(gfx3d.Vec3(0.0, 0.0, 0.0),
+                            gfx3d.Vec3(1.0, 0.0, 0.0),
+                            gfx3d.Vec3(0.0, 1.0, 0.0),
+                            gfx3d.Vec3(0.0, 0.0, 1.0), 1.0)
+    append_mesh(&verts, static_mesh, identity, cam, target)
+    picks := build_pickups(pickups, anim_ms)
+    append_mesh(&verts, picks, identity, cam, target)
+    bp := place_of(p)
+    append_mesh(&verts, body, bp, cam, target)
+    spin := to_float(anim_ms) * 0.004
+    sy := sin(p.yaw + spin)
+    cy := cos(p.yaw + spin)
+    rp := gfx3d.Place(gfx3d.Vec3(p.x, 1.28, p.z),
+                      gfx3d.Vec3(cy, 0.0, 0.0 - sy),
+                      gfx3d.Vec3(0.0, 1.0, 0.0),
+                      gfx3d.Vec3(sy, 0.0, cy), 1.0)
+    append_mesh(&verts, rotor, rp, cam, target)
+    return verts
+
 fn main():
     a := args()
     frames := 0
@@ -227,6 +354,10 @@ fn main():
     target := gfx3d.Target(RW, RH)
     body := build_body()
     rotor := build_rotor()
+    static_mesh := build_static()
+    gpu := gfxgpu_open_offscreen(RW, RH)
+    if is_null(gpu):
+        eprintln("rotor: GPU unavailable, using software renderer")
     player := Player(0.0, -3.5, 0.0)
     pickups := fresh_pickups()
     collected := 0
@@ -301,8 +432,20 @@ fn main():
                           player.z - cos(player.yaw) * 5.2)
         look := gfx3d.Vec3(player.x, 0.85, player.z)
         cam := gfx3d.look_at(eye, look, gfx3d.Vec3(0.0, 1.0, 0.0), FOCAL)
-        draw_scene(&fb, &zbuf, cam, target, player, pickups, play_frame * STEP_MS,
-                   &body, &rotor)
+        if is_null(gpu):
+            draw_scene(&fb, &zbuf, cam, target, player, pickups, play_frame * STEP_MS,
+                       &body, &rotor)
+        else:
+            verts := gpu_vertices(static_mesh, player, pickups, body, rotor, cam,
+                                  target, play_frame * STEP_MS)
+            pixels := gfxgpu_render_mesh(gpu, verts)
+            if len(pixels) == RW * RH * 4:
+                for i := 0; i < RW * RH; i += 1:
+                    fb[i] = 4278190080 + pixels[i * 4] * 65536 +
+                            pixels[i * 4 + 1] * 256 + pixels[i * 4 + 2]
+            else:
+                draw_scene(&fb, &zbuf, cam, target, player, pickups,
+                           play_frame * STEP_MS, &body, &rotor)
 
         if mode == MODE_MENU:
             gfx.fill_rect(&fb, RW, 55, 32, RW - 55, RH - 42, gfx.rgb(5, 9, 16))
@@ -356,6 +499,7 @@ fn main():
 
     if snap != "":
         gfx.save_bmp(snap, fb, RW, RH)
+    close(gpu)
     close(texset)
     close(audio)
     close(win)

@@ -7,9 +7,11 @@ a renderer probe, not yet the full game port.
 ## Build the shader translator once
 
 `core:gfxgpu` uses SDL_shadercross to translate committed SPIR-V to Vulkan,
-Metal or D3D12 at runtime. It is not a system package on this machine:
+Metal or D3D12 at runtime. It is not a system package on this machine. Linux
+GPU texture download also needs `libvkd3d-utils`:
 
 ```text
+sudo dnf install libvkd3d-utils   # Linux only, for GPU readback
 sh scripts/build-shadercross.sh
 ```
 

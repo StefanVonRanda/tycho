@@ -94,8 +94,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   runtime with `scripts/build-shadercross.sh`; this package is not available on
   a host without SDL_shadercross. The public function is `gfxgpu_close`; the
   handle-returning open and frame entry points are declared by the caller, the
-  same affine-opener pattern as `core:gfx`. The initial probe draws a
-  depth-tested triangle; game/HUD coverage is the next step.
+  same affine-opener pattern as `core:gfx`. The probe draws a depth-tested
+  triangle; the offscreen mesh path renders Rotor Run's scene into a GPU color
+  target and hands the pixels back to `core:gfx` for its HUD/input/audio.
 - **`char`** — byte/char classification & conversion over int byte values (what
   `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
   `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a

@@ -17,8 +17,12 @@ typedef struct {
     SDL_GPUGraphicsPipeline *pipeline;
     SDL_GPUBuffer *vertices;
     SDL_GPUTexture *depth;
+    SDL_GPUTexture *color;
+    SDL_GPUBuffer *mesh;
+    uint32_t mesh_cap;
     SDL_Window *window;
     uint32_t w, h;
+    int offscreen;
 } Gpu;
 
 static int gpu_upload_vertices(Gpu *g) {
@@ -277,10 +281,242 @@ int64_t gfxgpu_close(void *handle) {
     SDL_WaitForGPUIdle(g->device);
     if (g->pipeline) SDL_ReleaseGPUGraphicsPipeline(g->device, g->pipeline);
     if (g->vertices) SDL_ReleaseGPUBuffer(g->device, g->vertices);
+    if (g->mesh) SDL_ReleaseGPUBuffer(g->device, g->mesh);
     if (g->depth) SDL_ReleaseGPUTexture(g->device, g->depth);
+    if (g->color) SDL_ReleaseGPUTexture(g->device, g->color);
     SDL_ReleaseWindowFromGPUDevice(g->device, g->window);
     SDL_DestroyGPUDevice(g->device);
     SDL_ShaderCross_Quit();
     free(g);
     return 0;
 }
+
+
+/* ---------------------------------------------------------------- offscreen
+   The game backend renders into a GPU color/depth target and downloads the
+   pixels into the existing core:gfx framebuffer. HUD, input and audio remain
+   in core:gfx; this is the first mesh backend, not yet a swapchain HUD path. */
+
+void *gfxgpu_open_offscreen(int64_t w, int64_t h) {
+    if (w <= 0 || h <= 0 || w > 16384 || h > 16384) return NULL;
+    if (!SDL_ShaderCross_Init()) {
+        fprintf(stderr, "gfxgpu: shadercross init: %s\n", SDL_GetError());
+        return NULL;
+    }
+    SDL_GPUShaderFormat formats = SDL_ShaderCross_GetSPIRVShaderFormats();
+    SDL_GPUDevice *device = SDL_CreateGPUDevice(formats, true, NULL);
+    if (!device) {
+        fprintf(stderr, "gfxgpu: offscreen device: %s\n", SDL_GetError());
+        return NULL;
+    }
+    Gpu *g = (Gpu *)calloc(1, sizeof(*g));
+    if (!g) { SDL_DestroyGPUDevice(device); return NULL; }
+    g->device = device;
+    g->offscreen = 1;
+    g->w = (uint32_t)w;
+    g->h = (uint32_t)h;
+
+    SDL_ShaderCross_SPIRV_Info vi = {0};
+    vi.bytecode = tri_vert_spv;
+    vi.bytecode_size = tri_vert_spv_len;
+    vi.entrypoint = "main";
+    vi.shader_stage = SDL_SHADERCROSS_SHADERSTAGE_VERTEX;
+    SDL_ShaderCross_GraphicsShaderResourceInfo vri = {0};
+    vri.num_uniform_buffers = 1;
+    SDL_GPUShader *vs = SDL_ShaderCross_CompileGraphicsShaderFromSPIRV(device, &vi, &vri, 0);
+    SDL_ShaderCross_SPIRV_Info fi = {0};
+    fi.bytecode = tri_frag_spv;
+    fi.bytecode_size = tri_frag_spv_len;
+    fi.entrypoint = "main";
+    fi.shader_stage = SDL_SHADERCROSS_SHADERSTAGE_FRAGMENT;
+    SDL_ShaderCross_GraphicsShaderResourceInfo fri = {0};
+    SDL_GPUShader *fs = SDL_ShaderCross_CompileGraphicsShaderFromSPIRV(device, &fi, &fri, 0);
+    if (!vs || !fs) {
+        fprintf(stderr, "gfxgpu: offscreen shaders: %s\n", SDL_GetError());
+        if (vs) SDL_ReleaseGPUShader(device, vs);
+        if (fs) SDL_ReleaseGPUShader(device, fs);
+        goto off_fail;
+    }
+
+    SDL_GPUVertexBufferDescription vbd = {0};
+    vbd.slot = 0;
+    vbd.pitch = 6 * sizeof(float);
+    vbd.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+    SDL_GPUVertexAttribute attrs[2] = {
+        {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, 0},
+        {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, 3 * sizeof(float)},
+    };
+    SDL_GPUVertexInputState vis = {0};
+    vis.vertex_buffer_descriptions = &vbd;
+    vis.num_vertex_buffers = 1;
+    vis.vertex_attributes = attrs;
+    vis.num_vertex_attributes = 2;
+    SDL_GPURasterizerState rs = {0};
+    rs.fill_mode = SDL_GPU_FILLMODE_FILL;
+    rs.cull_mode = SDL_GPU_CULLMODE_NONE;
+    rs.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+    rs.enable_depth_clip = true;
+    SDL_GPUDepthStencilState ds = {0};
+    ds.compare_op = SDL_GPU_COMPAREOP_LESS;
+    ds.enable_depth_test = true;
+    ds.enable_depth_write = true;
+    SDL_GPUColorTargetDescription ctd = {0};
+    ctd.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    SDL_GPUGraphicsPipelineTargetInfo ti = {0};
+    ti.color_target_descriptions = &ctd;
+    ti.num_color_targets = 1;
+    ti.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+    ti.has_depth_stencil_target = true;
+    SDL_GPUGraphicsPipelineCreateInfo pci = {0};
+    pci.vertex_shader = vs;
+    pci.fragment_shader = fs;
+    pci.vertex_input_state = vis;
+    pci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    pci.rasterizer_state = rs;
+    pci.depth_stencil_state = ds;
+    pci.target_info = ti;
+    g->pipeline = SDL_CreateGPUGraphicsPipeline(device, &pci);
+    SDL_ReleaseGPUShader(device, vs);
+    SDL_ReleaseGPUShader(device, fs);
+    if (!g->pipeline) {
+        fprintf(stderr, "gfxgpu: offscreen pipeline: %s\n", SDL_GetError());
+        goto off_fail;
+    }
+
+    SDL_GPUTextureCreateInfo tci = {0};
+    tci.type = SDL_GPU_TEXTURETYPE_2D;
+    tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    tci.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tci.width = g->w;
+    tci.height = g->h;
+    tci.layer_count_or_depth = 1;
+    tci.num_levels = 1;
+    tci.sample_count = SDL_GPU_SAMPLECOUNT_1;
+    g->color = SDL_CreateGPUTexture(device, &tci);
+    if (!g->color) goto off_fail;
+    SDL_GPUTextureCreateInfo dci = tci;
+    dci.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+    dci.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+    g->depth = SDL_CreateGPUTexture(device, &dci);
+    if (!g->depth) goto off_fail;
+    fprintf(stderr, "gfxgpu: offscreen driver=%s\n", SDL_GetGPUDeviceDriver(device));
+    return g;
+
+off_fail:
+    if (g->pipeline) SDL_ReleaseGPUGraphicsPipeline(device, g->pipeline);
+    if (g->color) SDL_ReleaseGPUTexture(device, g->color);
+    if (g->depth) SDL_ReleaseGPUTexture(device, g->depth);
+    SDL_DestroyGPUDevice(device);
+    free(g);
+    return NULL;
+}
+
+static int gpu_upload_mesh(Gpu *g, const double *verts, int64_t nfloats) {
+    uint32_t bytes = (uint32_t)(nfloats * sizeof(float));
+    if (bytes > g->mesh_cap) {
+        if (g->mesh) SDL_ReleaseGPUBuffer(g->device, g->mesh);
+        SDL_GPUBufferCreateInfo bi = {0};
+        bi.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+        bi.size = bytes;
+        g->mesh = SDL_CreateGPUBuffer(g->device, &bi);
+        if (!g->mesh) { g->mesh_cap = 0; return -1; }
+        g->mesh_cap = bytes;
+    }
+    if (bytes == 0) return 0;
+    float *fp = (float *)malloc((size_t)nfloats * sizeof(float));
+    if (!fp) return -2;
+    for (int64_t i = 0; i < nfloats; i++) fp[i] = (float)verts[i];
+    SDL_GPUTransferBufferCreateInfo ti = {0};
+    ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    ti.size = bytes;
+    SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(g->device, &ti);
+    if (!tb) return -2;
+    void *map = SDL_MapGPUTransferBuffer(g->device, tb, false);
+    if (!map) { SDL_ReleaseGPUTransferBuffer(g->device, tb); return -3; }
+    memcpy(map, fp, bytes);
+    free(fp);
+    SDL_UnmapGPUTransferBuffer(g->device, tb);
+    SDL_GPUCommandBuffer *cb = SDL_AcquireGPUCommandBuffer(g->device);
+    if (!cb) { SDL_ReleaseGPUTransferBuffer(g->device, tb); return -4; }
+    SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cb);
+    SDL_GPUTransferBufferLocation src = { tb, 0 };
+    SDL_GPUBufferRegion dst = { g->mesh, 0, bytes };
+    SDL_UploadToGPUBuffer(cp, &src, &dst, true);
+    SDL_EndGPUCopyPass(cp);
+    if (!SDL_SubmitGPUCommandBuffer(cb)) {
+        SDL_ReleaseGPUTransferBuffer(g->device, tb);
+        return -5;
+    }
+    SDL_ReleaseGPUTransferBuffer(g->device, tb);
+    SDL_WaitForGPUIdle(g->device);
+    return 0;
+}
+
+void gfxgpu_render_mesh(void *handle, const double *verts, int64_t nfloats,
+                         unsigned char **out, int64_t *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    Gpu *g = (Gpu *)handle;
+    if (!g || !g->offscreen) return;
+    if (nfloats < 0 || nfloats % 6 != 0) return;
+    if (gpu_upload_mesh(g, verts, nfloats) != 0) return;
+    SDL_GPUCommandBuffer *cb = SDL_AcquireGPUCommandBuffer(g->device);
+    if (!cb) return;
+    SDL_GPUColorTargetInfo color = {0};
+    color.texture = g->color;
+    color.clear_color = (SDL_FColor){0.02f, 0.04f, 0.07f, 1.0f};
+    color.load_op = SDL_GPU_LOADOP_CLEAR;
+    color.store_op = SDL_GPU_STOREOP_STORE;
+    SDL_GPUDepthStencilTargetInfo depth = {0};
+    depth.texture = g->depth;
+    depth.clear_depth = 1.0f;
+    depth.load_op = SDL_GPU_LOADOP_CLEAR;
+    depth.store_op = SDL_GPU_STOREOP_DONT_CARE;
+    depth.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+    depth.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+    SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cb, &color, 1, &depth);
+    if (!pass) { SDL_SubmitGPUCommandBuffer(cb); return; }
+    if (nfloats > 0) {
+        float identity[16] = {
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f,
+        };
+        SDL_PushGPUVertexUniformData(cb, 0, identity, sizeof identity);
+        SDL_BindGPUGraphicsPipeline(pass, g->pipeline);
+        SDL_GPUBufferBinding vb = { g->mesh, 0 };
+        SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+        SDL_DrawGPUPrimitives(pass, (Uint32)(nfloats / 6), 1, 0, 0);
+    }
+    SDL_EndGPURenderPass(pass);
+
+    uint32_t bytes = g->w * g->h * 4;
+    SDL_GPUTransferBufferCreateInfo ti = {0};
+    ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+    ti.size = bytes;
+    SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(g->device, &ti);
+    if (!tb) { SDL_SubmitGPUCommandBuffer(cb); return; }
+    SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cb);
+    SDL_GPUTextureRegion src = { g->color, 0, 0, 0, 0, 0, g->w, g->h, 1 };
+    SDL_GPUTextureTransferInfo dst = { tb, 0, g->w, g->h };
+    SDL_DownloadFromGPUTexture(cp, &src, &dst);
+    SDL_EndGPUCopyPass(cp);
+    if (!SDL_SubmitGPUCommandBuffer(cb)) {
+        SDL_ReleaseGPUTransferBuffer(g->device, tb);
+        return;
+    }
+    SDL_WaitForGPUIdle(g->device);
+    const uint8_t *rgba = (const uint8_t *)SDL_MapGPUTransferBuffer(g->device, tb, false);
+    if (!rgba) { SDL_ReleaseGPUTransferBuffer(g->device, tb); return; }
+    uint8_t *copy = (uint8_t *)malloc(bytes);
+    if (copy) {
+        memcpy(copy, rgba, bytes);
+        *out = copy;
+        *outlen = bytes;
+    }
+    SDL_UnmapGPUTransferBuffer(g->device, tb);
+    SDL_ReleaseGPUTransferBuffer(g->device, tb);
+}
+
+int64_t gfxgpu_close_offscreen(void *handle) { return gfxgpu_close(handle); }
