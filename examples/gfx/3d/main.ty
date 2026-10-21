@@ -1,6 +1,7 @@
 package main
 
 import "core:gfx"
+import "core:gfx3d"
 import "core:strings"
 import "core:time"
 
@@ -31,17 +32,6 @@ const MODE_PLAY = 1
 const MODE_PAUSE = 2
 const MODE_WIN = 3
 
-struct V3:
-    x: float
-    y: float
-    z: float
-
-struct Cam:
-    x: float
-    y: float
-    z: float
-    yaw: float
-
 struct Player:
     x: float
     z: float
@@ -51,22 +41,6 @@ struct Pickup:
     x: float
     z: float
     taken: bool
-
-struct SVert:
-    x: float
-    y: float
-    invz: float
-    ok: bool
-
-fn fmin(a: float, b: float) -> float:
-    if a < b:
-        return a
-    return b
-
-fn fmax(a: float, b: float) -> float:
-    if a > b:
-        return a
-    return b
 
 fn shade(color: int, factor: float) -> int:
     r := (color / 65536) % 256
@@ -97,101 +71,8 @@ fn fog(color: int, dist: float) -> int:
         f = 1.0
     return shade(color, f)
 
-fn project(c: Cam, p: V3) -> SVert:
-    dx := p.x - c.x
-    dz := p.z - c.z
-    sy := sin(c.yaw)
-    cy := cos(c.yaw)
-    vx := dx * cy - dz * sy
-    vz := dx * sy + dz * cy
-    vy := p.y - c.y
-    if vz <= 0.08:
-        return SVert(0.0, 0.0, 0.0, false)
-    invz := 1.0 / vz
-    sx := to_float(RW / 2) + vx * FOCAL * invz
-    sy2 := to_float(RH / 2) - vy * FOCAL * invz
-    return SVert(sx, sy2, invz, true)
-
-fn screen_tri(fb: inout [int], zbuf: inout [float], a: SVert, b: SVert, c: SVert, color: int):
-    if not a.ok or not b.ok or not c.ok:
-        return
-    area := (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
-    if fabs(area) < 0.001:
-        return
-
-    minxf := fmin(a.x, fmin(b.x, c.x))
-    maxxf := fmax(a.x, fmax(b.x, c.x))
-    minyf := fmin(a.y, fmin(b.y, c.y))
-    maxyf := fmax(a.y, fmax(b.y, c.y))
-    minx := to_int(minxf)
-    maxx := to_int(maxxf) + 1
-    miny := to_int(minyf)
-    maxy := to_int(maxyf) + 1
-    if minx < 0:
-        minx = 0
-    if miny < 0:
-        miny = 0
-    if maxx > RW - 1:
-        maxx = RW - 1
-    if maxy > RH - 1:
-        maxy = RH - 1
-    if minx > maxx or miny > maxy:
-        return
-
-    inv_area := 1.0 / area
-    for py := miny; py <= maxy; py += 1:
-        pyf := to_float(py) + 0.5
-        base := py * RW
-        for px := minx; px <= maxx; px += 1:
-            pxf := to_float(px) + 0.5
-            e0 := (b.x - a.x) * (pyf - a.y) - (b.y - a.y) * (pxf - a.x)
-            e1 := (c.x - b.x) * (pyf - b.y) - (c.y - b.y) * (pxf - b.x)
-            e2 := (a.x - c.x) * (pyf - c.y) - (a.y - c.y) * (pxf - c.x)
-            if area > 0.0:
-                if e0 < 0.0 or e1 < 0.0 or e2 < 0.0:
-                    continue
-            else:
-                if e0 > 0.0 or e1 > 0.0 or e2 > 0.0:
-                    continue
-            # e0 is opposite A (edge AB), e1 opposite B, e2 opposite C.
-            invz := (e1 * a.invz + e2 * b.invz + e0 * c.invz) * inv_area
-            idx := base + px
-            if invz > zbuf[idx]:
-                zbuf[idx] = invz
-                fb[idx] = color
-
-fn world_tri(fb: inout [int], zbuf: inout [float], cam: Cam, a: V3, b: V3, c: V3, color: int):
-    screen_tri(&fb, &zbuf, project(cam, a), project(cam, b), project(cam, c), color)
-
-fn world_quad(fb: inout [int], zbuf: inout [float], cam: Cam,
-              a: V3, b: V3, c: V3, d: V3, color: int):
-    world_tri(&fb, &zbuf, cam, a, b, c, color)
-    world_tri(&fb, &zbuf, cam, a, c, d, color)
-
-fn draw_box(fb: inout [int], zbuf: inout [float], cam: Cam,
-            cx: float, cy: float, cz: float, sx: float, sy: float, sz: float, color: int):
-    x0 := cx - sx * 0.5
-    x1 := cx + sx * 0.5
-    y0 := cy - sy * 0.5
-    y1 := cy + sy * 0.5
-    z0 := cz - sz * 0.5
-    z1 := cz + sz * 0.5
-    top := shade(color, 1.0)
-    front := shade(color, 0.78)
-    side := shade(color, 0.62)
-    back := shade(color, 0.45)
-    world_quad(&fb, &zbuf, cam, V3(x0, y1, z0), V3(x0, y1, z1),
-               V3(x1, y1, z1), V3(x1, y1, z0), top)
-    world_quad(&fb, &zbuf, cam, V3(x0, y0, z1), V3(x1, y0, z1),
-               V3(x1, y1, z1), V3(x0, y1, z1), front)
-    world_quad(&fb, &zbuf, cam, V3(x1, y0, z0), V3(x0, y0, z0),
-               V3(x0, y1, z0), V3(x1, y1, z0), back)
-    world_quad(&fb, &zbuf, cam, V3(x0, y0, z0), V3(x0, y0, z1),
-               V3(x0, y1, z1), V3(x0, y1, z0), side)
-    world_quad(&fb, &zbuf, cam, V3(x1, y0, z1), V3(x1, y0, z0),
-               V3(x1, y1, z0), V3(x1, y1, z1), side)
-
-fn draw_floor(fb: inout [int], zbuf: inout [float], cam: Cam):
+fn draw_floor(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+              target: gfx3d.Target):
     n := 10
     for iz := 0; iz < n; iz += 1:
         z0 := 0.0 - ARENA + to_float(iz) * TILE
@@ -201,16 +82,19 @@ fn draw_floor(fb: inout [int], zbuf: inout [float], cam: Cam):
             x1 := x0 + TILE
             cx := x0 + TILE * 0.5
             cz := z0 + TILE * 0.5
-            dx := cx - cam.x
-            dz := cz - cam.z
+            dx := cx - cam.eye.x
+            dz := cz - cam.eye.z
             dist := sqrt(dx * dx + dz * dz)
             base := gfx.rgb(18, 43, 48)
             if (ix + iz) % 2 == 0:
                 base = gfx.rgb(24, 55, 62)
-            world_quad(&fb, &zbuf, cam, V3(x0, 0.0, z0), V3(x0, 0.0, z1),
-                       V3(x1, 0.0, z1), V3(x1, 0.0, z0), fog(base, dist))
+            gfx3d.draw_quad(&fb, &zbuf, target, cam,
+                            gfx3d.Vec3(x0, 0.0, z0), gfx3d.Vec3(x0, 0.0, z1),
+                            gfx3d.Vec3(x1, 0.0, z1), gfx3d.Vec3(x1, 0.0, z0),
+                            fog(base, dist))
 
-fn draw_walls(fb: inout [int], zbuf: inout [float], cam: Cam):
+fn draw_walls(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+              target: gfx3d.Target):
     n := 10
     for i := 0; i < n; i += 1:
         a := 0.0 - ARENA + to_float(i) * TILE
@@ -224,61 +108,67 @@ fn draw_walls(fb: inout [int], zbuf: inout [float], cam: Cam):
             if side == 1:
                 z = ARENA
             cx := a + TILE * 0.5
-            dz := z - cam.z
-            dx := cx - cam.x
+            dz := z - cam.eye.z
+            dx := cx - cam.eye.x
             dist := sqrt(dx * dx + dz * dz)
             col := fog(base, dist)
-            world_quad(&fb, &zbuf, cam, V3(a, 0.0, z), V3(b, 0.0, z),
-                       V3(b, WALL_H, z), V3(a, WALL_H, z), col)
+            gfx3d.draw_quad(&fb, &zbuf, target, cam,
+                            gfx3d.Vec3(a, 0.0, z), gfx3d.Vec3(b, 0.0, z),
+                            gfx3d.Vec3(b, WALL_H, z), gfx3d.Vec3(a, WALL_H, z), col)
         # x = -ARENA and x = +ARENA
         for side := 0; side < 2; side += 1:
             x := 0.0 - ARENA
             if side == 1:
                 x = ARENA
             cz := a + TILE * 0.5
-            dx := x - cam.x
-            dz := cz - cam.z
+            dx := x - cam.eye.x
+            dz := cz - cam.eye.z
             dist := sqrt(dx * dx + dz * dz)
             col := fog(base, dist)
-            world_quad(&fb, &zbuf, cam, V3(x, 0.0, a), V3(x, 0.0, b),
-                       V3(x, WALL_H, b), V3(x, WALL_H, a), col)
+            gfx3d.draw_quad(&fb, &zbuf, target, cam,
+                            gfx3d.Vec3(x, 0.0, a), gfx3d.Vec3(x, 0.0, b),
+                            gfx3d.Vec3(x, WALL_H, b), gfx3d.Vec3(x, WALL_H, a), col)
 
-fn draw_pillars(fb: inout [int], zbuf: inout [float], cam: Cam):
-    draw_box(&fb, &zbuf, cam, -4.0, 1.2, 2.0, 1.8, 2.4, 1.8, gfx.rgb(62, 88, 105))
-    draw_box(&fb, &zbuf, cam, 4.0, 1.2, -2.0, 1.8, 2.4, 1.8, gfx.rgb(72, 78, 105))
-    draw_box(&fb, &zbuf, cam, 3.0, 1.2, 4.5, 1.8, 2.4, 1.8, gfx.rgb(62, 100, 88))
+fn draw_pillars(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+                target: gfx3d.Target):
+    gfx3d.draw_box(&fb, &zbuf, target, cam, -4.0, 1.2, 2.0, 1.8, 2.4, 1.8, gfx.rgb(62, 88, 105))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 4.0, 1.2, -2.0, 1.8, 2.4, 1.8, gfx.rgb(72, 78, 105))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 3.0, 1.2, 4.5, 1.8, 2.4, 1.8, gfx.rgb(62, 100, 88))
 
-fn draw_pickups(fb: inout [int], zbuf: inout [float], cam: Cam,
-                pickups: [Pickup], anim_ms: int):
+fn draw_pickups(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+                target: gfx3d.Target, pickups: [Pickup], anim_ms: int):
     for i := 0; i < len(pickups); i += 1:
         if not pickups[i].taken:
             bob := sin(to_float(anim_ms) * 0.004 + to_float(i) * 0.8) * 0.12
             y := 1.1 + bob
-            draw_box(&fb, &zbuf, cam, pickups[i].x, y, pickups[i].z,
-                     0.46, 0.46, 0.46, gfx.rgb(255, 182, 38))
-            draw_box(&fb, &zbuf, cam, pickups[i].x, y, pickups[i].z,
-                     0.24, 0.24, 0.24, gfx.rgb(255, 242, 170))
+            gfx3d.draw_box(&fb, &zbuf, target, cam, pickups[i].x, y, pickups[i].z,
+                           0.46, 0.46, 0.46, gfx.rgb(255, 182, 38))
+            gfx3d.draw_box(&fb, &zbuf, target, cam, pickups[i].x, y, pickups[i].z,
+                           0.24, 0.24, 0.24, gfx.rgb(255, 242, 170))
 
-fn draw_portal(fb: inout [int], zbuf: inout [float], cam: Cam,
-               active: bool, anim_ms: int):
+fn draw_portal(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+               target: gfx3d.Target, active: bool, anim_ms: int):
     pulse := 0.62 + 0.38 * sin(to_float(anim_ms) * 0.006)
     col := gfx.rgb(48, 68, 82)
     if active:
         col = shade(gfx.rgb(70, 255, 155), pulse)
     # A frame, not a solid sheet: the player has to be able to see through the
     # exit while walking into it.
-    world_quad(&fb, &zbuf, cam, V3(-1.15, 0.0, ARENA - 0.16),
-               V3(-0.85, 0.0, ARENA - 0.16),
-               V3(-0.85, 2.9, ARENA - 0.16),
-               V3(-1.15, 2.9, ARENA - 0.16), col)
-    world_quad(&fb, &zbuf, cam, V3(0.85, 0.0, ARENA - 0.16),
-               V3(1.15, 0.0, ARENA - 0.16),
-               V3(1.15, 2.9, ARENA - 0.16),
-               V3(0.85, 2.9, ARENA - 0.16), col)
-    world_quad(&fb, &zbuf, cam, V3(-1.15, 2.6, ARENA - 0.16),
-               V3(1.15, 2.6, ARENA - 0.16),
-               V3(1.15, 2.9, ARENA - 0.16),
-               V3(-1.15, 2.9, ARENA - 0.16), col)
+    gfx3d.draw_quad(&fb, &zbuf, target, cam,
+                    gfx3d.Vec3(-1.15, 0.0, ARENA - 0.16),
+                    gfx3d.Vec3(-0.85, 0.0, ARENA - 0.16),
+                    gfx3d.Vec3(-0.85, 2.9, ARENA - 0.16),
+                    gfx3d.Vec3(-1.15, 2.9, ARENA - 0.16), col)
+    gfx3d.draw_quad(&fb, &zbuf, target, cam,
+                    gfx3d.Vec3(0.85, 0.0, ARENA - 0.16),
+                    gfx3d.Vec3(1.15, 0.0, ARENA - 0.16),
+                    gfx3d.Vec3(1.15, 2.9, ARENA - 0.16),
+                    gfx3d.Vec3(0.85, 2.9, ARENA - 0.16), col)
+    gfx3d.draw_quad(&fb, &zbuf, target, cam,
+                    gfx3d.Vec3(-1.15, 2.6, ARENA - 0.16),
+                    gfx3d.Vec3(1.15, 2.6, ARENA - 0.16),
+                    gfx3d.Vec3(1.15, 2.9, ARENA - 0.16),
+                    gfx3d.Vec3(-1.15, 2.9, ARENA - 0.16), col)
 
 fn crosshair(fb: inout [int]):
     cx := RW / 2
@@ -289,17 +179,15 @@ fn crosshair(fb: inout [int]):
             fb[cy * RW + cx + d] = col
             fb[(cy + d) * RW + cx] = col
 
-fn draw_scene(fb: inout [int], zbuf: inout [float], cam: Cam,
-              pickups: [Pickup], collected: int, anim_ms: int):
+fn draw_scene(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+              target: gfx3d.Target, pickups: [Pickup], collected: int, anim_ms: int):
     bg := gfx.rgb(7, 11, 19)
-    for i := 0; i < RW * RH; i += 1:
-        fb[i] = bg
-        zbuf[i] = 0.0
-    draw_floor(&fb, &zbuf, cam)
-    draw_walls(&fb, &zbuf, cam)
-    draw_pillars(&fb, &zbuf, cam)
-    draw_portal(&fb, &zbuf, cam, collected == len(pickups), anim_ms)
-    draw_pickups(&fb, &zbuf, cam, pickups, anim_ms)
+    gfx3d.clear(&fb, &zbuf, target, bg)
+    draw_floor(&fb, &zbuf, cam, target)
+    draw_walls(&fb, &zbuf, cam, target)
+    draw_pillars(&fb, &zbuf, cam, target)
+    draw_portal(&fb, &zbuf, cam, target, collected == len(pickups), anim_ms)
+    draw_pickups(&fb, &zbuf, cam, target, pickups, anim_ms)
     crosshair(&fb)
 
 fn blocked(x: float, z: float) -> bool:
@@ -409,7 +297,7 @@ fn main():
     texset := gfx_texset_open(win)
     font_id := 0 - 1
     if not is_null(texset):
-        font_id = gfx.load_texture(texset, "../assets/font.png")
+        font_id = gfx.load_texture(texset, "assets/font.png")
 
     audio := gfx_audio_open(22050, 1)
     pickup_beep := gfx.make_beep(22050, 880, 65)
@@ -439,6 +327,7 @@ fn main():
     last_mouse_x := to_i32(0 - 1)
     clock := gfx.clock_start()
     play_frame := 0
+    target := gfx3d.Target(RW, RH)
     gfx.set_title(win, "Tycho Vector Vault")
 
     for frame := 0; frames == 0 or frame < frames; frame += 1:
@@ -523,8 +412,11 @@ fn main():
                         break
             play_frame = play_frame + 1
 
-        cam := Cam(player.x, EYE, player.z, player.yaw)
-        draw_scene(&fb, &zbuf, cam, pickups, collected, play_frame * STEP_MS)
+        eye := gfx3d.Vec3(player.x, EYE, player.z)
+        look := gfx3d.Vec3(player.x + sin(player.yaw), EYE,
+                           player.z + cos(player.yaw))
+        cam := gfx3d.look_at(eye, look, gfx3d.Vec3(0.0, 1.0, 0.0), FOCAL)
+        draw_scene(&fb, &zbuf, cam, target, pickups, collected, play_frame * STEP_MS)
         if mode == MODE_MENU:
             gfx.fill_rect(&fb, RW, 55, 34, RW - 55, RH - 44, gfx.rgb(5, 9, 16))
         if mode == MODE_PAUSE:

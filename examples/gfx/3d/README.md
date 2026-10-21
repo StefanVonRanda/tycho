@@ -7,16 +7,21 @@ events, audio, HUD text, resize transform and presentation.
 
 The renderer runs at 480×270 and `draw_fb` scales that texture into the
 window. Walls, pillars and cells are flat-shaded triangles with a depth buffer;
-`View` keeps the framebuffer letterboxed on resize. The 3D math and scene remain
-example-local: only the source-framebuffer scaling was added to `core:gfx`.
+`View` keeps the framebuffer letterboxed on resize. The shared camera and
+rasterizer now live in `core:gfx3d`; `core:gfx` supplies only the window,
+framebuffer presentation, events, audio and text.
 
 ## Build and play
 
-Assets (the shared font atlas) are one directory up, so run from this directory:
+The font atlas is in `assets/`, so run from this directory:
 
 ```text
 ../../../tychoc1 main.ty --pkg sdl3 -o /tmp/vault
 /tmp/vault
+
+# or package a runnable directory
+sh package.sh
+cd dist && ./vector-vault
 ```
 
 Controls:
@@ -45,20 +50,25 @@ sh run.sh
 ```
 
 `run.sh` builds the game, checks the BMP header under the dummy driver, and runs
-the same program in an Xvfb/X11 window when Xvfb is available.
+the same program in an Xvfb/X11 window when Xvfb is available. The second
+caller's checked lane is `examples/gfx/orbit/run.sh`; `corelib/test/gfx3d` pins
+the depth mapping and near-plane clip numerically.
 
 ## What this adds to the gfx path
 
-- A perspective camera, near-plane rejection, triangle rasterization,
-  barycentric depth interpolation and a full-frame z-buffer, all in Tycho.
-- `draw_fb` now accepts a source framebuffer smaller than the window; the shim
-  caches a streaming texture at that source size and scales it into the
+- `core:gfx3d` owns the perspective camera, near-plane clipping, triangle
+  rasterization, corrected barycentric inverse-depth interpolation and the
+  flat-shaded box/quad primitives. It is pure Tycho: no SDL, handles or
+  pointers.
+- `core:gfx.draw_fb` accepts a source framebuffer smaller than the window; the
+  shim caches a streaming texture at that source size and scales it into the
   destination `FRect`.
 - Key-up events (`Event.kind == 6`) make held movement possible without polling
   SDL from Tycho or adding a callback.
 - The existing `View`, font atlas, audio stream and resource handles are used
   unchanged; no public `ptr`, callback or union is introduced.
 
-This is deliberately a software renderer, not a claim that `core:gfx` has a GPU
-3D API. If a second 3D caller arrives, the renderer/mesh layer is the point to
-extract; one game is not enough evidence for that API.
+The second caller is `examples/gfx/orbit`: a gallery with an orbit camera, which
+is what justified extracting the shared renderer. Flat-shaded triangles are the
+current library contract; textures, meshes, lighting and a GPU backend remain
+out of scope until another caller needs them.

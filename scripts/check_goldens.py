@@ -138,6 +138,7 @@ NO_GOLDEN = {
     "bench/trie/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/window/run.sh": "timing only",
     "examples/gfx/3d/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
+    "examples/gfx/orbit/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
     "examples/gfx/pong/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
     "examples/gfx/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
     "server/run.sh": "asserts HTTP responses from a live daemon, not a recorded stdout",

@@ -41,6 +41,24 @@ scale it. The texture is recreated only when the source dimensions change; the
 pixel buffer grows only when a larger source arrives. The 3D example uses
 480×270 for its z-buffered scene and a `View`-scaled destination at the window.
 
+## Software 3D stays a caller
+
+The 3D path is deliberately **not** part of `core:gfx`. `core:gfx3d` is a pure
+Tycho package that owns the camera basis, near-plane clipping, triangle
+rasterization, barycentric inverse-depth interpolation and a `draw_box`
+primitive. It takes a caller-owned `[int]` framebuffer, `[float]` depth buffer,
+`Target` dimensions and ARGB colours. It imports no SDL and exposes no handle or
+pointer.
+
+`core:gfx` gained only the two things the 3D callers needed: source framebuffer
+scaling in `draw_fb` and key-up events. `examples/gfx/3d` and
+`examples/gfx/orbit` use the shared rasterizer from first-person and orbit
+cameras respectively; that second caller is what justified extracting it.
+
+Flat-shaded triangles are the current contract. Textures, meshes, lighting
+models and a GPU backend are not in `core:gfx3d`; adding them requires another
+real caller first.
+
 ## Threads
 
 Handles are not shared across tasks. The window, renderer, event pump and audio

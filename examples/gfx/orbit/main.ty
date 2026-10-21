@@ -1,0 +1,197 @@
+package main
+
+import "core:gfx"
+import "core:gfx3d"
+import "core:strings"
+import "core:time"
+
+# Second caller for core:gfx3d. It uses a different camera model (orbit/look-at)
+# and a different scene from Vector Vault's first-person renderer.
+
+extern "m" fn sin(x: float) -> float
+extern "m" fn cos(x: float) -> float
+
+extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
+extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
+
+const RW = 480
+const RH = 270
+const WIN_W = 960
+const WIN_H = 540
+const FOCAL = 300.0
+const STEP_MS = 16
+
+struct State:
+    angle: float
+    radius: float
+    auto_rotate: bool
+
+fn reset() -> State:
+    return State(0.4, 7.0, true)
+
+fn draw_floor(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+              target: gfx3d.Target):
+    n := 8
+    for iz := 0; iz < n; iz += 1:
+        z0 := -8.0 + to_float(iz) * 2.0
+        z1 := z0 + 2.0
+        for ix := 0; ix < n; ix += 1:
+            x0 := -8.0 + to_float(ix) * 2.0
+            x1 := x0 + 2.0
+            col := gfx.rgb(16, 35, 48)
+            if (ix + iz) % 2 == 0:
+                col = gfx.rgb(22, 47, 60)
+            gfx3d.draw_quad(&fb, &zbuf, target, cam,
+                            gfx3d.Vec3(x0, 0.0, z0), gfx3d.Vec3(x0, 0.0, z1),
+                            gfx3d.Vec3(x1, 0.0, z1), gfx3d.Vec3(x1, 0.0, z0), col)
+
+fn draw_gallery(fb: inout [int], zbuf: inout [float], cam: gfx3d.Camera,
+                target: gfx3d.Target, anim_ms: int):
+    gfx3d.clear(&fb, &zbuf, target, gfx.rgb(5, 9, 16))
+    draw_floor(&fb, &zbuf, cam, target)
+
+    # A pedestal and four fixed exhibits.
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 0.0, 0.35, 0.0, 2.4, 0.7, 2.4, gfx.rgb(68, 86, 112))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 0.0, 1.35, 0.0, 1.5, 1.5, 1.5, gfx.rgb(170, 95, 220))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 3.5, 1.1, 0.0, 1.4, 1.4, 1.4, gfx.rgb(90, 210, 160))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, -3.5, 1.1, 0.0, 1.4, 1.4, 1.4, gfx.rgb(240, 180, 60))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 0.0, 1.1, 3.5, 1.4, 1.4, 1.4, gfx.rgb(80, 150, 245))
+    gfx3d.draw_box(&fb, &zbuf, target, cam, 0.0, 1.1, -3.5, 1.4, 1.4, 1.4, gfx.rgb(235, 85, 95))
+
+    # A satellite orbits the plinth independently.
+    a := to_float(anim_ms) * 0.001
+    mx := cos(a) * 4.2
+    mz := sin(a) * 4.2
+    my := 2.0 + sin(a * 2.0) * 0.45
+    gfx3d.draw_box(&fb, &zbuf, target, cam, mx, my, mz, 0.55, 0.55, 0.55,
+                   gfx.rgb(255, 225, 120))
+
+fn main():
+    a := args()
+    frames := 0
+    snap := ""
+    headless := false
+    for i := 1; i < len(a); i += 1:
+        if a[i] == "--headless":
+            headless = true
+        if a[i] == "--frames" and i + 1 < len(a):
+            match strings.parse_int(a[i + 1]):
+                Ok(v): frames = v
+                Err(e): pass
+        if a[i] == "--snapshot" and i + 1 < len(a):
+            snap = a[i + 1]
+    if headless and frames == 0:
+        frames = 240
+
+    win := gfx_open(WIN_W, WIN_H, "Tycho Orbital Gallery")
+    if is_null(win):
+        eprintln("orbit: could not open a window (SDL3 required)")
+        return
+    win_w := gfx.window_width(win)
+    win_h := gfx.window_height(win)
+
+    texset := gfx_texset_open(win)
+    font_id := 0 - 1
+    if not is_null(texset):
+        font_id = gfx.load_texture(texset, "../assets/font.png")
+
+    fb := []int
+    zbuf := []float
+    reserve(fb, RW * RH)
+    reserve(zbuf, RW * RH)
+    for i := 0; i < RW * RH; i += 1:
+        push(fb, 0)
+        push(zbuf, 0.0)
+
+    target := gfx3d.Target(RW, RH)
+    state := reset()
+    orbit_l := false
+    orbit_r := false
+    zoom_in := false
+    zoom_out := false
+    play_frame := 0
+
+    for frame := 0; frames == 0 or frame < frames; frame += 1:
+        ev := gfx.poll_event(win)
+        quit := false
+        for ev.kind != 0:
+            if ev.kind == 1:
+                quit = true
+            if ev.kind == 5:
+                win_w = gfx.window_width(win)
+                win_h = gfx.window_height(win)
+            if ev.kind == 2 or ev.kind == 6:
+                down := ev.kind == 2
+                k := ev.key
+                if down:
+                    if k == 27:
+                        quit = true
+                    if k == 112:
+                        state.auto_rotate = not state.auto_rotate
+                    if k == 114:
+                        state = reset()
+                if k == 122:
+                    orbit_l = down
+                if k == 99:
+                    orbit_r = down
+                if k == 1:
+                    zoom_in = down
+                if k == 3:
+                    zoom_out = down
+            ev = gfx.poll_event(win)
+        if quit:
+            break
+
+        if state.auto_rotate:
+            state.angle = state.angle + 0.006
+        if orbit_l:
+            state.angle = state.angle - 0.035
+        if orbit_r:
+            state.angle = state.angle + 0.035
+        if zoom_in:
+            state.radius = state.radius - 0.06
+        if zoom_out:
+            state.radius = state.radius + 0.06
+        if state.radius < 3.0:
+            state.radius = 3.0
+        if state.radius > 12.0:
+            state.radius = 12.0
+        play_frame = play_frame + 1
+
+        eye := gfx3d.Vec3(cos(state.angle) * state.radius, 3.2,
+                          sin(state.angle) * state.radius)
+        look := gfx3d.Vec3(0.0, 1.2, 0.0)
+        cam := gfx3d.look_at(eye, look, gfx3d.Vec3(0.0, 1.0, 0.0), FOCAL)
+        anim_ms := play_frame * STEP_MS
+        draw_gallery(&fb, &zbuf, cam, target, anim_ms)
+
+        view := gfx.fit_view(RW, RH, win_w, win_h)
+        dst := gfx.view_rect(view, 0, 0, RW, RH)
+        rc := gfx.begin(win)
+        if rc == 0:
+            rc = gfx.draw_fb(win, fb, RW, RH, dst)
+        if rc == 0 and font_id >= 0:
+            gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 8,
+                                        "ORBITAL GALLERY", 18, 120, 230, 220)
+            gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 32,
+                                        "SECOND CALLER FOR core:gfx3d", 9, 130, 160, 175)
+            status := "AUTO"
+            if not state.auto_rotate:
+                status = "PAUSED"
+            gfx.draw_text_view(view, texset, font_id, 8, RH - 18,
+                               "Z/C ORBIT  W/S ZOOM  " + status, 9, 170, 210, 220)
+            gfx.draw_text_view(view, texset, font_id, RW - 8 -
+                               gfx.text_width("P PAUSE  R RESET  ESC QUIT", 9),
+                               RH - 18, "P PAUSE  R RESET  ESC QUIT", 9, 170, 210, 220)
+        if rc == 0:
+            rc = gfx.present(win)
+        if rc != 0:
+            eprintln("orbit: frame failed: " + str(rc))
+            break
+        if not headless:
+            time.sleep_ms(16)
+
+    if snap != "":
+        gfx.save_bmp(snap, fb, RW, RH)
+    close(texset)
+    close(win)

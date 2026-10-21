@@ -1,0 +1,240 @@
+# corelib: pure software 3D camera and rasterizer. Import with `import "core:gfx3d"`.
+#
+# This package has no SDL, handles or pointers. A caller owns the framebuffer,
+# depth buffer, target dimensions and colours; core:gfx supplies the window and
+# presents the result. Flat-_shaded triangles only: colours are ARGB ints.
+package gfx3d
+
+const NEAR = 0.08
+
+struct Vec3:
+    x: float
+    y: float
+    z: float
+
+struct Camera:
+    eye: Vec3
+    right: Vec3
+    up: Vec3
+    forward: Vec3
+    focal: float
+
+struct Target:
+    w: int
+    h: int
+
+struct SVert:
+    x: float
+    y: float
+    invz: float
+    ok: bool
+
+fn _vsub(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+
+fn _vcross(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.y * b.z - a.z * b.y,
+                a.z * b.x - a.x * b.z,
+                a.x * b.y - a.y * b.x)
+
+fn _vdot(a: Vec3, b: Vec3) -> float:
+    return a.x * b.x + a.y * b.y + a.z * b.z
+
+fn _vnorm(v: Vec3) -> Vec3:
+    l := sqrt(_vdot(v, v))
+    if l < 0.000001:
+        return Vec3(0.0, 0.0, 0.0)
+    return Vec3(v.x / l, v.y / l, v.z / l)
+
+# Build an orthonormal camera basis looking from `eye` at `target`.
+# `focal` is in pixels, so a 480-wide target with focal 300 has a wide,
+# game-like field of view.
+fn look_at(eye: Vec3, target: Vec3, up: Vec3, focal: float) -> Camera:
+    f := _vnorm(_vsub(target, eye))
+    r := _vnorm(_vcross(up, f))
+    u := _vcross(f, r)
+    return Camera(eye, r, u, f, focal)
+
+fn _to_view(cam: Camera, p: Vec3) -> Vec3:
+    d := _vsub(p, cam.eye)
+    return Vec3(_vdot(d, cam.right), _vdot(d, cam.up), _vdot(d, cam.forward))
+
+fn _project_view(cam: Camera, target: Target, v: Vec3) -> SVert:
+    if v.z <= NEAR:
+        return SVert(0.0, 0.0, 0.0, false)
+    invz := 1.0 / v.z
+    sx := to_float(target.w) * 0.5 + v.x * cam.focal * invz
+    sy := to_float(target.h) * 0.5 - v.y * cam.focal * invz
+    return SVert(sx, sy, invz, true)
+
+fn project(cam: Camera, target: Target, p: Vec3) -> SVert:
+    return _project_view(cam, target, _to_view(cam, p))
+
+fn _minf(a: float, b: float) -> float:
+    if a < b:
+        return a
+    return b
+
+fn _maxf(a: float, b: float) -> float:
+    if a > b:
+        return a
+    return b
+
+fn _shade(color: int, factor: float) -> int:
+    r := (color / 65536) % 256
+    gc := (color / 256) % 256
+    b := color % 256
+    rr := to_int(to_float(r) * factor)
+    gg := to_int(to_float(gc) * factor)
+    bb := to_int(to_float(b) * factor)
+    if rr < 0:
+        rr = 0
+    if rr > 255:
+        rr = 255
+    if gg < 0:
+        gg = 0
+    if gg > 255:
+        gg = 255
+    if bb < 0:
+        bb = 0
+    if bb > 255:
+        bb = 255
+    return 4278190080 + rr * 65536 + gg * 256 + bb
+
+fn screen_tri(fb: inout [int], zbuf: inout [float], target: Target,
+              a: SVert, b: SVert, c: SVert, color: int):
+    if not a.ok or not b.ok or not c.ok:
+        return
+    area := (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+    if fabs(area) < 0.001:
+        return
+
+    minxf := _minf(a.x, _minf(b.x, c.x))
+    maxxf := _maxf(a.x, _maxf(b.x, c.x))
+    minyf := _minf(a.y, _minf(b.y, c.y))
+    maxyf := _maxf(a.y, _maxf(b.y, c.y))
+    if maxxf < 0.0 or minxf > to_float(target.w - 1) or maxyf < 0.0 or minyf > to_float(target.h - 1):
+        return
+    minx := to_int(minxf)
+    maxx := to_int(maxxf) + 1
+    miny := to_int(minyf)
+    maxy := to_int(maxyf) + 1
+    if minx < 0:
+        minx = 0
+    if miny < 0:
+        miny = 0
+    if maxx > target.w - 1:
+        maxx = target.w - 1
+    if maxy > target.h - 1:
+        maxy = target.h - 1
+    if minx > maxx or miny > maxy:
+        return
+
+    inv_area := 1.0 / area
+    for py := miny; py <= maxy; py += 1:
+        pyf := to_float(py) + 0.5
+        base := py * target.w
+        for px := minx; px <= maxx; px += 1:
+            pxf := to_float(px) + 0.5
+            e0 := (b.x - a.x) * (pyf - a.y) - (b.y - a.y) * (pxf - a.x)
+            e1 := (c.x - b.x) * (pyf - b.y) - (c.y - b.y) * (pxf - b.x)
+            e2 := (a.x - c.x) * (pyf - c.y) - (a.y - c.y) * (pxf - c.x)
+            if area > 0.0:
+                if e0 < 0.0 or e1 < 0.0 or e2 < 0.0:
+                    continue
+            else:
+                if e0 > 0.0 or e1 > 0.0 or e2 > 0.0:
+                    continue
+            # e0 is opposite A, e1 opposite B, e2 opposite C.
+            invz := (e1 * a.invz + e2 * b.invz + e0 * c.invz) * inv_area
+            idx := base + px
+            if invz > zbuf[idx]:
+                zbuf[idx] = invz
+                fb[idx] = color
+
+fn draw_view_tri(fb: inout [int], zbuf: inout [float], target: Target,
+                 cam: Camera, a: Vec3, b: Vec3, c: Vec3, color: int):
+    screen_tri(&fb, &zbuf, target, _project_view(cam, target, a),
+               _project_view(cam, target, b), _project_view(cam, target, c), color)
+
+fn _clip_edge(a: Vec3, b: Vec3) -> Vec3:
+    t := (NEAR - a.z) / (b.z - a.z)
+    return Vec3(a.x + (b.x - a.x) * t,
+                a.y + (b.y - a.y) * t,
+                NEAR + 0.0001)
+
+fn draw_tri(fb: inout [int], zbuf: inout [float], target: Target, cam: Camera, a: Vec3, b: Vec3, c: Vec3, color: int):
+    va := _to_view(cam, a)
+    vb := _to_view(cam, b)
+    vc := _to_view(cam, c)
+    ain := va.z > NEAR
+    bin := vb.z > NEAR
+    cin := vc.z > NEAR
+    if ain and bin and cin:
+        draw_view_tri(&fb, &zbuf, target, cam, va, vb, vc, color)
+        return
+    if not ain and not bin and not cin:
+        return
+    if ain and bin:
+        ac := _clip_edge(va, vc)
+        bc := _clip_edge(vb, vc)
+        draw_view_tri(&fb, &zbuf, target, cam, va, vb, bc, color)
+        draw_view_tri(&fb, &zbuf, target, cam, va, bc, ac, color)
+        return
+    if ain and cin:
+        ab := _clip_edge(va, vb)
+        cb := _clip_edge(vc, vb)
+        draw_view_tri(&fb, &zbuf, target, cam, va, ab, cb, color)
+        draw_view_tri(&fb, &zbuf, target, cam, va, cb, vc, color)
+        return
+    if bin and cin:
+        ab := _clip_edge(va, vb)
+        ca := _clip_edge(vc, va)
+        draw_view_tri(&fb, &zbuf, target, cam, vb, vc, ca, color)
+        draw_view_tri(&fb, &zbuf, target, cam, vb, ca, ab, color)
+        return
+    if ain:
+        ab := _clip_edge(va, vb)
+        ac := _clip_edge(va, vc)
+        draw_view_tri(&fb, &zbuf, target, cam, va, ab, ac, color)
+        return
+    if bin:
+        ba := _clip_edge(vb, va)
+        bc := _clip_edge(vb, vc)
+        draw_view_tri(&fb, &zbuf, target, cam, vb, bc, ba, color)
+        return
+    ca := _clip_edge(vc, va)
+    cb := _clip_edge(vc, vb)
+    draw_view_tri(&fb, &zbuf, target, cam, vc, ca, cb, color)
+
+fn draw_quad(fb: inout [int], zbuf: inout [float], target: Target, cam: Camera, a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: int):
+    draw_tri(&fb, &zbuf, target, cam, a, b, c, color)
+    draw_tri(&fb, &zbuf, target, cam, a, c, d, color)
+
+fn draw_box(fb: inout [int], zbuf: inout [float], target: Target, cam: Camera, cx: float, cy: float, cz: float, sx: float, sy: float, sz: float, color: int):
+    x0 := cx - sx * 0.5
+    x1 := cx + sx * 0.5
+    y0 := cy - sy * 0.5
+    y1 := cy + sy * 0.5
+    z0 := cz - sz * 0.5
+    z1 := cz + sz * 0.5
+    top := _shade(color, 1.0)
+    front := _shade(color, 0.78)
+    side := _shade(color, 0.62)
+    back := _shade(color, 0.45)
+    draw_quad(&fb, &zbuf, target, cam, Vec3(x0, y1, z0), Vec3(x0, y1, z1),
+              Vec3(x1, y1, z1), Vec3(x1, y1, z0), top)
+    draw_quad(&fb, &zbuf, target, cam, Vec3(x0, y0, z1), Vec3(x1, y0, z1),
+              Vec3(x1, y1, z1), Vec3(x0, y1, z1), front)
+    draw_quad(&fb, &zbuf, target, cam, Vec3(x1, y0, z0), Vec3(x0, y0, z0),
+              Vec3(x0, y1, z0), Vec3(x1, y1, z0), back)
+    draw_quad(&fb, &zbuf, target, cam, Vec3(x0, y0, z0), Vec3(x0, y0, z1),
+              Vec3(x0, y1, z1), Vec3(x0, y1, z0), side)
+    draw_quad(&fb, &zbuf, target, cam, Vec3(x1, y0, z1), Vec3(x1, y0, z0),
+              Vec3(x1, y1, z0), Vec3(x1, y1, z1), side)
+
+fn clear(fb: inout [int], zbuf: inout [float], target: Target, color: int):
+    n := target.w * target.h
+    for i := 0; i < n; i += 1:
+        fb[i] = color
+        zbuf[i] = 0.0
