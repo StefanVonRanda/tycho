@@ -310,9 +310,9 @@ where the loop bound proves an upper bound and over-reserving is safe.
 `tests/presize_loop.ty` pins both shapes.
 
 
-## Game-data experiments (post-0.8.9, not shipped)
+## Data-layout experiments (post-0.8.9, not shipped)
 
-These are the first checks for the Goose-inspired game-data work. They are
+These are the first checks for the Goose-inspired data-layout work. They are
 observations, not language changes.
 
 Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395). Compiler:
@@ -371,4 +371,4 @@ translator build. It is a build-dependency convenience, not a benchmark.
 Items 4–5 are deliberately not shipped. A fourth caller is only useful if a
 physics or UI requirement forces a shared package; the current three software
 callers and two GPU callers do not. References or inline variable-size records
-are a language-model change, and the game-data measurements do not support one.
+are a language-model change, and the entity/layout measurements do not support one.

@@ -1,6 +1,6 @@
 # Rotor Run — third caller for `core:gfx3d`
 
-A third-person drone game and the third real caller for the software 3D
+A third-person drone example and the third real caller for the software 3D
 renderer. It uses the `Mesh` and `Place` layer in `core:gfx3d` for a multi-part
 drone model and a spinning rotor, with a follow camera rather than Vector
 Vault's first-person camera or Orbit's gallery camera.

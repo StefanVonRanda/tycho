@@ -1,7 +1,7 @@
 # Vector Vault — software 3D over `core:gfx`
 
 A first-person collectathon built to answer one question: **can `core:gfx`
-carry a real 3D game without a new GPU/3D escape hatch?** The scene is a
+carry a real 3D workload without a new GPU/3D escape hatch?** The scene is a
 z-buffered software renderer written in Tycho; `core:gfx` supplies the window,
 events, audio, HUD text, resize transform and presentation.
 
@@ -51,8 +51,8 @@ SDL_VIDEODRIVER=dummy /tmp/vault --headless --frames 60 \
 sh run.sh
 ```
 
-`run.sh` builds the game, checks the BMP header under the dummy driver, and runs
-the same program in an Xvfb/X11 window when Xvfb is available. `corelib/test/gfx3d`
+`run.sh` builds the example, checks the BMP header under the dummy driver, and
+runs the same program in an Xvfb/X11 window when Xvfb is available. `corelib/test/gfx3d`
 pins the depth mapping and near-plane clip numerically; `examples/gfx/rotor/run.sh`
 checks the third caller and the GPU path.
 
@@ -71,7 +71,7 @@ checks the third caller and the GPU path.
   unchanged; no public `ptr`, callback or union is introduced.
 
 The second caller is `examples/gfx/orbit`: a gallery with an orbit camera. The
-third is `examples/gfx/rotor`: a third-person drone game using `Mesh`/`Place`.
+third is `examples/gfx/rotor`: a third-person drone example using `Mesh`/`Place`.
 Together they justified extracting the shared renderer and mesh layer.
 Flat-shaded triangles are the current library contract; textures, lighting and a
 GPU backend remain out of scope until another caller needs them.

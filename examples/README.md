@@ -55,12 +55,12 @@ Each subdirectory is a multi-file program with its own README or `run.sh`.
 | [`fetch/`](fetch) | A CLI that GETs a URL, summarizes it, and caches the result. |
 | [`sqlite/`](sqlite) | FFI against a real C library — in-memory SQLite. |
 | [`raytrace/`](raytrace) / [`mandelbrot/`](mandelbrot) | Float-heavy compute; `mandelbrot` uses a 16-core `parallel for`. |
-| [`life/`](life) / [`snake/`](snake) / [`minesweeper/`](minesweeper) | Games dogfooding recursion and mutable grids over the arena model. |
+| [`life/`](life) / [`snake/`](snake) / [`minesweeper/`](minesweeper) | Interactive examples dogfooding recursion and mutable grids over the arena model. |
 | [`gfx/`](gfx) | Shared gfx engine + windowed Snake: Tycho RGBA framebuffer, SDL3 shim, fonts, textures, audio; headless BMP test. |
 | [`gfx/pong/`](gfx/pong) | Second caller for the shared engine: Pong, same shim and font atlas. |
-| [`gfx/3d/`](gfx/3d) | Software 3D first-person game: z-buffered triangle renderer over the gfx framebuffer, scaled with `View`. |
+| [`gfx/3d/`](gfx/3d) | Software 3D first-person example: z-buffered triangle renderer over the gfx framebuffer, scaled with `View`. |
 | [`gfx/orbit/`](gfx/orbit) | Second `core:gfx3d` caller: orbit camera and gallery scene. |
-| [`gfx/rotor/`](gfx/rotor) | Third `core:gfx3d` caller: third-person game with `Mesh`/`Place` drone model and spinning rotor. |
+| [`gfx/rotor/`](gfx/rotor) | Third `core:gfx3d` caller: third-person example with `Mesh`/`Place` drone model and spinning rotor. |
 | [`gfx/gpu/`](gfx/gpu) | First SDL_GPU probe: depth-tested triangle through `core:gfxgpu`. |
 
 ## Core library

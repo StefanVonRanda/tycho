@@ -1,7 +1,8 @@
 # gfx — windowed Snake over SDL3
 
-A first proof of the Tycho game path. The game state and the RGBA framebuffer
-are Tycho values; the `core:gfx` shim only owns the SDL window, the streaming texture,
+A validation program for Tycho's window, framebuffer and FFI path. The Snake
+state and the RGBA framebuffer are Tycho values; the `core:gfx` shim only owns
+the SDL window, the streaming texture,
 key polling and presentation. The reusable layer lives in `core:gfx`; `pong/` is
 the second caller that forces the shared API shape.
 
@@ -39,7 +40,7 @@ skips the 16 ms frame sleep. A `--snapshot PATH` writes a 32-bit BMP through
 
 ## What this proves
 
-- Tycho can own a full RGBA framebuffer (`[int]`), draw a game frame, and hand
+- Tycho can own a full RGBA framebuffer (`[int]`), draw a frame, and hand
   it to C as a pointer + length with the existing FFI.
 - SDL3 opens a real window and uses its OpenGL renderer; the shim reports
   `video=... renderer=...` on startup. On this box the Weston/GL path reports
@@ -65,8 +66,8 @@ skips the 16 ms frame sleep. A `--snapshot PATH` writes a 32-bit BMP through
   `Anim`/`anim_frame` path and drawn over the food cell.
 - `assets/font.png` is a 16×6 glyph atlas (32-px cells). It is decoded by
   `core:image`, uploaded as an SDL texture, and each glyph is drawn with its own
-  source/destination `FRect`: menu, score, pause and game-over text all use it.
-  No SDL_ttf is involved.
+  source/destination `FRect`: menu, score, pause and terminal-state text all
+  use it. No SDL_ttf is involved.
 - The finished loop has a title menu, three speeds, pause/resume, restart,
   high-score persistence, fixed-timestep simulation, and resize letterboxing.
 

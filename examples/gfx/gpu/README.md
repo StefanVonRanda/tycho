@@ -2,7 +2,7 @@
 
 The first real SDL_GPU path: a depth-tested, shader-driven triangle presented
 through a GPU swapchain while `core:gfx` still owns the window and input. It is
-a renderer probe, not yet the full game port.
+a renderer probe, not yet the full example port.
 
 ## Build the shader translator once
 

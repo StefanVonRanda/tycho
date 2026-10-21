@@ -1,7 +1,7 @@
 package main
 
-# AoS vs SoA for a game-entity update loop. Both layouts are contiguous in
-# Tycho; SoA separates fields when a system touches only some of them.
+# AoS vs SoA for an entity update loop. Both layouts are contiguous in Tycho;
+# SoA separates fields when a system touches only some of them.
 struct Particle:
     x: int
     y: int

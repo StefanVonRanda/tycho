@@ -1,4 +1,4 @@
-# A tiny expression-language interpreter in Tycho — dogfooding the axes the games
+# A tiny expression-language interpreter in Tycho — dogfooding the axes the examples
 # never touched: custom RECURSIVE enums (a Tok stream and an Expr AST), nested and
 # exhaustive `match`, and the Result / or_return error pipeline (parse and eval
 # errors propagate as Err instead of crashing). Lexer -> recursive-descent parser

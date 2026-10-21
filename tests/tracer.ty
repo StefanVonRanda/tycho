@@ -1,5 +1,5 @@
 # A tiny ray tracer in Tycho — dogfooding the float/math side of the language
-# (the grid games were all-integer). Pure tycho: sqrt is a builtin, no FFI/shim.
+# (the grid examples were all-integer). Pure tycho: sqrt is a builtin, no FFI/shim.
 # Vectors are value-semantic structs returned by value; the arena reclaims the
 # per-pixel transients. Renders a few diffuse-shaded spheres on a ground plane
 # under a sky gradient.

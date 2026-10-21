@@ -64,7 +64,7 @@ fn _vnorm(v: Vec3) -> Vec3:
 
 # Build an orthonormal camera basis looking from `eye` at `target`.
 # `focal` is in pixels, so a 480-wide target with focal 300 has a wide,
-# game-like field of view.
+# real-time field of view.
 fn look_at(eye: Vec3, target: Vec3, up: Vec3, focal: float) -> Camera:
     f := _vnorm(_vsub(target, eye))
     r := _vnorm(_vcross(up, f))

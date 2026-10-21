@@ -18,7 +18,8 @@ The claim is sharper:
 > at 40% of C's memory on tree workloads, with no GC and no reference
 > counting (§4, [performance.md](performance.md)).**
 
-It is data-oriented: built for a domain (see §6), not general-purpose.
+It is a general-purpose systems language with a data-oriented core: the same
+value model is meant for compilers, data tools, services and real-time loops.
 
 Measurement method: cross-language *ratios* are the claim, not absolute times,
 and every fixture is checked under sanitizers against its golden output. See
@@ -277,9 +278,10 @@ The verdict:
   graphs, reference-cyclic structures) it is a poor fit, and no optimization
   changes that — it is the thesis's defining boundary, not a missing feature.
 
-So: data-oriented, not general-purpose, and not trying to be. Within its domain
-the wager holds — *value semantics is precisely the constraint that lets the arenas
-disappear* — and the domain is large and real.
+So: general-purpose in scope, data-oriented in its defaults. The boundary is
+shared-mutable-graph programs, not an application domain. Within that scope the
+wager holds — *value semantics is precisely the constraint that lets the arenas
+disappear* — and the scope is large and real.
 
 ## 7. Reproducing the numbers
 

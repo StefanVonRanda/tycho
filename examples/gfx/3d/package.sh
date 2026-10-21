@@ -18,7 +18,7 @@ fi
 LD_LIBRARY_PATH="/usr/local/lib64:/usr/local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export LD_LIBRARY_PATH
 
-# The packaged GPU game carries the shadercross runtime beside the binary.
+# The packaged GPU example carries the shadercross runtime beside the binary.
 # SDL3 itself remains a host dependency.
 RPATH="-Wl,-rpath,\$ORIGIN"
 case "$(uname -s)" in

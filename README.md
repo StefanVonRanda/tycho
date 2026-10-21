@@ -7,12 +7,13 @@
 
 # Tycho
 
-**A data-oriented systems language with automatic memory management from
-lexical scope.** It is built
-for **programs that allocate hard and cannot afford a GC pause** — parsers,
-interpreters, solvers, batch CLIs and long-running services — and its value
-semantics steer data into the flat, index-addressed layouts that data-oriented C
-reaches for on purpose. Every
+**A general-purpose systems language with automatic memory management from
+lexical scope, built around value semantics and data-oriented defaults.** It is
+built for **programs that allocate hard and cannot afford a GC pause** —
+parsers, interpreters, solvers, batch CLIs and long-running services — and its
+value semantics steer data into the flat, index-addressed layouts that
+data-oriented C reaches for on purpose. The scope is general-purpose systems
+work, not a single application niche. Every
 scope owns a memory arena, freed when the scope exits; with no reference type in
 the language, the compiler sees every value's lifetime from the syntax alone and
 inserts every allocation and free itself. No garbage collector, no manual
