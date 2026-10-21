@@ -13,21 +13,37 @@ Metal or D3D12 at runtime. It is not a system package on this machine:
 sh scripts/build-shadercross.sh
 ```
 
-Then set the paths printed by the script. From the repository root:
+The script writes `build/shadercross/env.sh` with the build and runtime paths.
+Source it from the repository root:
 
 ```sh
-export PKG_CONFIG_PATH="$PWD/build/shadercross/lib64/pkgconfig:$PWD/build/shadercross/lib/pkgconfig:$PKG_CONFIG_PATH"
-export LD_LIBRARY_PATH="$PWD/build/shadercross/lib64:$PWD/build/shadercross/lib:$LD_LIBRARY_PATH"
+. build/shadercross/env.sh
 ```
 
-On macOS, use `DYLD_LIBRARY_PATH` instead of `LD_LIBRARY_PATH`.
+On macOS that sets `DYLD_LIBRARY_PATH`; on Linux it sets `LD_LIBRARY_PATH`
+(and `PKG_CONFIG_PATH` on both). If you built the probe before this path was
+wired, either rebuild it after sourcing `env.sh`, or add the dylib directory
+manually:
+
+```sh
+export DYLD_LIBRARY_PATH="$PWD/build/shadercross/lib:$DYLD_LIBRARY_PATH"
+```
+
+Use `find build/shadercross -name 'libSDL3_shadercross*.dylib'` if the prefix
+has a different layout.
 
 ## Build and run
 
 ```text
+. build/shadercross/env.sh
+cd examples/gfx/gpu
 ../../../tychoc1 main.ty --pkg sdl3 -o /tmp/gpuprobe
 /tmp/gpuprobe
 ```
+
+`run.sh` also adds an rpath and sets both loader variables, so its temporary
+binary is directly runnable. On macOS the no-Xvfb branch opens the real display
+instead of skipping.
 
 Or run the checked lane:
 

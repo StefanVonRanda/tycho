@@ -23,7 +23,10 @@ cmake -S "$src" -B "$src/build" \
     -DCMAKE_INSTALL_PREFIX="$prefix"
 cmake --build "$src/build" -j4
 cmake --install "$src/build"
+cat > "$prefix/env.sh" <<EOF
+export PKG_CONFIG_PATH="$prefix/lib64/pkgconfig:$prefix/lib/pkgconfig:\$PKG_CONFIG_PATH"
+export LD_LIBRARY_PATH="$prefix/lib64:$prefix/lib:\$LD_LIBRARY_PATH"
+export DYLD_LIBRARY_PATH="$prefix/lib64:$prefix/lib:\$DYLD_LIBRARY_PATH"
+EOF
 printf '\nSDL_shadercross installed in %s\n' "$prefix"
-printf 'For a build:\n  export PKG_CONFIG_PATH="%s/lib64/pkgconfig:%s/lib/pkgconfig:$PKG_CONFIG_PATH"\n' "$prefix" "$prefix"
-printf 'For Linux run:\n  export LD_LIBRARY_PATH="%s/lib64:%s/lib:$LD_LIBRARY_PATH"\n' "$prefix" "$prefix"
-printf 'For macOS run:\n  export DYLD_LIBRARY_PATH="%s/lib:$DYLD_LIBRARY_PATH"\n' "$prefix"
+printf 'Source it before building/running:\n  . "%s/env.sh"\n' "$prefix"
