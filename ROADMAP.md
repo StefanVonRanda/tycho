@@ -1,6 +1,6 @@
 # Roadmap
 
-Tycho is **0.8.8 — pre-1.0**, and this file is a direction, not a promise of
+Tycho is **0.8.9 — pre-1.0**, and this file is a direction, not a promise of
 dates. Day-to-day work is tracked in [GitHub
 issues](https://github.com/StefanVonRanda/tycho/issues); this file is the
 high-level shape. What 1.0 now requires is [below](#what-10-requires).
@@ -184,7 +184,7 @@ in its text report with a golden update.
 
 ## Compiler optimization phases: widening the domain (2026-10-19)
 
-> **Release scope:** 0.8.8 stays open until **O1–O7** are all in it. O1
+> **Release scope:** 0.8.9 is the 3D/GPU checkpoint. O1
 > (immortal allocation + literal lifetime elision), O2 (read-only
 > pass-by-pointer in the reference compiler), O3 (last-use moves), O4
 > (borrowed slices), O5 (destination passing), O6 (conservative map CoW /

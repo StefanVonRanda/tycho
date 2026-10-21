@@ -12,6 +12,43 @@ gate (`make ci`); `FRICTION n` is entry n in the defect log
 (`docs/internals/FRICTION.md`); a *probe* is a small program written against the
 docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
+## [0.8.9] — 2026-10-21
+
+### 3D and GPU
+
+- **`core:gfx3d`** is a pure software camera and flat-shaded triangle
+  rasterizer: `Vec3`, `Camera`, `Target`, `SVert`, `Tri`, `Mesh` and `Place`;
+  `look_at`, `project`, `draw_tri`, `draw_quad`, `draw_box`, `clear`, `mesh`,
+  `add_tri`, `add_quad`, `add_box` and `draw_mesh`. Near-plane clipping and
+  corrected barycentric inverse-depth interpolation are covered by
+  `corelib/test/gfx3d`.
+- **Three 3D callers ship**: Vector Vault (first-person collectathon), Orbital
+  Gallery (orbit camera), and Rotor Run (third-person `Mesh`/`Place` drone with
+  a spinning rotor). Vector Vault builds a standalone `dist/`.
+- **`core:gfxgpu`** is the first SDL_GPU backend. It creates a device, shaders,
+  depth target and HUD pipeline; camera MVP is a vertex uniform; the HUD is a
+  transparent font-atlas overlay. Rotor Run presents directly to the swapchain
+  on Vulkan and Metal, with the software renderer as fallback.
+- **`scripts/build-shadercross.sh`** builds the pinned SDL_shadercross runtime
+  used to translate committed SPIR-V to the native backend. This is a build
+  dependency for GPU code; the backend is explicitly experimental in 0.8.9.
+
+### Fixed
+
+- Corrected software-3D barycentric depth interpolation, which made cube faces
+  depth-sort against themselves; near-plane clipping now keeps partially
+  visible triangles.
+- `core:image` released its per-decode header while preserving the live-set
+  double-free/use-after-free diagnostics.
+
+### Verification
+
+- `make corelib` — 49 ok; `make parse-check` — 1528 files;
+  `make surface-check` — 486 corelib functions.
+- Three 3D callers and the GPU probe pass headless/X11 checks; the GPU path was
+  run on macOS/Metal and Linux/Vulkan. Valgrind/ASan are clean on the software
+  callers; GPU-driver leak coverage is not a Linux LSan claim.
+
 ## [0.8.8] — 2026-10-21
 
 ### Breaking

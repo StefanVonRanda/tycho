@@ -2,6 +2,9 @@ package main
 
 import "core:gfx"
 import "core:gfx3d"
+import "core:gfxgpu"
+import "core:image"
+import "core:io"
 import "core:strings"
 import "core:time"
 
@@ -13,6 +16,9 @@ extern "m" fn cos(x: float) -> float
 extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
 extern fn gfx_audio_open(rate: int, channels: int) -> gfx.Audio
 extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
+extern fn gfxgpu_open(w: gfx.Window) -> gfxgpu.Gpu
+extern fn gfxgpu_frame_scene(g: gfxgpu.Gpu, verts: [float], mvp: [float],
+                             overlay: bytes, w: int, h: int) -> int
 
 const RW = 480
 const RH = 270
@@ -270,6 +276,222 @@ fn step_game(p: inout Player, pickups: inout [Pickup],
     play_ms = play_ms + STEP_MS
     return picked
 
+fn gpu_build_static() -> gfx3d.Mesh:
+    m := gfx3d.mesh()
+    n := 10
+    for iz := 0; iz < n; iz += 1:
+        z0 := 0.0 - ARENA + to_float(iz) * TILE
+        z1 := z0 + TILE
+        for ix := 0; ix < n; ix += 1:
+            x0 := 0.0 - ARENA + to_float(ix) * TILE
+            x1 := x0 + TILE
+            col := gfx.rgb(18, 43, 48)
+            if (ix + iz) % 2 == 0:
+                col = gfx.rgb(24, 55, 62)
+            gfx3d.add_quad(&m, gfx3d.Vec3(x0, 0.0, z0), gfx3d.Vec3(x0, 0.0, z1),
+                           gfx3d.Vec3(x1, 0.0, z1), gfx3d.Vec3(x1, 0.0, z0), col)
+    for i := 0; i < n; i += 1:
+        a := 0.0 - ARENA + to_float(i) * TILE
+        b := a + TILE
+        col := gfx.rgb(38, 68, 82)
+        if i % 2 == 0:
+            col = gfx.rgb(32, 59, 73)
+        gfx3d.add_quad(&m, gfx3d.Vec3(a, 0.0, 0.0 - ARENA),
+                       gfx3d.Vec3(b, 0.0, 0.0 - ARENA),
+                       gfx3d.Vec3(b, WALL_H, 0.0 - ARENA),
+                       gfx3d.Vec3(a, WALL_H, 0.0 - ARENA), col)
+        gfx3d.add_quad(&m, gfx3d.Vec3(a, 0.0, ARENA),
+                       gfx3d.Vec3(b, 0.0, ARENA),
+                       gfx3d.Vec3(b, WALL_H, ARENA),
+                       gfx3d.Vec3(a, WALL_H, ARENA), col)
+        gfx3d.add_quad(&m, gfx3d.Vec3(0.0 - ARENA, 0.0, a),
+                       gfx3d.Vec3(0.0 - ARENA, 0.0, b),
+                       gfx3d.Vec3(0.0 - ARENA, WALL_H, b),
+                       gfx3d.Vec3(0.0 - ARENA, WALL_H, a), col)
+        gfx3d.add_quad(&m, gfx3d.Vec3(ARENA, 0.0, a),
+                       gfx3d.Vec3(ARENA, 0.0, b),
+                       gfx3d.Vec3(ARENA, WALL_H, b),
+                       gfx3d.Vec3(ARENA, WALL_H, a), col)
+    gfx3d.add_box(&m, -4.0, 1.2, 2.0, 1.8, 2.4, 1.8, gfx.rgb(62, 88, 105))
+    gfx3d.add_box(&m, 4.0, 1.2, -2.0, 1.8, 2.4, 1.8, gfx.rgb(72, 78, 105))
+    gfx3d.add_box(&m, 3.0, 1.2, 4.5, 1.8, 2.4, 1.8, gfx.rgb(62, 100, 88))
+    return m
+
+fn gpu_build_dynamic(pickups: [Pickup], collected: int, anim_ms: int) -> gfx3d.Mesh:
+    m := gfx3d.mesh()
+    for i := 0; i < len(pickups); i += 1:
+        if not pickups[i].taken:
+            bob := sin(to_float(anim_ms) * 0.004 + to_float(i) * 0.8) * 0.12
+            gfx3d.add_box(&m, pickups[i].x, 1.1 + bob, pickups[i].z,
+                          0.46, 0.46, 0.46, gfx.rgb(255, 182, 38))
+            gfx3d.add_box(&m, pickups[i].x, 1.1 + bob, pickups[i].z,
+                          0.24, 0.24, 0.24, gfx.rgb(255, 242, 170))
+    pulse := 0.62 + 0.38 * sin(to_float(anim_ms) * 0.006)
+    col := gfx.rgb(48, 68, 82)
+    if collected == len(pickups):
+        col = shade(gfx.rgb(70, 255, 155), pulse)
+    gfx3d.add_quad(&m, gfx3d.Vec3(-1.15, 0.0, ARENA - 0.16),
+                   gfx3d.Vec3(-0.85, 0.0, ARENA - 0.16),
+                   gfx3d.Vec3(-0.85, 2.9, ARENA - 0.16),
+                   gfx3d.Vec3(-1.15, 2.9, ARENA - 0.16), col)
+    gfx3d.add_quad(&m, gfx3d.Vec3(0.85, 0.0, ARENA - 0.16),
+                   gfx3d.Vec3(1.15, 0.0, ARENA - 0.16),
+                   gfx3d.Vec3(1.15, 2.9, ARENA - 0.16),
+                   gfx3d.Vec3(0.85, 2.9, ARENA - 0.16), col)
+    gfx3d.add_quad(&m, gfx3d.Vec3(-1.15, 2.6, ARENA - 0.16),
+                   gfx3d.Vec3(1.15, 2.6, ARENA - 0.16),
+                   gfx3d.Vec3(1.15, 2.9, ARENA - 0.16),
+                   gfx3d.Vec3(-1.15, 2.9, ARENA - 0.16), col)
+    return m
+
+fn gpu_push_vertex(verts: inout [float], p: gfx3d.Vec3, color: int):
+    push(verts, p.x)
+    push(verts, p.y)
+    push(verts, p.z)
+    push(verts, to_float((color / 65536) % 256) / 255.0)
+    push(verts, to_float((color / 256) % 256) / 255.0)
+    push(verts, to_float(color % 256) / 255.0)
+
+fn gpu_append_mesh(verts: inout [float], m: gfx3d.Mesh):
+    for i := 0; i < len(m.tris); i += 1:
+        t := m.tris[i]
+        gpu_push_vertex(&verts, t.a, t.color)
+        gpu_push_vertex(&verts, t.b, t.color)
+        gpu_push_vertex(&verts, t.c, t.color)
+
+fn gpu_vertices(static_mesh: gfx3d.Mesh, pickups: [Pickup], collected: int,
+                anim_ms: int) -> [float]:
+    verts := []float
+    gpu_append_mesh(&verts, static_mesh)
+    dynamic := gpu_build_dynamic(pickups, collected, anim_ms)
+    gpu_append_mesh(&verts, dynamic)
+    return verts
+
+fn gpu_build_mvp(cam: gfx3d.Camera, target: gfx3d.Target) -> [float]:
+    near := 0.1
+    far := 100.0
+    sw := 2.0 * cam.focal / to_float(target.w)
+    sh := 2.0 * cam.focal / to_float(target.h)
+    er := cam.eye.x * cam.right.x + cam.eye.y * cam.right.y + cam.eye.z * cam.right.z
+    eu := cam.eye.x * cam.up.x + cam.eye.y * cam.up.y + cam.eye.z * cam.up.z
+    ef := cam.eye.x * cam.forward.x + cam.eye.y * cam.forward.y + cam.eye.z * cam.forward.z
+    pf := far / (far - near)
+    m := []float
+    r0x := sw * cam.right.x
+    r0y := sw * cam.right.y
+    r0z := sw * cam.right.z
+    r0w := 0.0 - sw * er
+    r1x := sh * cam.up.x
+    r1y := sh * cam.up.y
+    r1z := sh * cam.up.z
+    r1w := 0.0 - sh * eu
+    r2x := pf * cam.forward.x
+    r2y := pf * cam.forward.y
+    r2z := pf * cam.forward.z
+    r2w := 0.0 - pf * ef - far * near / (far - near)
+    r3x := cam.forward.x
+    r3y := cam.forward.y
+    r3z := cam.forward.z
+    r3w := 0.0 - ef
+    push(m, r0x)
+    push(m, r1x)
+    push(m, r2x)
+    push(m, r3x)
+    push(m, r0y)
+    push(m, r1y)
+    push(m, r2y)
+    push(m, r3y)
+    push(m, r0z)
+    push(m, r1z)
+    push(m, r2z)
+    push(m, r3z)
+    push(m, r0w)
+    push(m, r1w)
+    push(m, r2w)
+    push(m, r3w)
+    return m
+
+fn ov_rect(ov: inout [int], w: int, x0: int, y0: int, x1: int, y1: int, color: int):
+    for y := y0; y < y1; y += 1:
+        base := y * w
+        for x := x0; x < x1; x += 1:
+            ov[base + x] = color
+
+fn ov_text(font: image.Image, ov: inout [int], w: int, x: int, y: int,
+           text: string, size: int, r: int, gc: int, b: int):
+    if font.width <= 0 or size <= 0:
+        return
+    advance := size * 3 / 4
+    for i := 0; i < len(text); i += 1:
+        idx := text[i] - 32
+        if idx >= 0 and idx < 96:
+            col := idx % 16
+            row := idx / 16
+            for dy := 0; dy < size; dy += 1:
+                sy := row * 32 + dy * 32 / size
+                dsty := y + dy
+                if dsty >= 0 and dsty < 270:
+                    for dx := 0; dx < size; dx += 1:
+                        sx0 := col * 32 + dx * 32 / size
+                        sx1 := col * 32 + (dx + 1) * 32 / size
+                        if sx1 <= sx0:
+                            sx1 = sx0 + 1
+                        dstx := x + i * advance + dx
+                        if dstx >= 0 and dstx < w:
+                            a := 0
+                            for xx := sx0; xx < sx1; xx += 1:
+                                if xx < font.width:
+                                    aa := font.pixels[(sy * font.width + xx) * 4 + 3]
+                                    if aa > a:
+                                        a = aa
+                            if a > 100:
+                                ov[dsty * w + dstx] = 4278190080 + r * 65536 + gc * 256 + b
+
+fn ov_text_centered(font: image.Image, ov: inout [int], w: int, center_x: int,
+                    y: int, text: string, size: int, r: int, gc: int, b: int):
+    x := center_x - len(text) * (size * 3 / 4) / 2
+    ov_text(font, &ov, w, x, y, text, size, r, gc, b)
+
+fn ov_bytes(ov: [int]) -> bytes:
+    out := []int
+    reserve(out, len(ov) * 4)
+    for i := 0; i < len(ov); i += 1:
+        c := ov[i]
+        push(out, (c / 65536) % 256)
+        push(out, (c / 256) % 256)
+        push(out, c % 256)
+        push(out, (c / 16777216) % 256)
+    return to_bytes(out)
+
+fn build_overlay(font: image.Image, mode: int, collected: int, play_ms: int,
+                 total: int) -> bytes:
+    ov := []int
+    reserve(ov, RW * RH)
+    for i := 0; i < RW * RH; i += 1:
+        push(ov, 0)
+    if mode == MODE_MENU:
+        ov_rect(&ov, RW, 55, 34, RW - 55, RH - 44, gfx.rgb(5, 9, 16))
+        ov_text_centered(font, &ov, RW, RW / 2, 44, "VECTOR VAULT", 38, 100, 245, 160)
+        ov_text_centered(font, &ov, RW, RW / 2, 96, "COLLECT 8 CELLS, THEN FIND THE EXIT", 11, 190, 220, 225)
+        ov_text_centered(font, &ov, RW, RW / 2, 122, "SPACE TO START", 20, 255, 210, 80)
+        ov_text_centered(font, &ov, RW, RW / 2, 158, "WASD MOVE   Z/C TURN   MOUSE LOOK", 10, 150, 180, 190)
+        ov_text_centered(font, &ov, RW, RW / 2, 178, "P PAUSE   R RESTART   ESC QUIT", 10, 150, 180, 190)
+    elif mode == MODE_PLAY or mode == MODE_PAUSE:
+        cells := "CELLS " + str(collected) + "/" + str(total)
+        timer := "TIME " + str(play_ms / 1000) + "S"
+        ov_text(font, &ov, RW, 8, 6, cells, 12, 170, 245, 190)
+        ov_text(font, &ov, RW, RW - 8 - len(timer) * 9, 6, timer, 12, 170, 245, 190)
+        if mode == MODE_PAUSE:
+            ov_rect(&ov, RW, 82, 92, RW - 82, 192, gfx.rgb(5, 9, 16))
+            ov_text_centered(font, &ov, RW, RW / 2, 112, "PAUSED", 30, 255, 210, 80)
+            ov_text_centered(font, &ov, RW, RW / 2, 154, "SPACE RESUME   R RESTART   ESC QUIT", 10, 170, 200, 210)
+    elif mode == MODE_WIN:
+        ov_rect(&ov, RW, 82, 78, RW - 82, 208, gfx.rgb(5, 9, 16))
+        ov_text_centered(font, &ov, RW, RW / 2, 94, "VAULT CLEARED", 30, 100, 245, 160)
+        ov_text_centered(font, &ov, RW, RW / 2, 136, "TIME " + str(play_ms / 1000) + "S", 18, 255, 210, 80)
+        ov_text_centered(font, &ov, RW, RW / 2, 172, "SPACE OR R TO RUN AGAIN", 10, 170, 200, 210)
+    return ov_bytes(ov)
+
 fn main():
     a := args()
     frames := 0
@@ -298,6 +520,13 @@ fn main():
     font_id := 0 - 1
     if not is_null(texset):
         font_id = gfx.load_texture(texset, "assets/font.png")
+    font_img := image.Image(0, 0, to_bytes([]int))
+    match io.read_bytes("assets/font.png"):
+        Ok(data):
+            match image.decode(data):
+                Ok(img): font_img = img
+                Err(e): pass
+        Err(e): pass
 
     audio := gfx_audio_open(22050, 1)
     pickup_beep := gfx.make_beep(22050, 880, 65)
@@ -328,6 +557,10 @@ fn main():
     clock := gfx.clock_start()
     play_frame := 0
     target := gfx3d.Target(RW, RH)
+    gpu := gfxgpu_open(win)
+    static_mesh := gfx3d.mesh()
+    if not is_null(gpu):
+        static_mesh = gpu_build_static()
     gfx.set_title(win, "Tycho Vector Vault")
 
     for frame := 0; frames == 0 or frame < frames; frame += 1:
@@ -416,59 +649,69 @@ fn main():
         look := gfx3d.Vec3(player.x + sin(player.yaw), EYE,
                            player.z + cos(player.yaw))
         cam := gfx3d.look_at(eye, look, gfx3d.Vec3(0.0, 1.0, 0.0), FOCAL)
-        draw_scene(&fb, &zbuf, cam, target, pickups, collected, play_frame * STEP_MS)
-        if mode == MODE_MENU:
-            gfx.fill_rect(&fb, RW, 55, 34, RW - 55, RH - 44, gfx.rgb(5, 9, 16))
-        if mode == MODE_PAUSE:
-            gfx.fill_rect(&fb, RW, 82, 92, RW - 82, 192, gfx.rgb(5, 9, 16))
-        if mode == MODE_WIN:
-            gfx.fill_rect(&fb, RW, 82, 78, RW - 82, 208, gfx.rgb(5, 9, 16))
+        gpu_ok := false
+        if not is_null(gpu):
+            verts := gpu_vertices(static_mesh, pickups, collected, play_frame * STEP_MS)
+            mvp := gpu_build_mvp(cam, target)
+            overlay := build_overlay(font_img, mode, collected, play_ms, len(pickups))
+            if gfxgpu_frame_scene(gpu, verts, mvp, overlay, RW, RH) == 0:
+                gpu_ok = true
 
-        view := gfx.fit_view(RW, RH, win_w, win_h)
-        dst := gfx.view_rect(view, 0, 0, RW, RH)
-        rc := gfx.begin(win)
-        if rc == 0:
-            rc = gfx.draw_fb(win, fb, RW, RH, dst)
-        if rc == 0 and font_id >= 0:
+        if not gpu_ok:
+            draw_scene(&fb, &zbuf, cam, target, pickups, collected, play_frame * STEP_MS)
             if mode == MODE_MENU:
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 44,
-                                            "VECTOR VAULT", 40, 100, 245, 160)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 96,
-                                            "COLLECT 8 CELLS, THEN FIND THE EXIT", 12, 190, 220, 225)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 122,
-                                            "SPACE TO START", 20, 255, 210, 80)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 158,
-                                            "WASD MOVE   Z/C TURN   MOUSE LOOK", 11, 150, 180, 190)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 178,
-                                            "P PAUSE   R RESTART   ESC QUIT", 11, 150, 180, 190)
-            elif mode == MODE_PLAY or mode == MODE_PAUSE:
-                cells := "CELLS " + str(collected) + "/" + str(len(pickups))
-                timer := "TIME " + str(play_ms / 1000) + "S"
-                gfx.draw_text_view(view, texset, font_id, 8, 6, cells, 12, 170, 245, 190)
-                tw := gfx.text_width(timer, 12)
-                gfx.draw_text_view(view, texset, font_id, RW - 8 - tw, 6, timer, 12, 170, 245, 190)
-                if mode == MODE_PAUSE:
-                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 112,
-                                                "PAUSED", 30, 255, 210, 80)
-                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 154,
-                                                "SPACE RESUME   R RESTART   ESC QUIT", 10, 170, 200, 210)
-            elif mode == MODE_WIN:
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 94,
-                                            "VAULT CLEARED", 30, 100, 245, 160)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 136,
-                                            "TIME " + str(play_ms / 1000) + "S", 18, 255, 210, 80)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 172,
-                                            "SPACE OR R TO RUN AGAIN", 10, 170, 200, 210)
-        if rc == 0:
-            rc = gfx.present(win)
-        if rc != 0:
-            eprintln("3d: frame failed: " + str(rc))
-            break
+                gfx.fill_rect(&fb, RW, 55, 34, RW - 55, RH - 44, gfx.rgb(5, 9, 16))
+            if mode == MODE_PAUSE:
+                gfx.fill_rect(&fb, RW, 82, 92, RW - 82, 192, gfx.rgb(5, 9, 16))
+            if mode == MODE_WIN:
+                gfx.fill_rect(&fb, RW, 82, 78, RW - 82, 208, gfx.rgb(5, 9, 16))
+
+            view := gfx.fit_view(RW, RH, win_w, win_h)
+            dst := gfx.view_rect(view, 0, 0, RW, RH)
+            rc := gfx.begin(win)
+            if rc == 0:
+                rc = gfx.draw_fb(win, fb, RW, RH, dst)
+            if rc == 0 and font_id >= 0:
+                if mode == MODE_MENU:
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 44,
+                                                "VECTOR VAULT", 40, 100, 245, 160)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 96,
+                                                "COLLECT 8 CELLS, THEN FIND THE EXIT", 12, 190, 220, 225)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 122,
+                                                "SPACE TO START", 20, 255, 210, 80)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 158,
+                                                "WASD MOVE   Z/C TURN   MOUSE LOOK", 11, 150, 180, 190)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 178,
+                                                "P PAUSE   R RESTART   ESC QUIT", 11, 150, 180, 190)
+                elif mode == MODE_PLAY or mode == MODE_PAUSE:
+                    cells := "CELLS " + str(collected) + "/" + str(len(pickups))
+                    timer := "TIME " + str(play_ms / 1000) + "S"
+                    gfx.draw_text_view(view, texset, font_id, 8, 6, cells, 12, 170, 245, 190)
+                    tw := gfx.text_width(timer, 12)
+                    gfx.draw_text_view(view, texset, font_id, RW - 8 - tw, 6, timer, 12, 170, 245, 190)
+                    if mode == MODE_PAUSE:
+                        gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 112,
+                                                    "PAUSED", 30, 255, 210, 80)
+                        gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 154,
+                                                    "SPACE RESUME   R RESTART   ESC QUIT", 10, 170, 200, 210)
+                elif mode == MODE_WIN:
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 94,
+                                                "VAULT CLEARED", 30, 100, 245, 160)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 136,
+                                                "TIME " + str(play_ms / 1000) + "S", 18, 255, 210, 80)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 172,
+                                                "SPACE OR R TO RUN AGAIN", 10, 170, 200, 210)
+            if rc == 0:
+                rc = gfx.present(win)
+            if rc != 0:
+                eprintln("3d: frame failed: " + str(rc))
+                break
         if not headless:
             time.sleep_ms(16)
 
     if snap != "":
         gfx.save_bmp(snap, fb, RW, RH)
+    close(gpu)
     close(texset)
     close(audio)
     close(win)

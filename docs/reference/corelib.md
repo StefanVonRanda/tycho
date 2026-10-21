@@ -95,8 +95,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   a host without SDL_shadercross. The public function is `gfxgpu_close`; the
   handle-returning open and frame entry points are declared by the caller, the
   same affine-opener pattern as `core:gfx`. The probe draws a depth-tested
-  triangle; Rotor Run renders its world-space scene with a camera MVP uniform
-  and a GPU HUD overlay directly to the SDL_GPU swapchain. The offscreen
+  triangle; Vector Vault and Rotor Run render world-space scenes with camera MVP
+  uniforms and GPU HUD overlays directly to the SDL_GPU swapchain. The offscreen
   readback variant remains available as a fallback/probe path.
 - **`char`** — byte/char classification & conversion over int byte values (what
   `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,

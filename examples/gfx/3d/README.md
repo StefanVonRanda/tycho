@@ -5,17 +5,19 @@ carry a real 3D game without a new GPU/3D escape hatch?** The scene is a
 z-buffered software renderer written in Tycho; `core:gfx` supplies the window,
 events, audio, HUD text, resize transform and presentation.
 
-The renderer runs at 480×270 and `draw_fb` scales that texture into the
-window. Walls, pillars and cells are flat-shaded triangles with a depth buffer;
-`View` keeps the framebuffer letterboxed on resize. The shared camera and
-rasterizer now live in `core:gfx3d`; `core:gfx` supplies only the window,
-framebuffer presentation, events, audio and text.
+The renderer runs at 480×270. The shared software camera/rasterizer lives in
+`core:gfx3d`; with a GPU device, Vector Vault uses `core:gfxgpu` directly too:
+world-space meshes, a camera MVP uniform, a depth target and the GPU HUD overlay.
+Without a GPU it uses the software path and `core:gfx` presentation.
 
 ## Build and play
 
-The font atlas is in `assets/`, so run from this directory:
+The font atlas is in `assets/`, so run from this directory. The GPU path needs
+the SDL_shadercross runtime; build it with `scripts/build-shadercross.sh` and
+source `build/shadercross/env.sh` first (see `../gpu/README.md`):
 
 ```text
+. build/shadercross/env.sh
 ../../../tychoc1 main.ty --pkg sdl3 -o /tmp/vault
 /tmp/vault
 
@@ -50,9 +52,9 @@ sh run.sh
 ```
 
 `run.sh` builds the game, checks the BMP header under the dummy driver, and runs
-the same program in an Xvfb/X11 window when Xvfb is available. The second
-caller's checked lane is `examples/gfx/orbit/run.sh`; `corelib/test/gfx3d` pins
-the depth mapping and near-plane clip numerically.
+the same program in an Xvfb/X11 window when Xvfb is available. `corelib/test/gfx3d`
+pins the depth mapping and near-plane clip numerically; `examples/gfx/rotor/run.sh`
+checks the third caller and the GPU path.
 
 ## What this adds to the gfx path
 

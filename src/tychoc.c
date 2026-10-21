@@ -59,7 +59,7 @@
 
 #include "tycho_rt_embed.h"   /* defines: static const char *TYCHO_RUNTIME */
 
-#define TYCHO_VERSION "0.8.8"
+#define TYCHO_VERSION "0.8.9"
 
 /* ------------------------------------------------------------------ util */
 
