@@ -13,10 +13,10 @@ Tycho 0.8.9 — pre-1.0, no stability guarantees (see the [README](README.md) fo
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
-**This is the friction release: seven pieces of real-program feedback from the
-`tycho-dupe` probe, plus two benchmarked compiler optimizations.** It adds no
-references and no escape hatches. The language surface is unchanged in shape;
-`surface.lock` moved by addition only.
+**This release combines the seven pieces of real-program feedback from the
+`tycho-dupe` probe with the O1–O7 optimizer sweep, POD struct FFI, and the first
+complete game path.** It adds no references and no escape hatches. The language
+surface is unchanged in shape; `surface.lock` moved by addition only.
 
 ## Breaking
 
@@ -199,12 +199,14 @@ shapes are pinned by `tests/presize_loop.ty`.
 
 ## Verification
 
-`make ci N=0` — CI GREEN (893s). `make test` — 1159 passed, 0 failed.
-`make corelib` — 46 ok. `make parse-check` — all green, 1512 files.
-`make bench` — all benchmarks within bounds under both `./tychoc` and
-`./tychoc1`. The fuzz lanes were run separately at 60 seeds each:
-differential, reject and leak all green. `make asan-self` (inside `make ci`)
-compiled 1167 files with ASan+UBSan clean.
+`make ci N=0` — CI GREEN (3107s, serialized; includes the live server gate).
+`make test` — 1161 passed, 0 failed. `make corelib` — 48 ok.
+`make parse-check` — all green, 1521 files. `make bench` — all benchmarks within
+bounds under both `./tychoc` and `./tychoc1`. The fuzz lanes were run separately
+at 60 seeds each: differential, reject and leak all green. `make asan-self`
+(inside `make ci`) compiled 1169 files with ASan+UBSan clean. The full sweep was
+not recorded by `make status` only because the README changed during the run;
+the code itself was unchanged.
 
 0.8.9 is pre-1.0 and there are **no stability guarantees**: anything here may
 change before 1.0. See [CHANGELOG.md](CHANGELOG.md) for the accumulating record.
