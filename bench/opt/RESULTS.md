@@ -479,3 +479,28 @@ clamped at zero. `TYCHOC_NO_PRESIZE=1` is the control.
 The output is `md5=60212cb8` in every build. This is a builder-allocation fix, not
 a language-change: the reserve is an upper bound, and a `break`, `continue`,
 negative bound or extra push still grows normally.
+
+
+## Canonical while loops (post-0.8.9, kept)
+
+The service-shaped `latency` workload uses the canonical while form rather
+than a three-clause `for`, so it missed both O7 presizing and the monotone-index
+proof. `tychoc1` now recognizes `i := 0; while i < bound; i += 1` for a fresh
+array builder and for reads that stay inside `len(array)`. `TYCHOC_NO_PRESIZE=1`
+and `TYCHOC_NO_BOUNDS_ELISION=1` are the controls.
+
+`bench/latency/latency.ty`, 10M events, medians of five:
+
+| build | peak RSS | wall time |
+|---|---:|---:|
+| original | 4.6 MB | 176 ms |
+| counted presize + while bounds | **2.4 MB** | **126 ms** |
+| C reference | 2.2 MB | 128 ms |
+| no presize | 5.0 MB | 173 ms |
+
+Output `599376507` everywhere. Latency is now at C parity; Go is 990 ms.
+
+The remaining manual-memory violation in the service rows is `winagg`
+(~164 ms vs C ~140 ms in the latest noisy run), which is still above the 10%
+bar. It is not being averaged into a pass. The Koka column also needs a current
+run; Koka is not installed here.

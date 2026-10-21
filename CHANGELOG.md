@@ -29,6 +29,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   dispatch workload (11 ms -> 6 ms, against C 5 ms). `TYCHOC_NO_PRESIZE=1` is
   the control. `TYCHOC_NO_INLINE_ENUM=1` and this control are only in the
   shipped compiler's help.
+- **Canonical `while` loops get the same presize and bounds proof as `for`**
+  (`i := 0; while i < bound; i += 1`). The latency workload went from
+  176 ms to 126 ms, at C parity (128 ms).
 
 ## [0.8.9] — 2026-10-21
 

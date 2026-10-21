@@ -6699,6 +6699,142 @@ fn _count_bound(cs: inout C, ip: [ast.Stmt], c: [ast.Expr], b: [ast.Stmt]) -> st
         _: return ""
     return lim
 
+# Canonical while-loop shape:
+#   i := 0
+#   while i < n: body; i = i + 1
+# The counter declaration is the statement immediately before the while; the
+# array declaration (when presizing) is the one before that.
+fn _counter_init(s: ast.Stmt, nm: string) -> bool:
+    match s:
+        ast.Decl(l, n, ann, r, v):
+            if n != nm or len(v) > 0 or len(r) != 1:
+                return false
+            match r[0]:
+                ast.IntLit(l2, x): return x == 0
+                _: return false
+        _: return false
+    return false
+
+fn _last_inc(b: [ast.Stmt], iv: string) -> bool:
+    if len(b) == 0:
+        return false
+    match b[len(b) - 1]:
+        ast.Assign(l, n, r):
+            if n != iv or len(r) != 1:
+                return false
+            match r[0]:
+                ast.Binop(l2, op, k):
+                    if op != "+" or len(k) != 2:
+                        return false
+                    match k[0]:
+                        ast.Name(l3, n3):
+                            if n3 != iv:
+                                return false
+                        _: return false
+                    match k[1]:
+                        ast.IntLit(l4, one): return one == 1
+                        _: return false
+                _: return false
+        _: return false
+    return false
+
+fn _while_limit(cs: inout C, c: [ast.Expr], iv: string) -> string:
+    match c[0]:
+        ast.Binop(l, op, k):
+            if op != "<" or len(k) != 2:
+                return ""
+            match k[0]:
+                ast.Name(l2, n2):
+                    if n2 != iv:
+                        return ""
+                _: return ""
+            match k[1]:
+                ast.Name(l3, n3): return _vcname(&cs, n3)
+                ast.IntLit(l3, n3):
+                    if n3 <= 0:
+                        return ""
+                    return str(n3)
+                _: return ""
+        _: return ""
+    return ""
+
+fn _while_array(c: [ast.Expr], iv: string) -> string:
+    match c[0]:
+        ast.Binop(l, op, k):
+            if op != "<" or len(k) != 2:
+                return ""
+            match k[0]:
+                ast.Name(l2, n2):
+                    if n2 != iv:
+                        return ""
+                _: return ""
+            match k[1]:
+                ast.Call(l3, q, fnm, ts, args):
+                    if len(q) > 0 or fnm != "len" or len(ts) > 0 or len(args) != 1:
+                        return ""
+                    match args[0]:
+                        ast.Name(l4, an): return an
+                        _: return ""
+                _: return ""
+        _: return ""
+    return ""
+
+fn _while_presize(cs: inout C, arr: ast.Stmt, ctr: ast.Stmt, w: ast.Stmt) -> string:
+    if len(getenv("TYCHOC_NO_PRESIZE")) > 0:
+        return ""
+    match arr:
+        ast.Decl(l, n, ann, rhs, vv):
+            if len(rhs) != 1 or len(vv) > 0:
+                return ""
+            if not _is_arr(_vtype(&cs, n)) or _cap_of_target(&cs, ast.Name(l, n)) > 0:
+                return ""
+            match rhs[0]:
+                ast.EmptyArr(l2, ts):
+                    if len(ts) == 0 and len(ann) == 0:
+                        return ""
+                _: return ""
+            iv := ""
+            match ctr:
+                ast.Decl(l2, n2, a2, r2, v2): iv = n2
+                _: return ""
+            if len(iv) == 0 or not _counter_init(ctr, iv):
+                return ""
+            match w:
+                ast.WhileS(l3, c, b):
+                    if _pushn_b(b, n) == 0 or not _last_inc(b, iv):
+                        return ""
+                    lim := _while_limit(&cs, c, iv)
+                    if len(lim) == 0:
+                        return ""
+                    return _arrf(&cs, _elem(_vtype(&cs, n)), "_reserve") + "(" +
+                        _ownerof(&cs, ast.Name(l, n)) + ", &(" + _vcname(&cs, n) +
+                        "), ((" + lim + ") > 0 ? (tycho_int)(" + lim + ") : 0));"
+                _: return ""
+        _: return ""
+    return ""
+
+fn _while_bounds(cs: inout C, ctr: ast.Stmt, w: ast.Stmt) -> (string, string):
+    if not _elision_on():
+        return ("", "")
+    iv := ""
+    match ctr:
+        ast.Decl(l, n, a, r, v): iv = n
+        _: return ("", "")
+    if len(iv) == 0 or not _counter_init(ctr, iv):
+        return ("", "")
+    match w:
+        ast.WhileS(l2, c, b):
+            if not _last_inc(b, iv):
+                return ("", "")
+            arr := _while_array(c, iv)
+            if len(arr) == 0 or len(b) < 2:
+                return ("", "")
+            if _uns_b(b[0:len(b) - 1], iv, arr):
+                return ("", "")
+            return (iv, arr)
+        _: return ("", "")
+    return ("", "")
+
 fn _presize_pair(cs: inout C, prev: ast.Stmt, s: ast.Stmt) -> string:
     if len(getenv("TYCHOC_NO_PRESIZE")) > 0:
         return ""
@@ -6790,7 +6926,29 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
         if len(cs.dbgfile) > 0:
             out = out + "#line " + str(ast.sline_of(s)) + " \"" + _c_escape_path(cs.dbgfile) + "\"\n"
         cs.ret_store = i == cs.ret_update
+        # A canonical `i := 0; while ...` builder/reader gets the same
+        # presizing and monotone-index proof as a three-clause for loop. The
+        # array and counter declarations are the two statements before the
+        # while, and both are already registered here.
+        wb := ""
+        if i >= 2:
+            match s:
+                ast.WhileS(lw9, cw9, bw9):
+                    wpr := _while_presize(&cs, body[i - 2], body[i - 1], s)
+                    if len(wpr) > 0:
+                        out = out + ind + wpr + "\n"
+                    wiv, war := _while_bounds(&cs, body[i - 1], s)
+                    if len(war) > 0:
+                        wb = wiv + "|" + war
+                _: pass
+        if len(wb) > 0:
+            wparts := split(wb, "|")
+            push(cs.elv, wparts[0])
+            push(cs.ela, wparts[1])
         out = out + _stmt(&cs, s, ind)
+        if len(wb) > 0:
+            pop(cs.elv)
+            pop(cs.ela)
         if i + 1 < len(body):
             pr := _presize_pair(&cs, s, body[i + 1])
             if len(pr) > 0:
