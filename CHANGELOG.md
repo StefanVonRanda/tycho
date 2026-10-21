@@ -24,6 +24,11 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   the old layout for measurement. The benchmark is in
   [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md). The reference compiler still
   uses the old representation; porting it is a follow-up.
+- **Counted fresh-array builders are presized from `for i := 0; i < n`**, not
+  only from `i < len(src)`. This removes geometric closure-array growth in the
+  dispatch workload (11 ms -> 6 ms, against C 5 ms). `TYCHOC_NO_PRESIZE=1` is
+  the control. `TYCHOC_NO_INLINE_ENUM=1` and this control are only in the
+  shipped compiler's help.
 
 ## [0.8.9] — 2026-10-21
 

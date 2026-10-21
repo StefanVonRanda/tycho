@@ -540,3 +540,22 @@ Across GC (Go) and reference counting (Koka), Tycho is faster everywhere and use
 less memory than the GC; the only memory loss is to Perceus RC on the tree
 workloads, where RC's eager free is structurally tighter than scope-bounded
 arenas — and even there Tycho wins on time.
+
+## 2026-10-21 shipped-compiler scorecard (counted presizing)
+
+Local rerun after the counted fresh-array presize change, `TYCHOC=./tychoc1`,
+all outputs identical:
+
+| workload | Tycho | C | Rust | Go |
+|---|---:|---:|---:|---:|
+| binary-trees (RSS / ms) | 13 MB / 101 | 33 MB / 820 | 33 MB / 1146 | 38 MB / 1090 |
+| tree-rewrite (RSS / ms) | 6 MB / 52 | 13 MB / 380 | 9 MB / 534 | 21 MB / 485 |
+| array-pipeline (RSS / ms) | 2 MB / 21 | 2 MB / 20 | 3 MB / 16 | 7 MB / 33 |
+| string-pipeline (RSS / ms) | 1 MB / 2 | 1 MB / 1 | 2 MB / 2 | 3 MB / 3 |
+| iter-transform (RSS / ms) | 2 MB / 168 | 2 MB / 160 | 3 MB / 206 | 8 MB / 311 |
+| dispatch (RSS / ms) | 1 MB / 6 | 1 MB / 6 | 1 MB / 58 | 8 MB / 67 |
+| json-parse (RSS / ms) | 66 MB / 618 | 58 MB / 917 | 59 MB / 727 | 112 MB / 1326 |
+
+The remaining flat-array gap is essentially C-level (1 ms on array-pipeline,
+8 ms on iter-transform); Rust still wins the array rows. Tree workloads retain
+the arena advantage.

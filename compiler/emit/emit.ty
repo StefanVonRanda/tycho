@@ -3298,6 +3298,29 @@ fn _add1(xs: inout [string], n: string):
     if not _has(xs, n):
         push(xs, n)
 
+# A lambda body that cannot allocate needs no child arena and no per-call free.
+# Calls are conservatively excluded; the common arithmetic closure is covered.
+fn _noalloc_e(e: ast.Expr) -> bool:
+    match e:
+        ast.IntLit(l, n): return true
+        ast.FloatLit(l, n): return true
+        ast.StrLit(l, s): return true
+        ast.CharLit(l, n): return true
+        ast.BoolLit(l, b): return true
+        ast.Name(l, n): return true
+        ast.Field(l, k, f): return _noalloc_e(k[0])
+        ast.TupIdx(l, k, i): return _noalloc_e(k[0])
+        ast.Index(l, k): return _noalloc_e(k[0])
+        ast.Binop(l, o, k):
+            for x in k:
+                if not _noalloc_e(x):
+                    return false
+            return true
+        ast.Unop(l, o, k): return _noalloc_e(k[0])
+        ast.IsVar(l, k, q, n): return _noalloc_e(k[0])
+        _: return false
+    return false
+
 fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (string, string):
     # The lambda's own type: an untyped parameter or an omitted return is read
     # off `cs.want`, which is the only place either is written down.
@@ -3372,10 +3395,15 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
         pre = "    Env" + id + " *_ec = (Env" + id + " *)_env;\n"
     # The thunk's own scope must be released, exactly as a named fn's is: the
     # result is copied into _parent first, so the copy outlives the free.
+    noalloc := not _heap(&cs, rt) and _noalloc_e(body)
     ret2 := "    " + _ctyz(&cs, rt) + "_lr = " + _copy(&cs, bc, rt, "_parent") +
         ";\n    arena_free(&_scope);\n    return _lr;\n"
+    if noalloc:
+        ret2 = "    return " + bc + ";\n"
     if rt == "void":
         ret2 = "    " + bc + ";\n    arena_free(&_scope);\n"
+        if noalloc:
+            ret2 = "    " + bc + ";\n"
     d := ""
     if len(caps) > 0:
         d = "typedef struct { \n" + env + "} Env" + id + ";\n" +
@@ -3393,8 +3421,11 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
             if len(rc) > 0:
                 d = d + "    " + rc + "\n"
         d = d + "    arena_recycle(_a, _e, sizeof(*_e));\n}\n"
+    scope_decl := "    Arena _scope = arena_child(_parent);\n"
+    if noalloc:
+        scope_decl = ""
     d = d + _ctyz(&cs, rt) + "__lam" + id + "__clo" + sig + " {\n" + pre +
-        "    Arena _scope = arena_child(_parent);\n" + ret2 + "}\n"
+        scope_decl + ret2 + "}\n"
     push(cs.lamd, d)
     push(cs.lamp, _ctyz(&cs, rt) + "__lam" + id + "__clo" + sig + ";\n")
     if len(caps) == 0:
@@ -6603,6 +6634,71 @@ fn _projection_span(cs: inout C, body: [ast.Stmt], start: int, root: string, fie
 # O7: `xs := []T` immediately followed by a counted loop that pushes into it.
 # Reserve the loop's proven upper bound once; over-reserving is safe because
 # reserve only grows. Mirrors src/tychoc.c@presize_loop_src.
+# A counted fresh-array builder whose bound is a runtime value `n`:
+# `out := []; for i := 0; i < n; i += 1 { push(out, ...) }`.
+# Reserving n (clamped at zero) is an upper bound even with break/continue, and
+# removes geometric growth on closure-heavy builders. The array is freshly
+# empty and the loop counter has the canonical 0/+1 shape.
+fn _count_bound(cs: inout C, ip: [ast.Stmt], c: [ast.Expr], b: [ast.Stmt]) -> string:
+    iv := ""
+    match ip[0]:
+        ast.Decl(l, n, t, r, v):
+            if len(v) > 0 or len(r) != 1:
+                return ""
+            match r[0]:
+                ast.IntLit(l2, x):
+                    if x != 0:
+                        return ""
+                _: return ""
+            iv = n
+        _: return ""
+    lim := ""
+    limname := ""
+    match c[0]:
+        ast.Binop(l, op, k):
+            if op != "<" or len(k) != 2:
+                return ""
+            match k[0]:
+                ast.Name(l2, n2):
+                    if n2 != iv:
+                        return ""
+                _: return ""
+            match k[1]:
+                ast.Name(l3, n3):
+                    if n3 == iv or _defs_b(b, n3):
+                        return ""
+                    limname = n3
+                    lim = _vcname(&cs, n3)
+                ast.IntLit(l3, n3):
+                    if n3 <= 0:
+                        return ""
+                    lim = str(n3)
+                _: return ""
+        _: return ""
+    if len(lim) == 0 or len(ip) < 2:
+        return ""
+    match ip[1]:
+        ast.Assign(l, n, r):
+            if n != iv or len(r) != 1:
+                return ""
+            match r[0]:
+                ast.Binop(l2, op2, k2):
+                    if op2 != "+" or len(k2) != 2:
+                        return ""
+                    match k2[0]:
+                        ast.Name(l3, n3):
+                            if n3 != iv:
+                                return ""
+                        _: return ""
+                    match k2[1]:
+                        ast.IntLit(l4, one):
+                            if one != 1:
+                                return ""
+                        _: return ""
+                _: return ""
+        _: return ""
+    return lim
+
 fn _presize_pair(cs: inout C, prev: ast.Stmt, s: ast.Stmt) -> string:
     if len(getenv("TYCHOC_NO_PRESIZE")) > 0:
         return ""
@@ -6623,11 +6719,16 @@ fn _presize_pair(cs: inout C, prev: ast.Stmt, s: ast.Stmt) -> string:
                     if _pushn_b(b, n) == 0:
                         return ""
                     ev, ea := _for3_elide(ip, c, b)
-                    if len(ea) == 0 or ea == n or not _is_arr(_vtype(&cs, ea)):
-                        return ""
-                    return _arrf(&cs, _elem(dt), "_reserve") + "(" +
-                        _ownerof(&cs, ast.Name(l, n)) + ", &(" + _vcname(&cs, n) +
-                        "), (tycho_int)" + _vcname(&cs, ea) + ".len);"
+                    if len(ea) > 0 and ea != n and _is_arr(_vtype(&cs, ea)):
+                        return _arrf(&cs, _elem(dt), "_reserve") + "(" +
+                            _ownerof(&cs, ast.Name(l, n)) + ", &(" + _vcname(&cs, n) +
+                            "), (tycho_int)" + _vcname(&cs, ea) + ".len);"
+                    lim := _count_bound(&cs, ip, c, b)
+                    if len(lim) > 0:
+                        return _arrf(&cs, _elem(dt), "_reserve") + "(" +
+                            _ownerof(&cs, ast.Name(l, n)) + ", &(" + _vcname(&cs, n) +
+                            "), ((" + lim + ") > 0 ? (tycho_int)(" + lim + ") : 0));"
+                    return ""
                 _: pass
         _: pass
     return ""

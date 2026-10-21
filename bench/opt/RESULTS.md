@@ -456,3 +456,26 @@ semantics, copying, matching and equality are unchanged.
 The reference compiler (`src/tychoc.c`) still uses the old representation; the
 shipped `tychoc1` is the measured path. Porting it is a parity follow-up, not a
 semantic change.
+
+## Counted fresh-array presizing (post-0.8.9, kept)
+
+The closure-dispatch benchmark exposed a builder gap: O7 presized a fresh
+array only when the loop bound was `len(src)`. A fresh `[]fn` built by
+`for i := 0; i < n; i += 1` still grew geometrically, copying the closure
+array on every pass.
+
+`tychoc1` now presizes a fresh array from a canonical `0 .. n` counted loop too,
+clamped at zero. `TYCHOC_NO_PRESIZE=1` is the control.
+
+`bench/prongB/dispatch.ty` (2000 closures x 2000 passes), medians of five:
+
+| build | peak RSS | wall time |
+|---|---:|---:|
+| before (no scope/presize changes) | 1 MB | 11 ms |
+| no-call-scope only | 1 MB | 7 ms |
+| + counted presize | 1 MB | **6 ms** |
+| C reference | 1 MB | 5 ms |
+
+The output is `md5=60212cb8` in every build. This is a builder-allocation fix, not
+a language-change: the reserve is an upper bound, and a `break`, `continue`,
+negative bound or extra push still grows normally.
