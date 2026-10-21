@@ -453,6 +453,7 @@ static int gpu_upload_mesh(Gpu *g, const double *verts, int64_t nfloats) {
 }
 
 void gfxgpu_render_mesh(void *handle, const double *verts, int64_t nfloats,
+                         const double *mvp, int64_t nmvp,
                          unsigned char **out, int64_t *outlen) {
     *out = NULL;
     *outlen = 0;
@@ -477,13 +478,13 @@ void gfxgpu_render_mesh(void *handle, const double *verts, int64_t nfloats,
     SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cb, &color, 1, &depth);
     if (!pass) { SDL_SubmitGPUCommandBuffer(cb); return; }
     if (nfloats > 0) {
-        float identity[16] = {
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, 0.0f, 1.0f,
-        };
-        SDL_PushGPUVertexUniformData(cb, 0, identity, sizeof identity);
+        float m[16] = {0};
+        if (mvp && nmvp >= 16) {
+            for (int i = 0; i < 16; i++) m[i] = (float)mvp[i];
+        } else {
+            m[0] = 1.0f; m[5] = 1.0f; m[10] = 1.0f; m[15] = 1.0f;
+        }
+        SDL_PushGPUVertexUniformData(cb, 0, m, sizeof m);
         SDL_BindGPUGraphicsPipeline(pass, g->pipeline);
         SDL_GPUBufferBinding vb = { g->mesh, 0 };
         SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);

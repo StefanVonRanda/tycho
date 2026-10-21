@@ -6,9 +6,10 @@ drone model and a spinning rotor, with a follow camera rather than Vector
 Vault's first-person camera or Orbit's gallery camera.
 
 The renderer runs at 480×270. With `core:gfxgpu` available, the scene is
-submitted as a GPU triangle mesh with a depth target, then downloaded into the
-existing gfx framebuffer for the HUD and presentation. Without a GPU device it
-falls back to the software path automatically.
+submitted as a world-space GPU triangle mesh with a view-projection uniform and
+a depth target, then downloaded into the existing gfx framebuffer for the HUD
+and presentation. Without a GPU device it falls back to the software path
+automatically.
 
 ## Build and play
 

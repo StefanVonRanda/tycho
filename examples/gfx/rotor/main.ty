@@ -13,7 +13,7 @@ extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
 extern fn gfx_audio_open(rate: int, channels: int) -> gfx.Audio
 extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
 extern fn gfxgpu_open_offscreen(w: int, h: int) -> gfxgpu.Gpu
-extern fn gfxgpu_render_mesh(g: gfxgpu.Gpu, verts: [float]) -> bytes
+extern fn gfxgpu_render_mesh(g: gfxgpu.Gpu, verts: [float], mvp: [float]) -> bytes
 
 const RW = 480
 const RH = 270
@@ -229,77 +229,93 @@ fn transform(p: gfx3d.Place, v: gfx3d.Vec3) -> gfx3d.Vec3:
                       p.origin.y + (p.right.y * v.x + p.up.y * v.y + p.forward.y * v.z) * p.scale,
                       p.origin.z + (p.right.z * v.x + p.up.z * v.y + p.forward.z * v.z) * p.scale)
 
-fn push_gpu_tri(verts: inout [float], cam: gfx3d.Camera, target: gfx3d.Target,
-                a: gfx3d.Vec3, b: gfx3d.Vec3, c: gfx3d.Vec3, color: int):
-    pa := gfx3d.project(cam, target, a)
-    pb := gfx3d.project(cam, target, b)
-    pc := gfx3d.project(cam, target, c)
-    if not pa.ok or not pb.ok or not pc.ok:
-        return
+fn push_gpu_tri(verts: inout [float], a: gfx3d.Vec3, b: gfx3d.Vec3,
+                c: gfx3d.Vec3, color: int):
     rr := to_float((color / 65536) % 256) / 255.0
     gg := to_float((color / 256) % 256) / 255.0
     bb := to_float(color % 256) / 255.0
-    # screen -> NDC; 1/invz is monotone in camera depth.
-    za := 1.0 / (pa.invz * 32.0)
-    zb := 1.0 / (pb.invz * 32.0)
-    zc := 1.0 / (pc.invz * 32.0)
-    if za < 0.0:
-        za = 0.0
-    if zb < 0.0:
-        zb = 0.0
-    if zc < 0.0:
-        zc = 0.0
-    if za > 1.0:
-        za = 1.0
-    if zb > 1.0:
-        zb = 1.0
-    if zc > 1.0:
-        zc = 1.0
-    xa := 2.0 * pa.x / to_float(target.w) - 1.0
-    xb := 2.0 * pb.x / to_float(target.w) - 1.0
-    xc := 2.0 * pc.x / to_float(target.w) - 1.0
-    ya := 1.0 - 2.0 * pa.y / to_float(target.h)
-    yb := 1.0 - 2.0 * pb.y / to_float(target.h)
-    yc := 1.0 - 2.0 * pc.y / to_float(target.h)
-    push(verts, xa)
-    push(verts, ya)
-    push(verts, za)
+    push(verts, a.x)
+    push(verts, a.y)
+    push(verts, a.z)
     push(verts, rr)
     push(verts, gg)
     push(verts, bb)
-    push(verts, xb)
-    push(verts, yb)
-    push(verts, zb)
+    push(verts, b.x)
+    push(verts, b.y)
+    push(verts, b.z)
     push(verts, rr)
     push(verts, gg)
     push(verts, bb)
-    push(verts, xc)
-    push(verts, yc)
-    push(verts, zc)
+    push(verts, c.x)
+    push(verts, c.y)
+    push(verts, c.z)
     push(verts, rr)
     push(verts, gg)
     push(verts, bb)
 
-fn append_mesh(verts: inout [float], m: gfx3d.Mesh, p: gfx3d.Place,
-               cam: gfx3d.Camera, target: gfx3d.Target):
+fn build_mvp(cam: gfx3d.Camera, target: gfx3d.Target) -> [float]:
+    near := 0.1
+    far := 100.0
+    sw := 2.0 * cam.focal / to_float(target.w)
+    sh := 2.0 * cam.focal / to_float(target.h)
+    er := cam.eye.x * cam.right.x + cam.eye.y * cam.right.y + cam.eye.z * cam.right.z
+    eu := cam.eye.x * cam.up.x + cam.eye.y * cam.up.y + cam.eye.z * cam.up.z
+    ef := cam.eye.x * cam.forward.x + cam.eye.y * cam.forward.y + cam.eye.z * cam.forward.z
+    m := []float
+    # Rows of P*V, emitted in column-major order for GLSL.
+    r0x := sw * cam.right.x
+    r0y := sw * cam.right.y
+    r0z := sw * cam.right.z
+    r0w := 0.0 - sw * er
+    r1x := sh * cam.up.x
+    r1y := sh * cam.up.y
+    r1z := sh * cam.up.z
+    r1w := 0.0 - sh * eu
+    pf := far / (far - near)
+    r2x := pf * cam.forward.x
+    r2y := pf * cam.forward.y
+    r2z := pf * cam.forward.z
+    r2w := 0.0 - pf * ef - far * near / (far - near)
+    r3x := cam.forward.x
+    r3y := cam.forward.y
+    r3z := cam.forward.z
+    r3w := 0.0 - ef
+    push(m, r0x)
+    push(m, r1x)
+    push(m, r2x)
+    push(m, r3x)
+    push(m, r0y)
+    push(m, r1y)
+    push(m, r2y)
+    push(m, r3y)
+    push(m, r0z)
+    push(m, r1z)
+    push(m, r2z)
+    push(m, r3z)
+    push(m, r0w)
+    push(m, r1w)
+    push(m, r2w)
+    push(m, r3w)
+    return m
+
+fn append_mesh(verts: inout [float], m: gfx3d.Mesh, p: gfx3d.Place):
     for i := 0; i < len(m.tris); i += 1:
         t := m.tris[i]
-        push_gpu_tri(&verts, cam, target, transform(p, t.a), transform(p, t.b),
+        push_gpu_tri(&verts, transform(p, t.a), transform(p, t.b),
                      transform(p, t.c), t.color)
 
 fn gpu_vertices(static_mesh: gfx3d.Mesh, p: Player, pickups: [Pickup],
-                body: gfx3d.Mesh, rotor: gfx3d.Mesh, cam: gfx3d.Camera,
-                target: gfx3d.Target, anim_ms: int) -> [float]:
+                body: gfx3d.Mesh, rotor: gfx3d.Mesh, anim_ms: int) -> [float]:
     verts := []float
     identity := gfx3d.Place(gfx3d.Vec3(0.0, 0.0, 0.0),
                             gfx3d.Vec3(1.0, 0.0, 0.0),
                             gfx3d.Vec3(0.0, 1.0, 0.0),
                             gfx3d.Vec3(0.0, 0.0, 1.0), 1.0)
-    append_mesh(&verts, static_mesh, identity, cam, target)
+    append_mesh(&verts, static_mesh, identity)
     picks := build_pickups(pickups, anim_ms)
-    append_mesh(&verts, picks, identity, cam, target)
+    append_mesh(&verts, picks, identity)
     bp := place_of(p)
-    append_mesh(&verts, body, bp, cam, target)
+    append_mesh(&verts, body, bp)
     spin := to_float(anim_ms) * 0.004
     sy := sin(p.yaw + spin)
     cy := cos(p.yaw + spin)
@@ -307,7 +323,7 @@ fn gpu_vertices(static_mesh: gfx3d.Mesh, p: Player, pickups: [Pickup],
                       gfx3d.Vec3(cy, 0.0, 0.0 - sy),
                       gfx3d.Vec3(0.0, 1.0, 0.0),
                       gfx3d.Vec3(sy, 0.0, cy), 1.0)
-    append_mesh(&verts, rotor, rp, cam, target)
+    append_mesh(&verts, rotor, rp)
     return verts
 
 fn main():
@@ -436,9 +452,10 @@ fn main():
             draw_scene(&fb, &zbuf, cam, target, player, pickups, play_frame * STEP_MS,
                        &body, &rotor)
         else:
-            verts := gpu_vertices(static_mesh, player, pickups, body, rotor, cam,
-                                  target, play_frame * STEP_MS)
-            pixels := gfxgpu_render_mesh(gpu, verts)
+            verts := gpu_vertices(static_mesh, player, pickups, body, rotor,
+                                  play_frame * STEP_MS)
+            mvp := build_mvp(cam, target)
+            pixels := gfxgpu_render_mesh(gpu, verts, mvp)
             if len(pixels) == RW * RH * 4:
                 for i := 0; i < RW * RH; i += 1:
                     fb[i] = 4278190080 + pixels[i * 4] * 65536 +
