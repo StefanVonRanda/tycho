@@ -11053,13 +11053,21 @@ static int can_move_into_sink(Expr *rhs) {
     return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
 }
 
+static int is_place(Expr *e);
+
 /* O3: `push(dst, src)` retains src, so unlike a sink argument it needs the
  * source buffer to live as long as the destination. That is the same-arena
- * case (or a loop-local created in the current iteration). A cross-arena push
- * still copies; the control switch keeps the old path benchmarkable. */
+ * case (or a loop-local created in the current iteration). A fresh non-place
+ * expression is built in the receiver's arena by the push emitter, so it can
+ * be adopted too; a cross-arena place still copies. The control switches keep
+ * both paths benchmarkable. */
 static int can_move_into_push(Expr *arr, Expr *val, Type elem) {
     if (getenv("TYCHOC_NO_MOVE_PUSH")) return 0;
-    if (!type_is_heap(elem) || val->kind != E_IDENT) return 0;
+    if (!type_is_heap(elem)) return 0;
+    if (val->kind != E_IDENT) {
+        if (getenv("TYCHOC_NO_FRESH_PUSH") || is_place(val)) return 0;
+        return 1;
+    }
     if (is_param(val->sval)) return 0;
     if (g_loop_depth != 0 && cv_loop(val->sval) != g_loop_depth) return 0;
     const char *src = cv_arena(val->sval);
@@ -12396,7 +12404,7 @@ static char *gen_call(Expr *e, const char *arena) {
                  * deep-copy into the array's arena for str/struct/tuple/ARRC/... */
                 const char *gf = sfmt("tycho_arr_%s_grow", arr_fn(g_fuse[fi].ty));
                 const char *ow = owner_arena_of(e->args[0]->sval);
-                char *v = gen_expr(e->args[1], arena);
+                char *v = gen_expr(e->args[1], is_place(e->args[1]) ? arena : ow);
                 if (!can_move_into_push(e->args[0], e->args[1], arr_elem(g_fuse[fi].ty)))
                     v = copy_into(arr_elem(g_fuse[fi].ty), ow, v);
                 return sfmt("({ if (_fl%d == _fc%d) %s(%s, &_fd%d, &_fc%d, _fl%d); _fd%d[_fl%d++] = %s; })",
@@ -12410,7 +12418,9 @@ static char *gen_call(Expr *e, const char *arena) {
          * call and the caller sees the updated descriptor). */
         const char *owner = (root->kind == E_IDENT) ? owner_arena_of(root->sval) : arena;
         char *arr = gen_lvalue(e->args[0], arena);   /* lvalue so a projected `arr[i].xs` is the buffer slot */
-        char *v = gen_expr(e->args[1], arena);
+        /* A fresh value is built in the receiver's arena and adopted below; a
+         * place is evaluated here and copied into the receiver's arena. */
+        char *v = gen_expr(e->args[1], is_place(e->args[1]) ? arena : owner);
         if (IS_SOA(e->args[0]->type))   /* struct-of-arrays push: grow each field buffer + scatter */
             return sfmt("Soa%d_push(%s, &(%s), %s)", SOA_ID(e->args[0]->type), owner, arr, v);
         int mv = can_move_into_push(e->args[0], e->args[1], arr_elem(e->args[0]->type));

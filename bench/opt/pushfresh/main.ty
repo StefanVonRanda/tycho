@@ -1,0 +1,27 @@
+# Fresh values pushed into an outer array. The control keeps the old
+# copy-out-of-scratch path; the optimized path builds the value in the
+# receiver's arena and adopts it.
+struct Item:
+    a: string
+    b: int
+
+const N = 300000
+
+fn build_str() -> int:
+    out: [string] = []
+    for i := 0; i < N; i += 1:
+        push(out, str(i) + "-abcdefghijklmnopqrstuvwxyz0123456789")
+    return len(out)
+
+fn build_item() -> int:
+    out: [Item] = []
+    for i := 0; i < N; i += 1:
+        push(out, Item(str(i) + "-abcdefghijklmnopqrstuvwxyz0123456789", i))
+    return len(out)
+
+fn main():
+    mode := args()[1]
+    if mode == "str":
+        println(str(build_str()))
+    elif mode == "item":
+        println(str(build_item()))

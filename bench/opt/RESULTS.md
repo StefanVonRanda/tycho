@@ -372,3 +372,43 @@ Items 4–5 are deliberately not shipped. A fourth caller is only useful if a
 physics or UI requirement forces a shared package; the current three software
 callers and two GPU callers do not. References or inline variable-size records
 are a language-model change, and the entity/layout measurements do not support one.
+
+
+## Fresh-value push adoption (post-0.8.9, kept)
+
+Date: 2026-10-21. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI
+MAX+ 395). Compilers: `tychoc1 0.8.9` and `tychoc 0.8.9` at the working tree.
+
+Fixture: `bench/opt/pushfresh/main.ty` — 300,000 fresh strings, then 300,000
+fresh `Item`s, pushed into an outer array. `TYCHOC_NO_FRESH_PUSH=1` is the
+control; it keeps the old scratch-then-copy path. Build and run:
+
+```text
+./tychoc1 bench/opt/pushfresh/main.ty -o /tmp/pf_after
+TYCHOC_NO_FRESH_PUSH=1 ./tychoc1 bench/opt/pushfresh/main.ty -o /tmp/pf_before
+./tychoc  bench/opt/pushfresh/main.ty -o /tmp/pfr_after
+TYCHOC_NO_FRESH_PUSH=1 ./tychoc bench/opt/pushfresh/main.ty -o /tmp/pfr_before
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/pf_after str; done
+```
+
+Both modes print `300000` in every build. Medians of five:
+
+| build | mode | peak RSS | wall time |
+|---|---|---:|---:|
+| `tychoc1`, copy | str | 45,472 KB | 12 ms |
+| `tychoc1`, fresh | str | **29,336 KB** | **10 ms** |
+| `./tychoc`, copy | str | 45,484 KB | 12 ms |
+| `./tychoc`, fresh | str | **29,596 KB** | **10 ms** |
+| `tychoc1`, copy | item | 35,996 KB | 10 ms |
+| `tychoc1`, fresh | item | 35,736 KB | 8 ms |
+| `./tychoc`, copy | item | 52,304 KB | 13 ms |
+| `./tychoc`, fresh | item | **35,988 KB** | **12 ms** |
+
+That is **35–43% less peak RSS and 17–20% less wall time** on the string
+case. The `Item` case was already partly destination-built in `tychoc1`; the
+reference compiler gains the destination path there. The generation is pinned
+by the existing `make test` lane; the control is kept in the compiler.
+
+**Decision: keep.** A fresh value is built in the receiver's arena and adopted
+when it cannot alias the receiver. Places, views and unproven expressions keep
+the copy path. No language surface or value-semantics rule changed.

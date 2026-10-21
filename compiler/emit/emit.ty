@@ -6030,6 +6030,11 @@ fn _canmove_sink(cs: inout C, e: ast.Expr) -> bool:
 fn _canmove_push(cs: inout C, arr: ast.Expr, val: ast.Expr, et: string) -> bool:
     if len(getenv("TYCHOC_NO_MOVE_PUSH")) > 0 or not _heap(&cs, et):
         return false
+    # A fresh non-place is built in the array's arena by the push emitter
+    # above. It cannot alias the array, and no later name observes it, so the
+    # receiver may adopt it. Places still take the copy path.
+    if not _place(val):
+        return len(getenv("TYCHOC_NO_FRESH_PUSH")) == 0
     n := ""
     match val:
         ast.Name(l, nm): n = nm
