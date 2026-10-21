@@ -152,6 +152,9 @@ want a different tool, is
 - **Value semantics.** `b := a` copies; there is no shared mutable storage, so
   data races are inexpressible inside Tycho (copy-in/copy-out concurrency, no
   annotations) — concurrent FFI calls can still race ([SECURITY.md](SECURITY.md)).
+- **Compact fixed-size enums.** The shipped compiler stores a user enum with
+  scalar payloads as a packed tag-plus-union value; recursive and heap-bearing
+  enums remain boxed. `TYCHOC_NO_INLINE_ENUM=1` is the layout control.
 - **One dependency-free C file.** The transpiler is `src/tychoc.c`; the only
   toolchain is `cc` and `make`.
 - **Concurrency, generics, closures, FFI.** `spawn`/`wait` tasks, bounded

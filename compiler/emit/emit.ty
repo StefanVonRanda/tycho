@@ -249,6 +249,26 @@ fn _is_struct(t: string) -> bool:
 fn _is_enum(t: string) -> bool:
     return strings.starts_with(t, "E~")
 
+# A fixed-size user enum can be stored inline when every payload is a scalar.
+# Fieldless enums stay in the old cell representation because maps use their
+# singleton tag table; generated Option/Result enums stay pointers because
+# their lowering is shared with the rest of the compiler.
+fn _inline_enum(cs: inout C, n: string) -> bool:
+    if len(getenv("TYCHOC_NO_INLINE_ENUM")) > 0:
+        return false
+    if _is_gen(n) or strings.contains(n, "__"):
+        return false
+    ei := _eidx(&cs, n)
+    if ei < 0:
+        return false
+    any := false
+    for v in cs.eds[ei].vpay:
+        for p in v.ptypes:
+            if not (_is_sized(p) or p == "int" or p == "float" or p == "bool" or p == "char"):
+                return false
+            any = true
+    return any
+
 fn _tname(t: string) -> string:
     return t[2:]
 
@@ -687,6 +707,8 @@ fn _hash_det(cs: inout C, t: string, v: string) -> string:
     if t == "float":
         return "tycho_ik_hash_det(tycho_float_hashbits(" + v + "))"
     if _is_enum(t):
+        if _inline_enum(&cs, _tname(t)):
+            return "tycho_ik_hash_det((tycho_int)((" + v + ").tag))"
         return "tycho_ik_hash_det((tycho_int)((" + v + ")->tag))"
     if _is_vec(t):
         return _u(&cs, _vecf(&cs, t, "_dhash")) + "(" + v + ")"
@@ -714,6 +736,8 @@ fn _hash(cs: inout C, t: string, v: string) -> string:
     if t == "float":
         return "tycho_ik_hash(tycho_float_hashbits(" + v + "))"
     if _is_enum(t):
+        if _inline_enum(&cs, _tname(t)):
+            return "tycho_ik_hash((tycho_int)((" + v + ").tag))"
         return "tycho_ik_hash((tycho_int)((" + v + ")->tag))"
     if _is_vec(t):
         return _u(&cs, _vecf(&cs, t, "_hash")) + "(" + v + ")"
@@ -807,7 +831,9 @@ fn _heap(cs: inout C, t: string) -> bool:
         return true
     if _is_fn(t):
         return true
-    if _is_arr(t) or _is_enum(t) or _is_map(t) or _is_soa(t):
+    if _is_enum(t):
+        return not _inline_enum(&cs, _tname(t))
+    if _is_arr(t) or _is_map(t) or _is_soa(t):
         return true
     if _is_struct(t):
         i := _sidx(&cs, _tname(t))
@@ -1497,6 +1523,8 @@ fn _cty(cs: inout C, t: string) -> string:
     if _is_struct(t):
         return "S_" + _tname(t)
     if _is_enum(t):
+        if _inline_enum(&cs, _tname(t)):
+            return "E_" + _tname(t)
         return "E_" + _tname(t) + " *"
     if _is_tup(t):
         return "TychoTup" + _tname(t)
@@ -2164,6 +2192,8 @@ fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
     if _is_arr(t):
         return _arrf(&cs, _elem(t), "_copy") + "(" + arena + ", " + code + ")"
     if _is_enum(t):
+        if _inline_enum(&cs, _tname(t)):
+            return code
         cen := _u(&cs, "tycho_copy_E_" + _tname(t))
         return cen + "(" + arena + ", " + code + ")"
     if _is_map(t):
@@ -2186,6 +2216,8 @@ fn _recycle_name(cs: inout C, t: string) -> string:
     if _is_arr(t):
         return _apfx(&cs, _elem(t)) + "_recycle"
     if _is_enum(t):
+        if _inline_enum(&cs, _tname(t)):
+            return ""
         return "tycho_recycle_E_" + _tname(t)
     if _is_map(t):
         return _mpfx(&cs, t) + "_recycle"
@@ -2761,6 +2793,8 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 _bad("`is` on a non-enum")
             ei := _eidx(&cs, _tname(st))
             tag := _tag(&cs, ei, vn)
+            if _inline_enum(&cs, _tname(st)):
+                return ("((" + sc + ").tag == " + str(tag) + ")", "bool")
             return ("((" + sc + ")->tag == " + str(tag) + ")", "bool")
         ast.TupIdx(l, k, n):
             rc, rt := _ex(&cs, k[0])
@@ -3575,11 +3609,16 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
     pay := cs.eds[ei].vpay[tag].ptypes
     if len(pay) != len(args):
         _bad("variant " + vn + " takes " + str(len(pay)) + " payload value(s)")
+    inl := _inline_enum(&cs, en)
     if len(pay) == 0:
+        if inl:
+            return ("((E_" + en + "){ .tag = " + str(tag) + " })", "E~" + en)
         return ("(&_sing_" + en + "_" + str(tag) + ")", "E~" + en)
     v := _fresh(&cs, "_v")
-    out := "({ E_" + en + " *" + v + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", offsetof(E_" +
-        en + ", u) + sizeof(" + _vpaytype(en, vn) + ")); " + v + "->tag = " + str(tag) + "; "
+    out := "({ E_" + en + " " + v + " = {0}; " + v + ".tag = " + str(tag) + "; "
+    if not inl:
+        out = "({ E_" + en + " *" + v + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", offsetof(E_" +
+            en + ", u) + sizeof(" + _vpaytype(en, vn) + ")); " + v + "->tag = " + str(tag) + "; "
     for i := 0; i < len(args); i += 1:
         sw := cs.want
         cs.want = pay[i]
@@ -3594,7 +3633,10 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
                 not _own_path_ok(&cs, args[i]) and not _shared_get_expr(&cs, args[i]) and
                 not _canmove(&cs, args[i], cs.arena):
             ac = _copy(&cs, ac, pay[i], cs.arena)
-        out = out + v + "->u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
+        if inl:
+            out = out + v + ".u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
+        else:
+            out = out + v + "->u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
     return (out + v + "; })", "E~" + en)
 
 # The value a `return` hands back, homed in the caller's arena: shared by
@@ -8339,7 +8381,15 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     owned_subj := len(_own_path(&cs, subj)) > 0
     if _is_enum(st):
         ei := _eidx(&cs, _tname(st))
-        out := ind + "{\n" + ind + "    E_" + _tname(st) + " *" + v + " = " + sc + ";\n"
+        inl := _inline_enum(&cs, _tname(st))
+        tagp := "->tag"
+        usep := "->u."
+        if inl:
+            tagp = ".tag"
+            usep = ".u."
+        out := ind + "{\n" + ind + "    E_" + _tname(st) + " " + v + " = " + sc + ";\n"
+        if not inl:
+            out = ind + "{\n" + ind + "    E_" + _tname(st) + " *" + v + " = " + sc + ";\n"
         first := true
         deflt := ""
         hasdef := false
@@ -8382,7 +8432,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 if a.binds[i] == "_":
                     continue
                 bcn := _push(&cs, a.binds[i], pay[i])
-                psrc := v + "->u." + _vfield(a.name) + ".f" + str(i)
+                psrc := v + usep + _vfield(a.name) + ".f" + str(i)
                 pv := psrc
                 cs.vown[len(cs.vown) - 1] = sown
                 if owned_subj:
@@ -8397,9 +8447,12 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             # sub/subbinds since the parser, and nothing read them until now, so
             # the inner binding was simply never in scope. The payload is itself
             # an enum: test its tag too, and bind from ITS payload.
-            cond := v + "->tag == " + str(tag)
+            cond := v + tagp + " == " + str(tag)
             if len(nulsub) > 0:
-                cond = "(" + cond + ") && ((" + v + "->u." + _vfield(a.name) + ".f0)->tag == " + nulsub + ")"
+                npsep := "->tag"
+                if len(pay) > 0 and _inline_enum(&cs, _tname(pay[0])):
+                    npsep = ".tag"
+                cond = "(" + cond + ") && ((" + v + usep + _vfield(a.name) + ".f0)" + npsep + " == " + nulsub + ")"
             if len(a.sub) > 0:
                 if len(pay) != 1:
                     _bad("a nested pattern needs a single-payload variant")
@@ -8407,8 +8460,14 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                 if ii < 0:
                     _bad("nested pattern on a non-enum payload '" + pay[0] + "'")
                 itag := _tag(&cs, ii, a.sub)
-                iv := v + "->u." + _vfield(a.name) + ".f0"
-                cond = "(" + cond + ") && ((" + iv + ")->tag == " + str(itag) + ")"
+                iv := v + usep + _vfield(a.name) + ".f0"
+                pinl := _inline_enum(&cs, _tname(pay[0]))
+                ptag := "->tag"
+                puse := "->u."
+                if pinl:
+                    ptag = ".tag"
+                    puse = ".u."
+                cond = "(" + cond + ") && ((" + iv + ")" + ptag + " == " + str(itag) + ")"
                 ipay := cs.eds[ii].vpay[itag].ptypes
                 for j := 0; j < len(a.subbinds); j += 1:
                     if j >= len(ipay):
@@ -8416,7 +8475,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                     if a.subbinds[j] == "_":
                         continue
                     scn := _push(&cs, a.subbinds[j], ipay[j])
-                    ssrc := "(" + iv + ")->u." + _vfield(a.sub) + ".f" + str(j)
+                    ssrc := "(" + iv + ")" + puse + _vfield(a.sub) + ".f" + str(j)
                     sv2 := ssrc
                     cs.vown[len(cs.vown) - 1] = sown
                     if owned_subj:
@@ -9499,13 +9558,34 @@ fn _struct_support(cs: inout C) -> (string, string):
             body = body + cp + "    return r;\n}\n"
     return (proto, body)
 
+fn _inline_enum_defs(cs: inout C) -> string:
+    defs := ""
+    for i := 0; i < len(cs.eds); i += 1:
+        n := cs.eds[i].name
+        if not _inline_enum(&cs, n):
+            continue
+        un := ""
+        for t := 0; t < len(cs.eds[i].vnames); t += 1:
+            vn := cs.eds[i].vnames[t]
+            ps := cs.eds[i].vpay[t].ptypes
+            if len(ps) == 0:
+                continue
+            fl := ""
+            for j := 0; j < len(ps); j += 1:
+                fl = fl + " " + _ctyz(&cs, ps[j]) + "f" + str(j) + ";"
+            defs = defs + "typedef struct {" + fl + " } " + _vpaytype(n, vn) + ";\n"
+            un = un + " " + _vpaytype(n, vn) + " " + _vfield(vn) + ";"
+        defs = defs + "struct E_" + n + " { unsigned char tag; union {" + un + " } u; } __attribute__((packed));\n"
+    return defs
+
 fn _enum_support(cs: inout C) -> (string, string, string):
     defs := ""
     proto := ""
     body := ""
     for i := 0; i < len(cs.eds); i += 1:
         n := cs.eds[i].name
-        if _once(&cs, "def_E_" + n):
+        inl := _inline_enum(&cs, n)
+        if not inl and _once(&cs, "def_E_" + n):
             un := ""
             for t := 0; t < len(cs.eds[i].vnames); t += 1:
                 vn := cs.eds[i].vnames[t]
@@ -9517,7 +9597,7 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                     fl = fl + " " + _ctyz(&cs, ps[j]) + "f" + str(j) + ";"
                 defs = defs + "typedef struct {" + fl + " } " + _vpaytype(n, vn) + ";\n"
                 un = un + " " + _vpaytype(n, vn) + " " + _vfield(vn) + ";"
-            defs = defs + "struct E_" + n + " { int tag; union {" + un + " } u; };\n"
+            defs = defs + "struct E_" + n + " { unsigned char tag; union {" + un + " } u; } __attribute__((packed));\n"
             allbare := true
             for t := 0; t < len(cs.eds[i].vnames); t += 1:
                 if len(cs.eds[i].vpay[t].ptypes) == 0:
@@ -9525,8 +9605,6 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                         " = { " + str(t) + " };\n"
                 else:
                     allbare = false
-            # a fieldless enum is stored in a map's key table as its TAG, so keys()
-            # rebuilds the value through this table (src/tychoc.c:17323).
             if allbare and len(cs.eds[i].vnames) > 0:
                 tab := "static E_" + n + " *const _sing_tab_" + n + "[] = {"
                 for t := 0; t < len(cs.eds[i].vnames); t += 1:
@@ -9534,7 +9612,9 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                         tab = tab + ", "
                     tab = tab + "&_sing_" + n + "_" + str(t)
                 defs = defs + tab + "};\n"
-        docp := _need(&cs, "tycho_copy_E_" + n)
+        docp := false
+        if not inl:
+            docp = _need(&cs, "tycho_copy_E_" + n)
         doeq := _need(&cs, "tycho_eq_E_" + n)
         dost := _need(&cs, "tycho_str_E_" + n)
         if not (docp or doeq or dost):
@@ -9542,16 +9622,32 @@ fn _enum_support(cs: inout C) -> (string, string, string):
         if docp:
             proto = proto + "static E_" + n + " *tycho_copy_E_" + n + "(Arena *, E_" + n + " *);\n"
         if doeq:
-            proto = proto + "static int tycho_eq_E_" + n + "(E_" + n + " *, E_" + n + " *);\n"
+            if inl:
+                proto = proto + "static int tycho_eq_E_" + n + "(E_" + n + " x, E_" + n + " y);\n"
+            else:
+                proto = proto + "static int tycho_eq_E_" + n + "(E_" + n + " *, E_" + n + " *);\n"
         if dost:
-            proto = proto + "static char *tycho_str_E_" + n + "(Arena *, E_" + n + " *);\n"
-        cp := "static E_" + n + " *tycho_copy_E_" + n + "(Arena *a, E_" + n + " *v) {\n"
-        eq := "static int tycho_eq_E_" + n + "(E_" + n + " *x, E_" + n + " *y) {\n" +
-            "    if (x->tag != y->tag) return 0;\n"
-        st := "static char *tycho_str_E_" + n + "(Arena *a, E_" + n + " *v) {\n"
-        # str() prints the variant MANGLED, as ./tychoc does -- corelib's own
-        # golden reads `Err(strings__EmptyInput)`. The prefix is the enum type's
-        # own package; an entry-package enum has none and prints bare.
+            if inl:
+                proto = proto + "static char *tycho_str_E_" + n + "(Arena *, E_" + n + " v);\n"
+            else:
+                proto = proto + "static char *tycho_str_E_" + n + "(Arena *, E_" + n + " *);\n"
+        cp := ""
+        if docp:
+            cp = "static E_" + n + " *tycho_copy_E_" + n + "(Arena *a, E_" + n + " *v) {\n"
+        eq := ""
+        if doeq:
+            if inl:
+                eq = "static int tycho_eq_E_" + n + "(E_" + n + " x, E_" + n + " y) {\n" +
+                    "    if (x.tag != y.tag) return 0;\n"
+            else:
+                eq = "static int tycho_eq_E_" + n + "(E_" + n + " *x, E_" + n + " *y) {\n" +
+                    "    if (x->tag != y->tag) return 0;\n"
+        st := ""
+        if dost:
+            if inl:
+                st = "static char *tycho_str_E_" + n + "(Arena *a, E_" + n + " v) {\n"
+            else:
+                st = "static char *tycho_str_E_" + n + "(Arena *a, E_" + n + " *v) {\n"
         epfx := ""
         for q := 0; q + 1 < len(n); q += 1:
             if n[q] == 95 and n[q + 1] == 95:
@@ -9562,11 +9658,20 @@ fn _enum_support(cs: inout C) -> (string, string, string):
             shown := epfx + vn
             ps := cs.eds[i].vpay[t].ptypes
             tg := str(t)
+            tagx := "x->tag"
+            tagv := "v->tag"
+            usex := "x->u."
+            usev := "v->u."
+            if inl:
+                tagx = "x.tag"
+                tagv = "v.tag"
+                usex = "x.u."
+                usev = "v.u."
             if len(ps) == 0:
                 if dost:
-                    st = st + "    if (v->tag == " + tg + ") return tycho_str_from_c(a, \"" + shown + "\");\n"
+                    st = st + "    if (" + tagv + " == " + tg + ") return tycho_str_from_c(a, \"" + shown + "\");\n"
                 if doeq:
-                    eq = eq + "    if (x->tag == " + tg + ") return 1;\n"
+                    eq = eq + "    if (" + tagx + " == " + tg + ") return 1;\n"
                 continue
             if docp:
                 cp = cp + "    if (v->tag == " + tg + ") {\n" +
@@ -9574,10 +9679,9 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                     ", u) + sizeof(" + _vpaytype(n, vn) + ")); d->tag = " + tg + ";\n"
             eqs := ""
             if dost:
-                st = st + "    if (v->tag == " + tg + ") {\n" +
+                st = st + "    if (" + tagv + " == " + tg + ") {\n" +
                     "        char *r = tycho_str_from_c(a, \"" + shown + "(\");\n"
             for j := 0; j < len(ps); j += 1:
-                fj := ".u." + _vfield(vn) + ".f" + str(j)
                 if docp:
                     cp = cp + "        d->u." + _vfield(vn) + ".f" + str(j) + " = " +
                         _copy(&cs, "v->u." + _vfield(vn) + ".f" + str(j), ps[j], "a") + ";\n"
@@ -9587,14 +9691,15 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                     if dost:
                         st = st + "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n"
                 if doeq:
-                    eqs = eqs + _eq(&cs, "x->" + fj[1:], "y->" + fj[1:], ps[j])
+                    eqs = eqs + _eq(&cs, usex + _vfield(vn) + ".f" + str(j),
+                                     "y" + usex[1:] + _vfield(vn) + ".f" + str(j), ps[j])
                 if dost:
                     st = st + "        r = tycho_str_concat(a, r, " +
-                        _tostr_a(&cs, "v->" + fj[1:], ps[j]) + ");\n"
+                        _tostr_a(&cs, usev + _vfield(vn) + ".f" + str(j), ps[j]) + ");\n"
             if docp:
                 cp = cp + "        return d;\n    }\n"
             if doeq:
-                eq = eq + "    if (x->tag == " + tg + ") return " + eqs + ";\n"
+                eq = eq + "    if (" + tagx + " == " + tg + ") return " + eqs + ";\n"
             if dost:
                 st = st + "        return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n    }\n"
         if docp:
@@ -10635,8 +10740,9 @@ fn program_in(program: types.Program, dbgf: string) -> string:
     for ed in cs.eds:
         htd = htd + "typedef struct E_" + ed.name + " E_" + ed.name + ";\n"
     htd = htd + "\n" + mtd
+    ied := _inline_enum_defs(&cs)
     head = atd + asb + msb + osb + "\n" + head
-    head = htd + ttd + ftd + head + tsb + edefs + "\n" + apr + sproto + eproto +
+    head = htd + ied + ttd + ftd + head + tsb + edefs + "\n" + apr + sproto + eproto +
         tpr + mpr + hpr + vpr + rpr + "\n" + afb + vfb + sbody + ebody + tfb + hfb + mfb + ofb + rbd + "\n"
 
     # `fn main() -> Result(void, string)`: an Err reaching the entry point is

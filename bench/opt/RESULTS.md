@@ -433,19 +433,26 @@ check-free path needs index values that retain validation (the Goose model),
 which does not map to Tycho's mutable value arrays without a separate
 non-shrinking array/index design.
 
-## Fixed-size enum layout (post-0.8.9, candidate)
+## Inline fixed-size enums (post-0.8.9, kept)
 
-`Option` and `Result` are already inline value structs; user-defined enums are
-still pointer cells. The fixture builds 1,000,000 three-variant values and sums
-them:
+`tychoc1` now represents a user enum inline when every payload is a scalar:
+a packed tag plus the variant union, instead of an eight-byte cell pointer.
+Recursive, generic, fieldless, package and heap-payload enums keep the pointer
+representation. `TYCHOC_NO_INLINE_ENUM=1` is the control.
 
-| value | peak RSS (median) | wall time (median) |
+Fixture: `bench/opt/enumlayout/main.ty` — 1,000,000 three-variant values with
+an `int` payload, built and summed. Medians of five:
+
+| build | peak RSS | wall time |
 |---|---:|---:|
-| `[Kind]` user enum | 28,064 KB | 7 ms |
-| `[InlineKind]` packed tag+payload | **19,612 KB** | **6 ms** |
+| pointer-cell control | 28,068 KB | 7 ms |
+| inline tag+union | **19,872 KB** | **5 ms** |
 
-The inline record is **30% smaller and ~14% faster**. That is evidence for a
-future inline fixed-size enum representation, not a shipped language change:
-unboxing user enums touches construction, match, copy, equality, recycling,
-generics, maps and arrays. It should be a separate project with a caller, not
-a half-wired compiler path.
+That is **29% less peak RSS and ~29% less wall time**. The output is
+`333333333334` in both builds. The same test passes under the ASan/UBSan test
+lane and the corelib golden lane. This is a representation change only: value
+semantics, copying, matching and equality are unchanged.
+
+The reference compiler (`src/tychoc.c`) still uses the old representation; the
+shipped `tychoc1` is the measured path. Porting it is a parity follow-up, not a
+semantic change.

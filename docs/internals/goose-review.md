@@ -136,10 +136,10 @@ equivalent packed tag-plus-payload record (the lower bound for unboxing):
 
 | value | peak RSS | wall time |
 |---|---:|---:|
-| `[Kind]` user enum | 28,064 KB | 7 ms |
-| `[InlineKind]` packed tag+payload | **19,612 KB** | **6 ms** |
+| `[Kind]` old pointer cell | 28,068 KB | 7 ms |
+| `[Kind]` inline packed tag+union | **19,872 KB** | **5 ms** |
 
-That is 30% less memory and about 14% less time. The same effect appeared for
+That is 29% less memory and about 29% less time. The same effect appeared for
 `Option(int)` against a packed record: 28,500 KB / 8 ms versus 19,500 KB /
 6 ms. `Option` and `Result` already have the inline rep; they pay padding, not
 an allocation. An inline representation for *user* enums whose variants are all
@@ -147,10 +147,12 @@ fixed-size and non-recursive would remove the per-value cell and pointer chase;
 recursive enums stay boxed. This is a layout optimization, not variable-size
 records and not variable-mode enums; the value model is unchanged.
 
-This is a larger compiler change than the first two: copy/equality/recycle,
-match lowering, generic enums and array/map element layouts all have to agree.
-The probe says it would earn, but it is a separate representation project, not a
-half-wired patch.
+**Status 2026-10-21: kept in the shipped `tychoc1` for scalar payloads.** A
+fixed user enum with scalar payloads is now a packed tag+union value; recursive,
+generic, fieldless, package-mangled and heap-payload enums keep the pointer
+cell. The control `TYCHOC_NO_INLINE_ENUM=1` reproduces the old representation.
+The reference compiler still uses the old representation; porting it is a
+parity follow-up.
 
 ## 4. Static function values: measure first, do not restrict closures
 
@@ -212,6 +214,6 @@ These are real Goose conveniences, but none is a reason to change the model:
    ~35–43% less peak RSS and ~17–20% less wall time on the string case.
 2. Treat guard-derived bounds facts as a rejected experiment; a reporting mode
    may still be useful, but no speed claim is made.
-3. Prototype inline fixed-size *user* enums only as a representation project;
-   the benchmark says the layout earns, but it is not a small patch.
+3. Keep inline fixed-size *scalar-payload* enums in `tychoc1`; port the
+   reference compiler as a parity follow-up.
 4. Leave static function specialization and the small ergonomics demand-gated.

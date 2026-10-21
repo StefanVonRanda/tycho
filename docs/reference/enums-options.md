@@ -1,6 +1,8 @@
 # Enums, options, and `match`
 
 > **Memory:** copying an enum copies its whole payload. `Option` and `Result` work the same way — no null, no exceptions.
+> User enums whose variants carry only scalar payloads are stored inline by the
+> shipped compiler; recursive, generic and heap-bearing enums are boxed.
 
 A *sum type* is a value that is exactly one of several alternatives. Tycho has one
 general form, the user-defined `enum`, plus two built-in special cases for two common

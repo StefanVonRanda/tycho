@@ -17221,7 +17221,8 @@ static void tychoc_usage(FILE *f)
 "\n"
 "Environment\n"
 "  TYCHO_CORELIB              where corelib lives (default: beside this binary)\n"
-"  TYCHOC_NO_BOUNDS_ELISION   keep every bounds check, even provably redundant\n",
+"  TYCHOC_NO_BOUNDS_ELISION   keep every bounds check, even provably redundant\n"
+"  TYCHOC_NO_INLINE_ENUM      keep fixed-size user enums in pointer cells\n",
         TYCHO_VERSION);
 }
 

@@ -1,6 +1,7 @@
 # Changelog
 
 All notable changes are recorded here against the version that shipped them.
+
 The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
 `tychoc --version`); bump both together. Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
@@ -11,6 +12,18 @@ compiler, `tychoc1` the self-hosted compiler. A *lane* is one step of the local
 gate (`make ci`); `FRICTION n` is entry n in the defect log
 (`docs/internals/FRICTION.md`); a *probe* is a small program written against the
 docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
+
+## [Unreleased]
+
+### Compiler
+
+- **Fixed-size user enums with scalar payloads are inline in `tychoc1`.** They
+  are emitted as a packed tag plus variant union instead of a pointer to an
+  arena cell. Recursive, generic, fieldless, package-mangled and heap-payload
+  enums keep the pointer representation. `TYCHOC_NO_INLINE_ENUM=1` restores
+  the old layout for measurement. The benchmark is in
+  [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md). The reference compiler still
+  uses the old representation; porting it is a follow-up.
 
 ## [0.8.9] — 2026-10-21
 
