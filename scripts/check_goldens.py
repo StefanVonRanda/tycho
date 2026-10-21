@@ -140,6 +140,7 @@ NO_GOLDEN = {
     "examples/gfx/3d/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
     "examples/gfx/orbit/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
     "examples/gfx/rotor/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
+    "examples/gfx/gpu/run.sh": "GPU probe: asserts a real SDL_GPU frame under Xvfb; no recorded stdout or headless fallback",
     "examples/gfx/pong/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
     "examples/gfx/run.sh": "asserts a BMP header and an X11 smoke run; the rendered pixels need SDL and are not a recorded stdout",
     "server/run.sh": "asserts HTTP responses from a live daemon, not a recorded stdout",

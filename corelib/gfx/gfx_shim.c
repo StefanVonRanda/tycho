@@ -322,6 +322,13 @@ int64_t gfx_window_height(void *handle) {
     return (int64_t)h;
 }
 
+/* Internal C-to-C accessor for renderer packages. It is deliberately not
+   exposed in gfx.ty: Tycho never sees the SDL_Window pointer. */
+void *gfx_native_window(void *handle) {
+    Gfx *g = (Gfx *)handle;
+    return g ? g->window : NULL;
+}
+
 int64_t gfx_set_title(void *handle, const char *title) {
     Gfx *g = (Gfx *)handle;
     if (!g) return -1;

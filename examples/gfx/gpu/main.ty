@@ -1,0 +1,44 @@
+package main
+
+import "core:gfx"
+import "core:gfxgpu"
+import "core:strings"
+import "core:time"
+
+extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
+extern fn gfxgpu_open(w: gfx.Window) -> gfxgpu.Gpu
+extern fn gfxgpu_frame(g: gfxgpu.Gpu, angle: float) -> int
+
+fn main():
+    a := args()
+    frames := 0
+    for i := 1; i < len(a); i += 1:
+        if a[i] == "--frames" and i + 1 < len(a):
+            match strings.parse_int(a[i + 1]):
+                Ok(v): frames = v
+                Err(e): pass
+    win := gfx_open(960, 540, "Tycho GPU probe")
+    if is_null(win):
+        eprintln("gpu: cannot open gfx window")
+        return
+    gpu := gfxgpu_open(win)
+    if is_null(gpu):
+        eprintln("gpu: no SDL_GPU device (X11/Vulkan or Metal required)")
+        close(win)
+        return
+    frame := 0
+    quit := false
+    for quit == false and (frames == 0 or frame < frames):
+        ev := gfx.poll_event(win)
+        for ev.kind != 0:
+            if ev.kind == 1 or (ev.kind == 2 and ev.key == 27):
+                quit = true
+            ev = gfx.poll_event(win)
+        rc := gfxgpu_frame(gpu, to_float(frame) * 0.025)
+        if rc != 0:
+            eprintln("gpu: frame failed: " + str(rc))
+            break
+        frame = frame + 1
+        time.sleep_ms(16)
+    close(gpu)
+    close(win)

@@ -61,6 +61,7 @@ Each subdirectory is a multi-file program with its own README or `run.sh`.
 | [`gfx/3d/`](gfx/3d) | Software 3D first-person game: z-buffered triangle renderer over the gfx framebuffer, scaled with `View`. |
 | [`gfx/orbit/`](gfx/orbit) | Second `core:gfx3d` caller: orbit camera and gallery scene. |
 | [`gfx/rotor/`](gfx/rotor) | Third `core:gfx3d` caller: third-person game with `Mesh`/`Place` drone model and spinning rotor. |
+| [`gfx/gpu/`](gfx/gpu) | First SDL_GPU probe: depth-tested triangle through `core:gfxgpu`. |
 
 ## Core library
 

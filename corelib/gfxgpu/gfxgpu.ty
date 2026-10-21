@@ -1,0 +1,8 @@
+package gfxgpu
+
+# A deliberately small first SDL_GPU surface. It owns a GPU device and presents
+# its own swapchain; core:gfx still owns the window, input and audio.
+handle Gpu:
+    free: gfxgpu_close
+
+extern fn gfxgpu_close(g: Gpu) -> int

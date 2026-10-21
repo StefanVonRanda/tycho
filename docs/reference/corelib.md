@@ -87,6 +87,15 @@ expression-bodied; pass a named function where you need a multi-line body.
   right/up/forward basis, origin and uniform scale without copying the mesh.
   `examples/gfx/3d`, `examples/gfx/orbit` and `examples/gfx/rotor` are its
   callers.
+- **`gfxgpu`** — the first SDL_GPU backend. It owns a GPU device, swapchain,
+  depth texture and graphics pipeline for a `gfx.Window`; the Tycho side is the
+  affine `Gpu` handle plus an external frame call. Shaders are committed SPIR-V
+  and are translated to the native backend by SDL_shadercross. Build the pinned
+  runtime with `scripts/build-shadercross.sh`; this package is not available on
+  a host without SDL_shadercross. The public function is `gfxgpu_close`; the
+  handle-returning open and frame entry points are declared by the caller, the
+  same affine-opener pattern as `core:gfx`. The initial probe draws a
+  depth-tested triangle; game/HUD coverage is the next step.
 - **`char`** — byte/char classification & conversion over int byte values (what
   `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
   `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a
