@@ -10,11 +10,24 @@ $CC -O2 -o "$T/peakrss" bench/peakrss.c || { echo "peakrss build failed"; exit 2
 to_kb() { case "$(uname)" in Darwin) echo $(( $1 / 1024 ));; *) echo "$1";; esac; }
 ref=""; FAIL=0
 
+TYCHO_RSS_LIMIT_KB=262144       # the expected peak is ~20 MB; a shared-read
+                                # regression reached 121 GB before O6 was fixed
 runlang() {                                           # <label> <binary>
     if [ ! -x "$2" ]; then printf '%-8s %s\n' "$1" "(build skipped)"; return; fi
-    "$T/peakrss" "$2" > "$T/out" 2> "$T/m"
+    if [ "$1" = tycho ]; then
+        # Only the Tycho row is capped: Go's runtime reserves a large virtual
+        # arena at startup, while the scalar-map bug is a Tycho codegen issue.
+        ( ulimit -v 2097152; "$T/peakrss" "$2" > "$T/out" 2> "$T/m" ) || {
+            echo "  tycho exceeded the 2 GiB address-space guard"; FAIL=1; return
+        }
+    else
+        "$T/peakrss" "$2" > "$T/out" 2> "$T/m"
+    fi
     kb=$(to_kb "$(awk '{print $1}' "$T/m")"); rss=$(awk "BEGIN{printf \"%.1f\", $kb/1024}"); ms=$(awk '{print $2}' "$T/m"); out=$(cat "$T/out")
     printf '%-8s %7s MB %6s ms   %s\n' "$1" "$rss" "$ms" "$out"
+    if [ "$1" = tycho ] && [ "$kb" -gt "$TYCHO_RSS_LIMIT_KB" ]; then
+        echo "  ^ tycho peak RSS ${kb} KB exceeds ${TYCHO_RSS_LIMIT_KB} KB"; FAIL=1
+    fi
     if [ -z "$ref" ]; then ref="$out"; elif [ "$out" != "$ref" ]; then echo "  ^ CHECKSUM MISMATCH (expected $ref)"; FAIL=1; fi
 }
 

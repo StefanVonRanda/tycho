@@ -1,7 +1,7 @@
-# docs/spec/14-ffi.md:20-21, docs/spec/14-ffi.md:39-40 / src/tychoc.c:5238@ret_opt_str: a struct RETURN is rejected too.
+# docs/spec/14-ffi.md:20-21, docs/spec/14-ffi.md:39-40 / src/tychoc.c@ret_opt_str: a struct RETURN is rejected when the struct is not POD (a string field here).
 # expect: return type must be int/char/float/bool/string/ptr/bytes
 struct P:
-    x: int
+    s: string
 
 extern fn ffi_make(a: int) -> P
 

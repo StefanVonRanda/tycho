@@ -20,7 +20,7 @@ memory models."
 **What it says, honestly:**
 - **vs Go (GC): tycho wins every workload on BOTH time and memory.** Across the board.
 - **vs Koka (ARC): tycho wins every workload on BOTH axes too.** Time is always tycho's (binary-trees 179 vs 269, tree-rewrite 120 vs 182, array-pipeline 30 vs 372). Memory used to favour Koka on the pointer-tree workloads — closed by per-statement transient reclaim (see [memory-model.md](../../docs/memory-model.md)): binary-trees was 25 MB because the discarded depth-19 *stretch tree* sat in `main`'s arena until return; freeing each expression-statement's transients immediately drops it to **13.3 MB — under Koka's 14.8** (Perceus frees the stretch incrementally during the checksum walk; the arena now frees it one statement later). tycho is also far lighter on array/parse where Koka's core has no flat array.
-- **vs manual C/Rust** (neither GC nor ARC): tycho *beats* them on the tree workloads (bulk-free vs per-node free) and on object-count-bound gcscan; it trails them on flat-array throughput and `latency` (the raw-loop ceiling). That gap is the manual-memory ceiling, not the GC/ARC rivals.
+- **vs manual C/Rust** (neither GC nor ARC): tycho *beats* them on the tree workloads (bulk-free vs per-node free) and, with the reference compiler, on object-count-bound gcscan (64.7 MB vs C 78.1); the shipped `tychoc1` currently retains 125.6 MB on gcscan, a self-hosted gap. It trails them on flat-array throughput and `latency` (the raw-loop ceiling). That gap is the manual-memory ceiling, not the GC/ARC rivals.
 
 ¹ Koka's json-parse port failed to build in this run (the harness records a 1 ms / 2.7 MB
 sentinel, i.e. it did not execute); excluded rather than reported as a win.
@@ -34,10 +34,35 @@ trees to ~180 ms with the window-eviction memory win (4.0 MB) intact.
 Golden/fuzz/fixpoint checks did not catch it because they check **output, not wall
 time** — hence the `make bench-guard` perf gate in `make ci`.
 
+## 2026-10-20 repeat — shipped compiler, post-O6 fix
+
+`bench/fair_full.sh` under an 8 GiB address-space cap; `tychoc1` at `-O3`,
+best-of-3. Koka is not installed here, so its column is `—` (not zero). The
+table at the top is the earlier reference-compiler baseline and is retained for
+history.
+
+| workload | tycho (tychoc1) | C | Rust | Go |
+|---|---:|---:|---:|---:|
+| binary-trees | **13.6MB/94ms** | 33.7MB/788ms | 33.4MB/1128ms | 37.8MB/1139ms |
+| tree-rewrite | **6.4MB/45ms** | 13.8MB/350ms | 9.2MB/518ms | 22.8MB/591ms |
+| array-pipeline | 4.4MB/19ms | 3.5MB/21ms | **3.1MB/16ms** | 7.6MB/38ms |
+| json-parse | 66.7MB/589ms | 58.1MB/825ms | 58.9MB/721ms | 109.8MB/1186ms |
+| gcscan | 125.6MB/58ms | 78.1MB/77ms | — | 130.1MB/117ms |
+| latency | 4.6MB/183ms | 2.5MB/126ms | — | 13.4MB/872ms |
+
+The six rows are within run-to-run noise of the pre-fix repeat; the O6
+scalar-map fix did not invalidate the cross-language table. The one benchmark
+directly changed by the fix is LRU: **121 GB OOM → 20.4 MB / 139 ms** (see
+[lru/RESULTS.md](../lru/RESULTS.md)). `gcscan` still shows the self-hosted
+compiler's retained-set gap: 125.6 MB here versus 65.1 MB for the reference
+compiler (C 78.1, Go 130.1); that gap is emitted-C/string-push specific, not an
+O6 regression.
+
 ## macOS (Apple Silicon) — fair standard-opt sweep
 
-> The numbers above are the **Linux** machine (gcc 15.2 / rustc 1.93 / go 1.26 /
-> koka 3.2.3). This is a **second machine, second OS**:
+> The historical Linux table at the top is the **Linux** machine (**AMD Strix Halo / Ryzen AI MAX+ 395**,
+> Fedora Linux 44; gcc 15.2 / rustc 1.93 / go 1.26 / koka 3.2.3). This is a **second
+> machine, second OS**:
 > Apple Silicon arm64, Darwin 25.5, Apple clang 21.0.0, rustc 1.95.0, go 1.26.4,
 > **Koka not installed** (its column is absent here, not zero). Same fair rule —
 > each language at its standard optimized build (tycho/C/Rust `-O3`, `go build`).
@@ -105,7 +130,7 @@ shrinking `A`. **That form no longer exists** — it was deleted from the langua
 on 2026-07-29, and for one day the surviving three-clause spelling had no
 elision arm at all, so 223 sequential sites fell back to the checked accessor.
 Phase 27 restored it: `for i := 0; i < len(A); i += 1:` elides today
-(`src/tychoc.c:9818-9896`), for a slightly *stronger* reason — the condition is
+(`src/tychoc.c:9881-9959`), for a slightly *stronger* reason — the condition is
 emitted into the C `while` header and so is re-evaluated every iteration rather
 than cached. **The 47 ms was not re-measured on the three-clause form**, and at
 `-O3` gcc folds the check away by itself, so a wall-time re-run would not
@@ -289,6 +314,25 @@ systems-grade** — it wins or ties the lowest tier on memory in two of three
 workloads, never loses badly, and which of {Tycho, Koka} leads depends on
 data shape (trees favour Perceus reuse; flat arrays favour real arrays). It is
 never the GC tier (Go) and never the refcount-list tier (Koka on arrays).
+
+### O7 presizing (2026-10-20)
+
+The per-pass `ys := []int` is now presized from the counted loop's upper bound
+(`reserve(ys, len(xs))`), removing the geometric growth copies. Control:
+`TYCHOC_NO_PRESIZE=1`; output `218777` in every build, medians of five:
+
+| build | peak RSS | wall |
+|---|---:|---:|
+| `tychoc1`, control | 6,544 KB | 30 ms |
+| `tychoc1`, presized | **4,280 KB** | **24 ms** |
+| `./tychoc`, control | 6,496 KB | 26 ms |
+| `./tychoc`, presized | **4,300 KB** | **20 ms** |
+
+That is ~34% less RSS and ~20% less time on this workload. The 2026-10-20 fair
+repeat after the O6 fix is **4.4 MB / 19 ms**, with C at 3.5/21 and Rust at
+3.1/16; the presizing win holds. The `n := len(A)` bounds-check shape and SROA
+were measured and left alone (no gap); the full record is in
+[bench/opt/RESULTS.md](../opt/RESULTS.md#o7--loop-grown-array-and-map-literal-presizing-shipped-089).
 
 ## Fourth workload: string-pipeline (string-heavy)
 

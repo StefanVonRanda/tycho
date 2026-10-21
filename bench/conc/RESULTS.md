@@ -4,7 +4,8 @@
 language, each binary picking K = online cores itself. Fair-bench rule: every
 language at its standard optimized build (tycho -O3 via tychoc, C `-O3
 -pthread`, `go build` (Go 1.26.2), `rustc -O` (Rust 1.93.0)). Measured via
-bench/peakrss (peak RSS + wall). AMD Ryzen 7 7735HS, 16 hw threads, Linux
+bench/peakrss (peak RSS + wall). AMD Strix Halo / Ryzen AI MAX+ 395, 32 hw
+threads, Fedora Linux 44
 (parreduce/pipeline 2026-06-11; pool 2026-06-25; mandelbrot 2026-07-16).
 
 ## parreduce — compute-bound parallel reduction

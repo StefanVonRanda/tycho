@@ -1,6 +1,6 @@
 # expect: must be int/char/float/bool/string/ptr/bytes
 struct P:
-    x: int
+    s: string
 
 extern fn ffi_take(s: P) -> int
 

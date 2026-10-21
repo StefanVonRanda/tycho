@@ -29,14 +29,22 @@ for entry in corelib/test/*/main.ty; do
         fi
     fi
     if ! "$TYCHOC" "$entry" -o "$T/c" >/dev/null 2>&1; then echo "FAIL $name (tychoc compile)"; fail=1; continue; fi
-    "$T/c" > "$T/co" 2>&1; rc=$?
+    if [ "$name" = "gfx_window" ]; then
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$T/c" > "$T/co" 2>&1; rc=$?
+    else
+        "$T/c" > "$T/co" 2>&1; rc=$?
+    fi
     # Windows/MSYS2 flake (Prism emulation): under sustained process churn exec
     # of a PE intermittently returns 127. Retry with backoff (Windows only); the
     # Prism startup heap-corruption race (0xC0000374) is per-attempt.
     if [ "$rc" -eq 127 ] && [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" -ne 0 ]; then
         for _try in 1 2 3; do
             sleep 2
-            "$T/c" > "$T/co" 2>&1; rc=$?
+            if [ "$name" = "gfx_window" ]; then
+                SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$T/c" > "$T/co" 2>&1; rc=$?
+            else
+                "$T/c" > "$T/co" 2>&1; rc=$?
+            fi
             [ "$rc" -eq 0 ] && break
         done
     fi

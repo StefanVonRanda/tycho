@@ -196,6 +196,7 @@ test: tychoc tychoc1
 	@sh tests/accumulator_scope.sh
 	@sh tests/inout_append.sh
 	@sh tests/compiler_storage.sh
+	@sh tests/cow_scalar_share.sh
 	@sh tests/field_rebuild.sh
 	@sh tests/return_projection.sh
 	@sh tests/allocator_contract.sh

@@ -49,7 +49,7 @@ ROOTS = ("tests", "corelib", "tools", "examples", "server", "bench")
 # function of fully known type. The 7 left are template BODIES walked with `$T`
 # genuinely unbound, which no amount of work grounds.
 SIXB = 7
-EXPECT = 1509          # +1 tests/pkg/slice_view/main.ty and +1 bench/opt/sliceparse/main.ty (2026-10-20); +1 tests/move_loop_local.ty and +1 bench/opt/movebuild/main.ty (2026-10-20); +1 tests/ptr_param_abi.ty (2026-10-20); +1 bench/opt/bigparam/main.ty (2026-10-20); +1 bench/litarr_build.ty (2026-10-19); +1 tests/eprintln.ty and -1 tests/diag/eprintln_wrong_stream.ty (the builtin it refused now exists, 2026-10-19); +1 tools/tycho-dupe/main.ty (2026-10-19); +1 bench/allocator/readers.ty; +1 existing tools/tycho-docs/main.ty reconciled, 2026-10-15; +14 compiler regressions (three positive, three abort, eight reject), 2026-09-26; +10 D06 coercion rejects plus place-store, tuple-adaptation, pow/SoA-iteration, D24 f-string, D22 sized-float, D29/D30 map-key, D37 shift, D26 temp-namespace, D28 enum-C-name, D36 double-underscore and D21 packed-inout regressions, 2026-09-27; +20 audit/corelib fixtures, excluding the staged tycho-db .src input, 2026-09-27; +1 D81 receive escape case, 2026-09-27; +1 map-missing-composite accept, 2026-10-18; +1 store-discipline accept, 2026-10-18; +4 subscript-place root-rule rejects, 2026-10-18; 0 of 0 is not green
+EXPECT = 1521          # +2 corelib/test/gfx/main.ty + corelib/test/gfx_window/main.ty (core:gfx pure + windowed smoke tests); +1 corelib/gfx/gfx.ty + +1 examples/gfx/pong/main.ty (core:gfx and its second caller); +1 examples/gfx/main.ty (windowed gfx/FFI demo); +1 tests/presize_loop.ty and +1 bench/opt/smallmap/main.ty (O7); +1 tests/cow_maps.ty and +1 bench/trie/path/main.ty (O6, 2026-10-20); +1 tests/dest_pass.ty and +2 O5 bench fixtures (2026-10-20); +1 tests/pkg/slice_view/main.ty and +1 bench/opt/sliceparse/main.ty (2026-10-20); +1 tests/move_loop_local.ty and +1 bench/opt/movebuild/main.ty (2026-10-20); +1 tests/ptr_param_abi.ty (2026-10-20); +1 bench/opt/bigparam/main.ty (2026-10-20); +1 bench/litarr_build.ty (2026-10-19); +1 tests/eprintln.ty and -1 tests/diag/eprintln_wrong_stream.ty (the builtin it refused now exists, 2026-10-19); +1 tools/tycho-dupe/main.ty (2026-10-19); +1 bench/allocator/readers.ty; +1 existing tools/tycho-docs/main.ty reconciled, 2026-10-15; +14 compiler regressions (three positive, three abort, eight reject), 2026-09-26; +10 D06 coercion rejects plus place-store, tuple-adaptation, pow/SoA-iteration, D24 f-string, D22 sized-float, D29/D30 map-key, D37 shift, D26 temp-namespace, D28 enum-C-name, D36 double-underscore and D21 packed-inout regressions, 2026-09-27; +20 audit/corelib fixtures, excluding the staged tycho-db .src input, 2026-09-27; +1 D81 receive escape case, 2026-09-27; +1 map-missing-composite accept, 2026-10-18; +1 store-discipline accept, 2026-10-18; +4 subscript-place root-rule rejects, 2026-10-18; 0 of 0 is not green
                        # 1501 -> 1502: tools/tycho-dupe/main.ty (2026-10-19)
                        # 1406 -> 1407: tests/reject/value_if_nested.ty (2026-09-24); -> 1410: three handle use-after-close fixtures; -> 1411: handle_close_param; -> 1413: tests/inline_arr_reassign_loop.ty and tools/tycho-grade/main.ty; -> 1414: tests/reject/slice_struct.ty; -> 1418: tests/reject/{fixarr,vector}_{pop,reserve}.ty; -> 1425: tests/or_else{,_frees}.ty and the five tests/reject/orelse_*.ty; -> 1429: tests/neg_literal_adapt.ty and tests/reject/sized_lit_binop_fit.ty, where the two compilers disagreed with no fixture; -> 1431: tests/reject/value_if_one_line.ty and fstr_hole_escaped_quote.ty
                        # 1405 -> 1406: tools/tycho-du/main.ty, the handle
@@ -70,7 +70,7 @@ EXPECT = 1509          # +1 tests/pkg/slice_view/main.ty and +1 bench/opt/slicep
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:16290@declaration, src/tychoc.c:16294@declares) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:2327@declaration, src/tychoc.c:1175@declares) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
@@ -94,11 +94,11 @@ KNOWN_TYPE_MISS = set()
 # GENERIC_RECUR_GROW left this list on 2026-09-05: `_inst_body`'s depth guard
 # bailed silently, so a recursion at a growing type was never reported.
 # THE PENDING-TYPE RULES left this list when src/tychoc.c's B-3 grounding
-# walk (src/tychoc.c:6626@use, src/tychoc.c:6964@inferred, src/tychoc.c:9919@grounding) was ported to compiler/types/tcheck.ty as a
+# walk (src/tychoc.c:123@use, src/tychoc.c:2862@inferred, src/tychoc.c:986@grounding) was ported to compiler/types/tcheck.ty as a
 # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
 # SET R21f-11 built could carry none of the three.
 # THE CONCURRENCY RULES left this list under R21c, which ported the five
-# spawn legs (src/tychoc.c:6835-6845) and wait's argument (src/tychoc.c:7716@wait) into
+# spawn legs (src/tychoc.c:6898-6908) and wait's argument (src/tychoc.c:1151@wait) into
 # compiler/types/tcheck.ty in the bootstrap's own order.
 LIT = lambda f: len(re.sub(r"%[-0-9.*]*(?:ll)?[a-zA-Z]", "", f))
 

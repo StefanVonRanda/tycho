@@ -10,7 +10,7 @@ correctness oracle.
 
 ## Results
 
-Machine: **AMD Ryzen 7 7735HS** (Zen 3+, x86-64), Linux. Toolchains: tycho via `tychoc`
+Machine: **AMD Strix Halo / Ryzen AI MAX+ 395** (Zen 5, x86-64), Fedora Linux 44. Toolchains: tycho via `tychoc`
 (C backend) at `-O3`; C via **gcc 15.2.0** at `-O3`; Go **1.26.2**. Median of 3 runs; peak
 RSS via `bench/peakrss`. All three emit checksum `73529 21230611` (73529 of 300000 nodes
 reachable — the out-component of this random digraph).
@@ -21,10 +21,13 @@ reachable — the out-component of this random digraph).
 | C     |  31.5 MB | ~52 ms | `Edge**` — malloc'd per node   |
 | Go    |  34.0 MB | ~61 ms | `[][]Edge` — slices            |
 
+2026-10-20 repeat with the shipped `tychoc1`: **46.4 MB / 41 ms**; C 30.7/23,
+Go 33.1/33; checksum `73529 21230611`.
+
 ## Reading it honestly — the opposite of the trie
 
 This is the result `value-semantics-limits.md` predicts and the trie's companion: tycho is
-**~1.3× C on memory and ~1.2× on wall, ≈ Go** — *competitive*, not the ~3.2× the
+**~1.3–1.5× C on memory and ~1.2× on wall, ≈ Go** — *competitive*, not the ~3.2× the
 pointer-linked trie cost. The reason is representational:
 
 - A graph stored as an **adjacency list of integer indices** (the flat-pool idiom we

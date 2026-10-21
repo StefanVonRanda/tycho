@@ -3,7 +3,7 @@
 # `inout string` is banned. Widening the param direction must not widen this one, so
 # the param gate is `src/tychoc.c@ffi_arg_arr_ptr_ctype` and the return gate stays
 # `src/tychoc.c@ffi_arr_ptr_ctype`, which never answers for T_ARRAY_STRING.
-# expect: return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted
+# expect: return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], a POD struct, Option(string), a handle, or omitted
 extern "x" fn ffi_names(n: int) -> [string]
 
 fn main():

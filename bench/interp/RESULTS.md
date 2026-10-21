@@ -17,7 +17,7 @@ copy (it collapses constant subtrees), so ~8.58M nodes are live across the run.
 
 ## Numbers
 
-Machine: AMD Ryzen 7 7735HS, x86-64, Linux. tycho + C at `cc -O3` (C also `-fwrapv`),
+Machine: AMD Strix Halo / Ryzen AI MAX+ 395, x86-64, Fedora Linux 44. tycho + C at `cc -O3` (C also `-fwrapv`),
 Go at `go build`. Peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall.
 Run: `sh bench/interp/run.sh`.
 

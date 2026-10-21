@@ -2,7 +2,7 @@
 
 ## O1 — immortal allocation + literal lifetime elision (SHIPPED 0.8.9)
 
-Date: 2026-10-20. Host: Linux x86-64, AMD Ryzen 7 7735HS.
+Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
 Compiler: `tychoc 0.8.9` at the working tree.
 
 Fixture: `bench/litarr_build.ty` — 6,000,000 `push(b.tags, "literal")` calls into
@@ -47,7 +47,7 @@ That is **45% less peak RSS and 54% less wall time** on a literal-heavy builder.
 
 ## O2 — read-only pass-by-pointer (SHIPPED 0.8.9)
 
-Date: 2026-10-20. Host: Linux x86-64, AMD Ryzen 7 7735HS.
+Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
 Compiler: `tychoc 0.8.9`.
 
 Fixture: `bench/opt/bigparam/main.ty` — 5,000,000 calls to
@@ -89,7 +89,7 @@ had. The packaged binary's behavior and performance are unchanged.
 
 ## O3 — last-use moves into `push` (SHIPPED 0.8.9)
 
-Date: 2026-10-20. Host: Linux x86-64, AMD Ryzen 7 7735HS.
+Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
 Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
 
 Fixture: `bench/opt/movebuild/main.ty` — 500,000 loop-local `Item`s with four
@@ -123,7 +123,7 @@ array outlives the callee's scratch.
 
 ## O4 — borrowed in-scope slices (SHIPPED 0.8.9)
 
-Date: 2026-10-20. Host: Linux x86-64, AMD Ryzen 7 7735HS.
+Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
 
 Fixture: `bench/opt/sliceparse/main.ty` — a 12.8 MB string sliced 100 times
 with `s[0:len(s)]`; each slice is consumed by `len` and discarded. The control
@@ -151,7 +151,160 @@ is never copied. A binding, return, `push`, map key or FFI call goes through
 view path (`println`, `len`, `strings.to_upper`) and the materialization path
 (binding, return, `push`).
 
-## O5–O7
+## O5 — destination passing through owned self-rebuilds (SHIPPED 0.8.9)
 
-No measurements yet. Each phase adds its fixture and records the same table
-(copy/control vs optimized) before the phase is marked done.
+Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
+Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
+
+`t = f(t, ...)` where `t` is read once in the RHS and immediately rebound is a
+self-rebuild: the caller cannot observe the old value again. Both compilers
+generate a variant of `f` whose corresponding parameter is OWNED. Inside that
+variant a field or match payload of the old value may occupy the result's
+owning slot instead of being deep-copied; the move is only legal inside a
+`return`, so it is terminal, and the result is built in the assignment
+target's arena, so the moved buffer and the result share a lifetime. Recursive
+calls that consume the changed child select the same variant. `TYCHOC_NO_DEST_PASS=1`
+is the control and generates no variants.
+
+Fixture `bench/opt/treeupdate/main.ty` inserts 12,000 keys into a binary tree.
+The control reconstructs both children at every level (O(n) per insert, O(n^2)
+for the build); the owned variant moves the unchanged child and walks only the
+changed path.
+
+Fixture `bench/opt/editorupdate/main.ty` is a 16,384-leaf rope edited 10,000
+times through `t = set(t, i, v)`. The control copies the whole line per
+keystroke; the owned variant moves the untouched sibling and allocates one
+path node per edit.
+
+```text
+cc -O2 -o /tmp/peakrss bench/peakrss.c
+./tychoc1 bench/opt/treeupdate/main.ty -o /tmp/tree_after
+TYCHOC_NO_DEST_PASS=1 ./tychoc1 bench/opt/treeupdate/main.ty -o /tmp/tree_before
+./tychoc  bench/opt/editorupdate/main.ty -o /tmp/ed_after
+TYCHOC_NO_DEST_PASS=1 ./tychoc bench/opt/editorupdate/main.ty -o /tmp/ed_before
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/tree_before; done
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/tree_after;  done
+```
+
+`treeupdate` (12,000 inserts; output `12000 393127152` in every build):
+
+| build | peak RSS (median of 5) | wall time (median of 5) |
+|---|---:|---:|
+| `tychoc1`, control | 2,252,644 KB | 500 ms |
+| `tychoc1`, owned variant | **8,908 KB** | **3 ms** |
+| `./tychoc`, control | 2,252,484 KB | 493 ms |
+| `./tychoc`, owned variant | **9,112 KB** | **3 ms** |
+
+`editorupdate` (10,000 edits over 16,384 leaves; output
+`-7183164655047012628` in every build):
+
+| build | peak RSS (median of 5) | wall time (median of 5) |
+|---|---:|---:|
+| `tychoc1`, control | 8,966,776 KB | 1,800 ms |
+| `tychoc1`, owned variant | **7,584 KB** | **3 ms** |
+| `./tychoc`, control | 8,966,596 KB | 1,783 ms |
+| `./tychoc`, owned variant | **7,748 KB** | **4 ms** |
+
+That is a **99.6% peak-RSS drop on the tree** and **99.9% on the editor rope**,
+with identical output and no change to the source programs. `tests/dest_pass.ty`
+pins the boundary: a snapshot taken before the call stays independent, a call
+whose result is bound to another name still copies, and a heap struct field
+moves into the rebuilt aggregate only on the unique path.
+
+## O6 — conservative shared-bit CoW / path copying (SHIPPED 0.8.9)
+
+Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
+Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
+
+The shared bit is the **sign of a composite map's `ecap`**, so no map
+descriptor grew and the existing 64-byte layout is unchanged. A same-arena
+`b := a` of a shareable map, or of a struct whose mutable fields are maps, marks
+both descriptors shared. The first write through either (`put`, `del`,
+`reserve`, `slotptr`) copies the map's key/value/live/index arrays into the
+destination arena, clears the bit, and marks every copied value's nested maps
+shared; a composite read from a shared map returns a shallow value and marks
+the source. A stale bit can only over-copy, never under-copy — no reference
+count is involved. Arrays have no shared bit and still deep-copy; scalar maps
+and non-shareable aggregates keep the old path. `TYCHOC_NO_COW=1` is the
+control.
+
+Fixture `bench/trie/path/main.ty` builds a 2,000-word persistent trie with
+`t = insert(t, s, 0)`. The control copies each map and its subtree per insert;
+the CoW build copies only the maps on the changed path and shares untouched
+children. Output is `5954 1981` in every build.
+
+```text
+./tychoc1 bench/trie/path/main.ty -o /tmp/path_after
+TYCHOC_NO_COW=1 ./tychoc1 bench/trie/path/main.ty -o /tmp/path_before
+./tychoc  bench/trie/path/main.ty -o /tmp/path_ref_after
+TYCHOC_NO_COW=1 ./tychoc bench/trie/path/main.ty -o /tmp/path_ref_before
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/path_before; done
+for i in 1 2 3 4 5; do /tmp/peakrss /tmp/path_after;  done
+```
+
+| build | output | peak RSS (median of 5) | wall time (median of 5) |
+|---|---:|---:|---:|
+| `tychoc1`, control | 5954 1981 | 1,673,340 KB | 473 ms |
+| `tychoc1`, CoW | 5954 1981 | **12,640 KB** | **4 ms** |
+| `./tychoc`, control | 5954 1981 | 1,673,124 KB | 482 ms |
+| `./tychoc`, CoW | 5954 1981 | **12,448 KB** | **5 ms** |
+
+That is a **99.2% peak-RSS drop and 99.1% wall-time drop** on the persistent
+trie, with byte-identical output. The destructive `bench/trie` row is unchanged
+(58.6 MB in the same run, against 58.9 MB recorded before O6), so mutation
+through `inout` did not regress. `tests/cow_maps.ty` pins snapshots, nested
+maps, `delete`, string values and missing-key defaults; `tests/dest_pass.ty`,
+`tests/map_missing_composite.ty` and `tests/inout_string.ty` stay green.
+
+The first O6 cut also took the shallow-read path for scalar `[int:int]` reads
+inside an `inout` helper. That marked the map shared, and the next write copied
+all 200k entries: `bench/lru` went from ~20 MB to **121 GB** and OOM-killed the
+host. A scalar/string value has no nested mutable part to protect, so the share
+path is now gated on the value having a share helper. LRU is back to **20.4 MB /
+139 ms** (no-cow control 20.9 MB), while the persistent trie above still gets
+its path-copy win. `tests/cow_scalar_share.sh` asserts neither compiler emits
+`get_share` for the scalar shape, and `bench/lru/run.sh` fails above 256 MB.
+
+## O7 — loop-grown array and map-literal presizing (SHIPPED 0.8.9)
+
+Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
+Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
+
+`ys := []T` immediately followed by a counted loop that pushes into `ys` is
+presized to the loop's proven upper bound:
+`tycho_arr_*_reserve(owner, &ys, len(xs))`. The proof is the same one
+bounds-check elision uses (start 0, unit step, `i < len(src)`, no reassignment
+of `src`/`i`, no whole-`src` call). Over-reserving is safe: `reserve` only
+grows, and a conditional or repeated push still grows. `TYCHOC_NO_PRESIZE=1` is
+the control.
+
+Fixture `bench/prongB/arr_pipeline.ty` (100,000-element `xs`, 200 passes that
+build a fresh `ys` and sum it); output `218777` in every build:
+
+| build | peak RSS (median of 5) | wall time (median of 5) |
+|---|---:|---:|
+| `tychoc1`, control | 6,544 KB | 30 ms |
+| `tychoc1`, presized | **4,280 KB** | **24 ms** |
+| `./tychoc`, control | 6,496 KB | 26 ms |
+| `./tychoc`, presized | **4,300 KB** | **20 ms** |
+
+That is **~34% less peak RSS and ~20% less wall time** on the flat array
+pipeline.
+
+A map literal is now presized to its pair count in the reference compiler too
+(`tychoc1` already did this). Fixture `bench/opt/smallmap/main.ty` rebuilds a
+six-entry map literal 200,000 times: `./tychoc` **10 ms → 6 ms** with
+`TYCHOC_NO_MAP_PRESIZE=1` as the control; `tychoc1` is unchanged because it
+already presized. Output `20001100000` in every build.
+
+**Bounds and SROA, measured.** The existing monotone-index elision already
+removes the checks in the fixture's `len(xs)` loops (`TYCHOC_NO_BOUNDS_ELISION=1`
+is its control); a `n := len(A)`-bound probe measured 15 vs 16 ms at four
+million accesses, so no new elision shape was added. SROA was evaluated:
+fixed arrays and structs are already inline, and a two-element dynamic array
+built in loop scratch measured 6 ms / 1.9 MB against 7 ms / 1.9 MB for the
+inline fixed array — no gap for non-escaping small values. A small-map SROA
+would need a second map representation; the small-map loop is already flat and
+the demand gate does not justify it. O7 ships the allocation presizing only,
+where the loop bound proves an upper bound and over-reserving is safe.
+`tests/presize_loop.ty` pins both shapes.

@@ -7,25 +7,38 @@ The evidence is numbers next to C, Rust, Go (GC), and Koka
 not a passing test suite. This file is the map; each row links to a `RESULTS.md`
 with detail.
 
+All Linux figures below were recorded on **AMD Strix Halo / Ryzen AI MAX+ 395,
+Fedora Linux 44, x86-64** (16 cores, 32 hardware threads); macOS second-machine
+results are called out separately in each `RESULTS.md`. Figures were refreshed
+2026-10-20 for the O1–O7 sweep and the O6 fix; rows not rerun in that sweep
+retain their earlier measurements.
+
+The O5/O6 before-controls are deliberately pathological: the trie path control
+peaks at ~1.67 GB, treeupdate at ~2.25 GB and editorupdate at ~9 GB. Run one at
+a time under a hard cap, e.g. `(ulimit -v 12582912; ...)`, and never alongside
+`make ci` or another benchmark. A missed cap once took `bench/lru` to 121 GB
+and OOM-killed the host; the scalar-map fix and the 256 MB LRU guard are
+recorded in `bench/lru/RESULTS.md`.
+
 ## Axis 1 — memory (peak RSS)
 
 | workload | what it stresses | tycho vs others | verdict | run |
 |----------|------------------|----------------|---------|-----|
-| **binary-trees** | transient alloc/discard, deep recursion | 25 MB vs C 33, Go 35, Koka 14 | **beats hand-written C** (one arena reset/iter) | `bench-prongB` |
-| **tree-rewrite** | rewrite pass over a tree | 7 MB, lowest with Koka, beats C/Rust/Go | win | `bench-prongB` |
-| **array-pipeline** | bulk transform | 6 MB vs C 3 | ~2× C mem (slack, closes to ≤C with `reserve`); time **1.25× C** after push-loop fusion | `bench-prongB` |
+| **binary-trees** | transient alloc/discard, deep recursion | 13.6 MB vs C 33.7, Rust 33.4, Go 37.8 | **beats hand-written C** on both axes (one arena reset/iter) | `bench-prongB` |
+| **tree-rewrite** | rewrite pass over a tree | 6.4 MB vs C 13.8, Rust 9.2, Go 22.8 | lowest of C/Rust/Go; Koka not rerun | `bench-prongB` |
+| **array-pipeline** | bulk transform | 4.4 MB vs C 3.5, Rust 3.1, Go 7.6 | ~1.25× C mem; **19 vs 21 ms** in the 2026-10-20 repeat — O7 closed the old ~2× gap | `bench-prongB` |
 | **string-pipeline** | string building | 1 MB | parity | `bench-prongB` |
-| **json-parse (real)** | recursive-descent parse-and-discard | 67 MB vs C 58 | **fastest of all 5**, ~1.15× C memory (whole tree held per pass) | `bench-prongB` |
+| **json-parse (real)** | recursive-descent parse-and-discard | 66.7 MB vs C 58.1, Rust 58.9, Go 109.8 | **fastest of C/Rust/Go**, ~1.15× C memory (whole tree held per pass) | `bench-prongB` |
 | **iter-transform** | loop-carried reassign (was the arena's worst case) | 4 MB vs C 3 | **3.5 GB → 4 MB** mem (static FBIP reuse, no refcount); time 6.7×→**2.3× C** after push-loop fusion | `bench-prongB` |
 | **invindex** | build-and-hold growth | ~1.7× C, → ~1.07× with `reserve` | honest hold-cost; sizing closes it | `invindex/` |
-| **winagg** | per-window churn-and-discard | 7 MB vs C 5 (~1.4×), beats Go | hold-cost on per-key lists; win on bulk-free teardown | `winagg/` |
+| **winagg** | per-window churn-and-discard | 7.3 MB vs C 5.3 (~1.4×), Rust 5.8, Go 12.3 | hold-cost on per-key lists; win on bulk-free teardown | `winagg/` |
 | **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
 | **window** | sliding-window **eviction** | string: 4.2 MB vs C 3.3 (~1.3×) after **MM-9**; int: 2.3 MB (tie) | **was the clean loss (14×), now closed** — element-overwrite recycle | `bench-window` |
-| **gcscan** | large held set of small objects (per-object overhead) | 64.8 MB vs C 78.1, Go 119.8 | win — arena has no per-object header (C) or GC metadata (Go) | `bench-gcscan` |
-| **json-tree** | a tagged value tree held across a fold | 37 MB vs C 35, Go 28.5 | ≈ C — **value-shaped** data, zero manual mgmt | `json/` |
-| **trie** | pointer-linked recursive nodes (each owns a child map) | 58.9 MB vs C 38, Go 34 | **~1.55× C idiomatic — closed to ~1.10× C by the index idiom**: children stored by value, not by pointer; the compact indexed-dict map layout removed the empty-slot + order-list waste (was ~3.2× / 119 MB). The same trie in the flat-pool + integer-index idiom (`trie_pool.ty`, one `reserve`) lands at 41.4 MB — the per-child slot drops from a whole ~80 B node to an 8 B index | `trie/` |
-| **dijkstra** | graph as an adjacency list of **indices** | 41 MB vs C 31.5, Go 34 | ~1.3× C — the index idiom makes the graph value-shaped (the trie's bridge) | `dijkstra/` |
-| **lru** | fixed-cap cache, delete-heavy `[int:int]` map churn | 20.2 MB vs C 11.5, Go 21.4 | **~1.6× C, ahead of Go** — the `reserve` idiom (pre-size the pool + map for the known cap) cut the retained growth intermediates, 32.6 → 18.6 MiB peak live (9 allocations); earlier map fixes: O(n)→O(1) delete, bounded purge-rehash churn (was 222 MB), compact indexed-dict layout (40→32.6 MB) | `lru/` |
+| **gcscan** | large held set of small objects (per-object overhead) | 125.6 MB vs C 78.1, Go 130.1 (shipped `tychoc1`; reference compiler 65.1) | time win (58 vs 77 ms, below Go), memory gap on the shipped compiler; the reference matches the historical 64.7 MB | `bench-gcscan` |
+| **json-tree** | a tagged value tree held across a fold | 37 MB (reference) / 50.1 MB (shipped `tychoc1`) vs C 35.1, Go 27.3 | reference ≈ C; shipped compiler retains more on this tree — **value-shaped** data, zero manual mgmt | `json/` |
+| **trie** | pointer-linked recursive nodes (each owns a child map) | 58.3 MB vs C 37.6, Go 33.6; pool 34.0; persistent path 12.4 vs 1.63 GB control | **~1.55× C idiomatic — closed to ~0.9–1.1× C by the index idiom**: children stored by value, not by pointer; the compact indexed-dict map layout removed the empty-slot + order-list waste (was ~3.2× / 119 MB). The flat-pool + integer-index idiom (`trie_pool.ty`, one `reserve`) lands at **34.0 MB**; O6 path-copying makes the persistent twin **12.4 MB** vs **1.63 GB** for the copying control | `trie/` |
+| **dijkstra** | graph as an adjacency list of **indices** | 46.4 MB vs C 30.7, Go 33.1 | ~1.5× C — the index idiom makes the graph value-shaped (the trie's bridge) | `dijkstra/` |
+| **lru** | fixed-cap cache, delete-heavy `[int:int]` map churn | 20.4 MB vs C 11.4, Go 20.6 | **~1.8× C, ahead of Go** — the `reserve` idiom (pre-size the pool + map for the known cap) cut the retained growth intermediates, 32.6 → 18.6 MiB peak live (9 allocations); earlier map fixes: O(n)→O(1) delete, bounded purge-rehash churn (was 222 MB), compact indexed-dict layout (40→32.6 MB); the O6 scalar-map fix restored this row (121 GB OOM → 20.4 MB) | `lru/` |
 | **interp** | tree-walking interpreter, recursive-enum AST (5.6M nodes) | 252 MB vs C 512, Go 540 | **~0.5× C — beats C and Go**: the arena has no per-node malloc header (C) or GC metadata (Go) on a recursive value-shape with no per-node maps — the trie's inverse | `interp/` |
 
 ## Axis 2 — latency (GC-pause predictability)
@@ -74,8 +87,8 @@ data, not the domain of the workload:
   semantics** — the most mature MVS language (Hylo) hits the identical wall,
   not a tycho implementation shortfall.
 - **The bridge** — express the same graph as an **adjacency list of integer indices**
-  (`dijkstra/`: **41 vs 31.5 MB, ~1.3× C**, ≈ Go). Indices are value-shaped, so the graph
-  drops from ~3.2× to ~1.3× C. This is the idiom `docs/internals/value-semantics-limits.md`
+  (`dijkstra/`: **46.4 vs 30.7 MB, ~1.5× C**, ≈ Go). Indices are value-shaped, so the graph
+  drops from ~3.2× to ~1.5× C. This is the idiom `docs/internals/value-semantics-limits.md`
   prescribes for pointer-shaped data, measured on a real algorithm.
 - **Recursive but cheap-per-node** — a tree-walking interpreter's AST (`interp/`: **252 vs
   C 512, Go 540 MB, ~0.5× C — the lowest of the three**). This is *also* a large recursive
@@ -113,7 +126,7 @@ data and pay a real premium only where each node carries its own heap side table
 - **Loses:** **pointer-linked data structures** are a genuine standing cost — a trie of
   nodes that each own a child map is ~1.55× C (`trie/`, down from ~3.2×), because value semantics store
   children by value, not by pointer. It is fundamental to the model (Hylo hits the same
-  wall), and *mitigated* — not erased — by the index idiom (`dijkstra/`: ~1.3× C).
+  wall), and *mitigated* — not erased — by the index idiom (`dijkstra/`: ~1.5× C).
   Hold-and-grow peak (`invindex`, `arr_pipeline`) is ~1.3–2× C and needs sizing/`reserve`,
   like every language. Neither is a *correctness* defeat — both are honest memory costs of
   the model, stated as plainly as the wins.

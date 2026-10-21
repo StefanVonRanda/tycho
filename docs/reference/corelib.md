@@ -55,6 +55,22 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`fmath`** — float-only helpers (scalar `min`/`max`/`clamp`/`sign` live in `math`):
   `pi`, `e`, `round` (half away from zero), `trunc`, `lerp(a, b, t)`,
   `approx_eq(a, b, eps)`. (No trig — the language has no libm sin/cos builtin.)
+- **`gfx`** — an SDL3-backed window, 2D renderer and stream-audio shim
+  (`deps: sdl3`). Handles `Window`, `Audio` and `TexSet`; types `Event`, `FRect`,
+  `IRect`, `FVec`, `View`, `AssetSpec`, `Controls`, `Clock`, `Sprite`, `Anim`,
+  `Mixer`. `begin`, `draw_fb`, `draw_lines`, `present`, `poll_event`,
+  `set_title`, `window_width`, `window_height`, `fit_view`, `view_rect`,
+  `view_fvec`, `default_controls`, `action`, `clock_start`, `clock_advance`,
+  `clock_tick`, `tex_create`, `tex_draw`, `draw_sprite`, `anim_frame`,
+  `draw_anim`, `audio_queue`, `mixer`, `add`, `finish`, `play_mix`, `repeat`,
+  `play_loop`, `load_manifest`, `load_texture`, `draw_atlas_text`,
+  `draw_text_view`, `draw_text_centered`, `draw_text_centered_view`,
+  `text_width`, `fill_rect`, `rgb`, `make_beep`, `play_beep`, `save_bmp`.
+  A `TexSet` owns its textures and is
+  scope-freed; SDL3 must be
+  installed and selected with `--pkg sdl3`. The boundary rule is recorded in
+  [design-gfx](../internals/design-gfx.md): values and affine handles only, no
+  public `ptr`, callbacks or unions.
 - **`char`** — byte/char classification & conversion over int byte values (what
   `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
   `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a
@@ -592,14 +608,18 @@ automatically — no `--shim` needed for a corelib package.
 ### Freeing a shim handle
 
 A `ptr` handle is not affine, so nothing in the type system stops a caller freeing one
-twice or reading one after free. `core:crypto`, `core:tls`, `core:http` and `core:image`
-guard that at run time instead: the payload is released on free while the handle's own
-header is kept, so a second free or a later use aborts by name (for example `tycho:
-double free of crypto key handle`) rather than reading freed memory. The kept header is
-never reused for a new handle, so a stale handle can never alias a later one; it is also
-never freed, so each freed handle keeps a small header for the life of the process —
-nothing measurable for a one-shot program, and the figure for a long-lived one to check
-is in the design note.
+twice or reading one after free. `core:crypto`, `core:tls` and `core:http` guard that at
+run time by keeping the handle's own header: the payload is released on free, so a second
+free or a later use aborts by name (for example `tycho: double free of crypto key
+handle`) rather than reading freed memory. The kept header is never reused for a new
+handle, so a stale handle can never alias a later one; it is also never freed, so each
+freed handle keeps a small header for the life of the process — nothing measurable for a
+one-shot program, and the figure for a long-lived one to check is in the design note.
+
+`core:image` uses a monotonically numbered handle into a live set instead: releasing an
+image frees its header and pixels, and a stale ID is rejected before anything is read.
+That keeps the same double-free/use-after-free diagnosis without retaining one header per
+decoded image.
 
 ### External dependencies (C-shim `deps`)
 
@@ -609,8 +629,9 @@ pkg-config package names, one per line (`#` comments and blank lines ignored). F
 example `corelib/http/deps` is just `libcurl`.
 
 The `deps`-backed modules are `http` (libcurl) and `crypto` (libcrypto), documented above,
-plus three more:
+plus four more:
 
+- **`gfx`** — SDL3 window/render/audio (`deps: sdl3`); see the package entry above.
 - **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`).
   `compress(bytes) -> bytes`; `decompress(bytes) -> Result(bytes, ZErr)` and
   `raw_decompress` likewise, where `ZErr` is `Corrupt` / `Truncated` / `Failed` /

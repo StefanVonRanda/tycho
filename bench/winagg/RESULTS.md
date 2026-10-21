@@ -26,6 +26,9 @@ Go `map[int64][]int64`.
 (Wall re-measured 2026-06-07 at `-O3` standard opt, best-of-3; peak RSS unchanged —
 allocation is flag-independent. tycho 190→172 ms; C/Rust/Go within noise.)
 
+2026-10-20 repeat with the shipped `tychoc1`: **7.3 MB / 235 ms**; C 5.3/138,
+Rust 5.8/234, Go 12.3/343; checksum `505098931`.
+
 ### macOS (Apple Silicon, Darwin 25.5, clang 21 / rustc 1.95 / go 1.26.4 — 2026-06-09)
 
 Fair `-O3` best-of-3 (`sh bench/fair_rest.sh`, checksum `505098931`): tycho

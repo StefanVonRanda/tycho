@@ -1,0 +1,220 @@
+package main
+
+import "core:gfx"
+import "core:strings"
+import "core:time"
+
+extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
+extern fn gfx_audio_open(rate: int, channels: int) -> gfx.Audio
+extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
+
+const W = 768
+const H = 432
+const MARGIN = 24
+const PADDLE_W = 12
+const PADDLE_H = 72
+const BALL = 12
+const PADDLE_SPEED = 12
+
+struct Ball:
+    x: int
+    y: int
+    vx: int
+    vy: int
+
+struct Pong:
+    player_y: int
+    ai_y: int
+    lscore: int
+    rscore: int
+    ball: Ball
+
+fn reset_ball(lscore: int, rscore: int) -> Ball:
+    dir := 1
+    if (lscore + rscore) % 2 == 1:
+        dir = 0 - 1
+    return Ball(W / 2 - BALL / 2, H / 2 - BALL / 2, 5 * dir, 4)
+
+fn new_game() -> Pong:
+    return Pong(H / 2 - PADDLE_H / 2, H / 2 - PADDLE_H / 2, 0, 0,
+                reset_ball(0, 0))
+
+fn draw_court(fb: inout [int], game: Pong):
+    gfx.fill_rect(&fb, W, 0, 0, W, H, gfx.rgb(10, 16, 22))
+    gfx.fill_rect(&fb, W, MARGIN, MARGIN, W - MARGIN, H - MARGIN,
+                     gfx.rgb(24, 36, 44))
+    gfx.fill_rect(&fb, W, MARGIN, game.player_y, MARGIN + PADDLE_W,
+                     game.player_y + PADDLE_H, gfx.rgb(110, 240, 140))
+    gfx.fill_rect(&fb, W, W - MARGIN - PADDLE_W, game.ai_y,
+                     W - MARGIN, game.ai_y + PADDLE_H, gfx.rgb(235, 120, 80))
+
+fn step(game: inout Pong) -> bool:
+    p := game.ball
+    p.x = p.x + p.vx
+    p.y = p.y + p.vy
+    if p.y <= MARGIN:
+        p.y = MARGIN
+        p.vy = 0 - p.vy
+    if p.y + BALL >= H - MARGIN:
+        p.y = H - MARGIN - BALL
+        p.vy = 0 - p.vy
+
+    # The left paddle is the player; the right one tracks the ball.
+    if p.vx < 0 and p.x <= MARGIN + PADDLE_W and p.x + BALL >= MARGIN and
+            p.y + BALL >= game.player_y and p.y <= game.player_y + PADDLE_H:
+        p.x = MARGIN + PADDLE_W
+        p.vx = 0 - p.vx
+    if p.vx > 0 and p.x + BALL >= W - MARGIN - PADDLE_W and
+            p.x <= W - MARGIN and p.y + BALL >= game.ai_y and
+            p.y <= game.ai_y + PADDLE_H:
+        p.x = W - MARGIN - PADDLE_W - BALL
+        p.vx = 0 - p.vx
+
+    if p.x + BALL < MARGIN:
+        game.rscore = game.rscore + 1
+        game.ball = reset_ball(game.lscore, game.rscore)
+        return true
+    if p.x > W - MARGIN:
+        game.lscore = game.lscore + 1
+        game.ball = reset_ball(game.lscore, game.rscore)
+        return true
+    game.ball = p
+    return false
+
+fn score_mix(rate: int) -> gfx.Mixer:
+    m := gfx.mixer(rate, 180)
+    gfx.add(&m, gfx.make_beep(rate, 660, 90), 0)
+    gfx.add(&m, gfx.make_beep(rate, 880, 90), 80)
+    return m
+
+fn main():
+    a := args()
+    frames := 0
+    snap := ""
+    headless := false
+    for i := 1; i < len(a); i += 1:
+        if a[i] == "--headless":
+            headless = true
+        if a[i] == "--frames" and i + 1 < len(a):
+            match strings.parse_int(a[i + 1]):
+                Ok(v): frames = v
+                Err(e): pass
+        if a[i] == "--snapshot" and i + 1 < len(a):
+            snap = a[i + 1]
+    if headless and frames == 0:
+        frames = 240
+
+    win := gfx_open(W, H, "Tycho Pong")
+    if is_null(win):
+        eprintln("pong: could not open a window (SDL3 required)")
+        return
+    win_w := gfx.window_width(win)
+    win_h := gfx.window_height(win)
+    audio := gfx_audio_open(22050, 1)
+    beep := gfx.make_beep(22050, 520, 80)
+    score := score_mix(22050)
+    gfx.play_beep(audio, beep)
+
+    fb := []int
+    reserve(fb, W * H)
+    for i := 0; i < W * H; i += 1:
+        push(fb, 0)
+
+    texset := gfx_texset_open(win)
+    font_id := 0 - 1
+    ball_id := 0 - 1
+    if not is_null(texset):
+        specs := gfx.load_manifest("assets/manifest.json")
+        cache := []string: int
+        for i := 0; i < len(specs); i += 1:
+            cache[specs[i].name] = gfx.load_texture(texset, specs[i].path)
+        font_id = cache.get("font", 0 - 1)
+        ball_id = cache.get("ball", 0 - 1)
+
+    ball_anim := gfx.Anim(ball_id, 0, 0, 16, 16, 4, 6)
+    line := []gfx.FVec
+    push(line, gfx.FVec(to_f32(W / 2), to_f32(MARGIN)))
+    push(line, gfx.FVec(to_f32(W / 2), to_f32(H - MARGIN)))
+    game := new_game()
+    controls := gfx.default_controls()
+    clock := gfx.clock_start()
+    gfx.set_title(win, "Tycho Pong 0 - 0")
+
+    for frame := 0; frames == 0 or frame < frames; frame += 1:
+        ev := gfx.poll_event(win)
+        quit := false
+        for ev.kind != 0:
+            if ev.kind == 1:
+                quit = true
+            if ev.kind == 5:
+                win_w = gfx.window_width(win)
+                win_h = gfx.window_height(win)
+            act := gfx.action(ev, controls)
+            if act == gfx.ACTION_QUIT:
+                quit = true
+            if act == gfx.ACTION_UP:
+                game.player_y = game.player_y - PADDLE_SPEED
+            if act == gfx.ACTION_DOWN:
+                game.player_y = game.player_y + PADDLE_SPEED
+            ev = gfx.poll_event(win)
+        if quit:
+            break
+
+        steps := 0
+        if headless:
+            steps = gfx.clock_advance(&clock, frame * 16, 16)
+        else:
+            steps = gfx.clock_tick(&clock, 16)
+        for step_i := 0; step_i < steps; step_i += 1:
+            if game.player_y < MARGIN:
+                game.player_y = MARGIN
+            if game.player_y > H - MARGIN - PADDLE_H:
+                game.player_y = H - MARGIN - PADDLE_H
+
+            if game.ball.y < game.ai_y + PADDLE_H / 2:
+                game.ai_y = game.ai_y - 4
+            else:
+                game.ai_y = game.ai_y + 4
+            if game.ai_y < MARGIN:
+                game.ai_y = MARGIN
+            if game.ai_y > H - MARGIN - PADDLE_H:
+                game.ai_y = H - MARGIN - PADDLE_H
+
+            scored := step(&game)
+            if scored:
+                gfx.play_mix(audio, score)
+                gfx.set_title(win, "Tycho Pong " + str(game.lscore) + " - " + str(game.rscore))
+
+        draw_court(&fb, game)
+        view := gfx.fit_view(W, H, win_w, win_h)
+        dst := gfx.view_rect(view, 0, 0, W, H)
+        gfx.begin(win)
+        rc := gfx.draw_fb(win, fb, W, H, dst)
+        if rc == 0 and ball_id >= 0:
+            anim_ms := frame * 16
+            if not headless:
+                anim_ms = time.elapsed_ms(clock.start_ns)
+            ball_rect := gfx.view_rect(view, game.ball.x, game.ball.y, BALL, BALL)
+            rc = gfx.draw_anim(texset, ball_anim, anim_ms, ball_rect, 255, 255, 255)
+        if rc == 0 and font_id >= 0:
+            score := str(game.lscore) + " - " + str(game.rscore)
+            gfx.draw_text_centered_view(view, texset, font_id, W / 2, 4, score, 24, 235, 240, 245)
+        if rc == 0:
+            wline := []gfx.FVec
+            for i := 0; i < len(line); i += 1:
+                push(wline, gfx.view_fvec(view, line[i]))
+            full := gfx.IRect(to_i32(0), to_i32(0), to_i32(win_w), to_i32(win_h))
+            rc = gfx.draw_lines(win, full, wline, 48, 66, 78)
+        if rc == 0:
+            rc = gfx.present(win)
+        if rc != 0:
+            eprintln("pong: present failed: " + str(rc))
+            break
+        if not headless:
+            time.sleep_ms(16)
+
+    if snap != "":
+        gfx.save_bmp(snap, fb, W, H)
+    close(texset)
+    close(audio)
+    close(win)

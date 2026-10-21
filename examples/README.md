@@ -56,6 +56,8 @@ Each subdirectory is a multi-file program with its own README or `run.sh`.
 | [`sqlite/`](sqlite) | FFI against a real C library — in-memory SQLite. |
 | [`raytrace/`](raytrace) / [`mandelbrot/`](mandelbrot) | Float-heavy compute; `mandelbrot` uses a 16-core `parallel for`. |
 | [`life/`](life) / [`snake/`](snake) / [`minesweeper/`](minesweeper) | Games dogfooding recursion and mutable grids over the arena model. |
+| [`gfx/`](gfx) | Shared gfx engine + windowed Snake: Tycho RGBA framebuffer, SDL3 shim, fonts, textures, audio; headless BMP test. |
+| [`gfx/pong/`](gfx/pong) | Second caller for the shared engine: Pong, same shim and font atlas. |
 
 ## Core library
 

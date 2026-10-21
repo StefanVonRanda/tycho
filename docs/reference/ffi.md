@@ -71,11 +71,18 @@ rejected at compile time rather than corrupted at run time.
   **compile error**. A `close` inside an `if` or loop reaches only the end of
   that block, so a use after it compiles: it passes null to C if the branch ran,
   a logic bug, not memory corruption.
-- **`inout` scalar out-parameters** (a numeric scalar or `ptr`) — cross too; a
-  `string`, `bytes`, handle, or composite `inout` out-parameter is **rejected**.
+- **POD structs** — a non-packed, non-aligned struct of numeric scalar fields
+  may cross **by value**, as a **return**, and as an **`inout`** pointer. A
+  dynamic array of one (`[T]`) crosses as a `(const T*, length)` parameter,
+  borrowed for the call. Use fixed-width fields (`i32`, `u8`, `f32`) to match
+  the C header; `int` is 64-bit and `float` is C `double`.
+- **`inout` out-parameters** — a numeric scalar, `ptr`, or a **POD struct**. The
+  C function gets a pointer to the struct. A `string`, `bytes`, handle, map,
+  array or non-POD struct `inout` is **rejected**.
 
-Maps, structs, and non-scalar arrays are **rejected** at the boundary — fail closed. (The
-scalar arrays `[int]`/`[float]` do cross, above.)
+Maps, non-POD structs, and non-scalar arrays are **rejected** at the boundary —
+fail closed. (The scalar arrays `[int]`/`[float]` and arrays of POD structs do
+cross, above.)
 
 ## Threads
 
@@ -225,11 +232,33 @@ println(str(rc))
 ```
 
 An `inout` extern parameter is declared to C as a pointer to its type (`ptr →
-void**`, `int → int64_t*`, etc.), so the C function fills it in place and Tycho
-reads it back by value. Only `int`/`char`/`float`/`bool`/`ptr` may be `inout` —
-a `inout string` would hand Tycho a raw pointer with no length header, and
-`bytes`/handles/composites have no trivial pointer-to-self form, so all are
-rejected (use `--shim`).
+void**`, `int → int64_t*`, a struct → `S_Name *`), so the C function fills it in
+place and Tycho reads it back by value. A **plain struct of scalar fields** is
+allowed when its layout is the C layout. Use fixed-width fields for C widths —
+`i32` for C `int`, `u8` for `uint8_t`, `f32` for C `float`; Tycho `int` is 64-bit
+and `float` is C `double`. `packed`/`align` structs, and structs containing
+strings, arrays or maps, are rejected: use `--shim` for those. A `inout string`
+would hand Tycho a raw pointer with no length header; `bytes`/handles/maps/arrays
+have no trivial pointer-to-self form, so all are rejected.
+
+POSIX/LP64 example (`timeval`'s fields are 64-bit there):
+
+```tycho
+struct Timeval:
+    sec: i64
+    usec: i64
+
+extern fn gettimeofday(tv: inout Timeval, tz: ptr) -> i32
+
+fn main():
+    tv := Timeval(0, 0)
+    rc := gettimeofday(&tv, null)      # C gets S_Timeval * and fills the fields
+    println("rc=" + str(rc) + " sec_positive=" + str(tv.sec > 0))
+```
+
+The same POD struct may also be passed and returned **by value**; a
+`[Timeval]` parameter crosses as `(const S_Timeval *, length)`, borrowed for the
+call.
 
 **Boundary helpers: `to_ptr` and `to_i32`.** Two builtins cover the rough edges of
 crossing C's scalar conventions, both in-language (no shim):
@@ -244,13 +273,21 @@ crossing C's scalar conventions, both in-language (no shim):
   `-> int` only for a C 64-bit integer return. A C `long` has
   platform-dependent width, so prefer an explicitly sized C API.
 
-**Other composites are rejected.** Arrays, maps, structs, other `Option`/`Result`,
-and tuples have Tycho-internal C representations, not a stable C ABI. The type
-checker rejects any `extern fn` whose parameter or return type is outside the
-table above (plus the `Option(string)` return form) — it fails closed rather than
-emitting something that would corrupt memory across the boundary. To pass
-aggregate data, marshal it through scalars,
-strings, and `ptr` handles, or write a small C shim (see [Linking](#linking)).
+**Other composites are rejected.** Arrays of non-POD elements, maps, non-POD
+structs, other `Option`/`Result`, and tuples have Tycho-internal C
+representations, not a stable C ABI. The exceptions are POD structs by value, by
+return, and as `inout`, plus a dynamic `[POD struct]` parameter. The type checker
+rejects any other `extern fn` parameter or return outside the table above (plus
+the `Option(string)` return form) — it fails closed rather than emitting
+something that would corrupt memory across the boundary. To pass other aggregate
+data, marshal it through scalars, strings, and `ptr` handles, use a POD struct,
+or write a small C shim (see [Linking](#linking)).
+
+**C unions are not crossable, by design.** Keep the union in C and return a
+tagged POD struct: `examples/gfx` decodes `SDL_Event` into
+`Event { kind, key, x, y, button }`, so no layout-dependent union reaches Tycho.
+A language-level union would need initialization, active-member and ownership
+rules; it is not an FFI shortcut.
 
 ### Typed handles (safe-by-default resources)
 

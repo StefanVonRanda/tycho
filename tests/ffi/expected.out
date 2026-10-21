@@ -22,4 +22,6 @@ branchclose=0 null_after=0 live=1
 live3=0
 get1=hit get0=<none>
 r4 rc=0 read=9 dbl=42
+r4a rect=11,22,3,4 sum=40
+r4b vec=11,22 vsum=33 varr=33
 neg=-7 rawneg_ok=true sentinel=-1

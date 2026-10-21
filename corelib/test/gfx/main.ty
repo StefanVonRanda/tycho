@@ -1,0 +1,79 @@
+package main
+
+import "core:gfx"
+
+fn main():
+    println("rgb=" + str(gfx.rgb(1, 2, 3)))
+
+    fb := []int
+    reserve(fb, 12)
+    for i := 0; i < 12; i += 1:
+        push(fb, 0)
+    gfx.fill_rect(&fb, 4, 1, 1, 3, 3, 7)
+    sum := 0
+    for i := 0; i < len(fb); i += 1:
+        sum = sum + fb[i]
+    println("rect=" + str(sum))
+
+    beep := gfx.make_beep(8000, 400, 10)
+    println("beep=" + str(len(beep)) + " " + str(to_str(beep)[0]) + " " + str(to_str(beep)[1]))
+
+    controls := gfx.default_controls()
+    a1 := gfx.action(gfx.Event(2, 1, 0, 0, 0), controls)
+    a2 := gfx.action(gfx.Event(2, 2, 0, 0, 0), controls)
+    a3 := gfx.action(gfx.Event(2, 3, 0, 0, 0), controls)
+    a4 := gfx.action(gfx.Event(2, 4, 0, 0, 0), controls)
+    a5 := gfx.action(gfx.Event(2, 27, 0, 0, 0), controls)
+    a0 := gfx.action(gfx.Event(3, 0, 0, 0, 0), controls)
+    println("actions=" + str(a1) + " " + str(a2) + " " + str(a3) + " " + str(a4) +
+            " " + str(a5) + " " + str(a0))
+    println("text=" + str(gfx.text_width("AB", 18)))
+
+    clock := gfx.Clock(0, 0, 0)
+    s0 := gfx.clock_advance(&clock, 0, 16)
+    s1 := gfx.clock_advance(&clock, 40, 16)
+    s2 := gfx.clock_advance(&clock, 48, 16)
+    s3 := gfx.clock_advance(&clock, 1000, 16)
+    println("clock=" + str(s0) + " " + str(s1) + " " + str(s2) + " " + str(s3))
+
+    view := gfx.fit_view(100, 50, 200, 200)
+    vr := gfx.view_rect(view, 10, 10, 20, 10)
+    vp := gfx.view_fvec(view, gfx.FVec(to_f32(10), to_f32(10)))
+    println("view=" + str(to_int(view.x)) + " " + str(to_int(view.y)) + " " +
+            str(to_int(view.scale)) + " " + str(to_int(vr.x)) + " " +
+            str(to_int(vr.y)) + " " + str(to_int(vr.w)) + " " +
+            str(to_int(vr.h)) + " " + str(to_int(vp.x)) + " " + str(to_int(vp.y)))
+
+    anim := gfx.Anim(7, 0, 0, 32, 32, 4, 8)
+    f0 := gfx.anim_frame(anim, 0)
+    f1 := gfx.anim_frame(anim, 125)
+    f2 := gfx.anim_frame(anim, 1000)
+    println("anim=" + str(f0.sx) + " " + str(f1.sx) + " " + str(f2.sx))
+
+    mix := gfx.mixer(1000, 10)
+    gfx.add(&mix, gfx.make_beep(1000, 1, 10), 0)
+    gfx.add(&mix, gfx.make_beep(1000, 1, 10), 0)
+    mb := gfx.finish(mix)
+    println("mix=" + str(len(mb)) + " " + str(mb[0]) + " " + str(mb[1]))
+
+    tone := gfx.make_beep(1000, 1, 10)
+    twice := gfx.repeat(tone, 2)
+    println("repeat=" + str(len(twice)) + " " + str(twice[0]) + " " + str(twice[1]) +
+            " " + str(twice[20]) + " " + str(twice[21]))
+
+    offset := gfx.mixer(1000, 20)
+    gfx.add(&offset, tone, 10)
+    ob := gfx.finish(offset)
+    println("offset=" + str(len(ob)) + " " + str(ob[0]) + " " + str(ob[20]) +
+            " " + str(ob[21]))
+
+    clipped := gfx.mixer(1000, 10)
+    for i := 0; i < 20; i += 1:
+        gfx.add(&clipped, tone, 0)
+    cb := gfx.finish(clipped)
+    println("clip=" + str(len(cb)) + " " + str(cb[0]) + " " + str(cb[1]))
+
+    specs := gfx.load_manifest("corelib/test/gfx/manifest.json")
+    println("assets=" + str(len(specs)))
+    for i := 0; i < len(specs); i += 1:
+        println(specs[i].name + ":" + specs[i].path)

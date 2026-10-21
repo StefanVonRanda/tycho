@@ -70,15 +70,21 @@ guarantee, and backlogged connections are dropped, not drained. Normative text:
 
 ## Handle guards: cost and the rejected alternative
 
-`crypto`/`tls`/`http`/`image` keep each freed handle's header with a DEAD
-sentinel, so a double free or use-after-free aborts by name instead of reading
-freed memory. Headers are never reused (a stale handle can never alias a new
-one) and never freed: a few dozen bytes per handle ever opened (32 per `crypto`
-key, 48 per `image` handle, 55 per `tls` connection, 61 per `http` response on
-Linux x86-64/glibc; below ~40k handles it hides under the libraries'
-high-water mark). The rejected alternative — a bounded ring that really frees
-the oldest header — would cap the cost but drop the diagnosis for old handles;
-nothing shipped opens handles in a loop long enough to need it. Lane: `make
+`crypto`/`tls`/`http` keep each freed handle's header with a DEAD sentinel, so
+a double free or use-after-free aborts by name instead of reading freed memory.
+Headers are never reused (a stale handle can never alias a new one) and never
+freed: a few dozen bytes per handle ever opened (32 per `crypto` key, 55 per
+`tls` connection, 61 per `http` response on Linux x86-64/glibc; below ~40k
+handles it hides under the libraries' high-water mark). The rejected
+alternative — a bounded ring that really frees the oldest header — would cap the
+cost but drop the diagnosis for old handles; nothing shipped opens handles in a
+loop long enough to need it.
+
+`image` uses the same diagnostic without the kept header: the shim returns a
+monotonically numbered ID into a live set, frees the image header and pixels on
+release, and rejects a stale ID before dereferencing anything. Decoding in a
+long-lived process therefore does not retain one header per image, and a reused
+malloc address cannot make an old ID alias a new image. Lane: `make
 handle-guard`.
 
 ## `compress`: determinism callers may rely on

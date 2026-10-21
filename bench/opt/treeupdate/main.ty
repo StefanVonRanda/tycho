@@ -1,0 +1,41 @@
+# O5: destination passing through `t = insert(t, k)`.
+# A balanced-shaped insertion order keeps the tree shallow; the control
+# (TYCHOC_NO_DEST_PASS=1) deep-copies both children at every recursive level,
+# so one insert costs O(n) and the build O(n^2). The owned variant moves the
+# untouched child and recursively owns the changed one, so an insert allocates
+# one node per level.
+enum Tree:
+    Leaf
+    Node(Tree, int, Tree)
+
+fn insert(t: Tree, k: int) -> Tree:
+    match t:
+        Leaf:
+            return Node(Leaf, k, Leaf)
+        Node(l, v, r):
+            if k < v:
+                return Node(insert(l, k), v, r)
+            if k > v:
+                return Node(l, v, insert(r, k))
+            return t
+
+fn count(t: Tree) -> int:
+    match t:
+        Leaf:
+            return 0
+        Node(l, v, r):
+            return 1 + count(l) + count(r)
+
+fn total(t: Tree) -> int:
+    match t:
+        Leaf:
+            return 0
+        Node(l, v, r):
+            return total(l) + v + total(r)
+
+fn main():
+    t := Leaf
+    n := 12000
+    for i := 0; i < n; i += 1:
+        t = insert(t, (i * 40503) % 65536)
+    println(str(count(t)) + " " + str(total(t)))

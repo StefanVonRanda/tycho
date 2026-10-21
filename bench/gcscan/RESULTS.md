@@ -13,7 +13,8 @@ checksum across languages.
 
 ## Results (`make bench-gcscan`)
 
-Native builds at `-O3` (standard optimized build per language). Re-measured 2026-06-07.
+Native builds at `-O3` (standard optimized build per language). Re-measured 2026-06-07
+on AMD Strix Halo / Ryzen AI MAX+ 395, Fedora Linux 44, x86-64.
 
 | lang | peak RSS | wall | GC |
 |------|---------:|-----:|----|

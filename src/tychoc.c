@@ -2330,6 +2330,13 @@ typedef struct {
     int     nsizeparams;
     const char *srcfile;   /* package mode: the file this proc was parsed from, for diagnostics (NULL = use the global) */
     const char *srctext;   /* package mode: that file's source text, for die_at's snippet (NULL = use the global) */
+    /* O5 destination passing: zero for an ordinary proc. A generated variant
+     * names the original proc and marks ONE by-value parameter as owned: the
+     * caller transferred its value (a dead self-rebuild), so the body may move
+     * that value's fields into the result instead of deep-copying them. The
+     * C signature is unchanged; only the internal variant name differs. */
+    int         owned_plus1;      /* 1 + the owned parameter's index, 0 = ordinary proc */
+    const char *owned_orig;       /* original proc name for the variant (NULL = ordinary) */
 } Proc;
 
 typedef struct { Proc **v; int n, cap; } ProcVec;
@@ -2929,7 +2936,7 @@ static Type parse_type_inner(Parser *ps) {
             return mt;
         }
         eat(ps, TK_RBRACKET, "']'");
-        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2873) sits after a die_at */
+        if (elem == T_VOID)   /* defensive, not reachable from source: parse_type_inner's only `return T_VOID` (src/tychoc.c:2936) sits after a die_at */
             die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
         return arr_of(elem);   /* fixed [int]/[float]/[string] or a composite */
     }
@@ -3304,7 +3311,7 @@ static Expr *parse_primary(Parser *ps) {
                 e->ival = mt; e->op = TK_COLON;
                 return e;
             }
-            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2629): parse_type never yields T_VOID */
+            if (elem == T_VOID)   /* defensive, same as the `[T]` type site (src/tychoc.c:2692): parse_type never yields T_VOID */
                 die_at(t->line, "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option");
             e->ival = arr_of(elem);   /* type carried to the resolver */
             return e;
@@ -5137,6 +5144,31 @@ static int ffi_scalar_type(Type t) {
     return t == T_INT || t == T_CHAR || t == T_FLOAT || t == T_BOOL || t == T_STRING || t == T_PTR ||
            t == T_F32 || is_sized_int(t);   /* first-class sized numerics cross as their real C type */
 }
+/* FFI R4a: a plain, non-packed struct of scalar fields can be an `inout`
+ * out-param. The pointer is then a normal `S_Name *`; no layout is invented.
+ * Fixed-width field types (`i32`, `u8`, `f32`, ...) are what match a C header;
+ * `int` is Tycho's 64-bit int, exactly as in an extern signature. */
+static int ffi_pod_scalar(Type t) {
+    t = base_of(t);
+    return t == T_INT || t == T_CHAR || t == T_FLOAT || t == T_BOOL ||
+           t == T_F32 || is_sized_int(t);
+}
+static int ffi_pod_struct(Type t) {
+    t = base_of(t);
+    if (!IS_STRUCT(t)) return 0;
+    StructDef *sd = &g_structs[STRUCT_ID(t)];
+    if (sd->packed || sd->aln != 0) return 0;
+    for (int i = 0; i < sd->nfields; i++)
+        if (!ffi_pod_scalar(sd->fields[i].type)) return 0;
+    return 1;
+}
+/* A dynamic array of a POD struct can cross by pointer+length, exactly like
+ * `[int]`; fixed/bounded/vector arrays keep their inline Tycho representation. */
+static int ffi_pod_arr(Type t) {
+    if (!IS_ARRC(t)) return 0;
+    if (g_arrtypes[ARRC_ID(t)].size != 0 || g_arrtypes[ARRC_ID(t)].bnd != 0) return 0;
+    return ffi_pod_struct(arr_elem(t));
+}
 /* A scalar array (`[int]`/`[float]`) crosses the FFI as a `(const T*, long)` pair,
  * exactly like `bytes` crosses as (ptr,len). This is also the RETURN gate, so it
  * stays narrow: `[string]` is absent because a `char **` out of C carries no length
@@ -5207,9 +5239,11 @@ static Proc *parse_extern_fn(Parser *ps) {
              * qualify. string is a length-headered char* (a char** out-param would hand
              * tycho a raw C pointer with no length header) — banned, as are bytes/handle/
              * composite, which have no trivial pointer-to-self ABI. */
-            if (!ffi_scalar_type(pt) || pt == T_STRING) die_at(pn->line, "extern fn '%s': an `inout` (out) parameter '%s' must be int/char/float/bool/ptr — string/bytes/handle/composite have no trivial out-param ABI", pr->name, pn->text);
-        } else if (!ffi_scalar_type(pt) && pt != T_BYTES && !ffi_arg_arr_ptr_ctype(pt) && !IS_HANDLE(pt)) {
-            die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)", pr->name, pn->text);
+            if ((!ffi_scalar_type(pt) || pt == T_STRING) && !ffi_pod_struct(pt))
+                die_at(pn->line, "extern fn '%s': an `inout` (out) parameter '%s' must be int/char/float/bool/ptr or a plain scalar-field struct — string/bytes/handle/map/array have no trivial out-param ABI", pr->name, pn->text);
+        } else if (!ffi_scalar_type(pt) && pt != T_BYTES && !ffi_arg_arr_ptr_ctype(pt) &&
+                   !ffi_pod_struct(pt) && !ffi_pod_arr(pt) && !IS_HANDLE(pt)) {
+            die_at(pn->line, "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string]/[POD struct], a POD struct, or a handle (no other composites across the C boundary)", pr->name, pn->text);
         }
         if (pr->nparams == cap) { cap = cap ? cap * 2 : 4; pr->params = (Param *)xrealloc(pr->params, (size_t)cap * sizeof(Param)); }
         pr->params[pr->nparams].name = pn->text;
@@ -5235,7 +5269,9 @@ static Proc *parse_extern_fn(Parser *ps) {
          * (vs `-> string` which maps NULL to ""), so a nullable C getter need not use
          * a sentinel. The C symbol still returns char*; the wrapper does the NULL test. */
         int ret_opt_str = (IS_OPT(pr->ret) && opt_inner(pr->ret) == T_STRING);
-        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES && !ffi_arr_ptr_ctype(pr->ret) && !IS_HANDLE(pr->ret) && !ret_opt_str) die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted", pr->name);
+        if (!ffi_scalar_type(pr->ret) && pr->ret != T_BYTES && !ffi_arr_ptr_ctype(pr->ret) &&
+            !ffi_pod_struct(pr->ret) && !IS_HANDLE(pr->ret) && !ret_opt_str)
+            die_at(pr->line, "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], a POD struct, Option(string), a handle, or omitted", pr->name);
     } else {
         pr->ret = T_VOID;
     }
@@ -6597,7 +6633,7 @@ static void collect_idents(Expr *e, const char **out, int *n, int cap) {
     }
     if (e->kind == E_CALL) {   /* Neither name on a call is a child expr: the callee lives in
                                 * sval (`g(x)` where g is a closure) and a method call's RECEIVER
-                                * lives in qual (`m.get(k)`, src/tychoc.c:3748), because the parser
+                                * lives in qual (`m.get(k)`, src/tychoc.c:3811), because the parser
                                 * cannot tell it from a package call. Both are outer reads; missing
                                 * qual let `m` reach the lifted body uncaptured and the C compiler,
                                 * not tychoc, reported `h_m undeclared`. pf_scan_expr already does
@@ -8092,7 +8128,7 @@ static Type resolve_expr_inner(Expr *e) {
             if (e->nargs != s->nparams)
                 die_at(e->line, "'%s' takes %d argument(s), got %d",
                        nominal_name(e->sval), s->nparams, e->nargs);
-            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7481 */
+            int si = (int)(s - g_sigs);   /* index, not the pointer -- same reason as g_spawn, src/tychoc.c:7544 */
             for (int i = 0; i < e->nargs; i++) {
                 g_in_arg++;
                 Type at_ = resolve_exp(e->args[i], s->params[i]);   /* fixes a None arg */
@@ -8734,7 +8770,7 @@ static void pf_capture(Expr *id) {
 /* capture an outer local named by a STRING rather than by an E_IDENT node -- the
  * callee of `f(x)` and the receiver of `o.f(x)` live in E_CALL's sval/qual, not
  * in a child expr. The synthesized read is resolved in the enclosing scope with
- * every other capture (src/tychoc.c:9315). Non-locals (global fns, builtins,
+ * every other capture (src/tychoc.c:9378). Non-locals (global fns, builtins,
  * enum constructors, package qualifiers) fail vars_find and are dropped. */
 static void pf_capture_name(const char *n, int line) {
     Type vt;
@@ -8757,10 +8793,10 @@ static void pf_scan_expr(Expr *e) {
             die_at(e->line, "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)");
     }
     /* An in-place mutating builtin applied to a CAPTURED collection is the same
-     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8647),
+     * soundness violation S_INDEXSET/S_FIELDSET catch below (src/tychoc.c:8710),
      * and it must get the same message. `push`/`pop` are the pair the tree
      * already treats as mutating their first argument -- the while-loop mutation
-     * scan uses exactly this test (src/tychoc.c:8937). Before this, `push(xs, i)`
+     * scan uses exactly this test (src/tychoc.c:9000). Before this, `push(xs, i)`
      * inside a `parallel for` over a captured `xs` fell through the parfor scan
      * and was refused DOWNSTREAM by the generic borrow rule, on the lifted chunk
      * proc's parameter: `cannot mutate parameter 'xs' (it is borrowed
@@ -8781,7 +8817,7 @@ static void pf_scan_expr(Expr *e) {
     }
     /* A call's callee is NOT an E_IDENT child of the node: `f(x)` keeps the name
      * in sval, and `o.f(x)` keeps the receiver in qual because the parser cannot
-     * tell it from a package call (src/tychoc.c:3742). The generic descent below
+     * tell it from a package call (src/tychoc.c:3805). The generic descent below
      * visits lhs/rhs/args only, so a fn-typed local reached the lifted chunk proc
      * uncaptured and the C compiler -- not tychoc -- reported the undeclared name.
      * The lambda capture analysis already does the sval half (src/tychoc.c@collect_idents). */
@@ -9050,10 +9086,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:10907@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:9088@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at src/tychoc.c:6856@is_sink which sets
+     * required value, and it matches the lambda-lift twin at src/tychoc.c:4954@is_sink which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
@@ -10093,7 +10129,7 @@ static void instantiate_generic(Proc *gt, Expr *e) {
             nm = sfmt("%s__%s", nm, type_mangle_ident(binds[(int)(gt->typarams[i] - T_TYPARAM_BASE)]));
     }
     cret = subst_type(gt->ret, binds);
-    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:4961@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
+    if (IS_HANDLE(cret))   /* the instance half of src/tychoc.c:357@handle. A channel and a task are refused returning out of a generic by their own guards; a handle was not, and `g := ident(f)` DOUBLE FREED -- the callee frees at its scope exit and the caller frees the copy again (glibc "double free detected in tcache 2", observed 2026-08-14) */
         die_at(e->line, "a Tycho fn cannot return a handle -- '%s' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope",
                gt->name);
     if (has_typaram(cret))
@@ -10574,7 +10610,7 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!bound || bound->kind != E_CALL || !bound->sval || strcmp(bound->sval, "len") ||
         bound->nargs != 1 || !bound->args[0] || bound->args[0]->kind != E_IDENT) return NULL;
     if (IS_INLINE_ARR(bound->args[0]->type)) return NULL;   /* [N]T / bounded / vector store in .v, not .data — elision emits .data[i], so never elide it */
-    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4601-4606) */
+    /* post: `i += 1` exactly (parsed as `i = i + 1`, src/tychoc.c:4664-4669) */
     if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv)) return NULL;
     Expr *inc = post->expr;
     if (!inc || inc->kind != E_BINOP || inc->op != TK_PLUS) return NULL;
@@ -10584,6 +10620,27 @@ static const char *for3_elidable_arr(Stmt *s) {
     if (!strcmp(arr, iv)) return NULL;
     if (stmts_unsafe(s->body, s->nbody - 1, iv, arr)) return NULL;
     return arr;
+}
+
+/* O7: a fresh empty dynamic array immediately followed by a counted loop that
+ * pushes into it. Reserve the loop's proven upper bound once instead of growing
+ * geometrically (and copying) on the way. The bound proof is the same one
+ * bounds-check elision uses; over-reserving is safe (reserve only grows, and a
+ * conditional or multiple push still grows). TYCHOC_NO_PRESIZE is the control. */
+static int body_pushcount(Stmt **body, int n, const char *nm);
+static const char *presize_loop_src(Stmt *decl, Stmt *loop) {
+    if (getenv("TYCHOC_NO_PRESIZE")) return NULL;
+    if (!decl || decl->kind != S_DECL || !decl->name || !decl->expr) return NULL;
+    if (!is_array(decl->decl_type) || IS_INLINE_ARR(decl->decl_type)) return NULL;
+    if (decl->expr->kind != E_ARRLIT || decl->expr->nargs != 0) return NULL;
+    if (!loop || loop->kind != S_FOR3) return NULL;
+    if (body_pushcount(loop->body, loop->nbody, decl->name) == 0) return NULL;
+    const char *src = for3_elidable_arr(loop);
+    if (!src || !strcmp(src, decl->name)) return NULL;
+    Expr *b = loop->expr ? loop->expr->rhs : NULL;
+    if (!b || b->kind != E_CALL || b->nargs != 1 || !b->args[0]
+        || !is_array(b->args[0]->type)) return NULL;
+    return src;
 }
 
 /* A `vector[N]T` lane named by an integer LITERAL inside 0..N-1 cannot be out
@@ -10628,7 +10685,7 @@ static int g_blk = 0;   /* unique-name counter for block subarenas / literals */
  * so an assignment (or array push) can allocate in the *variable's* arena
  * rather than the current (possibly inner, soon-to-collapse) one. This is
  * what keeps the implicit model sound: a value never outlives its arena. */
-typedef struct { const char *name; const char *arena; const char *append; int loop; } CVar;
+typedef struct { const char *name; const char *arena; const char *append; int loop; int owned; } CVar;
 static CVar *g_cv;
 static int  g_ncv = 0, g_cv_cap = 0;
 static int  g_loop_depth;   /* lexical loop depth at codegen; defined with the move rules below */
@@ -10637,7 +10694,19 @@ static void cv_restore(int m) { g_ncv = m; }
 static void cv_push(const char *name, const char *arena) {
     TBL_ENSURE(g_cv, g_ncv, g_cv_cap);
     g_cv[g_ncv].name = name; g_cv[g_ncv].arena = arena;
-    g_cv[g_ncv].append = NULL; g_cv[g_ncv].loop = g_loop_depth; g_ncv++;
+    g_cv[g_ncv].append = NULL; g_cv[g_ncv].loop = g_loop_depth; g_cv[g_ncv].owned = 0; g_ncv++;
+}
+/* O5: is the VISIBLE binding of `name` the owned parameter / an owned match
+ * binding? Resolve through the scope stack: an inner declaration that shadows
+ * the owned name is an ordinary local and must never inherit its moves. */
+static int cv_owned(const char *name) {
+    for (int i = g_ncv - 1; i >= 0; i--)
+        if (!strcmp(g_cv[i].name, name)) return g_cv[i].owned;
+    return 0;
+}
+static void cv_set_owned(const char *name) {
+    for (int i = g_ncv - 1; i >= 0; i--)
+        if (!strcmp(g_cv[i].name, name)) { g_cv[i].owned = 1; return; }
 }
 static const char *cv_arena(const char *name) {
     for (int i = g_ncv - 1; i >= 0; i--)
@@ -10771,6 +10840,27 @@ static int g_slice_view = 0;
  * Nested calls nest the counter, so `f(g((s, 1)))` still sees a call arg. */
 static int g_call_arg_depth = 0;
 static int g_in_return = 0;
+/* O5: the return expression currently being generated. Owned-field moves are
+ * only legal inside a return: the move is then terminal, so no later read on
+ * that path can observe the old (consumed) value. */
+static Expr *g_return_expr = NULL;
+
+/* O5 destination-passing variants. A `t = f(t, ...)` call whose argument is a
+ * dead self-rebuild can hand t to a variant of f whose parameter is OWNED. The
+ * variant may move that value's fields into what it returns (and pass them to
+ * its own owned variant recursively) instead of deep-copying. Provenance is
+ * static: t is read once in the RHS and immediately rebound, exactly the
+ * self-rebuild gate (self_rebuild_move), so the old value cannot be observed
+ * after the call. The variant's result is built in the assignment target's
+ * arena, so a moved field and the result share an arena. */
+static ProcVec g_owned_procs;
+static const char *g_owned_param = NULL;   /* current variant's owned parameter name */
+static const char *g_owned_orig = NULL;    /* current variant's original proc name */
+static const char *g_owned_clone = NULL;   /* current variant's own C name */
+static int g_owned_index = -1;
+static Expr *g_force_owned_expr = NULL;    /* the one outer call this statement forces onto a variant */
+static const char *g_force_owned_name = NULL;
+static int owned_path_return_ok(Expr *arg);
 
 static int count_reads_e(Expr *e, const char *nm) {
     if (!e) return 0;
@@ -10795,6 +10885,25 @@ static int count_reads_b(Stmt **body, int n, const char *nm) {
         for (int a = 0; a < s->narms; a++) c += count_reads_b(s->arms[a].body, s->arms[a].nbody, nm);
         if (s->ctrl) c += count_reads_b(&s->ctrl, 1, nm);   /* value if/match decl: tails read variables too (move-on-last-use correctness) */
         /* S_SELECT: per-arm channel exprs (arm bodies are already in s->arms[].body) */
+        if (s->kind == S_SELECT && s->sel_ch)
+            for (int a = 0; a < s->narms; a++) c += count_reads_e(s->sel_ch[a], nm);
+    }
+    return c;
+}
+/* A write through a place is not a value read: `m[k] = v` mentions m but does
+ * not observe its old contents. Return moves use this count so a local that is
+ * built by writes and then returned can still hand off its buffer. */
+static int count_value_reads_b(Stmt **body, int n, const char *nm) {
+    int c = 0;
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        c += count_reads_e(s->expr, nm);
+        if (s->kind != S_INDEXSET && s->kind != S_FIELDSET)
+            c += count_reads_e(s->target, nm);
+        c += count_reads_e(s->r_start, nm) + count_reads_e(s->r_stop, nm);
+        c += count_value_reads_b(s->body, s->nbody, nm) + count_value_reads_b(s->els, s->nels, nm);
+        for (int a = 0; a < s->narms; a++) c += count_value_reads_b(s->arms[a].body, s->arms[a].nbody, nm);
+        if (s->ctrl) c += count_value_reads_b(&s->ctrl, 1, nm);
         if (s->kind == S_SELECT && s->sel_ch)
             for (int a = 0; a < s->narms; a++) c += count_reads_e(s->sel_ch[a], nm);
     }
@@ -10912,8 +11021,13 @@ static int can_move_from(Expr *rhs, const char *owner) {
      * A local from outside the loop would be the same buffer N times. */
     if (g_loop_depth != 0 && cv_loop(rhs->sval) != g_loop_depth) return 0;
     const char *a = cv_arena(rhs->sval);
-    if (!a || strcmp(a, owner) != 0) return 0;        /* not a same-arena local (NULL = a param) */
-    return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
+    if (!a || cv_owned(rhs->sval)) return 0;          /* owned payload: only a terminal return move */
+    if (strcmp(a, owner) != 0) return 0;              /* not a same-arena local (NULL = a param) */
+    if (count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1) return 1;
+    /* At a return the move is terminal, so a write through the value before it
+     * is not an observation. This is what lets a map built by `m[k] = ...` and
+     * then returned hand off its buffer instead of deep-copying. */
+    return g_in_return && count_value_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
 }
 
 /* --- sink-argument adopt (deep-copy elision into a `sink` parameter) -----
@@ -10935,6 +11049,7 @@ static int can_move_into_sink(Expr *rhs) {
      * the same buffer on every dynamic read, so only the former can move. */
     if (g_loop_depth != 0 && cv_loop(rhs->sval) != g_loop_depth) return 0;
     if (!cv_arena(rhs->sval)) return 0;         /* a tracked local: its arena encloses the call scope */
+    if (cv_owned(rhs->sval)) return 0;          /* owned payload: only a terminal return move */
     return count_reads_b(g_proc_body, g_proc_nbody, rhs->sval) == 1;
 }
 
@@ -10948,7 +11063,7 @@ static int can_move_into_push(Expr *arr, Expr *val, Type elem) {
     if (is_param(val->sval)) return 0;
     if (g_loop_depth != 0 && cv_loop(val->sval) != g_loop_depth) return 0;
     const char *src = cv_arena(val->sval);
-    if (!src) return 0;
+    if (!src || cv_owned(val->sval)) return 0;
     Expr *root = arr;
     while (root->kind == E_FIELD || root->kind == E_INDEX) root = root->lhs;
     if (root->kind != E_IDENT || is_param(root->sval)) return 0;
@@ -11160,7 +11275,7 @@ static void collect_ret_alias(Proc *pr) {
     for (int i = 0; i < pr->nbody; i++) {
         Stmt *s = pr->body[i];
         if (s->kind != S_DECL || !s->name || !type_is_heap(s->decl_type)) continue;
-        int tot = count_reads_b(pr->body, pr->nbody, s->name);
+        int tot = count_value_reads_b(pr->body, pr->nbody, s->name);
         int inr = reads_in_returns_b(pr->body, pr->nbody, s->name);
         if (tot > 0 && tot == inr
             && every_return_has(pr->body + i + 1, pr->nbody - i - 1, s->name)) {
@@ -11278,6 +11393,71 @@ static char *append_state_binding(const char *name, Type t) {
 static void gen_append_state(FILE *o, const char *name, Type t, int ind) {
     char *decl = append_state_binding(name, t);
     if (*decl) { indent(o, ind); fprintf(o, "%s\n", decl); }
+}
+
+/* --- O6: shareable shapes -------------------------------------------------
+ * A value is shareable when every mutable part of it is either a composite map
+ * (which gets a conservative shared bit + copy-on-write) or is immutable
+ * (scalars, strings, enums). Arrays are deliberately NOT shareable yet: their
+ * spines have no shared bit, so a shallow copy could be written through.
+ * Recursive structs (the trie's `[int: Trie]`) are coinductive: reaching a type
+ * already on the stack is accepted, because the cycle goes through a map. */
+static int shareable_rec(Type t, Type *seen, int n) {
+    t = base_of(t);
+    if (t == T_INT || t == T_BOOL || t == T_FLOAT || t == T_CHAR || t == T_F32
+        || t == T_STRING || t == T_BYTES || t == T_VOID || is_sized_int(t)) return 1;
+    if (IS_ENUM(t)) return 1;                 /* payloads are immutable */
+    for (int i = 0; i < n; i++) if (seen[i] == t) return 1;
+    if (n >= 32 || IS_HANDLE(t) || IS_CHAN(t) || IS_TASK(t) || IS_FUNC(t) || IS_SOA(t)) return 0;
+    seen[n++] = t;
+    if (IS_MAPC(t)) {
+        Type mv = base_of(map_val(t));
+        /* A direct string value has a destructive overwrite path
+         * (tycho_str_slot_set recycles the old buffer); sharing it would free a
+         * string the other map still points at. Structs containing strings are
+         * fine: field stores replace the descriptor without recycling. */
+        if (mv == T_STRING || mv == T_BYTES) return 0;
+        return shareable_rec(mv, seen, n);
+    }
+    if (is_map(t)) return 0;                  /* scalar maps have no shared bit yet */
+    if (IS_STRUCT(t)) {
+        StructDef *sd = &g_structs[STRUCT_ID(t)];
+        for (int j = 0; j < sd->nfields; j++)
+            if (!shareable_rec(sd->fields[j].type, seen, n)) return 0;
+        return 1;
+    }
+    return 0;                                 /* arrays, option/result/tuple, pointers */
+}
+static int shareable_raw(Type t) { Type seen[32]; return shareable_rec(t, seen, 0); }
+static int shareable(Type t) { return !getenv("TYCHOC_NO_COW") && shareable_raw(t); }
+
+/* A struct needs a share helper only when one of its fields is a composite map
+ * or another struct that needs one. A scalar/string-only struct shares nothing. */
+static int struct_needs_share(Type t) {
+    t = base_of(t);
+    if (!IS_STRUCT(t)) return 0;
+    StructDef *sd = &g_structs[STRUCT_ID(t)];
+    for (int j = 0; j < sd->nfields; j++) {
+        Type ft = base_of(sd->fields[j].type);
+        if (IS_MAPC(ft) && shareable_raw(ft)) return 1;
+        if (IS_STRUCT(ft) && struct_needs_share(ft)) return 1;
+    }
+    return 0;
+}
+
+/* C function name that marks a shareable value's mutable parts shared, or NULL
+ * when the value is immutable (a string/enum/scalar needs no bit). */
+static const char *share_fn(Type t) {
+    t = base_of(t);
+    if (!shareable_raw(t)) return NULL;
+    if (IS_MAPC(t)) return sfmt("tycho_mapc%d_share", MAPC_ID(t));
+    if (IS_STRUCT(t) && struct_needs_share(t))
+        return sfmt("tycho_share_S_%s", g_structs[STRUCT_ID(t)].name);
+    return NULL;
+}
+static char *share_call(Type t, const char *lvalue) {
+    const char *fn = share_fn(t);
+    return fn ? sfmt("%s(&(%s))", fn, lvalue) : NULL;
 }
 
 /* Wrap a generated C expression `val` of type `t` in the deep-copy call that
@@ -11503,6 +11683,7 @@ static ReturnProjection return_projection(Stmt **body, int n) {
 }
 static int ret_must_copy(Expr *e) {
     if (e == g_return_projection.ret) return 0;
+    if (owned_path_return_ok(e)) return 0;   /* O5: the owned value is in the destination arena and dead here */
     if (e->kind == E_IDENT) return !cv_in_parent(e->sval);
     /* see is_reinterpret_of_place: `return to_str(x)` is `return x` with a
      * different static type, so ask the same question of x (a _parent-owned
@@ -11586,6 +11767,9 @@ static char *arg_into(Type t, const char *arena, Expr *arg) {
     if (type_is_heap(t) && is_place(arg)) {
         int self_move = g_self_move_name && arg->kind == E_IDENT
             && !strcmp(arg->sval, g_self_move_name);
+        /* O5: a field/payload of the owned parameter is handed to the result
+         * instead of deep-copied. Terminal move, same arena, dead source. */
+        if (owned_path_return_ok(arg)) return v;
         if (!self_move && !can_take_rebuild_field(arg, arena) && !can_move_from(arg, arena)) {
             /* Val-style copy diagnostic: this deep copy is unavoidable AND
              * observable -- arg is a heap-bearing local still live after this
@@ -11688,9 +11872,179 @@ static char *sink_arg_into(Type t, const char *arena, Expr *arg) {
 static int self_rebuild_move(Stmt *s) {
     const char *nm = s->name;
     if (is_inout_param(nm)) return 0;
-    if (!cv_arena(nm)) return 0;
+    const char *a = cv_arena(nm);
+    if (!a || cv_owned(nm)) return 0;
     if (!type_is_heap(s->expr->type)) return 0;
     return count_reads_e(s->expr, nm) == 1;
+}
+
+/* --- O5 destination passing: owned-field moves --------------------------
+ * A generated variant of f receives one dead self-rebuild value as an OWNED
+ * parameter. Inside that variant a field (or a match payload binding) of the
+ * owned value may be handed to the result instead of deep-copied. The move is
+ * only allowed inside the current return expression: it is terminal, so no
+ * later read on that path can see the old value, and the caller already
+ * promised not to read it again. The result is built in the same arena as the
+ * assignment target (S_ASSIGN passes cv_arena(t)), so the moved buffer and the
+ * result share a lifetime; this is the same-arena condition move-on-last-use
+ * requires, just established at the call boundary. */
+
+static int path_same(Expr *a, Expr *b) {
+    if (!a || !b || a->kind != b->kind) return 0;
+    if (a->kind == E_IDENT) return a->sval && b->sval && !strcmp(a->sval, b->sval);
+    if (a->kind == E_FIELD) return a->sval && b->sval && !strcmp(a->sval, b->sval) && path_same(a->lhs, b->lhs);
+    if (a->kind == E_TUPIDX) return a->ival == b->ival && path_same(a->lhs, b->lhs);
+    return 0;
+}
+/* is `pre` a prefix of (or equal to) the place path `full`? */
+static int path_prefix(Expr *pre, Expr *full) {
+    if (!pre || !full) return 0;
+    if (path_same(pre, full)) return 1;
+    if (full->kind == E_FIELD || full->kind == E_TUPIDX) return path_prefix(pre, full->lhs);
+    return 0;
+}
+/* is e a place chain rooted in the owned parameter (or an owned match binding)? */
+static int owned_rooted(Expr *e) {
+    while (e && (e->kind == E_FIELD || e->kind == E_TUPIDX)) e = e->lhs;
+    if (!e || e->kind != E_IDENT || !e->sval) return 0;
+    return cv_owned(e->sval);
+}
+typedef struct { Expr *p[64]; int n; int poison; } OwnedPaths;
+/* Does argument i of this call RETAIN its value? Constructors own their
+ * fields; a sink parameter consumes; the owned variant of the current proc
+ * takes ownership at its owned index. Every other argument is a borrow: the
+ * callee copies at its own retention point, so reading it here cannot alias
+ * the one slot we are about to fill. */
+static int call_arg_retains(Expr *e, int i) {
+    if (e->kind != E_CALL) return 0;
+    if (e->op == TK_ENUM) return 1;
+    if (e->op == TK_FN || e->lhs) return 1;   /* unknown callee: assume it may retain */
+    if (e->sval && g_owned_orig && i == g_owned_index && !strcmp(e->sval, g_owned_orig)) return 1;
+    Sig *cs = e->sval ? sig_find(e->sval) : NULL;
+    return cs && i < cs->nparams && cs->sink[i];
+}
+static void owned_collect_retains(Expr *e, int retain, OwnedPaths *op) {
+    if (!e) return;
+    if (e->kind == E_LAMBDA) { op->poison = 1; return; }   /* captures are retained, never moved */
+    if ((e->kind == E_FIELD || e->kind == E_TUPIDX) && owned_rooted(e)) {
+        if (retain && op->n < 64) op->p[op->n++] = e;
+        return;                                            /* the whole place is one value */
+    }
+    if (e->kind == E_IDENT) {
+        if (retain && owned_rooted(e) && op->n < 64) op->p[op->n++] = e;
+        return;
+    }
+    if (e->kind == E_STRUCTLIT || e->kind == E_ARRLIT || e->kind == E_TUPLE
+        || e->kind == E_SOME || e->kind == E_OK || e->kind == E_ERR) {
+        for (int i = 0; i < e->nargs; i++) owned_collect_retains(e->args[i], 1, op);
+        return;
+    }
+    if (e->kind == E_CALL) {
+        for (int i = 0; i < e->nargs; i++)
+            owned_collect_retains(e->args[i], call_arg_retains(e, i), op);
+        return;
+    }
+    owned_collect_retains(e->lhs, 0, op);
+    owned_collect_retains(e->rhs, 0, op);
+    for (int i = 0; i < e->nargs; i++) owned_collect_retains(e->args[i], 0, op);
+}
+/* May `arg` (a field/payload of the owned parameter) be moved into the value
+ * currently being returned? It must occupy exactly one owning slot on this
+ * path, and no other retained path may overlap it. Borrow reads (`len(l)`,
+ * `size(l)`) are not owning slots and do not disqualify the move. */
+static int owned_path_return_ok(Expr *arg) {
+    if (!g_in_return || !g_return_expr || !arg || !owned_rooted(arg)) return 0;
+    if (arg->kind != E_IDENT && arg->kind != E_FIELD && arg->kind != E_TUPIDX) return 0;
+    OwnedPaths op = {0};
+    owned_collect_retains(g_return_expr, 1, &op);
+    if (op.poison) return 0;
+    int exact = 0;
+    for (int i = 0; i < op.n; i++)
+        if (path_same(op.p[i], arg)) exact++;
+    if (exact != 1) return 0;
+    for (int i = 0; i < op.n; i++)
+        if (!path_same(op.p[i], arg)
+            && (path_prefix(op.p[i], arg) || path_prefix(arg, op.p[i]))) return 0;
+    return 1;
+}
+
+/* At `t = f(t, ...)`, find the generated owned variant for this exact site.
+ * Mirrors self_rebuild_move's gate: t is read once in the RHS (the call
+ * argument) and immediately rebound, so the callee owns the old value and the
+ * caller cannot observe it again. */
+/* Inside an owned variant, a recursive call may consume an ordinary local that
+ * is read exactly once: value semantics already makes that local unique, and it
+ * is dead after the call. This is the shape `child := t.kids[c]; insert(child)`
+ * takes in a path-copying update; the field itself is not movable, but the
+ * shallow local bound from it is. */
+static int owned_arg_transfer_ok(Expr *e) {
+    if (owned_path_return_ok(e)) return 1;
+    if (!e || e->kind != E_IDENT || !e->sval || !type_is_heap(e->type)) return 0;
+    if (is_param(e->sval) || !cv_arena(e->sval)) return 0;
+    if (g_loop_depth != 0 && cv_loop(e->sval) != g_loop_depth) return 0;
+    return count_reads_b(g_proc_body, g_proc_nbody, e->sval) == 1;
+}
+
+static Proc *owned_site_variant(Stmt *s) {
+    if (!s || s->kind != S_ASSIGN || !s->name || !s->expr) return NULL;
+    Expr *e = s->expr;
+    if (e->kind != E_CALL || e->lhs || e->op != 0 || !e->sval || !type_is_heap(e->type)) return NULL;
+    if (is_param(s->name) || is_inout_param(s->name)) return NULL;
+    const char *a = cv_arena(s->name);
+    if (!a || cv_owned(s->name)) return NULL;
+    if (count_reads_e(e, s->name) != 1) return NULL;
+    for (int i = 0; i < g_owned_procs.n; i++) {
+        Proc *p = g_owned_procs.v[i];
+        if (!p->owned_orig || strcmp(p->owned_orig, e->sval)) continue;
+        int idx = p->owned_plus1 - 1;
+        if (idx < 0 || idx >= e->nargs) continue;
+        if (e->args[idx]->kind == E_IDENT && e->args[idx]->sval
+            && !strcmp(e->args[idx]->sval, s->name)) return p;
+    }
+    return NULL;
+}
+
+/* O6: a place whose evaluation has no side effects, so it can be both read and
+ * addressed for the share/source marking. Index/slice expressions are excluded
+ * (an index could be a call). */
+static int simple_place(Expr *e) {
+    if (!e) return 0;
+    if (e->kind == E_IDENT) return 1;
+    if (e->kind == E_FIELD || e->kind == E_TUPIDX) return simple_place(e->lhs);
+    return 0;
+}
+/* Can `b := a` share instead of deep-copying? Same arena, a simple place, and
+ * no value parameter (whose C copy would not mark the caller's storage). An
+ * owned or inout parameter is safe: its storage is the caller's, which is an
+ * ancestor of this scope. */
+static int share_bind_ok(Expr *src, Type t, const char *owner) {
+    if (!shareable(t) || !share_fn(t) || !is_place(src) || !simple_place(src)) return 0;
+    const char *root = place_root(src);
+    if (!root) return 0;
+    if (is_param(root) && !cv_owned(root) && !is_inout_param(root)) return 0;
+    /* An owned parameter's storage is the clone caller's `_parent`, even though
+     * its nominal cv_arena is this scope. */
+    if (cv_owned(root) && !strcmp(owner, "_parent")) return 1;
+    const char *a = cv_arena(root);
+    return a && !strcmp(a, owner);
+}
+/* A composite map read that may return a shallow, shared value. The map's
+ * source storage must be visible from the destination arena: `_parent` is the
+ * caller's arena and can outlive a local source, so it is only allowed when the
+ * source is already there. */
+static int expr_is_shared_get(Expr *e, const char *arena) {
+    if (!e || e->kind != E_INDEX || !e->lhs || !simple_place(e->lhs)) return 0;
+    Type mt = e->lhs->type, mv = map_val(mt);
+    /* A scalar/string value has no mutable nested part to protect: marking the
+     * source map shared here would force a full-map CoW on its next write for
+     * no benefit (the LRU benchmark: 21 MB -> 121 GB). Share only when the
+     * value itself has a mutable map/struct to keep independent. */
+    if (!IS_MAPC(mt) || !shareable(mv) || !share_fn(mv)) return 0;
+    const char *root = place_root(e->lhs);
+    if (!root || !cv_arena(root)) return 0;
+    if (is_param(root) && !cv_owned(root) && !is_inout_param(root)) return 0;
+    if (!strcmp(arena, "_parent") && strcmp(cv_arena(root), "_parent")) return 0;
+    return 1;
 }
 
 /* C expression that is nonzero iff the two operands of type `t` are equal by
@@ -11863,6 +12217,11 @@ static char *gen_extern_raw(Expr *e) {
             char *tv = sfmt("_xa%d", nb++);
             decls = sfmt("%s%s%s = %s; ", decls, c_type(at), tv, a);
             args = sfmt("%s%s(%s)%s.data, %s.len", args, emitted++ ? ", " : "", arrp, tv, tv);
+        } else if (ffi_pod_arr(at)) {   /* [POD struct] -> (const T*)xs.data, xs.len */
+            char *tv = sfmt("_xa%d", nb++);
+            decls = sfmt("%s%s%s = %s; ", decls, c_type(at), tv, a);
+            args = sfmt("%s%s(const %s *)%s.data, %s.len", args, emitted++ ? ", " : "",
+                        c_type(arr_elem(at)), tv, tv);
         } else if (at == T_STRING) {
             char *tv = sfmt("_xc%d", nb++);
             decls = sfmt("%schar *%s = tycho_str_cstr(%s, %s); ", decls, tv, g_cur_scope, a);
@@ -12324,7 +12683,19 @@ static char *gen_call(Expr *e, const char *arena) {
             return sfmt("tycho_str_from_c(%s, ({ const char *_x = %s; _x ? _x : \"\"; }))", arena, xc);
         return xc;
     }
-    char *out = sfmt("h_%s(%s", e->sval, arena);
+    /* O5: the outer `t = f(t, ...)` site forces its variant; inside a variant,
+     * a recursive call whose owned argument is a terminal field/payload move
+     * calls the same variant. */
+    const char *callee_name = e->sval;
+    if (g_force_owned_expr == e && g_force_owned_name) {
+        callee_name = g_force_owned_name;
+    } else if (g_owned_param && g_owned_orig && g_owned_clone
+               && !strcmp(e->sval, g_owned_orig)
+               && g_owned_index >= 0 && g_owned_index < e->nargs
+               && owned_arg_transfer_ok(e->args[g_owned_index])) {
+        callee_name = g_owned_clone;
+    }
+    char *out = sfmt("h_%s(%s", callee_name, arena);
     char *packed_pre = "", *packed_post = "";
     int packed_count = 0;
     g_call_arg_depth++;
@@ -12744,6 +13115,15 @@ static char *gen_expr(Expr *e, const char *arena) {
                  * resolve, so only composites reach this. Deep-copy the borrow out, as
                  * map_get's codegen does, so it outlives a later mutation/free of m. */
                 Type mt = e->lhs->type, vt = map_val(mt);
+                if (expr_is_shared_get(e, arena)) {
+                    /* O6: the map and the destination are arena-compatible, so the
+                     * read is a shallow value whose maps are marked shared. The
+                     * source map is marked too, forcing CoW on its next write. */
+                    char *ml = gen_lvalue(e->lhs, arena);
+                    char *k = key_rt(mt, gen_expr(e->rhs, arena));
+                    return sfmt("tycho_mapc%d_get_share(%s, &(%s), %s, (%s){0})",
+                                MAPC_ID(mt), arena, ml, k, c_type(vt));
+                }
                 char *m = gen_expr(e->lhs, arena);
                 char *k = key_rt(mt, gen_expr(e->rhs, arena));
                 char *call = sfmt("%s(%s, %s, (%s){0})", map_rt(mt, "get"), m, k, c_type(vt));
@@ -12820,12 +13200,13 @@ static char *gen_expr(Expr *e, const char *arena) {
             if (IS_SOA(e->type))   /* empty soa literal `soa []Struct` (core supports empty only) */
                 return sfmt("(Soa%d){0}", SOA_ID(e->type));
             if (is_map(e->type)) {
-                /* map literal: build empty in `arena`, then put each pair. The
-                 * runtime put copies the key bytes into `arena`. args interleave
-                 * k0,v0,k1,v1,...; an empty literal (nargs 0) just yields {0}. */
+                /* map literal: presize to the literal's pair count, then put
+                 * each pair (the put would otherwise grow 4 -> 8 -> ... and
+                 * copy every time). TYCHOC_NO_MAP_PRESIZE is the control. */
                 SBuf sb; sb_init(&sb);
-                sb_addf(&sb, "({ %s_l%d = %s(%s, 0L);",
-                        c_type(e->type), id, map_rt(e->type, "with_cap"), arena);
+                long long mcap = getenv("TYCHOC_NO_MAP_PRESIZE") ? 0 : (long long)(e->nargs / 2);
+                sb_addf(&sb, "({ %s_l%d = %s(%s, %lldL);",
+                        c_type(e->type), id, map_rt(e->type, "with_cap"), arena, mcap);
                 for (int i = 0; i + 1 < e->nargs; i += 2)
                     sb_addf(&sb, " %s(%s, &_l%d, %s, %s);",
                             map_rt(e->type, "put"), arena, id,
@@ -13483,7 +13864,11 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * is already a freshly-owned value built in `owner` — no copy. And a
              * dead same-arena local is MOVED (copy elided): it takes over the
              * source's buffer (see can_move_from). */
-            if (is_place(s->expr) && type_is_heap(s->decl_type) && !can_move_from(s->expr, owner))
+            int shared_bind = !rhs_shadows_binding
+                && share_bind_ok(s->expr, s->decl_type, owner);
+            int shared_get = !shared_bind && expr_is_shared_get(s->expr, owner);
+            if (!shared_bind && !shared_get && is_place(s->expr)
+                && type_is_heap(s->decl_type) && !can_move_from(s->expr, owner))
                 v = copy_into(s->decl_type, owner, v);
             indent(o, ind);
             /* Go/Odin lexical scope + value semantics: a self-referential shadow
@@ -13500,6 +13885,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                         c_type(s->decl_type), s->name, s->name);
             else
                 fprintf(o, "%sh_%s = %s;\n", c_type(s->decl_type), s->name, v);
+            if (shared_bind) {
+                char *dst = share_call(s->decl_type, sfmt("h_%s", s->name));
+                char *src = share_call(s->decl_type, gen_lvalue(s->expr, owner));
+                if (dst) { indent(o, ind); fprintf(o, "%s;\n", dst); }
+                if (src) { indent(o, ind); fprintf(o, "%s;\n", src); }
+            }
             cv_push(s->name, owner);   /* this variable lives in `owner` */
             gen_append_state(o, s->name, s->decl_type, ind);
             break;
@@ -13672,7 +14063,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 g_field_rebuild = s->expr;
                 g_field_root = s->name;
             }
+            Proc *owned_variant = owned_site_variant(s);   /* O5: t = f(t, ...) */
+            if (owned_variant) {
+                g_force_owned_expr = s->expr;
+                g_force_owned_name = owned_variant->name;
+            }
             char *v = gen_expr(s->expr, rhs_arena);
+            g_force_owned_expr = NULL;
+            g_force_owned_name = NULL;
             g_field_rebuild = NULL;
             g_field_root = NULL;
             g_self_move_name = NULL;
@@ -13680,7 +14078,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * soon-to-collapse) scope; deep-copy it into the target's arena
              * so it survives. A literal/call/concat result is already freshly
              * allocated in `owner` — no copy needed. */
-            if (is_place(s->expr) && type_is_heap(s->expr->type) && !can_move_from(s->expr, owner))
+            int shared_bind = share_bind_ok(s->expr, s->expr->type, owner);
+            int shared_get = !shared_bind && expr_is_shared_get(s->expr, owner);
+            if (!shared_bind && !shared_get && is_place(s->expr)
+                && type_is_heap(s->expr->type) && !can_move_from(s->expr, owner))
                 v = copy_into(s->expr->type, owner, v);
             /* liveness-driven recycle: a loop-carried scalar-array local being
              * reassigned from a FUNCTION CALL (`a = step(a)`). A Tycho call returns
@@ -13730,6 +14131,14 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                     fprintf(o, "(*h_%s) = %s;\n", s->name, v);
                 else
                     fprintf(o, "h_%s = %s;\n", s->name, v);
+                if (shared_bind) {
+                    const char *dst = is_inout_param(s->name)
+                        ? sfmt("(*h_%s)", s->name) : sfmt("h_%s", s->name);
+                    char *c1 = share_call(s->expr->type, dst);
+                    char *c2 = share_call(s->expr->type, gen_lvalue(s->expr, owner));
+                    if (c1) { indent(o, ind); fprintf(o, "%s;\n", c1); }
+                    if (c2) { indent(o, ind); fprintf(o, "%s;\n", c2); }
+                }
             }
             break;
         }
@@ -13773,9 +14182,15 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                 } else if (IS_MAPC(arrx->type)) {
                     char *mb = gen_lvalue(arrx, scope);
                     char *key = key_rt(arrx->type, gen_expr(s->target->rhs, scope));
-                    char *v = gen_expr(s->expr, scope);   /* mapc_put owns the deep copy */
+                    /* O6: a fresh value is built in the map's own arena and
+                     * stored directly -- no deep copy. A place still copies. */
+                    int fresh = !is_place(s->expr) && !is_reinterpret_of_place(s->expr)
+                        && shareable(vt);
+                    char *v = gen_expr(s->expr, fresh ? mowner : scope);
+                    const char *putfn = map_rt(arrx->type, "put");
+                    if (fresh) putfn = sfmt("%s_fresh", putfn);
                     indent(o, ind);
-                    fprintf(o, "%s(%s, &(%s), %s, %s);\n", map_rt(arrx->type, "put"), mowner, mb, key, v);
+                    fprintf(o, "%s(%s, &(%s), %s, %s);\n", putfn, mowner, mb, key, v);
                 } else {
                     char *lv = gen_lvalue(s->target, scope);   /* (*slotptr(owner, &m, k)) */
                     int id = g_blk++;
@@ -13900,6 +14315,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             for (int fi = 0; fi < g_nfuse; fi++) fuse_flush_one(o, ind, fi);
             char *rf = return_frees();
             g_in_return++;
+            g_return_expr = s->expr;   /* O5: terminal position for owned-field moves */
             if (!s->expr) {
                 indent(o, ind); fprintf(o, "{ %s return; }\n", rf);
             } else if (ret == T_STRING) {
@@ -14024,6 +14440,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                                         c_type(ret), v, rf);
             }
             g_in_return--;
+            g_return_expr = NULL;
             break;
         }
         case S_IF: {
@@ -14200,12 +14617,20 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                              * place in the arm (which would reach through). */
                             int borrow = type_is_heap(var->payload[b])
                                 && !block_mutates(arm->body, arm->nbody, arm->binds[b]);
+                            /* O5: if the scrutinee is the owned parameter, a
+                             * borrowed payload is part of a value the caller
+                             * consumed. Mark it owned so a return in this arm
+                             * can move it into the result instead of copying;
+                             * owned_path_return_ok still requires a terminal,
+                             * uniquely-read occurrence. */
+                            int owned_borrow = borrow && owned_rooted(s->expr);
                             indent(o, ind + 2);
                             fprintf(o, "%sh_%s = %s;\n", c_type(var->payload[b]), arm->binds[b],
                                     borrow ? field : copy_into(var->payload[b], scope, field));
                             /* a borrowed binding owns no arena (like a param):
                              * NULL keeps move-on-last-use from handing it off. */
                             cv_push(arm->binds[b], borrow ? NULL : scope);
+                            if (owned_borrow) cv_set_owned(arm->binds[b]);
                             gen_append_state(o, arm->binds[b], var->payload[b], ind + 2);
                         }
                     }
@@ -14457,6 +14882,18 @@ static void gen_block(FILE *o, Stmt **body, int n, int ind,
     for (int i = 0; i < n; i++) {
         if (body[i] == projection.decl) g_return_projection = projection;
         gen_stmt(o, body[i], ind, scope, ret);
+        if (i + 1 < n) {
+            const char *src = presize_loop_src(body[i], body[i + 1]);
+            if (src) {
+                const char *owner = cv_arena(body[i]->name);
+                if (!owner) owner = scope;
+                char *lenexpr = is_inout_param(src) ? sfmt("(*h_%s).len", src)
+                                                    : sfmt("h_%s.len", src);
+                indent(o, ind);
+                fprintf(o, "tycho_arr_%s_reserve(%s, &(h_%s), (tycho_int)%s);\n",
+                        arr_fn(body[i]->decl_type), owner, body[i]->name, lenexpr);
+            }
+        }
     }
     g_return_projection = saved_projection;
     if (g_ntaskvars > tm) {   /* CC-2 implicit join: tasks declared in this block die here
@@ -14516,6 +14953,9 @@ static void gen_extern_proto(FILE *o, Proc *pr) {
             fprintf(o, "%sconst unsigned char *, tycho_int", emitted++ ? ", " : "");
         else if (arrp)                     /* [int]/[float]/[string] cross as (const T*, long) */
             fprintf(o, "%s%s, tycho_int", emitted++ ? ", " : "", arrp);
+        else if (ffi_pod_arr(pr->params[i].type))   /* [POD struct] crosses as (const T*, long) */
+            fprintf(o, "%sconst %s *, tycho_int", emitted++ ? ", " : "",
+                    c_type(arr_elem(pr->params[i].type)));
         else if (pr->params[i].is_inout)   /* FFI R4: out-param — the C fn takes a pointer to T */
             fprintf(o, "%s%s*", emitted++ ? ", " : "", c_type(pr->params[i].type));
         else
@@ -14538,6 +14978,13 @@ static void gen_proc(FILE *o, Proc *pr) {
     g_loop_lbl = 0;
     g_gen_ret = pr->ret;
     g_proc_body = pr->body; g_proc_nbody = pr->nbody;   /* for move-on-last-use read counts */
+    g_owned_param = NULL; g_owned_orig = NULL; g_owned_clone = NULL; g_owned_index = -1;
+    if (pr->owned_plus1 > 0 && pr->owned_plus1 <= pr->nparams) {
+        g_owned_index = pr->owned_plus1 - 1;
+        g_owned_param = pr->params[g_owned_index].name;
+        g_owned_orig = pr->owned_orig;
+        g_owned_clone = pr->name;
+    }
     g_loop_depth = 0;
     g_ncv = 0;
     g_nascope = 0;   /* no enclosing block arenas at the proc body top level */
@@ -14592,6 +15039,7 @@ static void gen_proc(FILE *o, Proc *pr) {
             gen_append_state(o, name, pr->params[i].type, 1);
         }
     }
+    if (g_owned_param) cv_set_owned(g_owned_param);   /* O5: the one owned parameter */
     /* Structs are passed by value, but C copies them shallowly — a heap field
      * (string/array) still points at the caller's bytes. Deep-copy heap-
      * bearing struct params into this scope so the parameter is a truly
@@ -14632,6 +15080,7 @@ static void gen_proc(FILE *o, Proc *pr) {
         }
     }
     fprintf(o, "}\n\n");
+    g_owned_param = NULL; g_owned_orig = NULL; g_owned_clone = NULL; g_owned_index = -1;
 }
 
 /* Struct bodies and Option typedefs embed their members BY VALUE, so they must
@@ -14968,6 +15417,123 @@ static char *mapc_keyelem(Type k) {   /* keys() element rebuilt from ekeys[e] */
     return sfmt("m.ekeys[e]");
 }
 
+/* --- O5: discover `t = f(t, ...)` sites and build one owned variant ------
+ * The scan runs before prototypes are emitted, so every variant used by a
+ * body has a declaration. Variants share the original body: codegen selects
+ * the owned rules from Proc.owned_plus1, no AST clone is needed. */
+static Proc *find_proc_any(ProcVec *prog, const char *name) {
+    for (int i = 0; i < prog->n; i++)
+        if (prog->v[i]->name && !strcmp(prog->v[i]->name, name)) return prog->v[i];
+    for (int i = 0; i < g_ninst_procs; i++)
+        if (g_inst_procs[i]->name && !strcmp(g_inst_procs[i]->name, name)) return g_inst_procs[i];
+    for (int i = 0; i < g_nlaminfo; i++)
+        if (g_laminfo[i].proc && g_laminfo[i].proc->name
+            && !strcmp(g_laminfo[i].proc->name, name)) return g_laminfo[i].proc;
+    for (int i = 0; i < g_parprocs.n; i++)
+        if (g_parprocs.v[i]->name && !strcmp(g_parprocs.v[i]->name, name)) return g_parprocs.v[i];
+    return NULL;
+}
+static int proc_param_index(Proc *p, const char *name) {
+    for (int i = 0; i < p->nparams; i++)
+        if (p->params[i].name && !strcmp(p->params[i].name, name)) return i;
+    return -1;
+}
+static int body_binds_match(Stmt **body, int n, const char *name) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        for (int a = 0; a < s->narms; a++) {
+            for (int b = 0; b < s->arms[a].nbinds; b++)
+                if (!strcmp(s->arms[a].binds[b], name)) return 1;
+            for (int b = 0; b < s->arms[a].nsubbinds; b++)
+                if (!strcmp(s->arms[a].subbinds[b], name)) return 1;
+            if (body_binds_match(s->arms[a].body, s->arms[a].nbody, name)) return 1;
+        }
+        if (body_binds_match(s->body, s->nbody, name)) return 1;
+        if (body_binds_match(s->els, s->nels, name)) return 1;
+        if (s->ctrl && body_binds_match(&s->ctrl, 1, name)) return 1;
+    }
+    return 0;
+}
+/* The parameter index whose argument is the dead self-rebuild `s->name`, or -1. */
+static int owned_site_callee(ProcVec *prog, Proc *owner, Stmt *s, Proc **callee_out) {
+    if (!s || s->kind != S_ASSIGN || !s->name || !s->expr) return -1;
+    Expr *e = s->expr;
+    if (e->kind != E_CALL || e->lhs || e->op != 0 || !e->sval || !type_is_heap(e->type)) return -1;
+    Proc *callee = find_proc_any(prog, e->sval);
+    if (!callee || callee->is_extern || callee->generic) return -1;
+    if (!type_is_heap(callee->ret)) return -1;
+    if (proc_param_index(owner, s->name) >= 0) return -1;   /* a param borrows the caller's value */
+    if (body_binds_match(owner->body, owner->nbody, s->name)) return -1;   /* a borrowed payload binding */
+    if (count_reads_e(e, s->name) != 1) return -1;
+    int idx = -1;
+    for (int i = 0; i < e->nargs; i++)
+        if (e->args[i]->kind == E_IDENT && e->args[i]->sval
+            && !strcmp(e->args[i]->sval, s->name)) {
+            if (idx >= 0) return -1;
+            idx = i;
+        }
+    if (idx < 0 || idx >= callee->nparams) return -1;
+    Param *pp = &callee->params[idx];
+    if (pp->is_inout || pp->is_sink || pp->is_variadic) return -1;
+    if (!type_is_heap(pp->type) || pp->type != e->args[idx]->type) return -1;
+    *callee_out = callee;
+    return idx;
+}
+static Proc *owned_variant_get(const char *orig, int idx) {
+    for (int i = 0; i < g_owned_procs.n; i++)
+        if (g_owned_procs.v[i]->owned_orig && !strcmp(g_owned_procs.v[i]->owned_orig, orig)
+            && g_owned_procs.v[i]->owned_plus1 == idx + 1) return g_owned_procs.v[i];
+    return NULL;
+}
+static int owned_variant_get_any_name(const char *name) {
+    for (int i = 0; i < g_owned_procs.n; i++)
+        if (g_owned_procs.v[i]->name && !strcmp(g_owned_procs.v[i]->name, name)) return 1;
+    return 0;
+}
+static Proc *owned_variant_make(ProcVec *prog, Proc *orig, int idx) {
+    Proc *have = owned_variant_get(orig->name, idx);
+    if (have) return have;
+    Proc *p = (Proc *)xmalloc(sizeof(Proc));
+    *p = *orig;                              /* body/params/types are shared; codegen reads only */
+    int n = 0;
+    char *nm = sfmt("%s__own%d", orig->name, idx);
+    while (find_proc_any(prog, nm) || owned_variant_get_any_name(nm)) nm = sfmt("%s__own%d_%d", orig->name, idx, ++n);
+    p->name = nm;
+    p->owned_plus1 = idx + 1;
+    p->owned_orig = orig->name;
+    TBL_ENSURE(g_owned_procs.v, g_owned_procs.n, g_owned_procs.cap);
+    g_owned_procs.v[g_owned_procs.n++] = p;
+    return p;
+}
+static void collect_owned_in_block(ProcVec *prog, Proc *owner, Stmt **body, int n) {
+    for (int i = 0; i < n; i++) {
+        Stmt *s = body[i];
+        Proc *callee = NULL;
+        int idx = owned_site_callee(prog, owner, s, &callee);
+        if (idx >= 0) owned_variant_make(prog, callee, idx);
+        collect_owned_in_block(prog, owner, s->body, s->nbody);
+        collect_owned_in_block(prog, owner, s->els, s->nels);
+        for (int a = 0; a < s->narms; a++)
+            collect_owned_in_block(prog, owner, s->arms[a].body, s->arms[a].nbody);
+        if (s->ctrl) collect_owned_in_block(prog, owner, &s->ctrl, 1);
+    }
+}
+static void collect_owned_variants(ProcVec *prog) {
+    g_owned_procs.n = 0;
+    /* Benchmark control: the same compiler, variants not generated. */
+    if (getenv("TYCHOC_NO_DEST_PASS")) return;
+    for (int i = 0; i < prog->n; i++)
+        if (!prog->v[i]->is_extern && !prog->v[i]->generic)
+            collect_owned_in_block(prog, prog->v[i], prog->v[i]->body, prog->v[i]->nbody);
+    for (int i = 0; i < g_ninst_procs; i++)
+        collect_owned_in_block(prog, g_inst_procs[i], g_inst_procs[i]->body, g_inst_procs[i]->nbody);
+    for (int i = 0; i < g_nlaminfo; i++)
+        if (g_laminfo[i].proc && g_laminfo[i].ftype != T_VOID)
+            collect_owned_in_block(prog, g_laminfo[i].proc, g_laminfo[i].proc->body, g_laminfo[i].proc->nbody);
+    for (int i = 0; i < g_parprocs.n; i++)
+        collect_owned_in_block(prog, g_parprocs.v[i], g_parprocs.v[i]->body, g_parprocs.v[i]->nbody);
+}
+
 static void gen_program(FILE *o, ProcVec *prog) {
     fputs(TYCHO_RUNTIME, o);
     fputs("\n/* ---- generated from Tycho source ---- */\n\n", o);
@@ -15004,6 +15570,9 @@ static void gen_program(FILE *o, ProcVec *prog) {
         TBL_ENSURE(g_inst_procs, g_ninst_procs, g_inst_procs_cap);
         g_inst_procs[g_ninst_procs++] = p;
     } g_srcname = sn0; g_src = st0; g_inst_from = NULL; g_inst_cur = -1; g_inst_nchain = 0;   /* the loop retargeted them per instance; the emit below re-targets per proc */
+    /* O5: discover destination-passing sites now, before any prototype is
+     * written. Variants share the original body, so no resolution is needed. */
+    collect_owned_variants(prog);
     /* Types reference one another, sometimes cyclically (a `[Node]` field is a
      * TychoArrC descriptor holding S_Node*). Emit in dependency layers:
      *   1. forward-declare every struct tag,
@@ -15160,6 +15729,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         const char *nm = g_structs[i].name;
         if (type_is_heap(STRUCT_TYPE(i)))
             fprintf(o, "static S_%s tycho_copy_S_%s(Arena *a, S_%s v);\n", nm, nm, nm);
+        if (struct_needs_share(STRUCT_TYPE(i)))
+            fprintf(o, "static void tycho_share_S_%s(S_%s *v);\n", nm, nm);
         fprintf(o, "static int tycho_eq_S_%s(S_%s a, S_%s b);\n", nm, nm, nm);
         if (struct_keyused(STRUCT_TYPE(i)) || hash_keyused(STRUCT_TYPE(i)))   /* composite map key / hash(x): deep hash */
             fprintf(o, "static uint64_t tycho_hash_S_%s(S_%s v);\n", nm, nm);
@@ -15247,6 +15818,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static TychoMapC%d tycho_mapc%d_copy(Arena*, TychoMapC%d);\n", i, i, i);
         fprintf(o, "static int tycho_mapc%d_eq(TychoMapC%d, TychoMapC%d);\n", i, i, i);
         fprintf(o, "static void tycho_mapc%d_idxput(TychoMapC%d*, tycho_int);\n", i, i);   /* the reserve body calls it */
+        fprintf(o, "static void tycho_mapc%d_share(TychoMapC%d*);\n", i, i);
+        fprintf(o, "static int tycho_mapc%d_cow(Arena*, TychoMapC%d*);\n", i, i);
+        if (shareable_raw(g_maptypes[i].val)) {
+            const char *vct = c_type(g_maptypes[i].val), *kpp = mapc_kparam(g_maptypes[i].key);
+            fprintf(o, "static void tycho_mapc%d_put_fresh(Arena*, TychoMapC%d*, %s, %sv);\n", i, i, kpp, vct);
+            fprintf(o, "static %stycho_mapc%d_get_share(Arena*, TychoMapC%d*, %s, %sdflt);\n", vct, i, i, kpp, vct);
+        }
     }
     recycle_emit_all(o);                         /* map-value destruction helpers; prototypes first, then the recursive bodies */
     for (int i = 0; i < g_nstructs; i++)            /* (4) str() prototypes (F5): forward so recursive/mutual str refs resolve */
@@ -15277,6 +15855,20 @@ static void gen_program(FILE *o, ProcVec *prog) {
             fprintf(o, "    r.f_%s = %s;\n", sd->fields[j].name, copy_into(ft, "a", src));
         }
         fprintf(o, "    return r;\n}\n\n");
+    }
+    /* (5b) O6 share body: mark every mutable field shared, so a later write
+     * copies it instead of reaching through the other value. */
+    for (int i = 0; i < g_nstructs; i++) {
+        if (g_structs[i].generic) continue;
+        StructDef *sd = &g_structs[i];
+        if (!struct_needs_share(STRUCT_TYPE(i))) continue;
+        fprintf(o, "static void tycho_share_S_%s(S_%s *v) {\n", sd->name, sd->name);
+        for (int j = 0; j < sd->nfields; j++)
+            if (share_fn(sd->fields[j].type)) {
+                char *c = share_call(sd->fields[j].type, sfmt("v->f_%s", sd->fields[j].name));
+                if (c) fprintf(o, "    %s;\n", c);
+            }
+        fprintf(o, "}\n\n");
     }
     /* (6) structural-equality body per struct, field-wise. */
     for (int i = 0; i < g_nstructs; i++) {
@@ -15589,10 +16181,12 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    m.elive = (unsigned char *)arena_alloc(a, (size_t)ec);\n"
             "    m.idx = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n"
             "    for (tycho_int i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n", i, i, i, ks, ks, ct, ct);
+        fprintf(o, "static void tycho_mapc%d_share(TychoMapC%d *m) { if (m->ecap >= 0) m->ecap = ~m->ecap; }\n", i, i);
         fprintf(o,
             "static void tycho_mapc%d_reserve(Arena *a, TychoMapC%d *m, tycho_int cap) {\n"
             "    tycho_map_cap_check(cap);\n"
             "    if (cap == 0) return;\n"
+            "    (void)tycho_mapc%d_cow(a, m);\n"
             "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2;\n"
             "    if (m->ecap >= ec && m->icap >= ic) return;\n"
             "    tycho_cap_check(ec, sizeof(*m->ekeys)); tycho_cap_check(ec, sizeof(*m->evals));\n"
@@ -15604,7 +16198,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n"
             "    m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = ec;\n"
             "    m->idx = ni; m->icap = ic;\n"
-            "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_mapc%d_idxput(m, e);\n}\n", i, i, ks, ks, ks, ct, ct, ct, i);
+            "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) tycho_mapc%d_idxput(m, e);\n}\n", i, i, i, ks, ks, ks, ct, ct, ct, i);
         fprintf(o,
             "static tycho_int tycho_mapc%d_find(TychoMapC%d m, %s) {\n"
             "    if (m.icap == 0) return -1; uint64_t mask = (uint64_t)m.icap - 1; tycho_int i = (tycho_int)(%s & mask); int e;\n"
@@ -15627,6 +16221,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "    for (tycho_int e = 0; e < m->ecount; e++) tycho_mapc%d_idxput(m, e);\n}\n", i, i, i);
         fprintf(o,
             "static tycho_int tycho_mapc%d_append(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
+            "    (void)tycho_mapc%d_cow(a, m);\n"
             "    if (m->ecount == m->ecap) { tycho_int dead = m->ecount - m->len;\n"
             "        if (dead > m->ecap / 2) tycho_mapc%d_compact(m);\n"
             "        else { tycho_int nc = m->ecap ? m->ecap * 2 : 4;\n"
@@ -15634,37 +16229,71 @@ static void gen_program(FILE *o, ProcVec *prog) {
             "            for (tycho_int e = 0; e < m->ecount; e++) { nk[e] = m->ekeys[e]; nv[e] = m->evals[e]; nl[e] = m->elive[e]; }\n"
             "            m->ekeys = nk; m->evals = nv; m->elive = nl; m->ecap = nc; } }\n"
             "    tycho_int e = m->ecount++; m->ekeys[e] = k; m->evals[e] = v; m->elive[e] = 1; return e;\n}\n",
-            i, i, kpo, ct, i, ks, ks, ks, ct, ct, ct);
+            i, i, kpo, ct, i, i, ks, ks, ks, ct, ct, ct);
         Type valuet = g_maptypes[i].val;
         char *vrec = type_is_heap(valuet) ? sfmt("%s(a, _old);", recycle_name(valuet)) : "";
         fprintf(o,
             "static void tycho_mapc%d_put(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
+            "    int _was = tycho_mapc%d_cow(a, m);\n"
             "    tycho_int e = tycho_mapc%d_find(*m, k); if (e >= 0) {\n"
-            "        %s _new = %s; %s _old = m->evals[e]; m->evals[e] = _new; %s return; }\n"
+            "        %s _new = %s; %s _old = m->evals[e]; m->evals[e] = _new; if (!_was) %s return; }\n"
             "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
             "    tycho_int ne = tycho_mapc%d_append(a, m, %s, %s); m->len++; tycho_mapc%d_idxput(m, ne);\n}\n",
-            i, i, kp, ct, i, ct, vcopy, ct, vrec, i, i, kcopy, vcopy, i);
+            i, i, kp, ct, i, i, ct, vcopy, ct, vrec, i, i, kcopy, vcopy, i);
         fprintf(o,
             "static inline %s*tycho_mapc%d_slotptr(Arena *a, TychoMapC%d *m, %s) {\n"
+            "    (void)tycho_mapc%d_cow(a, m);\n"
             "    tycho_int e = tycho_mapc%d_find(*m, k); if (e >= 0) return &m->evals[e];\n"
             "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
-            "    tycho_int ne = tycho_mapc%d_append(a, m, %s, (%s){0}); m->len++; tycho_mapc%d_idxput(m, ne);\n"
-            "    return &m->evals[ne];\n}\n", ct, i, i, kp, i, i, i, kcopy, ct, i);
+            "    tycho_int ne = tycho_mapc%d_append(a, m, %s, %s); m->len++; tycho_mapc%d_idxput(m, ne);\n"
+            "    return &m->evals[ne];\n}\n", ct, i, i, kp, i, i, i, i, kcopy,
+            copy_into(g_maptypes[i].val, "a", sfmt("(%s){0}", ct)), i);
         char *krec = (!IS_ENUM(keyt) && type_is_heap(keyt)) ? sfmt("%s(a, m->ekeys[ei]);", recycle_name(keyt)) : "";
         char *vdelrec = type_is_heap(valuet) ? sfmt("%s(a, m->evals[ei]);", recycle_name(valuet)) : "";
         fprintf(o,
             "static void tycho_mapc%d_del(Arena *a, TychoMapC%d *m, %s) {\n"
-            "    if (m->icap == 0) return; uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(%s & mask), found = -1;\n"
+            "    if (m->icap == 0) return; int _was = tycho_mapc%d_cow(a, m); uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(%s & mask), found = -1;\n"
             "    while (m->idx[i] != 0) { if (%s) { found = i; break; } i = (tycho_int)((i + 1) & mask); }\n"
-            "    if (found < 0) return; tycho_int ei = m->idx[found] - 1; %s %s m->elive[ei] = 0; m->len--;\n"
+            "    if (found < 0) return; tycho_int ei = m->idx[found] - 1; if (!_was) { %s %s } m->elive[ei] = 0; m->len--;\n"
             "    tycho_int g = found;\n"
             "    for (;;) { m->idx[g] = 0; tycho_int j = g;\n"
             "        for (;;) { j = (tycho_int)((j + 1) & mask); if (m->idx[j] == 0) return;\n"
             "            tycho_int h = (tycho_int)(%s & mask);\n"
             "            if (g <= j) { if (g < h && h <= j) continue; } else { if (g < h || h <= j) continue; } break; }\n"
             "        m->idx[g] = m->idx[j]; g = j; }\n}\n",
-            i, i, kp, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m->ekeys[m->idx[i] - 1]", "k"),
+            i, i, kp, i, mapc_khash(keyt, "k"), mapc_kmatch(keyt, "m->ekeys[m->idx[i] - 1]", "k"),
             krec, vdelrec, mapc_khash(keyt, "m->ekeys[m->idx[j] - 1]"));
+        {
+            char *vshare = share_call(g_maptypes[i].val, "c.evals[ne]");
+            fprintf(o,
+                "static int tycho_mapc%d_cow(Arena *a, TychoMapC%d *m) {\n"
+                "    if (m->ecap >= 0) return 0;\n"
+                "    tycho_int oldcap = ~m->ecap; TychoMapC%d c = tycho_mapc%d_with_cap(a, oldcap ? oldcap : 1);\n"
+                "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) {\n"
+                "        tycho_int ne = c.ecount++;\n"
+                "        c.ekeys[ne] = m->ekeys[e]; c.evals[ne] = m->evals[e]; c.elive[ne] = 1; c.len++;\n"
+                "        tycho_mapc%d_idxput(&c, ne);\n"
+                "        %s;\n"
+                "    }\n"
+                "    *m = c; return 1;\n}\n",
+                i, i, i, i, i, vshare ? vshare : "");
+            Type valuet2 = g_maptypes[i].val;
+            char *vrec2 = type_is_heap(valuet2) ? sfmt("%s(a, _old);", recycle_name(valuet2)) : "";
+            fprintf(o,
+                "static void tycho_mapc%d_put_fresh(Arena *a, TychoMapC%d *m, %s, %sv) {\n"
+                "    int _was = tycho_mapc%d_cow(a, m);\n"
+                "    tycho_int e = tycho_mapc%d_find(*m, k);\n"
+                "    if (e >= 0) { %s _old = m->evals[e]; m->evals[e] = v; if (!_was) %s return; }\n"
+                "    if ((m->len + 1) * 2 > m->icap) tycho_mapc%d_idxgrow(a, m);\n"
+                "    tycho_int ne = tycho_mapc%d_append(a, m, %s, v); m->len++; tycho_mapc%d_idxput(m, ne);\n}\n",
+                i, i, kp, ct, i, i, ct, vrec2, i, i, kcopy, i);
+            char *vshare2 = share_call(g_maptypes[i].val, "v");
+            fprintf(o,
+                "static %stycho_mapc%d_get_share(Arena *a, TychoMapC%d *m, %s, %sdflt) {\n"
+                "    tycho_int e = tycho_mapc%d_find(*m, k); if (e < 0) return %s;\n"
+                "    if (m->ecap >= 0) m->ecap = ~m->ecap; %s v = m->evals[e]; %s; return v;\n}\n",
+                ct, i, i, kp, ct, i, copy_into(g_maptypes[i].val, "a", "dflt"), ct, vshare2 ? vshare2 : "");
+        }
         fprintf(o,
             "static TychoMapC%d tycho_mapc%d_copy(Arena *a, TychoMapC%d src) {\n"
             "    TychoMapC%d r = tycho_mapc%d_with_cap(a, src.len ? src.len : 0);\n"
@@ -15934,6 +16563,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         gen_proto(o, g_parprocs.v[i]);
     for (int i = 0; i < g_nginsts; i++)      /* generics: one prototype per monomorphic instance (all resolved up front, so nested ones are covered) */
         gen_proto(o, g_inst_procs[i]);
+    for (int i = 0; i < g_owned_procs.n; i++)   /* O5 destination-passing variants */
+        gen_proto(o, g_owned_procs.v[i]);
     fputs("\n", o);
     /* spawn sites: one args struct + thread trampoline each. The trampoline
      * runs the call with the task's root arena as _parent (so the return value
@@ -16024,6 +16655,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * gen_proc is self-contained, so this is emit-only. */
     for (int i = 0; i < g_nginsts; i++)
         if (g_ginsts[i].vlane) gen_vlane(o, g_inst_procs[i], g_ginsts[i].vlane); else gen_proc(o, g_inst_procs[i]);
+    for (int i = 0; i < g_owned_procs.n; i++)   /* O5 destination-passing variants */
+        gen_proc(o, g_owned_procs.v[i]);
     fputs("int main(int argc, char **argv) {\n", o);
     fputs("    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n", o);
     fputs("    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n", o);

@@ -16,7 +16,7 @@ is byte-identical across all three. The cache is the memory under test.
 
 ## Numbers
 
-Machine: AMD Ryzen 7 7735HS, x86-64, Linux. tycho + C at `cc -O3`, Go at `go build`.
+Machine: AMD Strix Halo / Ryzen AI MAX+ 395, x86-64, Fedora Linux 44. tycho + C at `cc -O3`, Go at `go build`.
 Peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall. Run: `sh bench/lru/run.sh`.
 
 | lang  | peak RSS | time   | checksum (hits sum)      |
@@ -29,20 +29,35 @@ Peak RSS via `getrusage` (`bench/peakrss.c`); best-of-N wall. Run: `sh bench/lru
 see below. The recorded 32.6 MB / 303 ms was the pre-reserve idiomatic run;
 wall is parity with that run, memory dropped a third.)
 
-## Verdict — ahead of Go, memory ~1.7× C with the reserve idiom
+### 2026-10-20 repeat (post-O6 fix)
 
-tycho's value-semantic LRU is now **ahead of Go on memory** (19.8 MB vs 21.4 MB) and sits
-at **~1.7× C memory / ~4× C wall** — the wall gap is the value-shaped index pool's
-per-op work, not the memory model. The move from ~2.8× to ~1.6× C was the
-**`reserve` idiom** (the same one-line fix that closed the trie): the map and the node
-pool pre-size for the known cache cap, so the arena never retains the growth
+`sh bench/lru/run.sh` with `tychoc1`; same checksum:
+
+| lang | peak RSS | time |
+|------|---------:|-----:|
+| tycho | **20.4 MB** | **139 ms** |
+| C | 11.4 MB | 123 ms |
+| go | 20.6 MB | 159 ms |
+
+The O6 scalar-map regression had made this row a 121 GB OOM; the fix is
+described below.
+
+## Verdict — ahead of Go, memory ~1.8× C with the reserve idiom
+
+tycho's value-semantic LRU is **ahead of Go on memory** (20.4 vs 20.6 MB in the
+2026-10-20 repeat; 19.8 vs 21.4 in the 2026-08-04 run) and sits at **~1.8× C
+memory**. Wall is **139 ms vs C 123 ms (~1.1×)** in the repeat; the August run
+was ~4× C. Compare within a row, not across dates: the repeat includes O1–O7 and
+a newer host/toolchain. The move from ~2.8× to ~1.8× C was the **`reserve`
+idiom** (the same one-line fix that closed the trie): the map and the node pool
+pre-size for the known cache cap, so the arena never retains the growth
 intermediates (the idiomatic run bumped 73 allocations totaling 33 MB; the reserved
 run bumps **9 allocations totaling 18.6 MB** — peak live 18.6 MiB, RSS ~20 MB, checksum
 byte-identical). `reserve(m, n)` for maps is a language feature (bench/lru's two lines:
 `reserve(pool, 200000)` and `reserve(idx, 400000)` — the map needs ~2× the live set
 while tombstones accumulate between compactions).
 
-Getting to ~1.6× took four fixes, all driven by this bench:
+Getting to ~1.8× took four fixes, all driven by this bench:
 
 1. **O(n) → O(1) map delete.** `delete m[k]` was O(map size): the in-place tombstone is
    O(1), but maintaining the insertion-ordered `keys()` (the hash-flooding-DoS hardening)
@@ -71,6 +86,15 @@ load-factor slack, the same header-cost family as the trie, not a pointer blowup
 These fixes ship in **all map families** — the four fixed ones (`[string:int/float]`,
 `[int:int/float]`) and the composite `[K: struct]` / struct-key families — so a struct-valued
 or struct-keyed map under equally heavy delete-churn stays bounded too.
+
+**O6 scalar-map regression (fixed 2026-10-20).** The first O6 cut used the
+shallow-read path for `[int:int]` reads inside an `inout` helper; the next write
+then copied the 200k-entry map, so this benchmark grew from ~20 MB to **121 GB**
+and OOM-killed the host. Scalar/string values have no nested mutable part to
+protect, so the share path is now gated on a share helper. This row is **20.4 MB
+/ 139 ms**; `tests/cow_scalar_share.sh` asserts neither compiler emits
+`get_share` for the shape, and `bench/lru/run.sh` fails above 256 MB or the
+2 GiB address-space cap.
 
 NOT wired into `make ci` (a head-to-head dogfood, like `bench/dijkstra`). The Go port is
 skipped automatically when `go` is absent.

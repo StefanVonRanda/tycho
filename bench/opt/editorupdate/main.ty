@@ -1,0 +1,51 @@
+# O5: destination passing for a long-lived editor buffer.
+# The line is a balanced rope of leaves. `t = set(t, i, v)` replaces one leaf
+# and must keep every untouched sibling; the control deep-copies the whole
+# line per keystroke (the §4c shape), the owned variant moves the unchanged
+# sibling and walks only the changed path.
+enum Rope:
+    Leaf(int, int)
+    Cat(int, Rope, Rope)
+
+fn build(s: string, lo: int, hi: int) -> Rope:
+    if hi - lo == 1:
+        return Leaf(hi - lo, s[lo])
+    mid := lo + (hi - lo) / 2
+    return Cat(hi - lo, build(s, lo, mid), build(s, mid, hi))
+
+fn size(t: Rope) -> int:
+    match t:
+        Leaf(n, x):
+            return n
+        Cat(n, l, r):
+            return n
+
+fn set(t: Rope, i: int, v: int) -> Rope:
+    match t:
+        Leaf(n, x):
+            return Leaf(n, v)
+        Cat(n, l, r):
+            if i < size(l):
+                return Cat(n, set(l, i, v), r)
+            return Cat(n, l, set(r, i - size(l), v))
+
+fn checksum(t: Rope) -> int:
+    match t:
+        Leaf(n, x):
+            return n * x
+        Cat(n, l, r):
+            return checksum(l) * 31 + checksum(r)
+
+fn main():
+    n := 16384
+    s := ""
+    for i := 0; i < n; i += 1:
+        s = s + chr(97 + (i % 26))
+    t := build(s, 0, n)
+    edits := 10000
+    state := 88172645463325252
+    for e := 0; e < edits; e += 1:
+        state = state * 6364136223846793005 + 1442695040888963407
+        i := (state & 1073741823) % n
+        t = set(t, i, 65 + (e % 26))
+    println(str(checksum(t)))

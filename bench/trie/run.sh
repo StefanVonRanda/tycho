@@ -38,4 +38,30 @@ if command -v go >/dev/null 2>&1; then
     cp "$D/trie.go" "$T/tg.go" && ( cd "$T" && go build -o tg tg.go 2>/dev/null )
     runlang go "$T/tg"
 fi
-[ "$FAIL" = 0 ] && echo "trie: ok (all checksums agree)" || { echo "trie: FAIL"; exit 1; }
+# O6: the persistent (path-copying) twin. The control disables the shared-bit
+# CoW; both builds must print the same checksum, and the optimized build must
+# use less memory.
+mkdir -p "$T/path"
+cp "$D/path/main.ty" "$T/path/main.ty"
+TYCHOC_NO_COW=1 $TYCHOC "$T/path/main.ty" -o "$T/path_before" > "$T/perr" 2>&1 || {
+    echo "trie_path: control build failed"; cat "$T/perr"; exit 2
+}
+( unset TYCHOC_NO_COW; $TYCHOC "$T/path/main.ty" -o "$T/path_after" ) > "$T/perr" 2>&1 || {
+    echo "trie_path: build failed"; cat "$T/perr"; exit 2
+}
+path_before_kb=0
+path_after_kb=0
+runpath() {                                           # <label> <binary>
+    "$T/peakrss" "$2" > "$T/pout" 2> "$T/pm"
+    kb=$(to_kb "$(awk '{print $1}' "$T/pm")"); rss=$(awk "BEGIN{printf \"%.1f\", $kb/1024}")
+    ms=$(awk '{print $2}' "$T/pm"); out=$(cat "$T/pout")
+    printf '%-10s %7s MB %6s ms   %s\n' "$1" "$rss" "$ms" "$out"
+    if [ "$out" != "5954 1981" ]; then echo "  ^ CHECKSUM MISMATCH (expected 5954 1981)"; FAIL=1; fi
+    if [ "$1" = "path-before" ]; then path_before_kb=$kb; else path_after_kb=$kb; fi
+}
+runpath path-before "$T/path_before"
+runpath path-after  "$T/path_after"
+if [ "$path_after_kb" -ge "$path_before_kb" ]; then
+    echo "  ^ O6 control: CoW did not reduce peak RSS"; FAIL=1
+fi
+[ "$FAIL" = 0 ] && echo "trie: ok (all checksums agree; path-copy CoW reduced RSS)" || { echo "trie: FAIL"; exit 1; }

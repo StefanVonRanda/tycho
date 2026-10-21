@@ -1,0 +1,50 @@
+# trie_path — the persistent (path-copying) twin of trie.ty.
+#
+# trie.ty mutates one tree through `inout`; this one builds a NEW root per
+# word, which is the shape a persistent editor/session state needs. `kids :=
+# t.kids` is a value copy, and `kids[c] = ...` stores the rebuilt child; without
+# sharing that copies the whole subtree at every level.
+#
+# The O6 control is TYCHOC_NO_COW=1. Output is identical either way.
+struct Trie:
+    kids: [int: Trie]
+    word: bool
+
+fn count(t: Trie) -> int:
+    n := 1
+    for k in keys(t.kids):
+        n = n + count(t.kids[k])
+    return n
+
+fn words(t: Trie) -> int:
+    n := 0
+    if t.word:
+        n = 1
+    for k in keys(t.kids):
+        n = n + words(t.kids[k])
+    return n
+
+fn insert(t: Trie, s: string, i: int) -> Trie:
+    if i >= len(s):
+        return Trie(t.kids, true)
+    c := s[i]
+    child := Trie([]int: Trie, false)
+    if c in t.kids:
+        child = t.kids[c]
+    kids := t.kids
+    kids[c] = insert(child, s, i + 1)
+    return Trie(kids, t.word)
+
+fn main():
+    nwords := 2000
+    root := Trie([]int: Trie, false)
+    state := 88172645463325252
+    for w := 0; w < nwords; w += 1:
+        state = state * 6364136223846793005 + 1442695040888963407
+        wlen := 3 + ((state & 1073741823) % 5)
+        s := ""
+        for j := 0; j < wlen; j += 1:
+            state = state * 6364136223846793005 + 1442695040888963407
+            s = s + chr(97 + ((state & 1073741823) % 26))
+        root = insert(root, s, 0)
+    println(str(count(root)) + " " + str(words(root)))

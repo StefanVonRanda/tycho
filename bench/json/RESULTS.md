@@ -16,7 +16,7 @@ tree plus the input string.
 
 ## Results
 
-Machine: **AMD Ryzen 7 7735HS** (Zen 3+, x86-64), Linux. Toolchains: tycho via `tychoc`
+Machine: **AMD Strix Halo / Ryzen AI MAX+ 395** (Zen 5, x86-64), Fedora Linux 44. Toolchains: tycho via `tychoc`
 (C backend) at `-O3`; C via **gcc 15.2.0** at `-O3`; Go **1.26.2**. Median of 3 runs;
 peak RSS via `bench/peakrss` (`ru_maxrss`). All three emit checksum `1275919372`.
 
@@ -25,6 +25,10 @@ peak RSS via `bench/peakrss` (`ru_maxrss`). All three emit checksum `1275919372`
 | tycho | 37.0 MB  | ~40 ms | none (implicit arena)    |
 | C     | 35.3 MB  | ~31 ms | manual `malloc` per node |
 | Go    | 28.5 MB  | ~57 ms | garbage collector        |
+
+2026-10-20 repeat with the shipped `tychoc1`: **50.1 MB / 40 ms**; C 35.1/17,
+Go 27.3/34; checksum `1275919372`. The table above is the earlier `tychoc`
+measurement; the repeat is recorded here rather than replacing it.
 
 ## Reading it honestly
 

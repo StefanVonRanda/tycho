@@ -1,0 +1,6 @@
+{
+  "textures": [
+    {"name": "font", "path": "../assets/font.png"},
+    {"name": "ball", "path": "assets/ball.png"}
+  ]
+}

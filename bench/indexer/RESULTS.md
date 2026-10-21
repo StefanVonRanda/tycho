@@ -3,8 +3,8 @@
 `make bench-indexer`. The **same concurrent program** in three languages —
 fan a corpus of files through a work queue to K=4 workers, each tallying a
 local term→count map, then merge — over a byte-identical synthetic corpus,
-gated by a cross-language checksum. 2026-06-13, AMD Ryzen 7 7735HS, 16 hw
-threads, Linux. Best-of-3 wall, measured via bench/peakrss.
+gated by a cross-language checksum. 2026-06-13, AMD Strix Halo / Ryzen AI MAX+
+395, 32 hw threads, Fedora Linux 44. Best-of-3 wall, measured via bench/peakrss.
 
 Corpus: 400 files × 4000 words, 5000-word vocabulary (`gencorpus.ty`, a fixed
 LCG over base-26 words — deterministic bytes on every machine, so all three

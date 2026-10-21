@@ -1,0 +1,406 @@
+package gfx
+
+# Public boundary: values and affine handles only. No ptr, callbacks or unions.
+# The SDL event union and every C pointer stay inside gfx_shim.c.
+
+import "core:image"
+import "core:io"
+import "core:json"
+import "core:raster"
+import "core:time"
+
+struct IRect:
+    x: i32
+    y: i32
+    w: i32
+    h: i32
+
+struct FRect:
+    x: f32
+    y: f32
+    w: f32
+    h: f32
+
+struct FVec:
+    x: f32
+    y: f32
+
+struct View:
+    x: float
+    y: float
+    scale: float
+
+struct Sprite:
+    tex: int
+    sx: int
+    sy: int
+    sw: int
+    sh: int
+
+struct Anim:
+    tex: int
+    start_x: int
+    start_y: int
+    frame_w: int
+    frame_h: int
+    frame_count: int
+    fps: int
+
+struct Mixer:
+    rate: int
+    samples: [int]
+
+struct Event:
+    kind: i32    # 0 none, 1 quit, 2 key, 3 mouse move, 4 mouse button, 5 resize
+    key: i32
+    x: i32
+    y: i32
+    button: i32
+
+struct Controls:
+    up: i32
+    down: i32
+    left: i32
+    right: i32
+    quit: i32
+
+const ACTION_NONE = 0
+const ACTION_UP = 1
+const ACTION_RIGHT = 2
+const ACTION_DOWN = 3
+const ACTION_LEFT = 4
+const ACTION_QUIT = 5
+
+fn default_controls() -> Controls:
+    return Controls(1, 3, 4, 2, 27)
+
+fn action(ev: Event, c: Controls) -> int:
+    if ev.kind != 2:
+        return ACTION_NONE
+    if ev.key == c.up:
+        return ACTION_UP
+    if ev.key == c.right:
+        return ACTION_RIGHT
+    if ev.key == c.down:
+        return ACTION_DOWN
+    if ev.key == c.left:
+        return ACTION_LEFT
+    if ev.key == c.quit:
+        return ACTION_QUIT
+    return ACTION_NONE
+
+const MAX_CATCHUP_MS = 250
+
+struct Clock:
+    start_ns: int
+    last_ms: int
+    acc_ms: int
+
+fn clock_start() -> Clock:
+    return Clock(time.start(), 0, 0)
+
+fn clock_advance(c: inout Clock, now_ms: int, step_ms: int) -> int:
+    if step_ms <= 0:
+        return 0
+    delta := now_ms - c.last_ms
+    c.last_ms = now_ms
+    if delta < 0:
+        delta = 0
+    if delta > MAX_CATCHUP_MS:
+        delta = MAX_CATCHUP_MS
+    c.acc_ms = c.acc_ms + delta
+    steps := 0
+    for c.acc_ms >= step_ms:
+        c.acc_ms = c.acc_ms - step_ms
+        steps = steps + 1
+    return steps
+
+fn clock_tick(c: inout Clock, step_ms: int) -> int:
+    start := c.start_ns
+    now := time.elapsed_ms(start)
+    return clock_advance(&c, now, step_ms)
+
+struct AssetSpec:
+    name: string
+    path: string
+
+handle Window:
+    free: gfx_close
+
+handle Audio:
+    free: gfx_audio_close
+
+handle TexSet:
+    free: gfx_texset_close
+
+extern fn gfx_close(w: Window) -> int
+extern fn gfx_begin(w: Window) -> int
+extern fn gfx_draw_fb(w: Window, fb: [int], w: int, h: int, dst: FRect) -> int
+extern fn gfx_draw_lines(w: Window, clip: IRect, pts: [FVec],
+                         r: int, gc: int, b: int, a: int) -> int
+extern fn gfx_present(w: Window) -> int
+extern fn gfx_poll_event(w: Window) -> Event
+extern fn gfx_set_title(w: Window, title: string) -> int
+extern fn gfx_window_width(w: Window) -> int
+extern fn gfx_window_height(w: Window) -> int
+extern fn gfx_audio_close(a: Audio) -> int
+extern fn gfx_audio_queue(a: Audio, pcm: bytes) -> int
+extern fn gfx_texset_create(s: TexSet, pixels: bytes, w: int, h: int) -> int
+extern fn gfx_texset_draw(s: TexSet, id: int, src: FRect, dst: FRect,
+                          r: int, gc: int, b: int, a: int) -> int
+extern fn gfx_texset_close(s: TexSet) -> int
+
+fn begin(w: Window) -> int:
+    return gfx_begin(w)
+
+fn draw_fb(w: Window, fb: [int], width: int, height: int, dst: FRect) -> int:
+    return gfx_draw_fb(w, fb, width, height, dst)
+
+fn draw_lines(w: Window, clip: IRect, pts: [FVec], r: int, gc: int, b: int) -> int:
+    return gfx_draw_lines(w, clip, pts, r, gc, b, 255)
+
+fn present(w: Window) -> int:
+    return gfx_present(w)
+
+fn poll_event(w: Window) -> Event:
+    return gfx_poll_event(w)
+
+fn set_title(w: Window, title: string) -> int:
+    return gfx_set_title(w, title)
+
+fn window_width(w: Window) -> int:
+    return gfx_window_width(w)
+
+fn window_height(w: Window) -> int:
+    return gfx_window_height(w)
+
+fn fit_view(canvas_w: int, canvas_h: int, win_w: int, win_h: int) -> View:
+    if canvas_w <= 0 or canvas_h <= 0 or win_w <= 0 or win_h <= 0:
+        return View(0.0, 0.0, 1.0)
+    sx := to_float(win_w) / to_float(canvas_w)
+    sy := to_float(win_h) / to_float(canvas_h)
+    s := sx
+    if sy < s:
+        s = sy
+    dw := to_float(canvas_w) * s
+    dh := to_float(canvas_h) * s
+    return View((to_float(win_w) - dw) / 2.0,
+                (to_float(win_h) - dh) / 2.0, s)
+
+fn view_rect(v: View, x: int, y: int, w: int, h: int) -> FRect:
+    return FRect(to_f32(v.x + to_float(x) * v.scale),
+                 to_f32(v.y + to_float(y) * v.scale),
+                 to_f32(to_float(w) * v.scale),
+                 to_f32(to_float(h) * v.scale))
+
+fn view_fvec(v: View, p: FVec) -> FVec:
+    return FVec(to_f32(v.x + to_float(p.x) * v.scale),
+                to_f32(v.y + to_float(p.y) * v.scale))
+
+fn audio_queue(a: Audio, pcm: bytes) -> int:
+    return gfx_audio_queue(a, pcm)
+
+fn tex_create(s: TexSet, pixels: bytes, width: int, height: int) -> int:
+    return gfx_texset_create(s, pixels, width, height)
+
+fn tex_draw(s: TexSet, id: int, src: FRect, dst: FRect, r: int, gc: int, b: int) -> int:
+    return gfx_texset_draw(s, id, src, dst, r, gc, b, 255)
+
+fn rgb(r: int, g: int, b: int) -> int:
+    return 4278190080 + r * 65536 + g * 256 + b
+
+fn fill_rect(fb: inout [int], w: int, x0: int, y0: int, x1: int, y1: int, color: int):
+    for y := y0; y < y1; y += 1:
+        base := y * w
+        for x := x0; x < x1; x += 1:
+            fb[base + x] = color
+
+fn load_manifest(path: string) -> [AssetSpec]:
+    match io.read_text(path):
+        Ok(text):
+            match json.parse_checked(text):
+                Ok(doc):
+                    arr := json.get(doc, "textures")
+                    n := json.len_of(arr)
+                    specs := []AssetSpec
+                    for i := 0; i < n; i += 1:
+                        item := json.at(arr, i)
+                        push(specs, AssetSpec(json.as_str(json.get(item, "name")),
+                                              json.as_str(json.get(item, "path"))))
+                    return specs
+                Err(e):
+                    eprintln("gfx: manifest JSON failed: " + path)
+                    return []AssetSpec
+        Err(e):
+            eprintln("gfx: manifest read failed: " + path)
+            return []AssetSpec
+
+fn load_texture(s: TexSet, path: string) -> int:
+    match io.read_bytes(path):
+        Ok(data):
+            match image.decode(data):
+                Ok(img):
+                    id := tex_create(s, img.pixels, img.width, img.height)
+                    if id < 0:
+                        eprintln("gfx: texture create failed: " + path)
+                    else:
+                        println("gfx: texture " + path + " " + str(img.width) + "x" + str(img.height))
+                    return id
+                Err(e):
+                    eprintln("gfx: PNG decode failed: " + path)
+                    return 0 - 1
+        Err(e):
+            eprintln("gfx: texture read failed: " + path)
+            return 0 - 1
+
+fn draw_text_view(v: View, s: TexSet, font_id: int, x: int, y: int, text: string, size: int, r: int, gc: int, b: int):
+    if font_id < 0 or size <= 0:
+        return
+    for i := 0; i < len(text); i += 1:
+        idx := text[i] - 32
+        if idx >= 0 and idx < 96:
+            col := idx % 16
+            row := idx / 16
+            src := FRect(to_f32(col * 32), to_f32(row * 32), to_f32(32), to_f32(32))
+            advance := size * 3 / 4
+            dst := view_rect(v, x + i * advance, y, size, size)
+            tex_draw(s, font_id, src, dst, r, gc, b)
+
+fn draw_atlas_text(s: TexSet, font_id: int, x: int, y: int, text: string, size: int, r: int, gc: int, b: int):
+    draw_text_view(View(0.0, 0.0, 1.0), s, font_id, x, y, text, size, r, gc, b)
+
+fn draw_sprite(s: TexSet, spr: Sprite, dst: FRect, r: int, gc: int, b: int) -> int:
+    src := FRect(to_f32(spr.sx), to_f32(spr.sy), to_f32(spr.sw), to_f32(spr.sh))
+    return tex_draw(s, spr.tex, src, dst, r, gc, b)
+
+fn anim_frame(a: Anim, elapsed_ms: int) -> Sprite:
+    if a.frame_count <= 0:
+        return Sprite(a.tex, a.start_x, a.start_y, a.frame_w, a.frame_h)
+    ms := elapsed_ms
+    if ms < 0:
+        ms = 0
+    idx := 0
+    if a.fps > 0:
+        idx = (ms * a.fps / 1000) % a.frame_count
+    return Sprite(a.tex, a.start_x + idx * a.frame_w, a.start_y,
+                  a.frame_w, a.frame_h)
+
+fn draw_anim(s: TexSet, a: Anim, elapsed_ms: int, dst: FRect, r: int, gc: int, b: int) -> int:
+    return draw_sprite(s, anim_frame(a, elapsed_ms), dst, r, gc, b)
+
+fn text_width(text: string, size: int) -> int:
+    return len(text) * (size * 3 / 4)
+
+fn draw_text_centered_view(v: View, s: TexSet, font_id: int, center_x: int, y: int, text: string, size: int, r: int, gc: int, b: int):
+    x := center_x - text_width(text, size) / 2
+    draw_text_view(v, s, font_id, x, y, text, size, r, gc, b)
+
+fn draw_text_centered(s: TexSet, font_id: int, center_x: int, y: int, text: string, size: int, r: int, gc: int, b: int):
+    draw_text_centered_view(View(0.0, 0.0, 1.0), s, font_id, center_x, y, text, size, r, gc, b)
+
+fn save_bmp(path: string, fb: [int], width: int, height: int):
+    pix := []int
+    reserve(pix, width * height * 4)
+    for i := 0; i < width * height; i += 1:
+        c := fb[i]
+        push(pix, (c / 65536) % 256)
+        push(pix, (c / 256) % 256)
+        push(pix, c % 256)
+        push(pix, 255)
+    img := raster.make(width, height, to_bytes(pix))
+    data := raster.encode_bmp(img)
+    match io.write_bytes(path, data):
+        Ok(): println("snapshot: " + path)
+        Err(e): println("snapshot failed")
+
+fn make_beep(rate: int, freq: int, ms: int) -> bytes:
+    n := rate * ms / 1000
+    pcm := []int
+    reserve(pcm, n * 2)
+    for i := 0; i < n; i += 1:
+        phase := (i * freq / rate) % 2
+        s := 0 - 7000
+        if phase == 0:
+            s = 7000
+        v := s
+        if v < 0:
+            v = v + 65536
+        push(pcm, v % 256)
+        push(pcm, v / 256)
+    return to_bytes(pcm)
+
+fn play_beep(a: Audio, pcm: bytes):
+    if is_null(a):
+        return
+    rc := audio_queue(a, pcm)
+    if rc != 0:
+        eprintln("gfx: audio queue failed: " + str(rc))
+
+fn mixer(rate: int, ms: int) -> Mixer:
+    n := 0
+    if rate > 0 and ms > 0:
+        n = rate * ms / 1000
+    samples := []int
+    reserve(samples, n)
+    for i := 0; i < n; i += 1:
+        push(samples, 0)
+    return Mixer(rate, samples)
+
+fn add(m: inout Mixer, pcm: bytes, at_ms: int) -> int:
+    if m.rate <= 0 or len(pcm) < 2:
+        return 0
+    off := 0
+    if at_ms > 0:
+        off = m.rate * at_ms / 1000
+    if off >= len(m.samples):
+        return 0
+    n := len(pcm) / 2
+    added := 0
+    for i := 0; i < n; i += 1:
+        idx := off + i
+        if idx >= len(m.samples):
+            break
+        lo := pcm[i * 2]
+        hi := pcm[i * 2 + 1]
+        v := lo + hi * 256
+        if v >= 32768:
+            v = v - 65536
+        s := m.samples[idx] + v
+        if s > 32767:
+            s = 32767
+        if s < 0 - 32768:
+            s = 0 - 32768
+        m.samples[idx] = s
+        added = added + 1
+    return added
+
+fn finish(m: Mixer) -> bytes:
+    out := []int
+    reserve(out, len(m.samples) * 2)
+    for i := 0; i < len(m.samples); i += 1:
+        v := m.samples[i]
+        if v < 0:
+            v = v + 65536
+        push(out, v % 256)
+        push(out, v / 256)
+    return to_bytes(out)
+
+fn play_mix(a: Audio, m: Mixer) -> int:
+    if is_null(a):
+        return 0
+    return audio_queue(a, finish(m))
+
+fn repeat(pcm: bytes, times: int) -> bytes:
+    if times <= 0 or len(pcm) == 0:
+        return to_bytes([]int)
+    out := []int
+    reserve(out, len(pcm) * times)
+    for t := 0; t < times; t += 1:
+        for i := 0; i < len(pcm); i += 1:
+            push(out, pcm[i])
+    return to_bytes(out)
+
+fn play_loop(a: Audio, pcm: bytes, times: int) -> int:
+    if is_null(a):
+        return 0
+    return audio_queue(a, repeat(pcm, times))

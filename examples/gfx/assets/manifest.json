@@ -1,0 +1,6 @@
+{
+  "textures": [
+    {"name": "apple", "path": "assets/apple_sheet.png"},
+    {"name": "font", "path": "assets/font.png"}
+  ]
+}

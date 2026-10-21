@@ -9,6 +9,18 @@ extern "ffidemo" fn ffi_brev(b: bytes) -> bytes          # bytes return via the 
 extern "ffidemo" fn ffi_get(key: int) -> Option(string)  # FFI R3a: nullable string return (C NULL -> None)
 extern "ffidemo" fn ffi_mk(id: int, out: inout ptr) -> int # FFI R4: out-param constructor (compiler passes &db)
 extern "ffidemo" fn ffi_dbl(a: int, out: inout int)        # FFI R4: scalar out-param
+struct FRect:                                              # FFI R4a: plain POD struct out-param
+    x: i32
+    y: i32
+    w: i32
+    h: i32
+extern "ffidemo" fn ffi_rect_bump(r: inout FRect, dx: int, dy: int) -> int
+struct FVec:                                               # FFI R4b: POD by value/return + [POD]
+    x: i32
+    y: i32
+extern "ffidemo" fn ffi_vec_add(a: FVec, b: FVec) -> FVec
+extern "ffidemo" fn ffi_vec_sum(v: FVec) -> int
+extern "ffidemo" fn ffi_vec_arr_sum(vs: [FVec]) -> int
 extern "ffidemo" fn ffi_neg() -> i32                    # exact C int return type
 extern "ffidemo" fn ffi_ptrval(p: ptr) -> int            # echoes a ptr's integer value (to_ptr round-trip)
 extern "ffidemo" fn ffi_isum(xs: [int]) -> int           # [int] param -> (const long*, long)
@@ -126,5 +138,15 @@ fn main():
     n := 0
     ffi_dbl(21, &n)                             # n <- 42
     println(f"r4 rc={mrc} read={ffi_read(db)} dbl={n}")   # rc=0 read=9 dbl=42
+    r4r := FRect(to_i32(1), to_i32(2), to_i32(3), to_i32(4))
+    r4n := ffi_rect_bump(&r4r, 10, 20)
+    println(f"r4a rect={to_int(r4r.x)},{to_int(r4r.y)},{to_int(r4r.w)},{to_int(r4r.h)} sum={r4n}")
+    va := FVec(to_i32(1), to_i32(2))
+    vb := FVec(to_i32(10), to_i32(20))
+    vc := ffi_vec_add(va, vb)
+    vs := []FVec
+    push(vs, va)
+    push(vs, vb)
+    println(f"r4b vec={to_int(vc.x)},{to_int(vc.y)} vsum={ffi_vec_sum(vc)} varr={ffi_vec_arr_sum(vs)}")
     # Sized `i32` matches the C int return; to_ptr makes an integer-valued sentinel pointer.
     println(f"neg={ffi_neg()} rawneg_ok={ffi_neg() < 0} sentinel={ffi_ptrval(to_ptr(-1))}")

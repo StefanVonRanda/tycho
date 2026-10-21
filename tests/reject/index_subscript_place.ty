@@ -1,4 +1,4 @@
-# src/tychoc.c:9796 -- an index-assign target must bottom out at a variable or
+# src/tychoc.c:9859 -- an index-assign target must bottom out at a variable or
 # field; a subscript call is not unrolled by the root walk, so assignment
 # through a projection is refused even though reads and inout through it work.
 # tychoc1 ACCEPTED this until the root walk was ported into

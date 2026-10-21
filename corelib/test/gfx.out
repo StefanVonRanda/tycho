@@ -1,0 +1,15 @@
+rgb=4278256131
+rect=28
+beep=160 88 27
+actions=1 2 3 4 5 0
+text=26
+clock=0 2 1 15
+view=0 50 2 20 70 40 20 20 70
+anim=0 32 0
+mix=20 176 54
+repeat=40 88 27 88 27
+offset=40 0 88 27
+clip=20 255 127
+assets=2
+font:assets/font.png
+missing:assets/missing.png

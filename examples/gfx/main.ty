@@ -1,0 +1,385 @@
+package main
+
+import "core:gfx"
+import "core:io"
+import "core:strings"
+import "core:time"
+
+extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
+extern fn gfx_audio_open(rate: int, channels: int) -> gfx.Audio
+extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
+
+const COLS = 30
+const ROWS = 16
+const CELL = 24
+const MARGIN = 24
+
+const MODE_MENU = 0
+const MODE_PLAY = 1
+const MODE_PAUSE = 2
+const MODE_OVER = 3
+
+struct Game:
+    w: int
+    h: int
+    body: [int]        # head at index 0; each cell is y * w + x
+    dir: int           # 0 up, 1 right, 2 down, 3 left
+    food: int          # y * w + x, or -1
+    rng: int
+    score: int
+    alive: int
+
+fn xnext(s: int) -> int:
+    return (s * 1103515245 + 12345) % 2147483648
+
+fn contains(xs: [int], v: int) -> bool:
+    for i := 0; i < len(xs); i += 1:
+        if xs[i] == v:
+            return true
+    return false
+
+fn hits_body(nb: [int]) -> bool:
+    for i := 1; i < len(nb); i += 1:
+        if nb[i] == nb[0]:
+            return true
+    return false
+
+fn spawn_food(g: inout Game):
+    r := g.rng
+    f := 0 - 1
+    for tries := 0; tries < 10000; tries += 1:
+        r = xnext(r)
+        cand := r % (g.w * g.h)
+        if not contains(g.body, cand):
+            f = cand
+            break
+    g.rng = r
+    g.food = f
+
+fn new_game(w: int, h: int, seed: int) -> Game:
+    cx := w / 2
+    cy := h / 2
+    body := []int
+    for i := 0; i < 3; i += 1:
+        push(body, cy * w + (cx - i))
+    g := Game(w, h, body, 1, 0 - 1, seed, 0, 1)
+    spawn_food(&g)
+    return g
+
+fn turn(g: inout Game, nd: int):
+    d := g.dir
+    if not ((d == 0 and nd == 2) or (d == 2 and nd == 0) or
+            (d == 1 and nd == 3) or (d == 3 and nd == 1)):
+        g.dir = nd
+
+fn step(g: inout Game):
+    if g.alive == 0:
+        return
+    hx := g.body[0] % g.w
+    hy := g.body[0] / g.w
+    if g.dir == 0:
+        hy = hy - 1
+    if g.dir == 1:
+        hx = hx + 1
+    if g.dir == 2:
+        hy = hy + 1
+    if g.dir == 3:
+        hx = hx - 1
+    if hx < 0 or hx >= g.w or hy < 0 or hy >= g.h:
+        g.alive = 0
+        return
+    nh := hy * g.w + hx
+    grew := nh == g.food
+    nb := []int
+    push(nb, nh)
+    keep := len(g.body)
+    if not grew:
+        keep = keep - 1
+    for i := 0; i < keep; i += 1:
+        push(nb, g.body[i])
+    g.body = nb
+    if hits_body(nb):
+        g.alive = 0
+        return
+    if grew:
+        g.score = g.score + 1
+        g.food = 0 - 1
+        spawn_food(&g)
+
+fn draw_frame(fb: inout [int], w: int, h: int, game: Game):
+    bg := gfx.rgb(10, 16, 22)
+    for i := 0; i < w * h; i += 1:
+        fb[i] = bg
+
+    bx := MARGIN
+    by := MARGIN
+    bw := game.w * CELL
+    bh := game.h * CELL
+    board := gfx.rgb(24, 36, 44)
+    grid := gfx.rgb(32, 48, 58)
+    border := gfx.rgb(70, 96, 110)
+    gfx.fill_rect(&fb, w, bx, by, bx + bw, by + bh, board)
+    for x := 1; x < game.w; x += 1:
+        gfx.fill_rect(&fb, w, bx + x * CELL, by, bx + x * CELL + 1, by + bh, grid)
+    for y := 1; y < game.h; y += 1:
+        gfx.fill_rect(&fb, w, bx, by + y * CELL, bx + bw, by + y * CELL + 1, grid)
+    gfx.fill_rect(&fb, w, bx - 2, by - 2, bx + bw + 2, by, border)
+    gfx.fill_rect(&fb, w, bx - 2, by + bh, bx + bw + 2, by + bh + 2, border)
+    gfx.fill_rect(&fb, w, bx - 2, by, bx, by + bh, border)
+    gfx.fill_rect(&fb, w, bx + bw, by, bx + bw + 2, by + bh, border)
+
+    for i := 0; i < len(game.body); i += 1:
+        v := game.body[i]
+        cx := v % game.w
+        cy := v / game.w
+        c := gfx.rgb(50, 170, 90)
+        if i == 0:
+            c = gfx.rgb(110, 240, 140)
+        gfx.fill_rect(&fb, w, bx + cx * CELL + 2, by + cy * CELL + 2,
+                  bx + (cx + 1) * CELL - 2, by + (cy + 1) * CELL - 2, c)
+
+    if game.food >= 0:
+        fx := game.food % game.w
+        fy := game.food / game.w
+        gfx.fill_rect(&fb, w, bx + fx * CELL + 6, by + fy * CELL + 6,
+                  bx + (fx + 1) * CELL - 6, by + (fy + 1) * CELL - 6,
+                  gfx.rgb(235, 80, 80))
+
+    if game.alive == 0:
+        msg_w := 9 * 24
+        tx := MARGIN + (bw - msg_w) / 2
+        ty := MARGIN + (bh - 32) / 2
+        gfx.fill_rect(&fb, w, tx - 10, ty - 10, tx + msg_w + 10, ty + 42, gfx.rgb(12, 18, 24))
+
+fn score_mix(rate: int) -> gfx.Mixer:
+    m := gfx.mixer(rate, 180)
+    gfx.add(&m, gfx.make_beep(rate, 660, 90), 0)
+    gfx.add(&m, gfx.make_beep(rate, 880, 90), 80)
+    return m
+
+fn load_high() -> int:
+    match io.read_text("snake.highscore"):
+        Ok(s):
+            match strings.parse_int(strings.trim(s)):
+                Ok(v): return v
+                Err(e): return 0
+        Err(e): return 0
+
+fn save_high(v: int):
+    if not io.write("snake.highscore", str(v) + "\n"):
+        eprintln("gfx: could not save high score")
+
+fn step_ms(speed: int) -> int:
+    if speed == 1:
+        return 160
+    if speed == 3:
+        return 90
+    return 120
+
+fn start_game(g: inout Game, clock: inout gfx.Clock, play_frame: inout int):
+    g = new_game(COLS, ROWS, 1)
+    clock = gfx.clock_start()
+    play_frame = 0
+
+fn main():
+    a := args()
+    frames := 0
+    snap := ""
+    headless := false
+    for i := 1; i < len(a); i += 1:
+        if a[i] == "--headless":
+            headless = true
+        if a[i] == "--frames" and i + 1 < len(a):
+            match strings.parse_int(a[i + 1]):
+                Ok(v): frames = v
+                Err(e): pass
+        if a[i] == "--snapshot" and i + 1 < len(a):
+            snap = a[i + 1]
+    if headless and frames == 0:
+        frames = 240
+
+    w := COLS * CELL + 2 * MARGIN
+    h := ROWS * CELL + 2 * MARGIN
+    win := gfx_open(w, h, "Tycho Snake")
+    if is_null(win):
+        eprintln("gfx: could not open a window (SDL3 required)")
+        return
+
+    win_w := gfx.window_width(win)
+    win_h := gfx.window_height(win)
+    mode := MODE_MENU
+    if headless:
+        mode = MODE_PLAY
+    high := 0
+    if not headless:
+        high = load_high()
+    speed := 2
+
+    audio := gfx_audio_open(22050, 1)
+    beep := gfx.make_beep(22050, 660, 90)
+    score := score_mix(22050)
+    gfx.play_beep(audio, beep)
+
+    fb := []int
+    reserve(fb, w * h)
+    for i := 0; i < w * h; i += 1:
+        push(fb, 0)
+
+    specs := gfx.load_manifest("assets/manifest.json")
+    if len(specs) == 0:
+        push(specs, gfx.AssetSpec("apple", "assets/apple_sheet.png"))
+        push(specs, gfx.AssetSpec("font", "assets/font.png"))
+    texset := gfx_texset_open(win)
+    cache := []string: int
+    if not is_null(texset):
+        for i := 0; i < len(specs); i += 1:
+            cache[specs[i].name] = gfx.load_texture(texset, specs[i].path)
+    apple_id := cache.get("apple", 0 - 1)
+    font_id := cache.get("font", 0 - 1)
+    apple_anim := gfx.Anim(apple_id, 0, 0, 32, 32, 4, 8)
+    board_h := ROWS * CELL
+
+    game := new_game(COLS, ROWS, 1)
+    controls := gfx.default_controls()
+    clock := gfx.clock_start()
+    play_frame := 0
+    gfx.set_title(win, "Tycho Snake")
+
+    for frame := 0; frames == 0 or frame < frames; frame += 1:
+        ev := gfx.poll_event(win)
+        quit := false
+        for ev.kind != 0:
+            if ev.kind == 1:
+                quit = true
+            if ev.kind == 5:
+                win_w = gfx.window_width(win)
+                win_h = gfx.window_height(win)
+            if ev.kind == 2:
+                k := ev.key
+                if k == 27:
+                    quit = true
+                if k == 32:
+                    if mode == MODE_MENU or mode == MODE_OVER:
+                        start_game(&game, &clock, &play_frame)
+                        mode = MODE_PLAY
+                        gfx.set_title(win, "Tycho Snake - score 0")
+                    elif mode == MODE_PAUSE:
+                        mode = MODE_PLAY
+                if k == 114:
+                    start_game(&game, &clock, &play_frame)
+                    mode = MODE_PLAY
+                    gfx.set_title(win, "Tycho Snake - score 0")
+                if k == 112:
+                    if mode == MODE_PLAY:
+                        mode = MODE_PAUSE
+                    elif mode == MODE_PAUSE:
+                        mode = MODE_PLAY
+                if k == 49:
+                    speed = 1
+                if k == 50:
+                    speed = 2
+                if k == 51:
+                    speed = 3
+                if mode == MODE_PLAY:
+                    act := gfx.action(ev, controls)
+                    if act == gfx.ACTION_QUIT:
+                        quit = true
+                    if act >= gfx.ACTION_UP and act <= gfx.ACTION_LEFT:
+                        turn(&game, act - 1)
+            ev = gfx.poll_event(win)
+        if quit:
+            break
+
+        if mode == MODE_PLAY:
+            steps := 0
+            if headless:
+                steps = gfx.clock_advance(&clock, play_frame * 16, step_ms(speed))
+            else:
+                steps = gfx.clock_tick(&clock, step_ms(speed))
+            for step_i := 0; step_i < steps; step_i += 1:
+                before := game.score
+                step(&game)
+                if game.score != before:
+                    gfx.set_title(win, "Tycho Snake - score " + str(game.score))
+                    gfx.play_mix(audio, score)
+                if game.score > high:
+                    high = game.score
+                if game.alive == 0:
+                    mode = MODE_OVER
+                    if not headless and high > 0:
+                        save_high(high)
+                    gfx.set_title(win, "Tycho Snake - game over")
+                    break
+            play_frame = play_frame + 1
+
+        view := gfx.fit_view(w, h, win_w, win_h)
+        dst := gfx.view_rect(view, 0, 0, w, h)
+        if mode == MODE_MENU:
+            gfx.fill_rect(&fb, w, 0, 0, w, h, gfx.rgb(10, 16, 22))
+        else:
+            draw_frame(&fb, w, h, game)
+        if mode == MODE_PAUSE:
+            gfx.fill_rect(&fb, w, MARGIN, 150, w - MARGIN, 320, gfx.rgb(12, 18, 24))
+
+        rc := gfx.begin(win)
+        if rc == 0:
+            rc = gfx.draw_fb(win, fb, w, h, dst)
+        if rc == 0 and mode != MODE_MENU and apple_id >= 0:
+            if game.food >= 0:
+                fx := game.food % game.w
+                fy := game.food / game.w
+                food_rect := gfx.view_rect(view, MARGIN + fx * CELL + 3,
+                                            MARGIN + fy * CELL + 3, CELL - 6, CELL - 6)
+                anim_ms := play_frame * 16
+                if not headless:
+                    anim_ms = time.elapsed_ms(clock.start_ns)
+                rc = gfx.draw_anim(texset, apple_anim, anim_ms, food_rect, 255, 255, 255)
+        if rc == 0 and font_id >= 0:
+            if mode == MODE_MENU:
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 44,
+                                            "SNAKE", 64, 110, 240, 140)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 160,
+                                            "PRESS SPACE TO START", 20, 235, 240, 245)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 210,
+                                            "1 SLOW   2 NORMAL   3 FAST", 16, 180, 200, 210)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 245,
+                                            "SPEED " + str(speed), 18, 110, 240, 140)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 285,
+                                            "HIGH SCORE " + str(high), 18, 235, 200, 80)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 340,
+                                            "P PAUSE   R RESTART   ESC QUIT", 16, 150, 170, 180)
+            elif mode == MODE_PLAY:
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2,
+                                            MARGIN + board_h + 4,
+                                            "SCORE " + str(game.score), 18, 110, 240, 140)
+            elif mode == MODE_PAUSE:
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 180,
+                                            "PAUSED", 40, 235, 200, 80)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 250,
+                                            "P RESUME   R RESTART", 18, 235, 240, 245)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, 285,
+                                            "ESC QUIT", 16, 150, 170, 180)
+            elif mode == MODE_OVER:
+                ty := MARGIN + (board_h - 32) / 2
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, ty,
+                                            "GAME OVER", 32, 235, 80, 80)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, ty + 48,
+                                            "SCORE " + str(game.score) + "   HIGH " + str(high),
+                                            18, 235, 240, 245)
+                gfx.draw_text_centered_view(view, texset, font_id, w / 2, ty + 82,
+                                            "SPACE OR R TO RESTART", 16, 150, 170, 180)
+        if rc == 0:
+            rc = gfx.present(win)
+        if rc != 0:
+            eprintln("gfx: present failed: " + str(rc))
+            break
+        if not headless:
+            time.sleep_ms(16)
+
+    if not headless and high > 0:
+        save_high(high)
+    if snap != "":
+        gfx.save_bmp(snap, fb, w, h)
+    close(texset)
+    close(audio)
+    close(win)

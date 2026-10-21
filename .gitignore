@@ -25,10 +25,10 @@ gmon.out
 
 # The five `.c` entries below are NOT produced by their `make` target any more.
 # docs/internals/plan-loops-cleanup-DONE.md phase 52 made the plain build `remove()` its own intermediate
-# (src/tychoc.c:15296), so `make tycho`, `make tychofmt`, `make tycho-lsp` and
+# (src/tychoc.c:16881), so `make tycho`, `make tychofmt`, `make tycho-lsp` and
 # `make server` now leave only a binary. They are kept because they still catch a
 # real artifact by the OTHER route: `--emit-c -o <base>` writes `<base>.c` and
-# deliberately keeps it (src/tychoc.c:15638-15640), which is the documented way to
+# deliberately keeps it (src/tychoc.c:16907-16909), which is the documented way to
 # debug the toolchain itself (docs/guides/debugging.md:37). Verified 2026-07-30 by
 # running `./tychoc tools/tycho.ty --shim tools/tycho_shim.c --emit-c -o tycho`:
 # `tycho.c` appeared at the root and `git status --short` stayed empty.
@@ -84,6 +84,8 @@ gmon.out
 !/examples/snake
 # the Minesweeper example is a shim dir too (termios input shim + own .gitignore).
 !/examples/minesweeper
+# the gfx FFI harness: Tycho framebuffer + SDL3 shim; run.sh builds into a temp.
+!/examples/gfx
 # the corelib usage examples (one program per core module + their goldens) are
 # tracked; the runner builds into a temp dir, so no binaries land here.
 !/examples/corelib

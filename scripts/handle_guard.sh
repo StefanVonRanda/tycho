@@ -100,9 +100,13 @@ import re, sys, pathlib
 d = pathlib.Path(sys.argv[1])
 src = next(d.glob("*_shim.c"))
 s = src.read_text()
-pat = re.compile(r"if \(!(\w+) \|\| \1->magic == \w+_LIVE\) return;")
-assert len(pat.findall(s)) == 1, f"{src}: {len(pat.findall(s))} guard conditions, expected 1"
-src.write_text(pat.sub("if (1) return;", s))
+pats = [
+    re.compile(r"if \(!(\w+) \|\| \1->magic == \w+_LIVE\) return;"),
+    re.compile(r"if \(!(\w+) \|\| imgx_find\(\1\)\) return;"),
+]
+matched = [p for p in pats if len(p.findall(s)) == 1]
+assert len(matched) == 1, f"{src}: {sum(len(p.findall(s)) for p in pats)} guard conditions, expected 1"
+src.write_text(matched[0].sub("if (1) return;", s))
 PY
     legs=$((legs + 1))
     TYCHO_CORELIB="$T/cl-$pkg-ctl" ./tychoc "$dir/main.ty" -o "$T/$pkg-ctl" >"$T/b" 2>&1 || {

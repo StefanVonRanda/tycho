@@ -2,23 +2,80 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include "../tycho.h"
 
 #include <stdio.h>
 
 /* A RUN-TIME guard, not a compile-time rule: a `ptr` handle is not affine, so
-   nothing stops a caller freeing one twice or using it afterwards. The header is
-   deliberately NOT released on free -- the sentinel in it is what the next call
-   reads. */
-#define IMGX_LIVE 0x496d67784c495645ull
-#define IMGX_DEAD 0x496d677844454144ull
-typedef struct { uint64_t magic; tycho_int w, h; unsigned char *rgba; size_t nbytes; } Img;
+   nothing stops a caller freeing one twice or using it afterwards. The handle
+   is a monotonically numbered ID, not a heap pointer: freeing unlinks the
+   entry, and a stale ID cannot alias a later image even when malloc reuses an
+   address. The Img header is released with its pixels, so decoding is not a
+   per-image leak. */
+typedef struct Img {
+    struct Img *next;
+    uint64_t id;
+    tycho_int w, h;
+    unsigned char *rgba;
+    size_t nbytes;
+} Img;
 
-static void imgx_live(const Img *im, int freeing) {
-    if (!im || im->magic == IMGX_LIVE) return;
+static Img *g_images = NULL;
+static uint64_t g_next_id = 1;
+static atomic_flag g_images_lock = ATOMIC_FLAG_INIT;
+
+static void imgx_acquire(void) {
+    while (atomic_flag_test_and_set_explicit(&g_images_lock, memory_order_acquire)) {}
+}
+
+static void imgx_release(void) {
+    atomic_flag_clear_explicit(&g_images_lock, memory_order_release);
+}
+
+static Img *imgx_find(void *p) {
+    uintptr_t id = (uintptr_t)p;
+    Img *found = NULL;
+    if (id == 0) return NULL;
+    imgx_acquire();
+    for (Img *im = g_images; im; im = im->next) {
+        if (im->id == id) { found = im; break; }
+    }
+    imgx_release();
+    return found;
+}
+
+static void imgx_live(void *p, int freeing) {
+    if (!p || imgx_find(p)) return;
     fputs(freeing ? "tycho: double free of image handle\n"
                   : "tycho: image handle used after free\n", stderr);
     exit(1);
+}
+
+static void imgx_add(Img *im) {
+    imgx_acquire();
+    im->id = g_next_id++;
+    im->next = g_images;
+    g_images = im;
+    imgx_release();
+}
+
+static Img *imgx_take(void *p) {
+    uintptr_t id = (uintptr_t)p;
+    Img *found = NULL;
+    if (id == 0) return NULL;
+    imgx_acquire();
+    Img **pp = &g_images;
+    while (*pp) {
+        if ((*pp)->id == id) {
+            found = *pp;
+            *pp = found->next;
+            break;
+        }
+        pp = &(*pp)->next;
+    }
+    imgx_release();
+    return found;
 }
 
 /* Status codes, mirrored by the constants in image.ty. */
@@ -63,26 +120,38 @@ void *imgx_decode(const unsigned char *data, tycho_int len, tycho_int *status) {
         free(buf); png_image_free(&image); *status = IMG_CORRUPT; return NULL;
     }
     Img *im = (Img *)malloc(sizeof *im);
-    if (!im) { free(buf); return NULL; }
+    if (!im) { free(buf); png_image_free(&image); return NULL; }
     *status = IMG_OK;
     im->w = (tycho_int)image.width;
     im->h = (tycho_int)image.height;
-    im->magic = IMGX_LIVE;
     im->rgba = buf;
     im->nbytes = nbytes;
-    return im;                                       /* png_image_free not needed after finish_read */
+    imgx_add(im);
+    return (void *)(uintptr_t)im->id;                /* opaque ID, never dereferenced by Tycho */
 }
 
-tycho_int imgx_width(void *p)  { imgx_live((const Img *)p, 0); return p ? ((Img *)p)->w : 0; }
-tycho_int imgx_height(void *p) { imgx_live((const Img *)p, 0); return p ? ((Img *)p)->h : 0; }
+tycho_int imgx_width(void *p) {
+    if (!p) return 0;
+    imgx_live(p, 0);
+    Img *im = imgx_find(p);
+    return im ? im->w : 0;
+}
+
+tycho_int imgx_height(void *p) {
+    if (!p) return 0;
+    imgx_live(p, 0);
+    Img *im = imgx_find(p);
+    return im ? im->h : 0;
+}
 
 /* Copy the decoded RGBA out as `bytes` (out-param convention). */
 void imgx_pixels(void *p, unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
-    imgx_live((const Img *)p, 0);
     if (!p) return;
-    Img *im = (Img *)p;
+    imgx_live(p, 0);
+    Img *im = imgx_find(p);
+    if (!im) return;
     unsigned char *cp = (unsigned char *)malloc(im->nbytes ? im->nbytes : 1);
     if (!cp) return;
     memcpy(cp, im->rgba, im->nbytes);
@@ -92,12 +161,11 @@ void imgx_pixels(void *p, unsigned char **out, tycho_int *outlen) {
 
 void imgx_free(void *p) {
     if (!p) return;
-    Img *im = (Img *)p;
-    imgx_live(im, 1);
+    imgx_live(p, 1);
+    Img *im = imgx_take(p);
+    if (!im) return;
     free(im->rgba);
-    im->rgba = NULL;
-    im->nbytes = 0;
-    im->magic = IMGX_DEAD;
+    free(im);
 }
 
 /* Encode w*h RGBA pixels (plen must be >= w*h*4) to a PNG in memory. */

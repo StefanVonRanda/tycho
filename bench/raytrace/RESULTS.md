@@ -15,7 +15,7 @@ show up against C where the compiler inlines it away?
 
 ## Results
 
-Machine: **AMD Ryzen 7 7735HS** (Zen 3+, x86-64), Linux. Toolchains: tycho via
+Machine: **AMD Strix Halo / Ryzen AI MAX+ 395** (Zen 5, x86-64), Fedora Linux 44. Toolchains: tycho via
 `tychoc` (C backend) at its default **-O3**; C via **gcc 15.2.0** at `-O3
 -ffp-contract=off`; Go **1.26.2** (default). Median of 5 runs; peak RSS via
 `bench/peakrss`. All three emit checksum **`6889824139`** — byte-identical, so the

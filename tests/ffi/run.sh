@@ -79,9 +79,10 @@ if "$TYCHOC" "$T/inj.ty" -o "$T/inj" >/dev/null 2>&1; then echo "FAIL: injection
 if "$TYCHOC" tests/ffi/main.ty --link "m; touch $mark" -L "$T" >/dev/null 2>&1; then echo "FAIL: injection --link compiled"; fail=1; fi
 [ -f "$mark" ] && { echo "FAIL: --link injection executed a shell command"; fail=1; }
 
-# (8) FFI R4 out-param fail-closed: only int/char/float/bool/ptr may be `inout`
-# (a clean T* the C fn fills). `inout string` (a char** with no length header) and
-# other non-trivial out-param shapes must be rejected.
+# (8) FFI R4 out-param fail-closed: only int/char/float/bool/ptr and plain
+# scalar-field structs may be `inout` (a clean T* the C fn fills). `inout string`
+# (a char** with no length header), a struct with a heap field, and other
+# non-trivial out-param shapes must be rejected.
 # --emit-c, NEVER -o: `extern "x"` puts -lx on the link line and no such library
 # exists, so a -o leg passed on `cannot find -lx` whatever the front end decided.
 printf 'extern "x" fn f(s: inout string)\nfn main():\n    print("x")\n' > "$T/r4rej.ty"
@@ -91,10 +92,22 @@ printf 'extern "x" fn f(s: inout int)\nfn main():\n    print("x")\n' > "$T/r4ok.
 if ! "$TYCHOC" "$T/r4ok.ty" --emit-c -o "$T/r4ok" >/dev/null 2>&1; then
     echo "FAIL: inout-int control rejected -- the R4 leg cannot distinguish string from int"; fail=1
 fi
-# Both front ends carry the ban now (src/tychoc.c:5228, compiler/types/tcheck.ty),
+# Both front ends carry the ban now (src/tychoc.c:5291, compiler/types/tcheck.ty),
 # so there is no exemption: an accept is a failure whichever compiler is under test.
 if "$TYCHOC" "$T/r4rej.ty" --emit-c -o "$T/r4rej" >/dev/null 2>&1; then
     echo "FAIL: inout-string out-param accepted by $TYCHOC"; fail=1
+fi
+printf 'struct Bad:\n    s: string\nextern "x" fn f(b: inout Bad)\nfn main():\n    print("x")\n' > "$T/r4bad.ty"
+if "$TYCHOC" "$T/r4bad.ty" --emit-c -o "$T/r4bad" >/dev/null 2>&1; then
+    echo "FAIL: inout struct with a string field accepted by $TYCHOC"; fail=1
+fi
+printf 'packed struct BadP:\n    x: i32\nextern "x" fn f(b: inout BadP)\nfn main():\n    print("x")\n' > "$T/r4badp.ty"
+if "$TYCHOC" "$T/r4badp.ty" --emit-c -o "$T/r4badp" >/dev/null 2>&1; then
+    echo "FAIL: packed inout struct accepted by $TYCHOC"; fail=1
+fi
+printf 'struct BadA:\n    s: string\nextern "x" fn f(v: [BadA]) -> int\nfn main():\n    print("x")\n' > "$T/r4bada.ty"
+if "$TYCHOC" "$T/r4bada.ty" --emit-c -o "$T/r4bada" >/dev/null 2>&1; then
+    echo "FAIL: [non-POD struct] parameter accepted by $TYCHOC"; fail=1
 fi
 
 # (9) FFI-boundary sized ints (u8/u16/u32/u64/i8/i16/i32/i64): recognized ONLY in

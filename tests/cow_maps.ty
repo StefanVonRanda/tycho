@@ -1,0 +1,40 @@
+# O6: composite-map copy-on-write. A snapshot shares the map until a write;
+# the write copies, so the snapshot is independent. Nested maps, deletes,
+# string values and missing-key defaults all keep their value semantics.
+struct P:
+    m: [int: int]
+    s: string
+
+struct Q:
+    m: [int: P]
+    tag: int
+
+fn bump(q: Q, k: int, v: int) -> Q:
+    m := q.m
+    m[k] = P([]int: int, str(v))
+    return Q(m, q.tag + 1)
+
+fn main():
+    a := Q([]int: P, 1)
+    a.m[1] = P([]int: int, "one")
+    a.m[2] = P([]int: int, "two")
+    b := a
+    b.m[3] = P([]int: int, "three")
+    b.m[1].s = "ONE"
+    println(str(len(a.m)) + " " + str(len(b.m)) + " " + a.m[1].s + " " + b.m[1].s)
+
+    c := bump(a, 4, 40)
+    println(str(len(a.m)) + " " + str(len(c.m)) + " " + c.m[4].s)
+
+    d := a
+    delete d.m[2]
+    println(str(len(a.m)) + " " + str(len(d.m)))
+
+    sm: [int: string] = []
+    sm[1] = "x"
+    sn := sm
+    sn[2] = "y"
+    println(str(len(sm)) + " " + str(len(sn)) + " " + sm[1] + " " + sn[2])
+
+    e := a.m[99]
+    println(str(len(e.m)) + " [" + e.s + "]")

@@ -10,7 +10,7 @@ Go uses the idiomatic `map[byte]*Node`.
 
 ## Results
 
-Machine: **AMD Ryzen 7 7735HS** (Zen 3+, x86-64), Linux. Toolchains: tycho via `tychoc`
+Machine: **AMD Strix Halo / Ryzen AI MAX+ 395** (Zen 5, x86-64), Fedora Linux 44. Toolchains: tycho via `tychoc`
 (C backend) at `-O3`; C via **gcc 15.2.0** at `-O3`; Go **1.26.2**. Median of 3 runs;
 peak RSS via `bench/peakrss`. All four emit checksum `229005 117013`.
 
@@ -24,10 +24,13 @@ peak RSS via `bench/peakrss`. All four emit checksum `229005 117013`.
 (tycho was 119 MB before its per-node maps moved to a compact indexed-dict layout — see
 below. The **pool** row is the same trie with children stored as indices into a flat
 node array — the idiom `docs/internals/value-semantics-limits.md` recommends for
-pointer-shaped data, the same trick `bench/dijkstra` measures at ~1.3× C. It lands at
+pointer-shaped data, the same trick `bench/dijkstra` measures at ~1.5× C. It lands at
 **1.10× C**, wall below C's. The one manual step is `reserve(pool, N)` — a dynamically
 grown pool retains every doubling buffer in the arena and measures *worse* than the
 idiomatic form (60.1 MiB); reserving the spine once makes it a single allocation.)
+
+2026-10-20 repeat with the shipped `tychoc1`: tycho **58.3 MB / 38 ms**, pool
+**34.0 MB / 24 ms**, C 37.6/34, Go 33.6/63; checksum `229005 117013`.
 
 ## Reading it honestly — the idiomatic premium, and the model's measured way out
 
@@ -89,3 +92,27 @@ empty-slot waste — the cap-8-vs-cap-4 tradeoff is gone) and the per-slot order
   arena's honest trade: capacity growth is retained until scope exit, so size-once.
 - Single-machine snapshot; absolute numbers vary by CPU/allocator/GC. Run
   `sh bench/trie/run.sh` to reproduce. Not wired into `make ci` (Go is optional).
+
+## O6: the persistent (path-copying) twin
+
+`trie_path.ty` is the same prefix tree built as a **persistent** value:
+`t = insert(t, s, 0)` returns a new root instead of mutating through `inout`.
+Without sharing, `kids := t.kids` and `kids[c] = ...` copy the whole map (and the
+compiler's map copy deep-copies every child), so one insert costs O(tree).
+`TYCHOC_NO_COW=1` is the control; the CoW build marks the map shared and copies
+only the maps on the changed path. The destructive `trie.ty` row above is
+unchanged.
+
+2,000 words, checksum `5954 1981` in every build; medians of five:
+
+| build | peak RSS | wall |
+|---|---:|---:|
+| `tychoc1`, control | 1,673,340 KB | 473 ms |
+| `tychoc1`, path-copy CoW | **12,640 KB** | **4 ms** |
+| `./tychoc`, control | 1,673,124 KB | 482 ms |
+| `./tychoc`, path-copy CoW | **12,448 KB** | **5 ms** |
+
+`sh bench/trie/run.sh` runs the control and CoW builds and asserts both the
+checksum and the RSS drop. The map shared bit is the sign of `ecap`, so the
+64-byte descriptor did not grow; the normal trie row measured 58.6 MB in the
+same run against the 58.9 MB recorded before O6.

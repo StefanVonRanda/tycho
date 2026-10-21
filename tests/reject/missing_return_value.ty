@@ -1,4 +1,4 @@
-# src/tychoc.c:9475 -- a bare `return` in a proc that declares a result type.
+# src/tychoc.c:9538 -- a bare `return` in a proc that declares a result type.
 # expect: missing return value (proc returns int)
 fn g() -> int:
     return

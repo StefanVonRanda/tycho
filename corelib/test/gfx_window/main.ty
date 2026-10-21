@@ -1,0 +1,53 @@
+package main
+
+import "core:gfx"
+
+extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
+extern fn gfx_audio_open(rate: int, channels: int) -> gfx.Audio
+extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
+
+fn main():
+    win := gfx_open(64, 64, "gfx smoke")
+    if is_null(win):
+        println("window=null")
+        return
+    println("window=ok")
+
+    texset := gfx_texset_open(win)
+    if is_null(texset):
+        println("texset=null")
+        close(win)
+        return
+
+    pixels := to_bytes([255, 0, 0, 255, 0, 255, 0, 255,
+                        0, 0, 255, 255, 255, 255, 255, 255])
+    id := gfx.tex_create(texset, pixels, 2, 2)
+    println("tex=" + str(id))
+
+    fb := []int
+    reserve(fb, 64 * 64)
+    for i := 0; i < 64 * 64; i += 1:
+        push(fb, 0)
+    dst := gfx.FRect(to_f32(0), to_f32(0), to_f32(64), to_f32(64))
+    src := gfx.FRect(to_f32(0), to_f32(0), to_f32(2), to_f32(2))
+    sprite := gfx.FRect(to_f32(0), to_f32(0), to_f32(32), to_f32(32))
+
+    rc := gfx.begin(win)
+    if rc == 0:
+        rc = gfx.draw_fb(win, fb, 64, 64, dst)
+    if rc == 0:
+        rc = gfx.tex_draw(texset, id, src, sprite, 255, 255, 255)
+    if rc == 0:
+        rc = gfx.present(win)
+    println("frame=" + str(rc))
+
+    audio := gfx_audio_open(8000, 1)
+    if is_null(audio):
+        println("audio=null")
+    else:
+        gfx.play_beep(audio, gfx.make_beep(8000, 440, 20))
+        println("audio=ok")
+
+    close(texset)
+    close(audio)
+    close(win)

@@ -1,0 +1,69 @@
+# O5 destination passing: `t = f(t, ...)` may hand t's storage to f, but only
+# when t is a dead self-rebuild. A call whose result goes anywhere else must
+# still copy, and a snapshot taken before the call must stay independent.
+
+enum Tree:
+    Leaf
+    Node(Tree, int, Tree)
+
+fn insert(t: Tree, k: int) -> Tree:
+    match t:
+        Leaf:
+            return Node(Leaf, k, Leaf)
+        Node(l, v, r):
+            if k < v:
+                return Node(insert(l, k), v, r)
+            if k > v:
+                return Node(l, v, insert(r, k))
+            return t
+
+fn count(t: Tree) -> int:
+    match t:
+        Leaf:
+            return 0
+        Node(l, v, r):
+            return 1 + count(l) + count(r)
+
+fn total(t: Tree) -> int:
+    match t:
+        Leaf:
+            return 0
+        Node(l, v, r):
+            return total(l) + v + total(r)
+
+struct Bag:
+    m: [int: int]
+    tag: int
+
+fn retag(b: Bag, tag: int) -> Bag:
+    return Bag(b.m, tag)
+
+fn main():
+    t := Leaf
+    for i := 0; i < 200; i += 1:
+        t = insert(t, (i * 40503) % 65536)
+    println(str(count(t)) + " " + str(total(t)))
+
+    # A duplicate returns the owned tree itself: no copy, and t stays usable.
+    t = insert(t, 0)
+    println(str(count(t)))
+
+    # A snapshot is a value, not an alias: the owned update may move t's
+    # children, but it can never reach through into `before`.
+    before := t
+    t = insert(t, 999)
+    println(str(count(t)) + " " + str(count(before)) + " " + str(total(t)))
+
+    # Not a self-rebuild: insert's parameter is borrowed and the result is a
+    # fresh value, so `before` is unchanged.
+    other := insert(before, 1000)
+    println(str(count(other)) + " " + str(count(before)))
+
+    # A heap struct field moves into the rebuilt aggregate on `b = retag(b)`.
+    b := Bag([]int: int, 1)
+    b.m[7] = 70
+    b = retag(b, 2)
+    b2 := retag(b, 3)
+    println(str(len(b.m)) + " " + str(b.tag) + " " + str(len(b2.m)) + " " + str(b2.tag))
+    b.m[8] = 80
+    println(str(len(b.m)) + " " + str(len(b2.m)))

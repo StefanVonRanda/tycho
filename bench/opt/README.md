@@ -32,11 +32,11 @@ checkout is not evidence of an optimization.
 | O2 | [`bench/opt/bigparam/main.ty`](bigparam/main.ty) | large `[N]T` read-only parameters (reference ABI parity) |
 | O3 | [`bench/opt/movebuild/main.ty`](movebuild/main.ty) | loop-local last-use moves into `push` |
 | O4 | [`bench/opt/sliceparse/main.ty`](sliceparse/main.ty) | borrowed in-scope string slices |
-| O5 | `bench/opt/treeupdate` (to add) | `t = insert(t, k)` destination passing |
-| O6 | `bench/trie` + path-copy fixture (to add) | conservative CoW |
-| O7 | `bench/prongB` array pipeline (to add) | SROA and bounds-check elimination |
+| O5 | [`bench/opt/treeupdate/main.ty`](treeupdate/main.ty) | `t = insert(t, k)` destination passing |
+| O5 | [`bench/opt/editorupdate/main.ty`](editorupdate/main.ty) | long-lived editor rope updated through `t = set(t, i, v)` |
+| O6 | [`bench/trie/path/main.ty`](../trie/path/main.ty) | conservative shared-bit CoW / path copying |
+| O7 | [`bench/prongB/arr_pipeline.ty`](../prongB/arr_pipeline.ty) + [`bench/opt/smallmap/main.ty`](smallmap/main.ty) | loop-grown array and map-literal presizing (SROA evaluated) |
 
-O1–O4 are shipped in 0.8.9; O2 is reference/bootstrap parity, while the packaged
-self-hosted compiler already passes `[N]T` as a descriptor. Their before/after
-is in [`RESULTS.md`](RESULTS.md). O5–O7 are next and each adds its fixture when
-the phase starts.
+O1–O7 are shipped in 0.8.9; O2 is reference/bootstrap parity, while the
+packaged self-hosted compiler already passes `[N]T` as a descriptor. Their
+before/after is in [`RESULTS.md`](RESULTS.md).

@@ -1,0 +1,20 @@
+# O7: loop-grown arrays are presized from the loop bound, and map literals are
+# presized from their pair count. Both are allocation hints only: output and
+# value semantics are unchanged. TYCHOC_NO_PRESIZE / TYCHOC_NO_MAP_PRESIZE are
+# the benchmark controls.
+fn main():
+    xs := []int
+    for i := 0; i < 100; i += 1:
+        push(xs, i)
+
+    ys := []int
+    for i := 0; i < len(xs); i += 1:
+        push(ys, xs[i] * 2)
+
+    s := 0
+    for i := 0; i < len(ys); i += 1:
+        s = s + ys[i]
+
+    m := [1: 10, 2: 20, 3: 30, 4: 40, 5: 50]
+    m[2] = 22
+    println(str(s) + " " + str(len(ys)) + " " + str(m[2]) + " " + str(len(m)))

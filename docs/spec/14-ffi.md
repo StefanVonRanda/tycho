@@ -15,8 +15,12 @@ is emitted unmangled and it receives no arena argument.
 
 ### 24.1 Crossable types
 
-Only these may appear in an `extern` signature; a **map, struct, or any array
-outside the list below** is rejected at the boundary:
+Only these may appear in an `extern` signature; a **map, an array outside the
+list below, or a non-POD struct** is rejected at the boundary. A plain
+scalar-field struct is allowed by value, by return and as an `inout`
+out-parameter; a dynamic array of one is allowed as a parameter (§24.1.1).
+**C unions are not crossable**: keep the union in C and expose a tagged POD
+struct (the `examples/gfx` `Event` decodes `SDL_Event` this way).
 
 - **Scalars** `int`, `char`, `float`, `bool`.
 - **Sized integers.** The whole fixed-width integer family — `u8`/`u16`/`u32`/
@@ -34,8 +38,10 @@ outside the list below** is rejected at the boundary:
 - **`bytes`** — crosses as a `(pointer, length)` pair, preserving interior `NUL`s;
   a `bytes`/array returned from C is copied into an arena and the C buffer freed.
 - **`[int]` and `[float]`** — a **scalar** array crosses as a `(const T*, int64_t)`
-  pair (like `bytes`), in either direction; an array of any other element type,
-  and any map or struct, is rejected (no flat, self-describing C ABI).
+  pair (like `bytes`), in either direction. A dynamic `[POD struct]` parameter
+  crosses the same way, borrowed for the call; an array of any other element
+  type, and any map or non-POD struct, is rejected (no flat, self-describing C
+  ABI).
 - **`[string]` — parameter direction only.** It crosses as a
   `(const char *const *, int64_t)` pair, the same `(ptr, len)` convention as
   `[int]`/`[float]` and **not** a `NULL`-terminated `argv`; a callee wanting
@@ -54,10 +60,17 @@ outside the list below** is rejected at the boundary:
   same reason an `inout string` out-parameter is rejected below.
 - **`ptr`** — an opaque `void*` Tycho never dereferences; the `null` literal and
   `is_null(p)` apply.
+- **POD structs** — a non-packed, non-aligned struct of numeric scalar fields.
+  It crosses by value, as a return, and as an `inout` pointer; a dynamic array of
+  one (`[T]`) crosses as `(const T*, int64_t)` in the parameter direction,
+  borrowed for the call. Use fixed-width fields (`i32`, `u8`, `f32`) to match the
+  C header; Tycho `int` is 64-bit and `float` is C `double`.
 - **typed `handle`s** — §25.
-- **`inout` out-parameters** — a numeric scalar or `ptr` only (`int`/`char`/
-  `float`/`bool`/`ptr`); a `string`, `bytes`, handle, or composite `inout`
-  out-parameter is **rejected** (no trivial out-param ABI).
+- **`inout` out-parameters** — a numeric scalar, `ptr`, or a **plain
+  scalar-field struct** (no `packed`/`align`, no string/array/map fields); a
+  `string`, `bytes`, handle, map, array, or non-POD struct `inout` is
+  **rejected** (no trivial out-param ABI). A struct crosses as `S_Name *`; use
+  fixed-width fields (`i32`, `u8`, `f32`) to match the C header.
 
 Every value returned from C that carries storage (`string`, `bytes`, an array) is
 **deep-copied into the caller's storage at the call site**; a program never holds
@@ -162,9 +175,10 @@ extern void iox_read_file(char *, tycho_int *, unsigned char **, tycho_int *);
 
 Rules that follow from §24.1 and are not optional:
 
-- The classification parameter must be a **numeric scalar or `ptr`** — that is the
-  whole `inout` crossable set. A `string`, `bytes`, handle or composite `inout` is
-  rejected, so the classification cannot be a message; it is a code.
+- The classification parameter must be a **numeric scalar or `ptr`**. A plain
+  scalar-field struct is also crossable as an `inout`, but it is a value, not a
+  status code; a `string`, `bytes`, handle, map, array or non-POD composite
+  `inout` is rejected, so the classification cannot be a message; it is a code.
 - **Set it on every path, first.** The shim writes a failure code before anything
   can fail (`*status = TY_RD_ERR;` in `corelib/net/net_shim.c`) so an early
   `return` fails closed rather than leaving the caller's variable untouched.
@@ -181,12 +195,11 @@ is **forced, not preferred** — and the constraint that forces it only exists f
 one kind of payload:
 
 - **A `bytes` or array payload cannot be an `inout` at all.** The crossable
-  `inout` set is int/char/float/bool/ptr (the rule above), and the compiler
-  rejects the rest by name —  is the predicate and
-  its diagnostic spells out "string/bytes/handle/composite have no trivial
-  out-param ABI". So a `bytes` payload has only the return available, and the
-  classification takes the `inout` because nothing else is left. That is
-  §24.1.1's case.
+  `inout` set is a numeric scalar, `ptr`, or a plain scalar-field struct (the
+  rule above), and the compiler rejects the rest by name — its diagnostic spells
+  out "string/bytes/handle/map/array have no trivial out-param ABI". So a `bytes`
+  payload has only the return available, and the classification takes the
+  `inout` because nothing else is left. That is §24.1.1's case.
 - **A scalar payload can occupy either slot**, so nothing above decides it and a
   second constraint does: the two halves must not share one integer's code space.
   An epoch second, a file size or a byte count can take *any* value, including

@@ -4,8 +4,8 @@ import "core:sort"
 import "../ast"
 
 # The monomorphic type checker -- src/tychoc.c's type-resolve section
-# (src/tychoc.c:6515-10460) for the non-generic language, plus the type rules
-# parse_type enforces while a declaration is read (src/tychoc.c:2746-3055).
+# (src/tychoc.c:6578-10523) for the non-generic language, plus the type rules
+# parse_type enforces while a declaration is read (src/tychoc.c:2809-3118).
 #
 # THE ONE INVARIANT THAT MATTERS. A type is a STRING and `?` is UNKNOWN.
 # Every rule below fires only when the types it compares are KNOWN; anything
@@ -143,7 +143,7 @@ struct Pend:
 # One branch result of a value if/match -- src/tychoc.c@ctrl_collect_tails.
 # `_value_type` returns ONE type, so a void tail, an all-diverging if/match and
 # a bare `None` tail are the same observation to it; the LIST is what tells them
-# apart (src/tychoc.c:4124@diverges, src/tychoc.c:9396@infer, src/tychoc.c:9389@void).
+# apart (src/tychoc.c:4131@diverges, src/tychoc.c:2239@infer, src/tychoc.c:129@void).
 struct Tail:
     line: int
     ty: string
@@ -184,7 +184,7 @@ struct C:
                                        # closure's entry
     nlambda: int                       # depth inside a closure body: a channel
                                        # read from an enclosing scope here is a
-                                       # CAPTURE (src/tychoc.c:6801)
+                                       # CAPTURE (src/tychoc.c:6864)
     chan_decl: bool                    # this expression is the DIRECT rhs of a `:=`
     hdl_decl: bool                     # ... and so is this one, for an opener
     nmatch: int
@@ -210,7 +210,7 @@ struct C:
     symfn: int                         # the enclosing fn's line, the row's 4th field
     callee: bool                       # this expression is the CALLEE of a CallVal:
                                        # `a.b.get(v, 0)` is a method call, not a
-                                       # field read, so src/tychoc.c:7233@nominal_name must not fire on it
+                                       # field read, so src/tychoc.c:2120@nominal_name must not fire on it
     symfnm: string                     # ...and its MANGLED name: two files can put
                                        # two functions on the same line (cli__is_short
                                        # and main are both line 44 in tycho-stat), and
@@ -219,11 +219,11 @@ struct C:
                                        # is_extern and spawn needs one
     mbind: [string: bool]              # match/if-let arm bindings. They BORROW the
                                        # scrutinee's payload, so they own no arena
-                                       # (src/tychoc.c:14260 pushes NULL) and can
+                                       # (src/tychoc.c:16952 pushes NULL) and can
                                        # never be adopted by a `sink`
     pend: [Pend]                       # locals declared as a bare `[]`: PENDING,
                                        # grounded by their first typed use
-                                       # (src/tychoc.c:6640). Kept beside the
+                                       # (src/tychoc.c:6703). Kept beside the
                                        # binding rather than in its type, which
                                        # stays "?" so nothing else changes
     npend: int                         # live length of `pend`; blocks mark/restore it
@@ -288,7 +288,7 @@ fn _tedit(a: string, b: string) -> int:
         prev = cur
     return prev[lb]
 
-# An imported enum's variant is named `pkg.Variant` by src/tychoc.c:9231
+# An imported enum's variant is named `pkg.Variant` by src/tychoc.c:9294
 # (nominal_name); a local one stays bare.
 fn _vq(tdname: string, v: string) -> string:
     i := 1
@@ -338,7 +338,7 @@ fn _cwarn(cs: inout C, msg: string):
 
 # A newtype is erased in lowering, so "is int, expected Cents" reads as a
 # compiler quirk until you see that Cents IS an int, declared here
-# (src/tychoc.c:8114). Emitted AFTER its error, which is the order ./tychoc
+# (src/tychoc.c:8177). Emitted AFTER its error, which is the order ./tychoc
 # flushes them in.
 fn _cnote(cs: inout C, file: string, line: int, msg: string):
     push(cs.errs, file + ":" + str(line) + ": note: " + msg + _cexcerpt(&cs, file, line))
@@ -519,7 +519,7 @@ fn _enc(cs: inout C, t: ast.Ty) -> string:
             return out + ")"
         ast.TSoa(k):
             el := _enc_noval(&cs, k[0])
-            if not _soa_elem_ok(&cs, el):                   # src/tychoc.c:2735
+            if not _soa_elem_ok(&cs, el):                   # src/tychoc.c:2798
                 _cperr(&cs, "soa requires a struct element type, e.g. soa [Point]")
             return "soa(" + el + ")"
     return "?"
@@ -532,7 +532,7 @@ fn _enc_noval(cs: inout C, t: ast.Ty) -> string:
     cs.void_ok = keep
     return r
 
-# `[N]T` / `bounded[N]T`: a literal, or an int `const`. src/tychoc.c:2910.
+# `[N]T` / `bounded[N]T`: a literal, or an int `const`. src/tychoc.c:2973.
 # A fixed size is compared as TEXT, so `[0xA]int` and `[10]int` must normalise
 # to the same thing or a legal program is refused (tests/int_hex.ty:17).
 fn _dec(sz: string) -> string:
@@ -806,10 +806,10 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
         if pm.is_variadic:
             fl = "var"
         _aff_param_check(&cs, pm.name, t, fl)
-        if fd.is_extern and pm.is_inout and not _ffi_inout_ok(t):
-            _cperr(&cs, "extern fn '" + fd.name + "': an `inout` (out) parameter '" + pm.name + "' must be int/char/float/bool/ptr — string/bytes/handle/composite have no trivial out-param ABI")
+        if fd.is_extern and pm.is_inout and not _ffi_inout_ok(&cs, t):
+            _cperr(&cs, "extern fn '" + fd.name + "': an `inout` (out) parameter '" + pm.name + "' must be int/char/float/bool/ptr or a plain scalar-field struct — string/bytes/handle/map/array have no trivial out-param ABI")
         if fd.is_extern and not pm.is_inout and not _ffi_param_ok(&cs, t):
-            _cperr(&cs, "extern fn '" + fd.name + "': parameter '" + pm.name + "' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string], or a handle (no other composites across the C boundary)")
+            _cperr(&cs, "extern fn '" + fd.name + "': parameter '" + pm.name + "' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string]/[POD struct], a POD struct, or a handle (no other composites across the C boundary)")
         push(pf, fl)
     cs.line = fd.line
     rt := "void"
@@ -819,7 +819,7 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
         rt = _enc(&cs, fd.ret[0])
         cs.void_ok = keep
     if fd.is_extern and not _ffi_ret_ok(&cs, rt):
-        _cperr(&cs, "extern fn '" + fd.name + "': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], Option(string), a handle, or omitted")
+        _cperr(&cs, "extern fn '" + fd.name + "': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], a POD struct, Option(string), a handle, or omitted")
     if _head(rt) == "chan":
         _cperr(&cs, "a function cannot return a channel -- create it in the owning scope and pass it down")
     # An `extern fn` opener is the only producer: its return is where a handle
@@ -830,7 +830,7 @@ fn _sig_of(cs: inout C, prefix: string, fd: ast.Fn) -> FSig:
     nm := prefix + fd.name
     if fd.is_extern:
         nm = fd.name
-        cs.extfn[nm] = true            # src/tychoc.c:6766 reads it back at spawn
+        cs.extfn[nm] = true            # src/tychoc.c:6829 reads it back at spawn
     cs.typarams = []string: bool
     szs := _sig_sizeparams(fd.params, fd.ret)
     tps := []string                    # the parser lists a `$T` once per mention
@@ -1007,7 +1007,24 @@ fn _tdecl(cs: inout C, t: string) -> int:
             return cs.tindex[m]
     return -1
 
-# src/tychoc.c:2734@IS_STRUCT and src/tychoc.c:3358@IS_STRUCT, IS_STRUCT(el). An SOA splits its element into one
+# FFI R4a: a plain, non-packed struct of scalar fields can cross as an `inout`
+# (a normal `S_Name *`). The field-width choice is the caller's, exactly as in
+# an extern signature: `i32` matches C int, `f32` matches C float.
+fn _ffi_pod_scalar(t: string) -> bool:
+    return _ffi_scalar(t) and t != "string" and t != "ptr"
+
+fn _ffi_pod_struct(cs: inout C, t: string) -> bool:
+    i := _tdecl(&cs, _base(&cs, t))
+    if i < 0 or cs.tds[i].kind != "struct":
+        return false
+    if cs.tds[i].packed or cs.tds[i].aln != 0:
+        return false
+    for ft in cs.tds[i].ftypes:
+        if not _ffi_pod_scalar(_base(&cs, ft)):
+            return false
+    return true
+
+# src/tychoc.c:1774@IS_STRUCT and src/tychoc.c:1774@IS_STRUCT, IS_STRUCT(el). An SOA splits its element into one
 # array per FIELD, so an enum, a newtype, a handle or a scalar has nothing to
 # split. `?` is an unground generic and says nothing either way.
 fn _soa_elem_ok(cs: inout C, el: string) -> bool:
@@ -1045,7 +1062,7 @@ fn _exs(cs: inout C, es: [ast.Expr]):
 
 # "" is NO EXPECTED TYPE, "?" is AN EXPECTED TYPE THIS PASS COULD NOT COMPUTE.
 # src/tychoc.c separates the two by which entry point runs -- resolve_expr
-# (synthesis) vs resolve_exp (checking) -- and src/tychoc.c:7015 is the one rule
+# (synthesis) vs resolve_exp (checking) -- and src/tychoc.c:7078 is the one rule
 # that can only be worded with the distinction: a bare `[]` is an error when
 # NOTHING can type it, and silent when this pass merely does not know yet.
 # Every _ex2 site that meant the second already passes "?" and is unaffected.
@@ -1083,7 +1100,7 @@ fn _sized_fits(cs: inout C, e: ast.Expr, want: string):
                     ".." + str(hi) + ") -- write to_" + want + "(x) to convert with wraparound")
         _: pass
 
-# src/tychoc.c:6848's four rejected inner types, in this pass's spelling:
+# src/tychoc.c:6911's four rejected inner types, in this pass's spelling:
 # T_VOID, T_NONE (a `None` no context typed), and the two half-built Results a
 # nested Ok()/Err() yields -- E_OK and E_ERR always resolve to a PARTIAL there,
 # so a "?" on either side is the same test.
@@ -1097,7 +1114,7 @@ fn _no_concrete(t: string) -> bool:
 
 # --------------------------------------------- pending decls (src/tychoc.c B-3)
 # The three rules a `pendarr` SET could not carry: a pending decl has a LINE (the
-# B-3 audit, src/tychoc.c:9919@grounding, reports at the declaration, not at the block end), a DONE flag (the
+# B-3 audit, src/tychoc.c:986@grounding, reports at the declaration, not at the block end), a DONE flag (the
 # audit is per block, so an entry cannot just be deleted when it grounds), and an
 # ORDER (`pend_find` takes the newest, so an inner shadow grounds before an outer).
 
@@ -1134,7 +1151,7 @@ fn _pend_ground(cs: inout C, name: string, t: string, line: int):
         if len(ka) == 2 and (_no_concrete(ka[0]) or _no_concrete(ka[1])):
             bad = true
     if bad:
-        _cerr(&cs, "cannot infer the type of '" + name + "' from this use")   # src/tychoc.c:6633
+        _cerr(&cs, "cannot infer the type of '" + name + "' from this use")   # src/tychoc.c:6696
         cs.pend[pi].done = true
         cs.line = keep
         return
@@ -1196,7 +1213,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
         if (el is ast.FloatLit) and want == "f32":
             _f32_fits(&cs, el)
             return want
-    # src/tychoc.c:8506 -- checking mode grounds a pending decl from the
+    # src/tychoc.c:8569 -- checking mode grounds a pending decl from the
     # destination type, and must run BEFORE the ast.Name arm below refuses the
     # read: `f(xs)` at a typed parameter is a grounding use, not an ungrounded one.
     if known(want) and want != "void":
@@ -1227,7 +1244,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             t := _vtype(&cs, n)
             if len(t) > 0 and n != cs.pendok and _pend_find(&cs, n) >= 0:
                 cs.line = l
-                _cerr(&cs, "'" + n + "' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration")   # src/tychoc.c:6903
+                _cerr(&cs, "'" + n + "' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration")   # src/tychoc.c:6966
                 return "?"
             if len(t) > 0:
                 vi := _vfind(&cs, n)
@@ -1256,7 +1273,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 _cerr(&cs, "'" + n + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: " + n + "(a, b)")
                 return "?"
             if si >= 0:
-                # src/tychoc.c:6935-6938 -- the shape rules for a fn VALUE. A
+                # src/tychoc.c:6998-7001 -- the shape rules for a fn VALUE. A
                 # builtin has no Tycho signature to take, so it is left alone.
                 if not cs.sg[si].builtin:
                     if len(cs.sg[si].ptypes) > 8:
@@ -1277,7 +1294,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                         if m in cs.consts:
                             return cs.consts[m]
                         if m in cs.vowner:
-                            # src/tychoc.c:7151-7156, the qualified twins of the two
+                            # src/tychoc.c:7214-7219, the qualified twins of the two
                             # rules _bare_variant carries for a bare one.
                             if m in cs.vpay and len(cs.vpay[m]) > 0:
                                 cs.line = l
@@ -1295,7 +1312,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                             _cerr(&cs, "'" + q + "." + f + "' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: " + q + "." + f + "(a, b)")
                             return "?"
                         if si >= 0:
-                            # src/tychoc.c:7139 -- the same shape rule the bare-name
+                            # src/tychoc.c:7202 -- the same shape rule the bare-name
                             # arm above enforces; this sibling caller had none.
                             if not cs.sg[si].builtin:
                                 for fl in cs.sg[si].pflags:
@@ -1342,7 +1359,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
         ast.TupIdx(l, k, i):
             rt := _base(&cs, _ex(&cs, k[0]))
             if _head(rt) != "tup":
-                if known(rt):                      # src/tychoc.c:6868
+                if known(rt):                      # src/tychoc.c:6931
                     cs.line = l
                     _cerr(&cs, "tuple index ." + str(i) + " on a non-tuple value (" + _show(&cs, rt) + ")")
                 return "?"
@@ -1365,7 +1382,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 return "?"
             # Everything past the map/tuple cases indexes by position, and the
             # index is exactly `int` -- not a sized int, not a newtype over one
-            # (src/tychoc.c:7068-7069, `kt != T_INT`).
+            # (src/tychoc.c:7131-7132, `kt != T_INT`).
             if known(rt) and known(it) and it != "int":
                 cs.line = l
                 _cerr(&cs, "index must be int")
@@ -1374,7 +1391,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             if _is_arr(rt) or h == "soa":
                 _tnote(&cs, "x:" + _elem_of(&cs, rt))
                 return _elem_of(&cs, rt)
-            # src/tychoc.c:7084. Scored only for the shapes that CANNOT carry a
+            # src/tychoc.c:7147. Scored only for the shapes that CANNOT carry a
             # `subscript` -- a scalar or a wrapper. A named struct is left alone
             # because `g[r, c]` on one is a declared subscript, not this rule.
             if _unindexable(rt):
@@ -1388,13 +1405,13 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             ki := 1
             if a:
                 lt := _ex(&cs, k[ki])
-                if known(lt) and lt != "int":      # src/tychoc.c:7094
+                if known(lt) and lt != "int":      # src/tychoc.c:7157
                     cs.line = l
                     _cerr(&cs, "slice start must be int")
                 ki += 1
             if b:
                 ht := _ex(&cs, k[ki])
-                if known(ht) and ht != "int":      # src/tychoc.c:7096
+                if known(ht) and ht != "int":      # src/tychoc.c:7159
                     cs.line = l
                     _cerr(&cs, "slice end must be int")
                 ki += 1
@@ -1407,7 +1424,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 sbargs := _targs(sb)
                 if len(sbargs) > 0:
                     inline_sized = _capn(sbargs[0]) >= 0
-            if _head(sb) == "bnd":                 # src/tychoc.c:7100
+            if _head(sb) == "bnd":                 # src/tychoc.c:7163
                 cs.line = l
                 _cerr(&cs, "cannot slice a bounded[...] value; copy it into a [" +
                     _show(&cs, _elem_of(&cs, sb)) + "] first")
@@ -1415,7 +1432,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 cs.line = l                        # `[N]T` / `vector[N]T` store inline: no .data to view
                 _cerr(&cs, "cannot slice a " + _show(&cs, sb) + " value; copy it into a [" +
                     _show(&cs, _elem_of(&cs, sb)) + "] first")
-            elif _unindexable(sb) or _head(sb) == "map" or (len(sb) > 1 and sb[0] == 64):   # src/tychoc.c:7173; `@` = a named struct/enum
+            elif _unindexable(sb) or _head(sb) == "map" or (len(sb) > 1 and sb[0] == 64):   # src/tychoc.c:7236; `@` = a named struct/enum
                 cs.line = l
                 _cerr(&cs, "can only slice an array, soa, a string, or bytes")
             return sb
@@ -1469,7 +1486,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             ct := _base(&cs, _ex(&cs, k[0]))
             # fun(R,P...) keeps the RETURN first, so the parameters start at 1.
             ps := _targs(ct)
-            if _head(ct) == "fun" and len(k) - 1 != len(ps) - 1:   # src/tychoc.c:7444
+            if _head(ct) == "fun" and len(k) - 1 != len(ps) - 1:   # src/tychoc.c:7507
                 cs.line = l
                 _cerr(&cs, "this function value expects " + str(len(ps) - 1) +
                     " argument(s), got " + str(len(k) - 1))
@@ -1478,10 +1495,10 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             for i := 1; i < len(k); i += 1:
                 aw := "?"
                 if _head(ct) == "fun" and i < len(ps):
-                    aw = ps[i]                                     # src/tychoc.c:7447 CHECKS the arg
+                    aw = ps[i]                                     # src/tychoc.c:7510 CHECKS the arg
                 at_ := _ex2(&cs, k[i], aw)
                 if _head(ct) == "fun" and i < len(ps) and known(at_) and known(ps[i]) and
-                        not compat(at_, ps[i]):                    # src/tychoc.c:7449
+                        not compat(at_, ps[i]):                    # src/tychoc.c:7512
                     cs.line = l
                     _cerr(&cs, "argument " + str(i) + " must be " + _show(&cs, ps[i]))
             cs.in_arg = keep
@@ -1496,7 +1513,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
         ast.Unop(l, o, k):
             t := _ex(&cs, k[0])
             cs.line = l
-            # src/tychoc.c:8176-8191, arm for arm. `~` reads the RAW type (a
+            # src/tychoc.c:8239-8254, arm for arm. `~` reads the RAW type (a
             # newtype over int is refused); `-` reads the base (`-Meters` is a
             # Meters); neither sees through a sized int to `int`.
             if o == "not":
@@ -1555,7 +1572,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 _cerr(&cs, "a fixed-size array of length " + _targs(wb)[0] + " needs " + _targs(wb)[0] + " elements, got " + str(len(k)))
                 return wb
             # bounded[N]T accepts FEWER than N (len becomes k) but never more --
-            # src/tychoc.c:8546-8550. A `$N` capacity is "?" and stays unscored.
+            # src/tychoc.c:8609-8613. A `$N` capacity is "?" and stays unscored.
             if _head(wb) == "bnd" and _capn(_targs(wb)[0]) >= 0 and len(k) > _capn(_targs(wb)[0]):
                 for x in k:
                     _ex2(&cs, x, ew)
@@ -1566,12 +1583,12 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             for i := 0; i < len(k); i += 1:
                 iw := ew
                 if iw == "?" and i > 0:
-                    iw = et                                        # src/tychoc.c:7024-7025
+                    iw = et                                        # src/tychoc.c:7087-7088
                 t := _ex2(&cs, k[i], iw)
                 if t == "void":
                     _cerr(&cs, "an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)")
                 elif i == 0 and ew == "?" and (k[i] is ast.NoneE):
-                    # src/tychoc.c:7023. Only with NO expected element type: an
+                    # src/tychoc.c:7086. Only with NO expected element type: an
                     # annotated `[Option(int)]` destination accepts a leading
                     # None, measured against ./tychoc 2026-09-03.
                     cs.line = l
@@ -1603,13 +1620,13 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 b := _ex(&cs, k[i + 1])
                 if kt == "?":
                     kt = a
-                elif known(a) and not compat(a, kt):     # src/tychoc.c:7007
+                elif known(a) and not compat(a, kt):     # src/tychoc.c:7070
                     cs.line = l
                     _cerr(&cs, "map keys must all have the same type")
                     return "?"
                 if vt == "?":
                     vt = b
-                elif known(b) and not compat(b, vt):     # src/tychoc.c:7009
+                elif known(b) and not compat(b, vt):     # src/tychoc.c:7072
                     cs.line = l
                     _cerr(&cs, "map values must all have the same type")
                     return "?"
@@ -1626,7 +1643,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                     return want
                 if nowant:
                     cs.line = l
-                    _cerr(&cs, "cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)")   # src/tychoc.c:7015
+                    _cerr(&cs, "cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)")   # src/tychoc.c:7078
                 return "?"
             at := "arr(" + _enc(&cs, t[0]) + ")"
             if _is_arr(_base(&cs, want)) and compat(_elem_of(&cs, want), _elem_of(&cs, at)):
@@ -1644,12 +1661,12 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             if len(t) == 0:
                 return "?"
             sel := _enc(&cs, t[0])
-            if not _soa_elem_ok(&cs, sel):                  # src/tychoc.c:3363
+            if not _soa_elem_ok(&cs, sel):                  # src/tychoc.c:3426
                 cs.line = l
                 _cerr(&cs, "soa requires a struct element type, e.g. soa []Point")
             return "soa(" + sel + ")"
         ast.Tuple(l, k):
-            if len(k) < 2:                         # src/tychoc.c:6853 -- `(x,)`
+            if len(k) < 2:                         # src/tychoc.c:6916 -- `(x,)`
                 cs.line = l
                 _cerr(&cs, "a tuple needs at least two elements")
             out := "tup("
@@ -1659,7 +1676,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 if _head(_base(&cs, want)) == "tup" and i < len(ws):
                     w = ws[i]
                 et_ := _ex2(&cs, k[i], w)
-                if et_ == "void":                  # src/tychoc.c:6859
+                if et_ == "void":                  # src/tychoc.c:6922
                     cs.line = l
                     _cerr(&cs, "tuple element " + str(i + 1) + " needs a concrete value")
                 _nest_aff_e(&cs, et_)
@@ -1672,7 +1689,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             if _head(_base(&cs, want)) == "opt":
                 w = _targs(_base(&cs, want))[0]
             it_ := _ex2(&cs, k[0], w)
-            if it_ == "void":                      # src/tychoc.c:6841
+            if it_ == "void":                      # src/tychoc.c:6904
                 cs.line = l
                 _cerr(&cs, "Some(...) needs a concrete value")
             _nest_aff_e(&cs, it_)
@@ -1699,7 +1716,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                     _cerr(&cs, "Result(void, " + _targs(wb)[1] + ") carries no ok value -- write Ok(), not Ok(x)")
                     return want
             ot := _ex2(&cs, k[0], w)
-            if _no_concrete(ot):                   # src/tychoc.c:6849
+            if _no_concrete(ot):                   # src/tychoc.c:6912
                 cs.line = l
                 _cerr(&cs, "Ok(...) needs a concrete value")
             if known(w) and known(ot) and not compat(w, ot):
@@ -1712,7 +1729,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             if _head(wb) == "res":
                 w = _targs(wb)[1]
             et := _ex2(&cs, k[0], w)
-            if _no_concrete(et):                   # src/tychoc.c:6849
+            if _no_concrete(et):                   # src/tychoc.c:6912
                 cs.line = l
                 _cerr(&cs, "Err(...) needs a concrete value")
             if known(w) and known(et) and not compat(w, et):
@@ -1723,8 +1740,8 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             # `task(T)`, not a bare `task`: wait(t) has to know what it yields.
             rt := "void"
             if len(k) > 0:
-                rt = _ex(&cs, k[0])          # src/tychoc.c:6755, resolved first
-                # src/tychoc.c:6760-6771, leg for leg and in ITS order: a direct
+                rt = _ex(&cs, k[0])          # src/tychoc.c:6818, resolved first
+                # src/tychoc.c:6823-6834, leg for leg and in ITS order: a direct
                 # call to a named USER function, not extern, returning a value,
                 # with no inout parameter.
                 cs.line = l
@@ -1743,19 +1760,19 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                             if si < 0 and len(cs.prefix) > 0:
                                 si = _sigidx(&cs, cs.prefix + n2)
                     _: direct = false
-                if not direct:                                       # src/tychoc.c:6801@closures
+                if not direct:                                       # src/tychoc.c:1200@closures
                     _cerr(&cs, "spawn requires a direct call to a named function (closures/constructors cannot be spawned yet)")
-                elif si < 0 or cs.sg[si].builtin:                   # src/tychoc.c:6804@defined
+                elif si < 0 or cs.sg[si].builtin:                   # src/tychoc.c:1232@defined
                     _cerr(&cs, "spawn requires a user-defined function ('" + _spawn_callee(k[0]) + "' is not one)")
-                elif _spawn_extern(&cs, k[0]):                        # src/tychoc.c:6806@extern
+                elif _spawn_extern(&cs, k[0]):                        # src/tychoc.c:2318@extern
                     _cerr(&cs, "cannot spawn an extern (FFI) function")
-                elif rt == "void":                                    # src/tychoc.c:6808@spawned
+                elif rt == "void":                                    # src/tychoc.c:1198@spawned
                     _cerr(&cs, "a spawned function must return a value (wait(t) yields it)")
-                elif _has_inout(cs.sg[si]):                         # src/tychoc.c:6840@inout
+                elif _has_inout(cs.sg[si]):                         # src/tychoc.c:2352@inout
                     _cerr(&cs, "cannot spawn a function with inout parameters (no shared state across threads)")
             return "task(" + rt + ")"
         ast.OrRet(l, b, k):
-            # src/tychoc.c:6873-6889, leg for leg. Every one is guarded on the
+            # src/tychoc.c:6936-6952, leg for leg. Every one is guarded on the
             # types being KNOWN: an unresolved return type is `?` here.
             t := _base(&cs, _ex(&cs, k[0]))
             if len(k) > 1:
@@ -1790,7 +1807,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 _cerr(&cs, "'&' is only valid as the argument to an inout parameter, e.g. f(&x)")
             return _ex(&cs, k[0])
         ast.ChanE(l, t, k):
-            # The capacity is exactly `int` (src/tychoc.c:7558); _exs discards
+            # The capacity is exactly `int` (src/tychoc.c:7621); _exs discards
             # the argument's type, so the check has to read it back here.
             for ce in k:
                 ct := _ex(&cs, ce)
@@ -1804,7 +1821,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 return "chan(?)"
             return "chan(" + _enc(&cs, t[0]) + ")"
         ast.Lambda(l, ps, rt, body):
-            if len(ps) > 8:                                 # src/tychoc.c:6785
+            if len(ps) > 8:                                 # src/tychoc.c:6848
                 cs.line = l
                 _cerr(&cs, "a lambda has at most 8 parameters")
             m := _vmark(&cs)
@@ -1859,7 +1876,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                         else:
                             _cerr(&cs, "a closure cannot capture a handle -- it is freed at the end of its scope")
                         break
-            # src/tychoc.c:6802. The lifted proc takes [captures][params], and
+            # src/tychoc.c:6865. The lifted proc takes [captures][params], and
             # src/tychoc.c@collect_idents dedups by NAME, so count distinct names.
             capn := []string: bool
             for ci := 0; ci < m; ci += 1:
@@ -1879,7 +1896,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
 
 # ---------------------------------------------------------------- operators
 #
-# src/tychoc.c:8192-8484, arm for arm. The LITERAL ADAPTATION rules matter as
+# src/tychoc.c:8255-8547, arm for arm. The LITERAL ADAPTATION rules matter as
 # much as the refusals: an int literal takes a sized/f32/float operand's type,
 # and a variable never widens -- so `f < 0` is legal and `f < n` is not, and a
 # checker that widened both would accept a program src/tychoc.c refuses (which
@@ -2036,7 +2053,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     rt := _ex(&cs, k[1])
     cs.line = ast.line_of(k[0])
     if op == "and" or op == "or":
-        # src/tychoc.c:8216-8220 -- EXACTLY bool on both sides, no adaptation
+        # src/tychoc.c:8279-8283 -- EXACTLY bool on both sides, no adaptation
         # and no newtype: the C compares against T_BOOL, not base_of().
         if (known(lt) and lt != "bool") or (known(rt) and rt != "bool"):
             _cerr(&cs, "`" + op + "` needs bool operands")
@@ -2084,7 +2101,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     if op == "==" or op == "!=":
         if lt != rt:
             _cerr(&cs, "cannot compare " + _show(&cs, lt) + " with " + _show(&cs, rt))
-        elif lt == "void":             # src/tychoc.c:8273 -- void has no values to compare
+        elif lt == "void":             # src/tychoc.c:8336 -- void has no values to compare
             _cerr(&cs, "cannot compare void")
         elif _head(lt) == "fun":
             _cerr(&cs, "functions are not comparable -- closures have no structural equality; compare the values they produce instead")
@@ -2193,7 +2210,7 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
         _cerr(&cs, "arithmetic on two different newtypes: '" + _show(&cs, "@" + cs.tds[li].name) + "' and '" + _show(&cs, "@" + cs.tds[ri].name) + "' are distinct types even though both are over " + _show(&cs, _base(&cs, lt)) + " -- unwrap one with to_under(x), or make both sides the same newtype")
         return "?"
     # A single newtype operand used to return "?" here, which accepted
-    # `Cents(1) + 1` -- src/tychoc.c:8487 falls straight through to the generic
+    # `Cents(1) + 1` -- src/tychoc.c:8550 falls straight through to the generic
     # arithmetic error, and the same-newtype numeric pair already returned above.
     _cerr(&cs, "arithmetic requires two ints or two floats (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ") -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints")
     return lt
@@ -2284,7 +2301,7 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
             # variadic argument. Checking extras as `?` skipped sized/f32 literal
             # range validation (and accepted the wrong scalar type entirely).
             want = cs.sg[si].ptypes[len(cs.sg[si].ptypes) - 1]
-        # src/tychoc.c:6752 -- a variadic call unwraps its spread args before
+        # src/tychoc.c:6815 -- a variadic call unwraps its spread args before
         # resolving them, so a spread in a FIXED parameter slot is a misuse.
         if i < n and (args[i] is ast.Spread):
             cs.line = line
@@ -2325,7 +2342,7 @@ fn _arg_name(a: ast.Expr) -> string:
         ast.Named(l, n, k): return n
         _: return ""
 
-# src/tychoc.c:7549-7563 -- the three rules an all-named struct construction
+# src/tychoc.c:7612-7626 -- the three rules an all-named struct construction
 # must satisfy, in the bootstrap's own order.
 fn _check_named(cs: inout C, ti: int, args: [ast.Expr], line: int):
     nm := cs.tds[ti].name
@@ -2356,7 +2373,7 @@ fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
         for a in args:
             _ex(&cs, a)
         cs.in_arg = keep
-        # src/tychoc.c:7544-7546: once one field is named, every field is.
+        # src/tychoc.c:7607-7609: once one field is named, every field is.
         if _any_named(args) and not _all_named(args):
             cs.line = line
             _cerr(&cs, cs.tds[ti].name + ": cannot mix named and positional fields")
@@ -2494,7 +2511,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         m := _prefix_of(&cs, q) + n
         return _call_named(&cs, l, m, n, args, want)
     # The shape-directed builtins are resolved BEFORE the Sig table, exactly as
-    # src/tychoc.c:7582-7850 sits before its sig_find at src/tychoc.c:8074@sig_find -- a user `fn len`
+    # src/tychoc.c:7645-7913 sits before its sig_find at src/tychoc.c:6071@sig_find -- a user `fn len`
     # in the entry package is registered UNMANGLED, so without this ordering the
     # bare `len(b)` inside core:strings found it and refused a program ./tychoc
     # accepts (tests/warn/pkg/corelib_mute/main.ty).
@@ -2507,10 +2524,10 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         _cerr(&cs, "'" + n + "' has type " + vt + ", not a procedure -- it cannot be called")
         return "?"
     if len(vt) > 0 and _head(_base(&cs, vt)) == "fun":
-        # src/tychoc.c:7454-7464. A local of fn type shadows every top-level
+        # src/tychoc.c:7517-7527. A local of fn type shadows every top-level
         # name, exactly as vars_find runs before sig_find there.
         fps := _targs(_base(&cs, vt))
-        if len(args) != len(fps) - 1:                              # src/tychoc.c:7457
+        if len(args) != len(fps) - 1:                              # src/tychoc.c:7520
             _walk_args(&cs, args)
             cs.line = l
             _cerr(&cs, "'" + n + "' expects " + str(len(fps) - 1) +
@@ -2519,9 +2536,9 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         fkeep := cs.in_arg
         cs.in_arg = true
         for i := 0; i < len(args); i += 1:
-            fat := _ex2(&cs, args[i], fps[i + 1])                  # src/tychoc.c:7460 CHECKS the arg
+            fat := _ex2(&cs, args[i], fps[i + 1])                  # src/tychoc.c:7523 CHECKS the arg
             if known(fat) and known(fps[i + 1]) and not compat(fat, fps[i + 1]):
-                cs.line = l                                        # src/tychoc.c:7462
+                cs.line = l                                        # src/tychoc.c:7525
                 _cerr(&cs, "argument " + str(i + 1) + " to '" + n + "' must be " +
                     _show(&cs, fps[i + 1]))
         cs.in_arg = fkeep
@@ -2535,7 +2552,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
     return _call_builtin(&cs, l, n, args, want)
 
 fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], want: string) -> string:
-    # src/tychoc.c:7540-7542: `f(a: 1)` at anything but a struct is refused
+    # src/tychoc.c:7603-7605: `f(a: 1)` at anything but a struct is refused
     # outright; the mix rule for a struct lives in _check_fields.
     if _any_named(args):
         ti0 := -1
@@ -2559,7 +2576,7 @@ fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], 
         if d.kind == "struct":
             return _check_fields(&cs, cs.tindex[m], args, l)
         if d.kind == "newtype":
-            # src/tychoc.c:7521-7527: one argument, and it must already BE the
+            # src/tychoc.c:7584-7590: one argument, and it must already BE the
             # underlying type -- Cents(1.5) does not truncate on the way in.
             un := "?"
             if len(d.ftypes) > 0:
@@ -2586,7 +2603,7 @@ fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], 
 
 # ---------------------------------------------------------------- builtins
 #
-# The shape-directed half of src/tychoc.c:7582-7850: str/hash/to_*/len/keys/
+# The shape-directed half of src/tychoc.c:7645-7913: str/hash/to_*/len/keys/
 # push/pop/reserve and the map_* family bypass the fixed Sig table because their
 # answer follows the ARGUMENT's type. Everything else falls through to the Sig
 # table, which is where `'print' takes 1 argument(s), got 0` comes from.
@@ -2634,8 +2651,8 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     ats := []string
     keep := cs.in_arg
     cs.in_arg = true
-    # src/tychoc.c:7933@T_PENDING and src/tychoc.c:7933@T_PENDING -- `push(xs, v)` and `map_set(m, k, v)` GROUND a
-    # pending receiver, so its read here is not the ungrounded one src/tychoc.c:6964@inferred refuses.
+    # src/tychoc.c:986@T_PENDING and src/tychoc.c:986@T_PENDING -- `push(xs, v)` and `map_set(m, k, v)` GROUND a
+    # pending receiver, so its read here is not the ungrounded one src/tychoc.c:2862@inferred refuses.
     # Both C sites ground before resolving args[0]; the composed type is only
     # available after the arg walk here, so the read is EXEMPTED instead and the
     # grounding runs below, off `ats` -- walking args[1] twice would double every
@@ -2831,7 +2848,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         return "void"
     # The four concurrency builtins used to fall through silently on a wrong
     # arity or a non-channel argument, leaving codegen to die with `unsupported
-    # call` -- src/tychoc.c:7543-7585 refuses each here, so this does too.
+    # call` -- src/tychoc.c:7606-7648 refuses each here, so this does too.
     if n == "close":
         if not _arity(&cs, n, args, 1, "close takes one channel or handle"):
             return "void"
@@ -2864,7 +2881,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
             return "?"
         if _head(b0) == "task":
             return _targs(b0)[0]
-        if known(b0):                                   # src/tychoc.c:7545
+        if known(b0):                                   # src/tychoc.c:7608
             _cerr(&cs, "wait(t) takes a task from spawn, got " + _show(&cs, a0))
         return "?"
     if n == "recv":
@@ -2885,7 +2902,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
 
 # ---------------------------------------------------------------- match
 #
-# src/tychoc.c:9491-9691. Exhaustiveness is the half a verdict differential
+# src/tychoc.c:9554-9754. Exhaustiveness is the half a verdict differential
 # cannot get for free: a match that covers three of four variants COMPILES under
 # a checker that forgot to count, and the program then falls off the end.
 
@@ -3032,7 +3049,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                         _cerr(&cs, "duplicate " + no + " arm")
                     nested = _nested_of(&cs, a, _targs(st)[1])
                 else:
-                    # None is nullary: src/tychoc.c:9599@duplicate and src/tychoc.c:9602@nbinds word it apart
+                    # None is nullary: src/tychoc.c:4285@duplicate and src/tychoc.c:4049@nbinds word it apart
                     # from the Err side, which does carry a payload.
                     if seen1:
                         _cerr(&cs, "duplicate None arm")
@@ -3099,7 +3116,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                 pay := _variant_payload(&cs, st, a.name)
                 if found and len(a.binds) != len(pay) and len(a.subbinds) == 0:
                     _cerr(&cs, a.name + " binds " + str(len(pay)) + " value(s), got " + str(len(a.binds)))
-                # src/tychoc.c:9577 -- the sibling of `_pay_shape`'s nested-pattern
+                # src/tychoc.c:9640 -- the sibling of `_pay_shape`'s nested-pattern
                 # arm. A nested pattern is an Option/Result payload spelling only;
                 # this arm bound one silently.
                 if found and len(a.sub) > 0:
@@ -3251,7 +3268,7 @@ fn _tblock(cs: inout C, body: [ast.Stmt]):
         _copylive_stmt(&cs, body, _ix9)
         _shut_mark(&cs, s)
         _ix9 += 1
-    # src/tychoc.c:9884 -- a pending decl must ground in its OWN block.
+    # src/tychoc.c:9947 -- a pending decl must ground in its OWN block.
     for pi := pm; pi < cs.npend; pi += 1:
         if not cs.pend[pi].done:
             cs.line = cs.pend[pi].line
@@ -3310,7 +3327,7 @@ fn _tail_rules(cs: inout C, m: int, l: int, name: string) -> bool:
     return false
 
 # The type an if/match VALUE block produces, and the rule that its branches must
-# agree (src/tychoc.c:9318). The parser rewrote each tail into a Decl/Assign of
+# agree (src/tychoc.c:9381). The parser rewrote each tail into a Decl/Assign of
 # the same target, so the branch types are read back off those tails.
 fn _value_type(cs: inout C, body: [ast.Stmt], want: string) -> string:
     if len(body) == 0:
@@ -3398,7 +3415,7 @@ fn _is_place(cs: inout C, e: ast.Expr) -> bool:
 
 # src/tychoc.c@is_lvalue's E_INDEX arm, which `_is_place` above deliberately is
 # NOT: that one mirrors the STRUCTURAL root walk C spells inline (a root that is
-# not an identifier), and the inout rule at src/tychoc.c:8083 wants exactly that.
+# not an identifier), and the inout rule at src/tychoc.c:8146 wants exactly that.
 # This one is TYPE-AWARE -- an index step is a mutable interior only over a
 # composite array, an soa or a map, because src/tychoc.c@arr_of sends
 # [int]/[string]/[float] to the scalar array types, which are not ARRC. The raw
@@ -3433,8 +3450,8 @@ fn _root_name(e: ast.Expr) -> string:
         _: return ""
     return ""
 
-# The mutating builtins' root rule (src/tychoc.c:7931, src/tychoc.c:7966,
-# src/tychoc.c:7989 and src/tychoc.c:9796): walk Field/Index ONLY to a bare
+# The mutating builtins' root rule (src/tychoc.c:7994, src/tychoc.c:8029,
+# src/tychoc.c:8052 and src/tychoc.c:9859): walk Field/Index ONLY to a bare
 # Name. A call stays a call, so a subscript projection is refused even though
 # `_is_place` accepts it as a place -- the reference inlines subscripts too
 # late for these checks to see through, and the pending-grounding and owner
@@ -3449,7 +3466,7 @@ fn _root_ident(e: ast.Expr) -> string:
         _: return ""
     return ""
 
-# src/tychoc.c:9784 tests `s->expr->lhs == s->target` by POINTER, which the
+# src/tychoc.c:9847 tests `s->expr->lhs == s->target` by POINTER, which the
 # desugar at compiler/parse/parse.ty:1448 guarantees for `place op= v`. There is
 # no pointer identity here, so the two places are compared structurally instead
 # -- a literal or a name key, which is every key the desugar can reproduce.
@@ -3470,7 +3487,7 @@ fn _same_place(a: ast.Expr, b: ast.Expr) -> bool:
         _: return false
     return false
 
-# src/tychoc.c:9783 -- `m[k] op= v` reads and writes the value slot in place, so
+# src/tychoc.c:9846 -- `m[k] op= v` reads and writes the value slot in place, so
 # it lowers to a plain C operator and is restricted to the scalar value types.
 fn _map_place(cs: inout C, place: ast.Expr) -> bool:
     match place:
@@ -3495,7 +3512,7 @@ fn _map_compound(cs: inout C, l: int, place: ast.Expr, val: ast.Expr, pt: string
                 _cerr(&cs, "compound assignment `m[k] op= ...` is only supported for int/float/char " +
                     "map values; for a composite value use push(m[k], ...) or `m[k] = <expr>`")
                 return
-            # src/tychoc.c:9787 -- the read-modify-write is on the value slot, so
+            # src/tychoc.c:9850 -- the read-modify-write is on the value slot, so
             # the right side must already BE the value type; this runs ahead of
             # the binop's own arithmetic rule, as it does in the bootstrap.
             rt := _ex(&cs, kv[1])
@@ -3544,8 +3561,8 @@ fn _place_ty(cs: inout C, e: ast.Expr) -> string:
             rt := _base(&cs, _ex(&cs, k[0]))
             h := _head(rt)
             cs.line = l
-            # src/tychoc.c:9838@root (the root walk), src/tychoc.c:9841@is_lvalue,
-            # then src/tychoc.c:9828@immutable
+            # src/tychoc.c:5024@root (the root walk), src/tychoc.c:6594@is_lvalue,
+            # then src/tychoc.c:976@immutable
             # (the container type) -- three rules in that order, where this arm
             # used to test the container first and fold the other two together.
             if not _is_place(&cs, k[0]):
@@ -3654,7 +3671,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 _cerr(&cs, "cannot bind a void value")
                 t = "?"
             if len(vb) > 0 and _head(t) == "task":
-                _cerr(&cs, "a value if/match cannot produce a task handle")   # src/tychoc.c:9327
+                _cerr(&cs, "a value if/match cannot produce a task handle")   # src/tychoc.c:9390
             if len(ty) == 1:
                 t = want
             _tnote(&cs, "d:" + t)
@@ -3711,7 +3728,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
         ast.PlaceSet(l, k):
             match k[0]:
                 ast.Index(lx, kx):
-                    # src/tychoc.c:9796 -- the root walk is Field/Index only, so
+                    # src/tychoc.c:9859 -- the root walk is Field/Index only, so
                     # a subscript call is refused even though `_is_place`
                     # accepts it. Gated on `_is_place` (pure) so an
                     # already-failing target keeps its single diagnostic.
@@ -3722,7 +3739,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                         _cerr(&cs, "can only index-assign an array or map variable or field")
                 _: pass
             pt := _place_ty(&cs, k[0])
-            _map_compound(&cs, l, k[0], k[1], pt)   # src/tychoc.c:9783
+            _map_compound(&cs, l, k[0], k[1], pt)   # src/tychoc.c:9846
             vt := _ex2(&cs, k[1], pt)
             cs.line = l
             if not compat(pt, vt):
@@ -3740,7 +3757,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             if len(k) == 1:
                 t := _ex2(&cs, k[0], cs.ret)
                 cs.line = l
-                # src/tychoc.c:9466 runs AHEAD of the type comparison, so a proc
+                # src/tychoc.c:9529 runs AHEAD of the type comparison, so a proc
                 # with no return type is told it returns nothing rather than
                 # being handed a `returning int but proc returns void`.
                 if cs.ret == "void":
@@ -3750,7 +3767,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             elif known(cs.ret) and cs.ret != "void":
                 cs.line = l
                 _cerr(&cs, "missing return value (proc returns " + cs.ret + ")")
-        # src/tychoc.c:14299-14302. cs.loopd was already maintained by every loop
+        # src/tychoc.c:16992-16995. cs.loopd was already maintained by every loop
         # arm below and read by nothing.
         ast.BreakS(l):
             if cs.loopd == 0:
@@ -3798,7 +3815,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             et := "?"
             h := _head(ct)
             if par:
-                # src/tychoc.c:8980 -- the parallel form lifts the body over the
+                # src/tychoc.c:9043 -- the parallel form lifts the body over the
                 # source, so its set is narrower than the sequential one: an
                 # array, a string or a channel, and NOT bytes, a map or a soa.
                 if h == "chan":
@@ -3819,7 +3836,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 et = _targs(ct)[0]
             elif known(ct):
                 # The sequential form desugars to `len(...)`, so that is the
-                # rule that owns the refusal (src/tychoc.c:7833).
+                # rule that owns the refusal (src/tychoc.c:7896).
                 _cerr(&cs, "len(...) takes an array, a string, bytes, a map, or a soa")
             m := _vmark(&cs)
             _tnote(&cs, "i:" + et)
@@ -3828,7 +3845,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             _vrestore(&cs, m)
             cs.loopd = cs.loopd - 1
         ast.ForRange(l, v, bounds, b):
-            # src/tychoc.c:8983 checks the range BEFORE scanning the body, and
+            # src/tychoc.c:9046 checks the range BEFORE scanning the body, and
             # takes the type as written: a sized int and a newtype over int are
             # both refused, so this compares the raw type, not `_base`.
             for x in bounds:
@@ -3884,12 +3901,12 @@ fn _assign_check(cs: inout C, name: string, t: string):
     vt := _vtype(&cs, name)
     if len(vt) == 0:
         return
-    # src/tychoc.c:6664@declared and src/tychoc.c:6664@None -- a bare `[]` or `None` decl is PENDING and
+    # src/tychoc.c:1843@declared and src/tychoc.c:1350@None -- a bare `[]` or `None` decl is PENDING and
     # its first typed use grounds it; only an array/map/soa grounds the first,
     # only an Option the second. tcheck types the bare `[]` "?" and the bare
     # `None` "opt(?)", so without these two the family is accepted (`[]`) or
     # refused by the generic assign rule under other wording (`None`).
-    if _pend_find(&cs, name) >= 0:                 # src/tychoc.c:9454
+    if _pend_find(&cs, name) >= 0:                 # src/tychoc.c:9517
         _pend_ground(&cs, name, t, cs.line)
         return
     if vt == "opt(?)" and known(t) and _head(t) != "opt":
@@ -4046,15 +4063,15 @@ fn _fill_decls(cs: inout C, p: Program):
 # src/tychoc.c@check_finite_types -- a THREE-COLOUR DFS over the emit type
 # graph, rooted at every struct in declaration order. A type that contains
 # itself by value has no size; an array or a map breaks the cycle, a tuple, an
-# inline array, an Option and a Result do not (src/tychoc.c:15022@TychoOpt emits
-# `struct TychoOpt%d_ { char has; T val; }` and src/tychoc.c:15024@TychoRes the Result twin).
+# inline array, an Option and a Result do not (src/tychoc.c:1351@TychoOpt emits
+# `struct TychoOpt%d_ { char has; T val; }` and src/tychoc.c:1374@TychoRes the Result twin).
 # Which arm fires is decided by which GREY node the walk re-enters, so the
 # Option, Result or tuple that closes a cycle names ITSELF
-# (src/tychoc.c:15012@Option, src/tychoc.c:15023@Result, src/tychoc.c:15025@tuple). Walking struct
+# (src/tychoc.c:1350@Option, src/tychoc.c:987@Result, src/tychoc.c:1236@tuple). Walking struct
 # DECLARATIONS alone, as this did until 2026-09-04, could only ever reach the
-# struct arm (src/tychoc.c:15089@infinite).
+# struct arm (src/tychoc.c:4518@infinite).
 # The line reported is the declaration whose fields were being walked when the
-# cycle closed -- g_emit_line, saved and restored per struct at src/tychoc.c:14721@save / src/tychoc.c:14721@save.
+# cycle closed -- g_emit_line, saved and restored per struct at src/tychoc.c:3140@save / src/tychoc.c:3140@save.
 fn _fin_dfs(cs: inout C, t0: string, ln: int, fl: string, col: inout [string: int]) -> bool:
     t := _base(&cs, t0)
     h := _head(t)
@@ -4205,7 +4222,7 @@ fn check_on2(p: Program, syms: bool, tgt: string) -> C:
             cs.errbase = -1
             _vrestore(&cs, m)
             cs.ret = "?"
-    # `main`: src/tychoc.c:10450@parameters and src/tychoc.c:10453@Result, a whole-program rule like `no 'main'`.
+    # `main`: src/tychoc.c:2515@parameters and src/tychoc.c:987@Result, a whole-program rule like `no 'main'`.
     mi := _sigidx(&cs, "main")
     if mi >= 0:
         cs.file = cs.sg[mi].file

@@ -186,11 +186,12 @@ in its text report with a golden update.
 
 > **Release scope:** 0.8.9 stays open until **O1–O7** are all in it. O1
 > (immortal allocation + literal lifetime elision), O2 (read-only
-> pass-by-pointer in the reference compiler), O3 (last-use moves) and O4
-> (borrowed slices) are done, with their before/after benchmarks. The packaged
-> compiler already had O2's descriptor form; O2 closes the bootstrap gap.
-> O5–O7 are next. Nothing in this section is claimed as shipped merely because
-> it is written down.
+> pass-by-pointer in the reference compiler), O3 (last-use moves), O4
+> (borrowed slices), O5 (destination passing), O6 (conservative map CoW /
+> path copying) and O7 (loop-grown array and map-literal presizing) are done,
+> with their before/after benchmarks. The packaged compiler already had O2's
+> descriptor form; O2 closes the bootstrap gap. Nothing in this section is
+> claimed as shipped merely because it is written down.
 
 The goal is to expand the domains where Tycho competes by exploiting what value
 semantics already guarantees — uniqueness, read-only parameters, and the absence
@@ -311,44 +312,89 @@ copy, and the parser output/goldens are byte-identical. **All met.**
 
 ### O5 — Destination passing / automatic `inout`
 
-**Status: planned; the largest phase.**
+**Status: DONE 2026-10-20 — shipped in 0.8.9 in both compilers.** The numbers
+are in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
-For `t = f(t, ...)` where `t` is uniquely owned and dead after the call,
-specialize `f` with a destination/`inout` convention. This turns the
-rebuild-per-operation wall (§4c) into in-place updates for ASTs, editors,
-caches and server state. The existing `sink` and `inout` place machinery
-(`&b.asks`, `&g.items(i)`) is the prototype; the missing piece is a sound
-uniqueness proof and an interprocedural reuse summary.
+For `t = f(t, ...)` where `t` is uniquely owned and dead after the call, both
+compilers now generate a variant of `f` whose corresponding parameter is
+OWNED. The variant may move a field or match payload of the old value into the
+result instead of deep-copying it, and a recursive call that consumes the
+changed child selects the same variant. The move is legal only inside a
+`return` (terminal, so no later read can observe the old value), and the result
+is built in the assignment target's arena, so the moved buffer and the result
+share a lifetime. `sink`/`inout` were the prototype; the uniqueness proof is
+the self-rebuild gate already used by O3 — `t` is read once in the RHS and
+immediately rebound — and the interprocedural summary is the variant itself.
+`TYCHOC_NO_DEST_PASS=1` is the control.
 
-**Before/after fixture:** `t = insert(t, k)` over a tree, and a long-lived
-editor-buffer update. **Done when:** unique calls mutate in place, shared calls
-still copy, and the fixture shows the path-copy/allocation drop with identical
-output.
+On `bench/opt/treeupdate` (12,000 inserts): `tychoc1` **2,252,644 KB / 500 ms →
+8,908 KB / 3 ms**; `./tychoc` **2,252,484 KB / 493 ms → 9,112 KB / 3 ms**. On
+`bench/opt/editorupdate` (10,000 edits over a 16,384-leaf rope): `tychoc1`
+**8,966,776 KB / 1,800 ms → 7,584 KB / 3 ms**; `./tychoc` **8,966,596 KB /
+1,783 ms → 7,748 KB / 4 ms**. Output is byte-identical in every build.
+
+**Done when:** unique calls mutate in place, shared calls still copy, and the
+fixture shows the path-copy/allocation drop with identical output. **All met.**
+`tests/dest_pass.ty` pins the unique, shared and snapshot cases.
 
 ### O6 — Conservative shared-bit CoW / path copying
 
-**Status: research; only if O1–O5 leave a measured gap.**
+**Status: DONE 2026-10-20 — shipped in 0.8.9 in both compilers, shape-gated.**
+The numbers are in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md) and
+[`bench/trie/RESULTS.md`](bench/trie/RESULTS.md).
 
-A single conservative “shared” bit per heap allocation would let `b := a` share
-until a write, and nested trees share untouched subtrees (path copying). It is
-not reference counting: a stale bit can over-copy, never under-copy. It is also
-the one phase that conflicts with the project’s “no CoW/RC” non-goal as a
-*model*; it is admissible only as a shape-gated implementation optimization.
-The before/after fixture is `bench/trie` + a path-copying update; the gate must
-show a real RSS/time gain and no mutation regression before this is considered.
+A same-arena `b := a` of a composite map, or of a struct whose mutable fields
+are maps, shares the map and sets a conservative shared bit. The first write
+through either copy (`put`, `del`, `reserve`, `slotptr`) copies the map's
+arrays into the destination arena, clears the bit, and marks every copied
+value's nested maps shared; a composite read from a shared map returns a
+shallow value and marks the source. A stale bit can only over-copy, never
+under-copy — there is no reference count. The bit is the **sign of the map's
+`ecap`**, so no descriptor grew. Arrays have no shared bit and still deep-copy;
+scalar maps and non-shareable aggregates keep the old path, so this is an
+implementation optimization, not a change to the value model or the
+`surface.lock`. `TYCHOC_NO_COW=1` is the control.
 
-### O7 — SROA and bounds-check elimination
+On `bench/trie/path/main.ty` (2,000-word persistent trie, output
+`5954 1981`): `tychoc1` **1,673,340 KB / 473 ms → 12,640 KB / 4 ms**;
+`./tychoc` **1,673,124 KB / 482 ms → 12,448 KB / 5 ms**. The destructive
+`bench/trie` row is unchanged (58.6 MB in the same run, against 58.9 MB
+recorded before O6), and `tests/cow_maps.ty` pins snapshots, nested maps,
+`delete`, string values and missing-key defaults.
 
-**Status: planned; orthogonal to value semantics.**
+**Gate met:** a real peak-RSS and wall-time gain on the path-copying fixture,
+identical output, and no mutation regression in the existing map/inout tests,
+fuzz lanes or sanitizers.
 
-Non-escaping small arrays/maps/structs can be scalar-replaced or stack-allocated
-instead of arena-allocated, and monotone loop indices can drop redundant bounds
-checks. These are not copy-elision phases, but they address the measured
-`array-pipeline` gap that the model itself does not cause.
+### O7 — Loop-grown array and map-literal presizing (SROA evaluated)
 
-**Before/after fixture:** `bench/array-pipeline` and a tight small-map loop.
-**Done when:** the checks/allocs disappear only where proven redundant, and the
-fixture improves without changing any golden.
+**Status: DONE 2026-10-20 — shipped in 0.8.9 in both compilers.** The numbers
+are in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
+
+`ys := []T` immediately followed by a counted loop that pushes into `ys` is
+presized to the loop's proven upper bound, eliminating the geometric growth
+copies. The proof is the same one bounds-check elision uses; over-reserving is
+safe because `reserve` only grows. The reference compiler now also presizes map
+literals to their pair count, matching `tychoc1`. Controls:
+`TYCHOC_NO_PRESIZE=1` and `TYCHOC_NO_MAP_PRESIZE=1`.
+
+On `bench/prongB/arr_pipeline.ty` (200 passes over a 100,000-element array):
+`tychoc1` **6,544 KB / 30 ms → 4,280 KB / 24 ms**; `./tychoc` **6,496 KB /
+26 ms → 4,300 KB / 20 ms**. On `bench/opt/smallmap/main.ty` (a six-entry map
+literal rebuilt 200,000 times), `./tychoc` **10 ms → 6 ms**; `tychoc1` was
+already presized.
+
+**Bounds and SROA, measured, not assumed.** The existing monotone-index elision
+already removes the checks in the fixture's loops; a `n := len(A)`-bound probe
+measured 15 vs 16 ms at four million accesses, so no new shape was added. Fixed
+arrays and structs are already inline; a small dynamic array in loop scratch
+measured within noise of the inline fixed array, so there is no non-escaping
+small-value gap to scalar-replace. A small-map SROA would need a second map
+representation, which the demand gate does not justify.
+
+**Done when:** the allocations disappear only where the loop bound proves them
+redundant, and the fixture improves without changing any golden. **All met**;
+`tests/presize_loop.ty` pins the shapes and outputs.
 
 ## What 1.0 requires
 

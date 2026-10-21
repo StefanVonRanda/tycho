@@ -1,6 +1,6 @@
 # 05-generics.md:20: 16 type parameters per generic -- structs included.
-# src/tychoc.c:5385@struct. 17 SLOTS here (one repeated name, so the distinct-name cap
-# at src/tychoc.c:2725@g_ncur_typarams is not what fires).
+# src/tychoc.c:164@struct. 17 SLOTS here (one repeated name, so the distinct-name cap
+# at src/tychoc.c:2731@g_ncur_typarams is not what fires).
 # expect: too many struct type parameters (max 16)
 struct Box($T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T, $T):
     f: $T

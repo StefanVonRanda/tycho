@@ -1,0 +1,6 @@
+gfx: video=dummy renderer=software
+gfx: audio=dummy rate=8000 channels=1
+window=ok
+tex=0
+frame=0
+audio=ok

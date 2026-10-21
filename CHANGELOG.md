@@ -51,6 +51,77 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - `tycho-dupe` (`tools/tycho-dupe`) is the duplicate-finder probe, with
   `make dupe-check` and `FRICTION-OUTSIDE.md`.
 
+### FFI
+
+- **Plain scalar-field structs can be `inout` out-parameters.** A non-packed,
+  non-aligned struct whose fields are numeric scalars now crosses as a normal
+  `S_Name *`; the C function fills it in place and Tycho reads it back by value.
+  Fixed-width fields (`i32`, `u8`, `f32`) match C widths. Strings, arrays, maps,
+  handles, packed/align structs and non-POD composites remain rejected; use
+  `--shim` for those. `tests/ffi` covers the round trip and the rejection of a
+  string-field and a packed struct.
+- **POD structs by value/return, and `[POD]` parameters.** The same
+  non-packed scalar-field struct may cross by value and as an extern return; a
+  dynamic array of one crosses as `(const S_Name *, len)` and is borrowed for the
+  call. This covers SDL_Rect/SDL_FRect/Vector2-style APIs without a shim for the
+  values themselves. `tests/ffi` checks an added struct, a returned struct and a
+  `[struct]` sum; non-POD and packed structs stay rejected. `examples/gfx` now
+  passes `SDL_FRect` and `SDL_Rect` by value and a `[FVec]` (`SDL_FPoint`
+  layout) array to `SDL_RenderLines`, so the windowed Snake exercises the real
+  SDL struct layouts on the GPU path. C unions stay non-crossable by design:
+  `examples/gfx` decodes `SDL_Event` into a tagged POD `Event` in the shim.
+- **The gfx example now has stream audio.** Tycho generates signed-16-bit PCM
+  into `bytes` and queues it through the SDL audio stream; no callback crosses
+  the boundary. The lane uses `SDL_AUDIODRIVER=dummy` for a silent, deterministic
+  test, while a normal run opens the default playback device.
+- **The gfx example now has a texture cache and asset manifest.**
+  `assets/manifest.json` declares the textures; Tycho parses it with
+  `core:json`, decodes each PNG with `core:image`, uploads SDL textures, and
+  fills a `[string: int]` ID cache. One scoped `TexSet` handle owns the whole
+  set; `close(texset)` destroys every texture together. This avoids putting
+  individual typed handles into collections, which is still unsupported.
+- **The gfx example now draws its own text.** `assets/font.png` is a 16×6 glyph
+  atlas decoded by `core:image` and uploaded as an SDL texture; each glyph is
+  drawn with its own source/destination `FRect`. `SCORE n` and `GAME OVER` need
+  no SDL_ttf or external font runtime.
+- **The gfx layer is now `core:gfx`.** `corelib/gfx` owns the `Window`, `Audio`
+  and `TexSet` handles, events, framebuffer/text helpers, manifest loading and
+  snapshots; its `gfx_shim.c` is auto-linked. `examples/gfx/pong` is the second
+  caller, using the same package alongside Snake. `present` is now parameterless;
+  overlays use the separate `draw_lines` call, so a demo-specific clip/point
+  overlay is no longer part of the present API. `default_controls`/`action`
+  centralize key-to-action mapping, and `text_width`/`draw_text_centered` keep
+  text layout in the package instead of in each game. `Clock`/`clock_start`/
+  `clock_advance`/`clock_tick` add fixed-step simulation with a catch-up cap;
+  both games use it instead of frame counts. Value `Sprite`/`Anim` types plus
+  `draw_sprite`/`anim_frame`/`draw_anim` add sprite-sheet animation; Snake uses
+  a four-frame apple sheet and Pong a four-frame ball sheet. Value `Mixer` plus
+  `mixer`/`add`/`finish`/`play_mix` mix overlapping PCM in Tycho; both games use
+  a two-note score jingle, still with no audio callback. `repeat`/`play_loop`
+  queue a finite number of PCM repetitions for music; the caller re-queues when
+  it wants more. Snake is now a complete small game loop: title menu, three
+  speeds, pause, restart, persistent high score, and resize letterboxing through
+  the value `View` transform; `package.sh` builds a runnable directory.
+
+### Fixed
+
+- **`core:image` no longer retains a handle header per decode.** The previous
+  guard kept a 40-byte DEAD-sentinel header for every decoded image so a second
+  free could be named. The shim now uses a monotonically numbered live-set
+  handle, frees the header with the pixels, and still rejects a stale handle
+  before reading freed memory. Snake and Pong runs under Valgrind and
+  LeakSanitizer now have no definite or indirect leaks.
+- **O6 no longer marks scalar maps shared on a read.** The first cut emitted
+  `get_share` for `[int:int]` reads inside an `inout` helper. The read set the
+  map's shared bit, so the next write copied the whole map; `bench/lru` grew
+  from ~20 MB to 121 GB and OOM-killed the host. A scalar/string value has no
+  nested mutable part to protect, so the shallow-read path is now gated on the
+  value having a share helper. LRU is back to **20.4 MB / 139 ms** (control
+  20.9 MB), and the persistent trie still measures **12.4 MB / 4 ms** against
+  **1.63 GB / 468 ms** for its copying control. `tests/cow_scalar_share.sh`
+  asserts neither compiler emits `get_share` for the scalar-map shape;
+  `bench/lru/run.sh` now fails above 256 MB instead of letting the host OOM.
+
 ### Compiler optimizations
 
 - **O1 shipped: immortal allocation + literal lifetime elision.** `TYCHO_LIT`
@@ -92,10 +163,51 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   copy path. On 100 slices of a 12.8 MB string: **33 ms / 42.9 MB → 7 ms /
   30.6 MB** in `tychoc1`, and **32 ms / 43.0 MB → 6 ms / 30.7 MB** in
   `./tychoc`. `tests/pkg/slice_view` covers both paths.
+- **O5: destination passing for `t = f(t, ...)`.** When `t` is read once in
+  the RHS and immediately rebound, both compilers generate a variant of `f`
+  whose matching parameter is OWNED. The variant may move a field or match
+  payload of the old value into the result instead of deep-copying it, and a
+  recursive call that consumes the changed child selects the same variant.
+  Moves are legal only inside a `return`, and the result is built in the
+  assignment target's arena, so the moved buffer and the result share a
+  lifetime. `TYCHOC_NO_DEST_PASS=1` is the control; a call whose argument is
+  still live, or whose result goes anywhere else, keeps the original function
+  and copies. On `bench/opt/treeupdate` (12,000 inserts): `tychoc1`
+  **2,252,644 KB / 500 ms → 8,908 KB / 3 ms**, `./tychoc` **2,252,484 KB /
+  493 ms → 9,112 KB / 3 ms**. On `bench/opt/editorupdate` (10,000 edits over a
+  16,384-leaf rope): `tychoc1` **8,966,776 KB / 1,800 ms → 7,584 KB / 3 ms**,
+  `./tychoc` **8,966,596 KB / 1,783 ms → 7,748 KB / 4 ms**. Byte-identical
+  output; `tests/dest_pass.ty` covers the unique, shared and snapshot cases.
+- **O6: conservative shared-bit CoW / path copying.** A same-arena `b := a` of
+  a composite map, or of a struct whose mutable fields are maps, now shares the
+  map and sets a conservative shared bit; the first write through either copy
+  duplicates the map's arrays and marks nested maps shared. The bit is the sign
+  of the map's `ecap`, so no descriptor grew, and a stale bit can only
+  over-copy. Arrays, scalar maps and non-shareable aggregates keep the old
+  deep-copy path; this is an implementation optimization, not a value-model
+  change. `TYCHOC_NO_COW=1` is the control. On `bench/trie/path/main.ty`
+  (2,000-word persistent trie, output `5954 1981`): `tychoc1`
+  **1,673,340 KB / 473 ms → 12,640 KB / 4 ms**, `./tychoc` **1,673,124 KB /
+  482 ms → 12,448 KB / 5 ms**. The destructive `bench/trie` row is unchanged
+  (58.6 MB vs 58.9 MB before O6); `tests/cow_maps.ty` pins snapshots, nested
+  maps, `delete`, string values and missing-key defaults.
+- **O7: loop-grown array and map-literal presizing.** A fresh empty dynamic
+  array immediately followed by a counted loop that pushes into it is presized
+  to the loop's proven upper bound, removing the geometric growth copies;
+  `TYCHOC_NO_PRESIZE=1` is the control. The reference compiler now also presizes
+  map literals to their pair count (`TYCHOC_NO_MAP_PRESIZE=1`), matching
+  `tychoc1`. On `bench/prongB/arr_pipeline.ty`: `tychoc1` **6,544 KB / 30 ms →
+  4,280 KB / 24 ms**, `./tychoc` **6,496 KB / 26 ms → 4,300 KB / 20 ms**. On the
+  six-entry map literal in `bench/opt/smallmap/main.ty`, `./tychoc` **10 ms →
+  6 ms**. Bounds elision and SROA were measured: the existing elision already
+  covers the fixture's loops, fixed arrays/structs are already inline, and a
+  small dynamic array in loop scratch measured within noise of the inline form,
+  so no second representation was added. `tests/presize_loop.ty` pins both
+  shapes.
 - `ROADMAP.md` now carries O1–O7 for widening the domain without adding
   references: O1 above, read-only pointer parameters, last-use moves, borrowed
-  string/bytes slices, destination passing, conservative CoW, and SROA/bounds
-  elimination. O1–O4 are in 0.8.9; O5–O7 are next.
+  string/bytes slices, destination passing, conservative CoW, and
+  allocation/bounds work. All seven are in 0.8.9.
 
 ## [0.8.7] — 2026-10-18
 

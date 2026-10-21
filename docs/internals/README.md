@@ -15,6 +15,7 @@ measurements, and they assume you already know the codebase.
 - [`design-concurrency.md`](design-concurrency.md) — concurrency runtime, channel core, and measurement.
 - [`design-ffi.md`](design-ffi.md) — FFI ownership, prototypes, and coverage.
 - [`design-corelib.md`](design-corelib.md) — corelib handle guards, path layering, and shim conventions.
+- [`design-gfx.md`](design-gfx.md) — `core:gfx`'s values-and-handles-only boundary, ownership and thread rules.
 - [`design-subscripts.md`](design-subscripts.md) — subscript lowering and rules.
 - [`design-enums.md`](design-enums.md) — enum payloads and error operators.
 - [`design-functions.md`](design-functions.md) — closure capture and `sink` adoption.

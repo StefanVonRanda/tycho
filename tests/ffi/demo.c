@@ -74,6 +74,30 @@ const char *ffi_get(int64_t key) { return key > 0 ? "hit" : 0; }
 int64_t ffi_mk(int64_t id, void **out) { if (id <= 0) { *out = 0; return -1; } slot = (int)id; *out = &slot; return 0; }
 void ffi_dbl(int64_t a, int64_t *out) { *out = a * 2; }
 
+/* FFI R4a: a plain POD struct as an `inout` out-param. The fields use fixed-width
+ * C types; Tycho's i32 fields emit C int, so the layouts match. */
+typedef struct { int32_t x, y, w, h; } FRect;
+int64_t ffi_rect_bump(FRect *r, int64_t dx, int64_t dy) {
+    if (!r) return -1;
+    r->x += (int32_t)dx;
+    r->y += (int32_t)dy;
+    return (int64_t)r->x + r->y + r->w + r->h;
+}
+
+/* FFI R4b: POD structs by value/return and a [POD] parameter. The C ABI is the
+ * generated C struct's ABI; the shim's fields must match the Tycho layout. */
+typedef struct { int32_t x, y; } FVec;
+FVec ffi_vec_add(FVec a, FVec b) {
+    FVec r = { a.x + b.x, a.y + b.y };
+    return r;
+}
+int64_t ffi_vec_sum(FVec v) { return (int64_t)v.x + v.y; }
+int64_t ffi_vec_arr_sum(const FVec *v, int64_t n) {
+    int64_t s = 0;
+    for (int64_t i = 0; i < n; i++) s += (int64_t)v[i].x + v[i].y;
+    return s;
+}
+
 /* Sized return / to_ptr coverage. ffi_neg returns a negative C int and is
  * declared `-> i32`, so the emitted prototype matches exactly. ffi_ptrval echoes
  * a pointer's integer value, so to_ptr(-1) (a SQLITE_TRANSIENT-style sentinel)

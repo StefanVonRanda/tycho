@@ -17,9 +17,9 @@ how you represent data, and the shapes it rewards are not always the ones you'd 
 The intended trade: no manual `malloc`/`free` in ordinary Tycho code, independent
 values and no collector pauses; the price is the table above. These are design
 properties, not proof that the compiler/runtime has no memory-safety bugs or
-that execution has no latency spikes. All figures measured on one machine (AMD Ryzen 7 7735HS,
-Debian x86-64); where a workload's shape fights the model even after the right representation,
-the note says so and names a different tool.
+that execution has no latency spikes. All figures measured on one machine (AMD Strix Halo /
+Ryzen AI MAX+ 395, Fedora Linux 44 x86-64); where a workload's shape fights the model even
+after the right representation, the note says so and names a different tool.
 
 **If you read one section, read §2.** §1 is the better introduction to *why* the model
 behaves as it does, but §2 — rebuilding a long-lived value on every edit pays a full copy each
@@ -152,7 +152,7 @@ the OS — and eligible dead buffers can be reused incrementally. At supported
 reassignment sites the compiler checks that a buffer is dead and uniquely owned,
 then hands it back to
 the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted by the compiler at
-`src/tychoc.c:13723@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
+`src/tychoc.c:2013@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
 of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
 static value semantics. Supported churn patterns can reuse buffers rather than
 retain every intermediate; this is not a general bound for all transient churn.
@@ -181,7 +181,7 @@ exactly how far it reaches before concluding that a workload is doomed. There ar
 several supported paths:
 
 - **Loop-carried reassignment of a named array local** — `a = f(a)` inside a loop
-  (`src/tychoc.c:13711@do_recycle`). Narrow by design: it requires a *named
+  (`src/tychoc.c:14112@do_recycle`). Narrow by design: it requires a *named
   variable* (not an element or field store), a type for which `is_array` holds
   (`src/tychoc.c:1282@is_array` — note a `string` is **not** an array here), a
   loop, a non-`inout` non-accumulator target, and at least two reads in the
