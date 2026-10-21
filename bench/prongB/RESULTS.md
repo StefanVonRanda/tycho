@@ -559,3 +559,25 @@ all outputs identical:
 The remaining flat-array gap is essentially C-level (1 ms on array-pipeline,
 8 ms on iter-transform); Rust still wins the array rows. Tree workloads retain
 the arena advantage.
+
+
+## 2026-10-21 Java (GC) and Swift (ARC) comparison
+
+Koka has been replaced in the current headline by OpenJDK 25 and Swift 6.3.2:
+both are widely used, one is GC and the other is reference counted. Ports live
+beside the existing workload sources. The Java/Swift rows are currently four
+workloads; the remaining rows show `-` rather than a fabricated number.
+
+All four outputs are byte-identical to the existing implementations.
+
+| workload | Tycho | C | Rust | Go (GC) | Java (GC) | Swift (ARC) |
+|---|---:|---:|---:|---:|---:|---:|
+| binary-trees | **93 ms** | 772 | 1106 | 1170 | 335 | 2375 |
+| array-pipeline | **20 ms** | 19 | 23 | 34 | 72 | 50 |
+| dispatch | **5 ms** | 5 | 56 | 58 | 66 | 156 |
+| json-parse | **601 ms** | 889 | 738 | 1309 | 698 | 3072 |
+
+Memory is deliberately not compared for Java: the JVM baseline dominates the
+small rows. Tycho beats Java and Swift on time in all four. The manual-memory
+bar is still red on `winagg` (C ~97 ms versus Tycho ~165 ms); that row is not
+averaged into a pass.

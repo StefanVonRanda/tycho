@@ -17,6 +17,19 @@ build_tycho() {                                # <src.ty> <out-binary> — fail-
     fi
     $CC -O3 -o "$2" "$2.c" || { echo "cc failed on tycho-emitted C for $1"; exit 2; }
 }
+build_java() {                                  # <base> — class name equals base
+    [ -f "$D/$1.java" ] || return 1
+    command -v javac >/dev/null 2>&1 || return 1
+    mkdir -p "$T/jc"
+    javac -d "$T/jc" "$D/$1.java" || return 1
+    printf '#!/bin/sh\nexec java -cp "%s" %s\n' "$T/jc" "$1" > "$T/w_java"
+    chmod +x "$T/w_java"
+}
+build_swift() {                                 # <base>
+    [ -f "$D/$1.swift" ] || return 1
+    command -v swiftc >/dev/null 2>&1 || return 1
+    swiftc -O -o "$T/w_swift" "$D/$1.swift" 2>/dev/null
+}
 REC="$T/records"; : > "$REC"                   # "<workload> <lang> <rssMB> <ms>" rows, for the summary scorecard
 WL="-"                                         # current workload slug (set by workload()/json_workload())
 # The `md5=` label on the digest below is load-bearing, not decoration: a bare
@@ -49,13 +62,13 @@ workload() {                                  # <title> <hi/c/rs/go base> <kk ba
     run_one rust "$T/w_rs"
     if command -v go >/dev/null 2>&1; then cp "$D/$b.go" "$T/w.go" && ( cd "$T" && go build -o w_go w.go 2>/dev/null ); fi
     run_one go "$T/w_go"
-    if command -v koka >/dev/null 2>&1; then koka -O2 --builddir="$T/.koka" -o "$T/w_koka" "$D/$kk.kk" >/dev/null 2>&1 && chmod +x "$T/w_koka"; fi
-    run_one koka "$T/w_koka"
+    if build_java "$b"; then run_one java "$T/w_java"; else printf '%-12s %10s\n' java "-"; fi
+    if build_swift "$b"; then run_one swift "$T/w_swift"; else printf '%-12s %10s\n' swift "-"; fi
     echo
 }
 
 # The json-parse workload reads a generated doc: the four C-family parsers take
-# it on stdin; Koka (UTF-8 strings, no stdin slurp) reads it as a file-path arg.
+# it on stdin; the Java/Swift runners use the same stdin path.
 json_run() {                                  # <label> <binary> <stdin|arg>
     lbl="$1"; bin="$2"; m="$3"
     [ -x "$bin" ] || { printf '%-12s %10s   (not built)\n' "$lbl" "-"; return; }
@@ -81,8 +94,8 @@ json_workload() {
     json_run rust "$T/j_rs" stdin
     if command -v go >/dev/null 2>&1; then cp "$D/json_parse.go" "$T/jg.go" && ( cd "$T" && go build -o j_go jg.go 2>/dev/null ); fi
     json_run go "$T/j_go" stdin
-    if command -v koka >/dev/null 2>&1; then koka -O2 --builddir="$T/.kkj" -o "$T/j_kk" "$D/jsonparse.kk" >/dev/null 2>&1 && chmod +x "$T/j_kk"; fi
-    json_run koka "$T/j_kk" arg
+    if build_java json_parse; then json_run java "$T/w_java" stdin; else printf '%-12s %10s\n' java "-"; fi
+    if build_swift json_parse; then json_run swift "$T/w_swift" stdin; else printf '%-12s %10s\n' swift "-"; fi
     echo
 }
 
@@ -95,10 +108,10 @@ summary() {                                   # normalized head-to-head scorecar
       function v(w,l){ return (m[w"|"l]!="")? m[w"|"l] : "-" }
       { m[$1"|"$2]=$3 }
       END{ n=split(ord,o," ")
-        printf "  %-16s %7s %7s %7s %7s %7s   %7s\n","workload","tycho","c","rust","go","koka","tycho/C"
+        printf "  %-16s %7s %7s %7s %7s %7s %7s   %7s\n","workload","tycho","c","rust","go","java","swift","tycho/C"
         for(i=1;i<=n;i++){ w=o[i]; h=m[w"|tycho"]; c=m[w"|c"]
           r=(h!=""&&c!=""&&c+0>0)? sprintf("%.2fx",h/c) : "-"
-          printf "  %-16s %7s %7s %7s %7s %7s   %7s\n", w, v(w,"tycho"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"koka"), r }
+          printf "  %-16s %7s %7s %7s %7s %7s %7s   %7s\n", w, v(w,"tycho"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"java"),v(w,"swift"), r }
       }' "$REC"
     echo
     echo "SUMMARY — wall time (ms):"
@@ -106,8 +119,8 @@ summary() {                                   # normalized head-to-head scorecar
       function v(w,l){ return (t[w"|"l]!="")? t[w"|"l] : "-" }
       { t[$1"|"$2]=$4 }
       END{ n=split(ord,o," ")
-        printf "  %-16s %7s %7s %7s %7s %7s\n","workload","tycho","c","rust","go","koka"
-        for(i=1;i<=n;i++){ w=o[i]; printf "  %-16s %7s %7s %7s %7s %7s\n", w, v(w,"tycho"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"koka") }
+        printf "  %-16s %7s %7s %7s %7s %7s %7s\n","workload","tycho","c","rust","go","java","swift"
+        for(i=1;i<=n;i++){ w=o[i]; printf "  %-16s %7s %7s %7s %7s %7s %7s\n", w, v(w,"tycho"),v(w,"c"),v(w,"rust"),v(w,"go"),v(w,"java"),v(w,"swift") }
       }' "$REC"
     echo
 }

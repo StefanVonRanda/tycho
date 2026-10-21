@@ -12,7 +12,7 @@ parser over a recursive `Json` sum type — real recursion, zero
 loop holds at a **flat 10 MB**: each document's tree is reclaimed when its loop
 iteration's arena resets. Clean under ASan + LeakSanitizer.
 
-## Head-to-head, five languages
+## Head-to-head, manual and managed memory
 
 Per-workload timings are in [`bench/prongB/RESULTS.md`](../bench/prongB/RESULTS.md).
 Peak resident memory (MB) — every binary computes the same checksum; lower is
@@ -30,6 +30,23 @@ On the allocation-heavy tree workloads Tycho uses the least memory of the five �
 40% of C's on binary-trees, half on tree-rewrite — with no GC and no reference
 counting, only lexical arenas and value semantics. Memory is the thesis metric,
 and it is reached with zero manual management.
+
+### Current GC / ARC rows
+
+The four workload ports are also built for **OpenJDK 25 (GC)** and
+**Swift 6.3.2 (ARC)**. Wall time, same outputs, best-of-three:
+
+| workload | Tycho | Java (GC) | Swift (ARC) |
+|---|---:|---:|---:|
+| binary-trees | **93 ms** | 335 ms | 2375 ms |
+| array-pipeline | **20 ms** | 72 ms | 50 ms |
+| dispatch | **5 ms** | 66 ms | 156 ms |
+| json-parse | **601 ms** | 698 ms | 3072 ms |
+
+Tycho is faster than both managed-memory runtimes on every port. Java's JVM
+baseline makes its peak RSS uninformative for the small rows; the table is a
+time comparison. Koka results elsewhere in the repository are historical and
+are no longer the headline managed-memory comparison.
 
 ## Arena internals, measured
 

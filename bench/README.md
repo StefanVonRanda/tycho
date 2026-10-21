@@ -2,8 +2,8 @@
 
 The thesis: a **value-semantic + implicit-arena** memory model gives **C-class
 memory and predictable, pause-free reclamation, with no manual frees and no GC**.
-The evidence is numbers next to C, Rust, Go (GC), and Koka
-(Perceus RC) on memory-heavy work, with **byte-identical output** per workload —
+The evidence is numbers next to C, Rust, Go (GC), Java (GC) and Swift (ARC)
+on memory-heavy work, with **byte-identical output** per workload —
 not a passing test suite. This file is the map; each row links to a `RESULTS.md`
 with detail.
 
@@ -25,7 +25,7 @@ recorded in `bench/lru/RESULTS.md`.
 | workload | what it stresses | tycho vs others | verdict | run |
 |----------|------------------|----------------|---------|-----|
 | **binary-trees** | transient alloc/discard, deep recursion | 13.6 MB vs C 33.7, Rust 33.4, Go 37.8 | **beats hand-written C** on both axes (one arena reset/iter) | `bench-prongB` |
-| **tree-rewrite** | rewrite pass over a tree | 6.4 MB vs C 13.8, Rust 9.2, Go 22.8 | lowest of C/Rust/Go; Koka not rerun | `bench-prongB` |
+| **tree-rewrite** | rewrite pass over a tree | 6.4 MB vs C 13.8, Rust 9.2, Go 22.8 | lowest of C/Rust/Go; Java/Swift not ported to this row | `bench-prongB` |
 | **array-pipeline** | bulk transform | 4.4 MB vs C 3.5, Rust 3.1, Go 7.6 | ~1.25× C mem; **19 vs 21 ms** in the 2026-10-20 repeat — O7 closed the old ~2× gap | `bench-prongB` |
 | **string-pipeline** | string building | 1 MB | parity | `bench-prongB` |
 | **json-parse (real)** | recursive-descent parse-and-discard | 66.7 MB vs C 58.1, Rust 58.9, Go 109.8 | **fastest of C/Rust/Go**, ~1.15× C memory (whole tree held per pass) | `bench-prongB` |
