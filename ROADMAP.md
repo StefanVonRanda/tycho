@@ -1,6 +1,6 @@
 # Roadmap
 
-Tycho is **0.8.9 — pre-1.0**, and this file is a direction, not a promise of
+Tycho is **0.8.8 — pre-1.0**, and this file is a direction, not a promise of
 dates. Day-to-day work is tracked in [GitHub
 issues](https://github.com/StefanVonRanda/tycho/issues); this file is the
 high-level shape. What 1.0 now requires is [below](#what-10-requires).
@@ -184,7 +184,7 @@ in its text report with a golden update.
 
 ## Compiler optimization phases: widening the domain (2026-10-19)
 
-> **Release scope:** 0.8.9 stays open until **O1–O7** are all in it. O1
+> **Release scope:** 0.8.8 stays open until **O1–O7** are all in it. O1
 > (immortal allocation + literal lifetime elision), O2 (read-only
 > pass-by-pointer in the reference compiler), O3 (last-use moves), O4
 > (borrowed slices), O5 (destination passing), O6 (conservative map CoW /
@@ -213,7 +213,7 @@ Every phase uses the same evidence rule:
 
 ### O1 — Immortal allocation marking + literal lifetime elision
 
-**Status: DONE 2026-10-20 — shipped in 0.8.9.** The numbers are in
+**Status: DONE 2026-10-20 — shipped in 0.8.8.** The numbers are in
 [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
 A `[string]` push copies the bytes unless the source is a string literal. A
@@ -239,7 +239,7 @@ shows the gain above; both compilers and the full gate are green. **All met.**
 
 ### O2 — Read-only pass-by-pointer for large value parameters
 
-**Status: DONE 2026-10-20 — reference/bootstrap parity in 0.8.9.** The result is
+**Status: DONE 2026-10-20 — reference/bootstrap parity in 0.8.8.** The result is
 in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
 A default parameter is read-only, so a large fixed array can cross a direct call
@@ -262,7 +262,7 @@ compiler; `tychoc1`'s lowering already avoids the copy.**
 
 ### O3 — Last-use moves / auto-sink
 
-**Status: DONE 2026-10-20 — shipped in 0.8.9.** The result is in
+**Status: DONE 2026-10-20 — shipped in 0.8.8.** The result is in
 [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
 `push`, a direct `sink` call and a heap rebind can adopt a dead local instead
@@ -288,7 +288,7 @@ fixture improves, and the copy case still copies. **All met.**
 
 ### O4 — Borrowed string/bytes slices
 
-**Status: DONE 2026-10-20 — shipped in 0.8.9.** The result is in
+**Status: DONE 2026-10-20 — shipped in 0.8.8.** The result is in
 [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
 `substr` and `s[a:b]` copy today. Strings are immutable, so a slice can be a
@@ -312,7 +312,7 @@ copy, and the parser output/goldens are byte-identical. **All met.**
 
 ### O5 — Destination passing / automatic `inout`
 
-**Status: DONE 2026-10-20 — shipped in 0.8.9 in both compilers.** The numbers
+**Status: DONE 2026-10-20 — shipped in 0.8.8 in both compilers.** The numbers
 are in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
 For `t = f(t, ...)` where `t` is uniquely owned and dead after the call, both
@@ -339,7 +339,7 @@ fixture shows the path-copy/allocation drop with identical output. **All met.**
 
 ### O6 — Conservative shared-bit CoW / path copying
 
-**Status: DONE 2026-10-20 — shipped in 0.8.9 in both compilers, shape-gated.**
+**Status: DONE 2026-10-20 — shipped in 0.8.8 in both compilers, shape-gated.**
 The numbers are in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md) and
 [`bench/trie/RESULTS.md`](bench/trie/RESULTS.md).
 
@@ -368,7 +368,7 @@ fuzz lanes or sanitizers.
 
 ### O7 — Loop-grown array and map-literal presizing (SROA evaluated)
 
-**Status: DONE 2026-10-20 — shipped in 0.8.9 in both compilers.** The numbers
+**Status: DONE 2026-10-20 — shipped in 0.8.8 in both compilers.** The numbers
 are in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 
 `ys := []T` immediately followed by a counted loop that pushes into `ys` is

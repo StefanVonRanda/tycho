@@ -9,7 +9,7 @@ Build one tarball per platform (there is no hosted CI); attach them all to the r
 Name the version in the globs: dist/ still holds the previous release's tarballs.
 -->
 
-Tycho 0.8.9 — pre-1.0, no stability guarantees (see the [README](README.md) for
+Tycho 0.8.8 — pre-1.0, no stability guarantees (see the [README](README.md) for
 what that means in practice). Prebuilt binaries are attached, so you can try the
 language without building from source.
 
@@ -93,7 +93,7 @@ resize, with `package.sh` producing a runnable directory.
 
 ## Compiler optimizations
 
-**O1 ships in 0.8.9: immortal allocation + literal lifetime elision.** String
+**O1 ships in 0.8.8: immortal allocation + literal lifetime elision.** String
 literals now carry a negative length header; the runtime masks it, returns an
 immortal literal unchanged on copy, and skips it on recycle. Every copy, push
 and assign path inherits the elision without a compiler branch.
@@ -107,7 +107,7 @@ marks `m` as escaping in both compilers, so a mutated map/array local returned
 through a zero-cost newtype no longer keeps its storage in a scope that is
 freed on the way out. `tests/newtype_agg` is the regression.
 
-The O1–O7 optimization phases are all in 0.8.9; O1 was the prerequisite for
+The O1–O7 optimization phases are all in 0.8.8; O1 was the prerequisite for
 O6, and O7 closes the allocation gap on the flat array pipeline.
 
 **O2: read-only pass-by-pointer in the reference compiler.** It passes
@@ -208,5 +208,5 @@ at 60 seeds each: differential, reject and leak all green. `make asan-self`
 not recorded by `make status` only because the README changed during the run;
 the code itself was unchanged.
 
-0.8.9 is pre-1.0 and there are **no stability guarantees**: anything here may
+0.8.8 is pre-1.0 and there are **no stability guarantees**: anything here may
 change before 1.0. See [CHANGELOG.md](CHANGELOG.md) for the accumulating record.

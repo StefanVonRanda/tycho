@@ -12,7 +12,7 @@ gate (`make ci`); `FRICTION n` is entry n in the defect log
 (`docs/internals/FRICTION.md`); a *probe* is a small program written against the
 docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
-## [0.8.9] — 2026-10-21
+## [0.8.8] — 2026-10-21
 
 ### Breaking
 
@@ -207,7 +207,7 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - `ROADMAP.md` now carries O1–O7 for widening the domain without adding
   references: O1 above, read-only pointer parameters, last-use moves, borrowed
   string/bytes slices, destination passing, conservative CoW, and
-  allocation/bounds work. All seven are in 0.8.9.
+  allocation/bounds work. All seven are in 0.8.8.
 
 ## [0.8.7] — 2026-10-18
 

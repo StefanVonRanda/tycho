@@ -37,6 +37,6 @@ checkout is not evidence of an optimization.
 | O6 | [`bench/trie/path/main.ty`](../trie/path/main.ty) | conservative shared-bit CoW / path copying |
 | O7 | [`bench/prongB/arr_pipeline.ty`](../prongB/arr_pipeline.ty) + [`bench/opt/smallmap/main.ty`](smallmap/main.ty) | loop-grown array and map-literal presizing (SROA evaluated) |
 
-O1–O7 are shipped in 0.8.9; O2 is reference/bootstrap parity, while the
+O1–O7 are shipped in 0.8.8; O2 is reference/bootstrap parity, while the
 packaged self-hosted compiler already passes `[N]T` as a descriptor. Their
 before/after is in [`RESULTS.md`](RESULTS.md).

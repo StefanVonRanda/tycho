@@ -1,9 +1,9 @@
 # Compiler-optimization results
 
-## O1 — immortal allocation + literal lifetime elision (SHIPPED 0.8.9)
+## O1 — immortal allocation + literal lifetime elision (SHIPPED 0.8.8)
 
 Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
-Compiler: `tychoc 0.8.9` at the working tree.
+Compiler: `tychoc 0.8.8` at the working tree.
 
 Fixture: `bench/litarr_build.ty` — 6,000,000 `push(b.tags, "literal")` calls into
 a projected `[string]` field. Output is `6000000` in every build.
@@ -45,10 +45,10 @@ That is **45% less peak RSS and 54% less wall time** on a literal-heavy builder.
 `make parse-check` 1505 files green; `make bench` all bounds; `make docs-fences`,
 `make check-links`, `make surface-check`, `make goldens-check` green.
 
-## O2 — read-only pass-by-pointer (SHIPPED 0.8.9)
+## O2 — read-only pass-by-pointer (SHIPPED 0.8.8)
 
 Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
-Compiler: `tychoc 0.8.9`.
+Compiler: `tychoc 0.8.8`.
 
 Fixture: `bench/opt/bigparam/main.ty` — 5,000,000 calls to
 `fn first(xs: [256]int) -> int`, which reads one element. The emitted C is
@@ -87,10 +87,10 @@ reference/bootstrap-compiler parity change: it removes the 2 KB copy from
 `./tychoc` and brings it to the representation the shipped compiler already
 had. The packaged binary's behavior and performance are unchanged.
 
-## O3 — last-use moves into `push` (SHIPPED 0.8.9)
+## O3 — last-use moves into `push` (SHIPPED 0.8.8)
 
 Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
-Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
+Compilers: `tychoc 0.8.8` and the packaged `tychoc1 0.8.8`.
 
 Fixture: `bench/opt/movebuild/main.ty` — 500,000 loop-local `Item`s with four
 128-byte strings each, built only to be pushed into an outer `[Item]`. The
@@ -121,7 +121,7 @@ outside the loop still copies. `tests/move_loop_local.ty` covers the local
 adoption and the cross-arena `sink` push, which must copy because the caller's
 array outlives the callee's scratch.
 
-## O4 — borrowed in-scope slices (SHIPPED 0.8.9)
+## O4 — borrowed in-scope slices (SHIPPED 0.8.8)
 
 Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
 
@@ -151,10 +151,10 @@ is never copied. A binding, return, `push`, map key or FFI call goes through
 view path (`println`, `len`, `strings.to_upper`) and the materialization path
 (binding, return, `push`).
 
-## O5 — destination passing through owned self-rebuilds (SHIPPED 0.8.9)
+## O5 — destination passing through owned self-rebuilds (SHIPPED 0.8.8)
 
 Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
-Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
+Compilers: `tychoc 0.8.8` and the packaged `tychoc1 0.8.8`.
 
 `t = f(t, ...)` where `t` is read once in the RHS and immediately rebound is a
 self-rebuild: the caller cannot observe the old value again. Both compilers
@@ -211,10 +211,10 @@ pins the boundary: a snapshot taken before the call stays independent, a call
 whose result is bound to another name still copies, and a heap struct field
 moves into the rebuilt aggregate only on the unique path.
 
-## O6 — conservative shared-bit CoW / path copying (SHIPPED 0.8.9)
+## O6 — conservative shared-bit CoW / path copying (SHIPPED 0.8.8)
 
 Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
-Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
+Compilers: `tychoc 0.8.8` and the packaged `tychoc1 0.8.8`.
 
 The shared bit is the **sign of a composite map's `ecap`**, so no map
 descriptor grew and the existing 64-byte layout is unchanged. A same-arena
@@ -265,10 +265,10 @@ path is now gated on the value having a share helper. LRU is back to **20.4 MB /
 its path-copy win. `tests/cow_scalar_share.sh` asserts neither compiler emits
 `get_share` for the scalar shape, and `bench/lru/run.sh` fails above 256 MB.
 
-## O7 — loop-grown array and map-literal presizing (SHIPPED 0.8.9)
+## O7 — loop-grown array and map-literal presizing (SHIPPED 0.8.8)
 
 Date: 2026-10-20. Host: Fedora Linux 44 x86-64, AMD Strix Halo (Ryzen AI MAX+ 395).
-Compilers: `tychoc 0.8.9` and the packaged `tychoc1 0.8.9`.
+Compilers: `tychoc 0.8.8` and the packaged `tychoc1 0.8.8`.
 
 `ys := []T` immediately followed by a counted loop that pushes into `ys` is
 presized to the loop's proven upper bound:

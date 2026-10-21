@@ -332,7 +332,7 @@ That is ~34% less RSS and ~20% less time on this workload. The 2026-10-20 fair
 repeat after the O6 fix is **4.4 MB / 19 ms**, with C at 3.5/21 and Rust at
 3.1/16; the presizing win holds. The `n := len(A)` bounds-check shape and SROA
 were measured and left alone (no gap); the full record is in
-[bench/opt/RESULTS.md](../opt/RESULTS.md#o7--loop-grown-array-and-map-literal-presizing-shipped-089).
+[bench/opt/RESULTS.md](../opt/RESULTS.md#o7--loop-grown-array-and-map-literal-presizing-shipped-088).
 
 ## Fourth workload: string-pipeline (string-heavy)
 
