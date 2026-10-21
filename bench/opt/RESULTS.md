@@ -412,3 +412,40 @@ by the existing `make test` lane; the control is kept in the compiler.
 **Decision: keep.** A fresh value is built in the receiver's arena and adopted
 when it cannot alias the receiver. Places, views and unproven expressions keep
 the copy path. No language surface or value-semantics rule changed.
+
+
+## Guard-derived bounds facts (post-0.8.9, not kept)
+
+A prototype proved `if j >= 0 and j < len(xs)` for the then-branch and removed
+the bounds check from `xs[j]`. A 5,000,000-element array was summed over 12
+passes, with `TYCHOC_NO_GUARD_BCE=1` as the control:
+
+| build | peak RSS (median) | wall time (median) |
+|---|---:|---:|
+| guard facts | 106,140 KB | 43 ms |
+| control | 106,116 KB | 40 ms |
+
+The emitted C did differ (`(h_xs).data[h_j]` against
+`tycho_arr_int_get(h_xs, h_j)`), but the C compiler folds the duplicate
+condition and the guard branch already predicts perfectly. There was no
+measured win. **Decision: reject.** The source and fixture were removed; a real
+check-free path needs index values that retain validation (the Goose model),
+which does not map to Tycho's mutable value arrays without a separate
+non-shrinking array/index design.
+
+## Fixed-size enum layout (post-0.8.9, candidate)
+
+`Option` and `Result` are already inline value structs; user-defined enums are
+still pointer cells. The fixture builds 1,000,000 three-variant values and sums
+them:
+
+| value | peak RSS (median) | wall time (median) |
+|---|---:|---:|
+| `[Kind]` user enum | 28,064 KB | 7 ms |
+| `[InlineKind]` packed tag+payload | **19,612 KB** | **6 ms** |
+
+The inline record is **30% smaller and ~14% faster**. That is evidence for a
+future inline fixed-size enum representation, not a shipped language change:
+unboxing user enums touches construction, match, copy, equality, recycling,
+generics, maps and arrays. It should be a separate project with a caller, not
+a half-wired compiler path.

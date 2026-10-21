@@ -181,7 +181,7 @@ exactly how far it reaches before concluding that a workload is doomed. There ar
 several supported paths:
 
 - **Loop-carried reassignment of a named array local** — `a = f(a)` inside a loop
-  (`src/tychoc.c:14112@do_recycle`). Narrow by design: it requires a *named
+  (`src/tychoc.c:14122@do_recycle`). Narrow by design: it requires a *named
   variable* (not an element or field store), a type for which `is_array` holds
   (`src/tychoc.c:1282@is_array` — note a `string` is **not** an array here), a
   loop, a non-`inout` non-accumulator target, and at least two reads in the

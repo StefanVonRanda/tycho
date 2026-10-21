@@ -4,10 +4,13 @@ Status: research note, 2026-10-21. No language or runtime change is implied by
 this file.
 
 Sources: [aardappel/goose](https://github.com/aardappel/goose), read at
-`master` on 2026-10-21: `README.md`, `docs/goose_spec.md`,
-`docs/reference.md`, `docs/implementation.md`, `docs/packages.md`,
-`docs/stdlib.md`, and the samples/benchmark notes. Goose's performance claims
-are its author's measurements, not independently reproduced here.
+`master` on 2026-10-21: its README, [language spec](https://github.com/aardappel/goose/blob/master/docs/goose_spec.md),
+[reference](https://github.com/aardappel/goose/blob/master/docs/reference.md),
+[implementation notes](https://github.com/aardappel/goose/blob/master/docs/implementation.md),
+[packages](https://github.com/aardappel/goose/blob/master/docs/packages.md),
+[standard library](https://github.com/aardappel/goose/blob/master/docs/stdlib.md),
+and the samples/benchmark notes. Goose's performance claims are its author's
+measurements, not independently reproduced here.
 
 Constraints for this review:
 
@@ -31,8 +34,9 @@ What transfers is narrower:
    and copied afterwards.
 2. **A function should be able to state a bounds contract once**, and the
    compiler should report whether any check survives.
-3. **A fixed-size sum value can be stored inline**; Tycho currently boxes every
-   enum payload.
+3. **A fixed-size sum value can be stored inline**; Tycho boxes user-defined
+   enum payloads, while the reference compiler's `Option`/`Result` are already
+   inline.
 
 Everything else is either incompatible with the value model or belongs behind
 a concrete caller.
@@ -98,11 +102,12 @@ Tycho already removes the checks in monotone `len(xs)` loops
 no way to state or inspect a cross-call length relation. Two pieces are worth
 considering separately:
 
-- **Facts from guards.** Tycho knows `die` never returns. A dominating
-  `if not cond: die("...")` can be a sound fact at the following code, without
-  adding a new keyword. Use it to carry `len(b) >= len(a)`, `i < len(a)` and
-  equality of lengths across statements and calls that do not mutate either
-  array.
+- **Facts from guards.** A prototype proved `if j >= 0 and j < len(xs)` in a
+  branch and removed the check from `xs[j]`. On 5,000,000 elements x 12 passes
+  it was 43 ms against 40 ms for the control: the C compiler already folds the
+  duplicate condition and the branch predicts. No measured win; the prototype
+  was reverted. A real check-free path needs index types that retain validation,
+  not more branch facts.
 - **A reporting mode.** `tychoc --bce-report` (name unresolved) should print
   every bounds check that survives in a function, with its source line. A
   `checkfree` source annotation is the stronger version, but only add it when a
@@ -121,30 +126,31 @@ the report's accuracy, not a promised speedup.
 ## 3. Inline fixed-size enum payloads
 
 Goose's fixed-mode enum stores tag plus the largest payload inline; variable
-mode stores each value at its own size and gives up indexing. Tycho currently
-stores every enum as a pointer to one tagged cell, with the payload inline in
-that cell (`docs/internals/design-enums.md`). That is already compact for
-recursive trees, but every `Option(int)` or small `Result` still costs a second
-allocation and a pointer.
+mode stores each value at its own size and gives up indexing. Tycho stores user-defined enums as pointers to one tagged cell, with the
+payload inline in that cell (`docs/internals/design-enums.md`). `Option` and
+`Result` are already inline value structs; user enums are the remaining boxed
+case.
 
-A quick probe (1,000,000 values) found:
+A 1,000,000-value probe compared a fixed three-variant user enum with the
+equivalent packed tag-plus-payload record (the lower bound for unboxing):
 
 | value | peak RSS | wall time |
 |---|---:|---:|
-| `[int]` | 18,000 KB | 4 ms |
-| `[Option(int)]` | 28,500 KB | 8 ms |
-| `[Plain]` with a bool and an int | 33,800 KB | 8 ms |
+| `[Kind]` user enum | 28,064 KB | 7 ms |
+| `[InlineKind]` packed tag+payload | **19,612 KB** | **6 ms** |
 
-An inline representation for enums whose variants are all fixed-size and whose
-payloads do not recurse would remove the per-value cell and the pointer chase.
-`Option(int)` would become a fixed tag-plus-payload value; recursive enums stay
-boxed. This is a layout optimization, not variable-size records and not
-variable-mode enums; the value model is unchanged.
+That is 30% less memory and about 14% less time. The same effect appeared for
+`Option(int)` against a packed record: 28,500 KB / 8 ms versus 19,500 KB /
+6 ms. `Option` and `Result` already have the inline rep; they pay padding, not
+an allocation. An inline representation for *user* enums whose variants are all
+fixed-size and non-recursive would remove the per-value cell and pointer chase;
+recursive enums stay boxed. This is a layout optimization, not variable-size
+records and not variable-mode enums; the value model is unchanged.
 
 This is a larger compiler change than the first two: copy/equality/recycle,
 match lowering, generic enums and array/map element layouts all have to agree.
-It needs a concrete caller and a benchmark before work starts. `[Option(int)]`
-and a parser result array are enough to start, not a reason by themselves.
+The probe says it would earn, but it is a separate representation project, not a
+half-wired patch.
 
 ## 4. Static function values: measure first, do not restrict closures
 
@@ -202,9 +208,10 @@ These are real Goose conveniences, but none is a reason to change the model:
 
 ## Recommendation
 
-1. Implement destination construction for fresh `push` values, with a control
-   and a memory/time benchmark. This is the best transferable idea.
-2. Add a bounds-check report and guard-derived facts; add a source-level
-   `checkfree` only after a real kernel uses the report.
-3. Prototype inline fixed-size enums behind a concrete caller and a benchmark.
+1. Ship destination construction for fresh `push` values. It earned its keep:
+   ~35–43% less peak RSS and ~17–20% less wall time on the string case.
+2. Treat guard-derived bounds facts as a rejected experiment; a reporting mode
+   may still be useful, but no speed claim is made.
+3. Prototype inline fixed-size *user* enums only as a representation project;
+   the benchmark says the layout earns, but it is not a small patch.
 4. Leave static function specialization and the small ergonomics demand-gated.
