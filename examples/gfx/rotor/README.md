@@ -5,10 +5,10 @@ renderer. It uses the `Mesh` and `Place` layer in `core:gfx3d` for a multi-part
 drone model and a spinning rotor, with a follow camera rather than Vector
 Vault's first-person camera or Orbit's gallery camera.
 
-The renderer runs at 480×270. With `core:gfxgpu` available, the scene is
-submitted as a world-space GPU triangle mesh with a view-projection uniform and
-a depth target, then downloaded into the existing gfx framebuffer for the HUD
-and presentation. Without a GPU device it falls back to the software path
+The renderer runs at 480×270. With `core:gfxgpu` available, the scene and its
+HUD are submitted directly to the SDL_GPU swapchain: world-space meshes, a
+view-projection uniform, a depth target and a transparent GPU HUD overlay built
+from the font atlas. Without a GPU device it falls back to the software path
 automatically.
 
 ## Build and play

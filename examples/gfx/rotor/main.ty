@@ -3,6 +3,8 @@ package main
 import "core:gfx"
 import "core:gfx3d"
 import "core:gfxgpu"
+import "core:image"
+import "core:io"
 import "core:strings"
 import "core:time"
 
@@ -12,8 +14,9 @@ extern "m" fn cos(x: float) -> float
 extern fn gfx_open(w: int, h: int, title: string) -> gfx.Window
 extern fn gfx_audio_open(rate: int, channels: int) -> gfx.Audio
 extern fn gfx_texset_open(g: gfx.Window) -> gfx.TexSet
-extern fn gfxgpu_open_offscreen(w: int, h: int) -> gfxgpu.Gpu
-extern fn gfxgpu_render_mesh(g: gfxgpu.Gpu, verts: [float], mvp: [float]) -> bytes
+extern fn gfxgpu_open(w: gfx.Window) -> gfxgpu.Gpu
+extern fn gfxgpu_frame_scene(g: gfxgpu.Gpu, verts: [float], mvp: [float],
+                             overlay: bytes, w: int, h: int) -> int
 
 const RW = 480
 const RH = 270
@@ -326,6 +329,91 @@ fn gpu_vertices(static_mesh: gfx3d.Mesh, p: Player, pickups: [Pickup],
     append_mesh(&verts, rotor, rp)
     return verts
 
+fn ov_rect(ov: inout [int], w: int, x0: int, y0: int, x1: int, y1: int, color: int):
+    for y := y0; y < y1; y += 1:
+        base := y * w
+        for x := x0; x < x1; x += 1:
+            ov[base + x] = color
+
+fn ov_text(font: image.Image, ov: inout [int], w: int, x: int, y: int,
+           text: string, size: int, r: int, gc: int, b: int):
+    if font.width <= 0 or size <= 0:
+        return
+    advance := size * 3 / 4
+    for i := 0; i < len(text); i += 1:
+        idx := text[i] - 32
+        if idx >= 0 and idx < 96:
+            col := idx % 16
+            row := idx / 16
+            for dy := 0; dy < size; dy += 1:
+                sy := row * 32 + dy * 32 / size
+                dsty := y + dy
+                if dsty >= 0 and dsty < 270:
+                    for dx := 0; dx < size; dx += 1:
+                        sx0 := col * 32 + dx * 32 / size
+                        sx1 := col * 32 + (dx + 1) * 32 / size
+                        if sx1 <= sx0:
+                            sx1 = sx0 + 1
+                        dstx := x + i * advance + dx
+                        if dstx >= 0 and dstx < w:
+                            a := 0
+                            for yy := sy; yy < sy + 1; yy += 1:
+                                for xx := sx0; xx < sx1; xx += 1:
+                                    if xx < font.width:
+                                        aa := font.pixels[(yy * font.width + xx) * 4 + 3]
+                                        if aa > a:
+                                            a = aa
+                            if a > 100:
+                                ov[dsty * w + dstx] = 4278190080 + r * 65536 + gc * 256 + b
+
+fn ov_text_centered(font: image.Image, ov: inout [int], w: int, center_x: int,
+                    y: int, text: string, size: int, r: int, gc: int, b: int):
+    x := center_x - len(text) * (size * 3 / 4) / 2
+    ov_text(font, &ov, w, x, y, text, size, r, gc, b)
+
+fn ov_bytes(ov: [int]) -> bytes:
+    out := []int
+    reserve(out, len(ov) * 4)
+    for i := 0; i < len(ov); i += 1:
+        c := ov[i]
+        push(out, (c / 65536) % 256)
+        push(out, (c / 256) % 256)
+        push(out, c % 256)
+        push(out, (c / 16777216) % 256)
+    return to_bytes(out)
+
+fn build_overlay(font: image.Image, mode: int, collected: int, play_ms: int,
+                 total: int) -> bytes:
+    ov := []int
+    reserve(ov, RW * RH)
+    for i := 0; i < RW * RH; i += 1:
+        push(ov, 0)
+    if mode == MODE_MENU:
+        ov_rect(&ov, RW, 55, 32, RW - 55, RH - 42, gfx.rgb(5, 9, 16))
+        ov_text_centered(font, &ov, RW, RW / 2, 42, "ROTOR RUN", 38, 95, 235, 200)
+        ov_text_centered(font, &ov, RW, RW / 2, 92, "COLLECT 6 CELLS IN THE DRONE YARD", 11, 190, 220, 225)
+        ov_text_centered(font, &ov, RW, RW / 2, 120, "SPACE TO START", 20, 255, 205, 75)
+        ov_text_centered(font, &ov, RW, RW / 2, 154, "W/S FLY   A/D TURN", 11, 160, 195, 205)
+        ov_text_centered(font, &ov, RW, RW / 2, 174, "P PAUSE   R RESTART   ESC QUIT", 10, 150, 180, 190)
+    elif mode == MODE_PLAY or mode == MODE_PAUSE:
+        cells := "CELLS " + str(collected) + "/" + str(total)
+        timer := "TIME " + str(play_ms / 1000) + "S"
+        ov_text(font, &ov, RW, 8, 6, cells, 12, 170, 245, 190)
+        ov_text(font, &ov, RW, RW - 8 - len(timer) * 9, 6, timer, 12, 170, 245, 190)
+        if mode == MODE_PAUSE:
+            ov_rect(&ov, RW, 82, 98, RW - 82, 190, gfx.rgb(5, 9, 16))
+            ov_text_centered(font, &ov, RW, RW / 2, 112, "PAUSED", 30, 255, 205, 75)
+            ov_text_centered(font, &ov, RW, RW / 2, 154,
+                             "SPACE RESUME   R RESTART   ESC QUIT", 10, 170, 200, 210)
+    elif mode == MODE_WIN:
+        ov_rect(&ov, RW, 82, 78, RW - 82, 208, gfx.rgb(5, 9, 16))
+        ov_text_centered(font, &ov, RW, RW / 2, 94, "YARD CLEARED", 30, 95, 235, 200)
+        ov_text_centered(font, &ov, RW, RW / 2, 136,
+                         "TIME " + str(play_ms / 1000) + "S", 18, 255, 205, 75)
+        ov_text_centered(font, &ov, RW, RW / 2, 172,
+                         "SPACE OR R TO FLY AGAIN", 10, 170, 200, 210)
+    return ov_bytes(ov)
+
 fn main():
     a := args()
     frames := 0
@@ -354,6 +442,13 @@ fn main():
     font_id := 0 - 1
     if not is_null(texset):
         font_id = gfx.load_texture(texset, "../assets/font.png")
+    font_img := image.Image(0, 0, to_bytes([]int))
+    match io.read_bytes("../assets/font.png"):
+        Ok(data):
+            match image.decode(data):
+                Ok(img): font_img = img
+                Err(e): pass
+        Err(e): pass
 
     audio := gfx_audio_open(22050, 1)
     pickup_beep := gfx.make_beep(22050, 900, 65)
@@ -371,7 +466,7 @@ fn main():
     body := build_body()
     rotor := build_rotor()
     static_mesh := build_static()
-    gpu := gfxgpu_open_offscreen(RW, RH)
+    gpu := gfxgpu_open(win)
     if is_null(gpu):
         eprintln("rotor: GPU unavailable, using software renderer")
     player := Player(0.0, -3.5, 0.0)
@@ -448,69 +543,65 @@ fn main():
                           player.z - cos(player.yaw) * 5.2)
         look := gfx3d.Vec3(player.x, 0.85, player.z)
         cam := gfx3d.look_at(eye, look, gfx3d.Vec3(0.0, 1.0, 0.0), FOCAL)
-        if is_null(gpu):
-            draw_scene(&fb, &zbuf, cam, target, player, pickups, play_frame * STEP_MS,
-                       &body, &rotor)
-        else:
+        gpu_ok := false
+        if not is_null(gpu):
             verts := gpu_vertices(static_mesh, player, pickups, body, rotor,
                                   play_frame * STEP_MS)
             mvp := build_mvp(cam, target)
-            pixels := gfxgpu_render_mesh(gpu, verts, mvp)
-            if len(pixels) == RW * RH * 4:
-                for i := 0; i < RW * RH; i += 1:
-                    fb[i] = 4278190080 + pixels[i * 4] * 65536 +
-                            pixels[i * 4 + 1] * 256 + pixels[i * 4 + 2]
-            else:
-                draw_scene(&fb, &zbuf, cam, target, player, pickups,
-                           play_frame * STEP_MS, &body, &rotor)
+            overlay := build_overlay(font_img, mode, collected, play_ms, len(pickups))
+            if gfxgpu_frame_scene(gpu, verts, mvp, overlay, RW, RH) == 0:
+                gpu_ok = true
 
-        if mode == MODE_MENU:
-            gfx.fill_rect(&fb, RW, 55, 32, RW - 55, RH - 42, gfx.rgb(5, 9, 16))
-        if mode == MODE_PAUSE:
-            gfx.fill_rect(&fb, RW, 82, 98, RW - 82, 190, gfx.rgb(5, 9, 16))
-        if mode == MODE_WIN:
-            gfx.fill_rect(&fb, RW, 82, 78, RW - 82, 208, gfx.rgb(5, 9, 16))
-
-        view := gfx.fit_view(RW, RH, win_w, win_h)
-        dst := gfx.view_rect(view, 0, 0, RW, RH)
-        rc := gfx.begin(win)
-        if rc == 0:
-            rc = gfx.draw_fb(win, fb, RW, RH, dst)
-        if rc == 0 and font_id >= 0:
+        if not gpu_ok:
+            draw_scene(&fb, &zbuf, cam, target, player, pickups, play_frame * STEP_MS,
+                       &body, &rotor)
             if mode == MODE_MENU:
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 42,
-                                            "ROTOR RUN", 38, 95, 235, 200)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 92,
-                                            "COLLECT 6 CELLS IN THE DRONE YARD", 11, 190, 220, 225)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 120,
-                                            "SPACE TO START", 20, 255, 205, 75)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 154,
-                                            "W/S FLY   A/D TURN", 11, 160, 195, 205)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 174,
-                                            "P PAUSE   R RESTART   ESC QUIT", 10, 150, 180, 190)
-            elif mode == MODE_PLAY or mode == MODE_PAUSE:
-                cells := "CELLS " + str(collected) + "/" + str(len(pickups))
-                timer := "TIME " + str(play_ms / 1000) + "S"
-                gfx.draw_text_view(view, texset, font_id, 8, 6, cells, 12, 170, 245, 190)
-                tw := gfx.text_width(timer, 12)
-                gfx.draw_text_view(view, texset, font_id, RW - 8 - tw, 6, timer, 12, 170, 245, 190)
-                if mode == MODE_PAUSE:
-                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 112,
-                                                "PAUSED", 30, 255, 205, 75)
+                gfx.fill_rect(&fb, RW, 55, 32, RW - 55, RH - 42, gfx.rgb(5, 9, 16))
+            if mode == MODE_PAUSE:
+                gfx.fill_rect(&fb, RW, 82, 98, RW - 82, 190, gfx.rgb(5, 9, 16))
+            if mode == MODE_WIN:
+                gfx.fill_rect(&fb, RW, 82, 78, RW - 82, 208, gfx.rgb(5, 9, 16))
+
+            view := gfx.fit_view(RW, RH, win_w, win_h)
+            dst := gfx.view_rect(view, 0, 0, RW, RH)
+            rc := gfx.begin(win)
+            if rc == 0:
+                rc = gfx.draw_fb(win, fb, RW, RH, dst)
+            if rc == 0 and font_id >= 0:
+                if mode == MODE_MENU:
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 42,
+                                                "ROTOR RUN", 38, 95, 235, 200)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 92,
+                                                "COLLECT 6 CELLS IN THE DRONE YARD", 11, 190, 220, 225)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 120,
+                                                "SPACE TO START", 20, 255, 205, 75)
                     gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 154,
-                                                "SPACE RESUME   R RESTART   ESC QUIT", 10, 170, 200, 210)
-            elif mode == MODE_WIN:
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 94,
-                                            "YARD CLEARED", 30, 95, 235, 200)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 136,
-                                            "TIME " + str(play_ms / 1000) + "S", 18, 255, 205, 75)
-                gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 172,
-                                            "SPACE OR R TO FLY AGAIN", 10, 170, 200, 210)
-        if rc == 0:
-            rc = gfx.present(win)
-        if rc != 0:
-            eprintln("rotor: frame failed: " + str(rc))
-            break
+                                                "W/S FLY   A/D TURN", 11, 160, 195, 205)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 174,
+                                                "P PAUSE   R RESTART   ESC QUIT", 10, 150, 180, 190)
+                elif mode == MODE_PLAY or mode == MODE_PAUSE:
+                    cells := "CELLS " + str(collected) + "/" + str(len(pickups))
+                    timer := "TIME " + str(play_ms / 1000) + "S"
+                    gfx.draw_text_view(view, texset, font_id, 8, 6, cells, 12, 170, 245, 190)
+                    tw := gfx.text_width(timer, 12)
+                    gfx.draw_text_view(view, texset, font_id, RW - 8 - tw, 6, timer, 12, 170, 245, 190)
+                    if mode == MODE_PAUSE:
+                        gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 112,
+                                                    "PAUSED", 30, 255, 205, 75)
+                        gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 154,
+                                                    "SPACE RESUME   R RESTART   ESC QUIT", 10, 170, 200, 210)
+                elif mode == MODE_WIN:
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 94,
+                                                "YARD CLEARED", 30, 95, 235, 200)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 136,
+                                                "TIME " + str(play_ms / 1000) + "S", 18, 255, 205, 75)
+                    gfx.draw_text_centered_view(view, texset, font_id, RW / 2, 172,
+                                                "SPACE OR R TO FLY AGAIN", 10, 170, 200, 210)
+            if rc == 0:
+                rc = gfx.present(win)
+            if rc != 0:
+                eprintln("rotor: frame failed: " + str(rc))
+                break
         if not headless:
             time.sleep_ms(16)
 
