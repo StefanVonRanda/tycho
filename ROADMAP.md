@@ -124,8 +124,8 @@ needs a closure environment/array ABI change, not another local codegen tweak.
 Follow-up work after the benchmark refresh:
 
 - **Specialized rows:** DONE — `trie`, `dijkstra`, `lru`, `interp` and
-  `json_tree` are in the generated suite; Rust/Java/Swift cells are `-` where
-  no port exists.
+  `json_tree` are in the generated suite with Tycho/C/Rust/Go ports; Java/Swift
+  cells are `-` because those ports do not exist.
 - **Regression gate:** DONE — `make bench-suite-gate` checks saved GCC/clang
   results for checksum failure, latency relative to C/Rust, service memory and
   six-language `dbquery` coverage.
