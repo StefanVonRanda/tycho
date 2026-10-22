@@ -61,3 +61,20 @@ Together with the memory benchmarks this adds one limited axis of evidence:
 
 **Reproduce:** `make bench-latency` (skips Go if absent). A successful run checks
 checksums and reports totals; it does not certify jitter-free execution.
+
+
+## 2026-10-22 Java and Swift service-row check
+
+The latency runner now also builds OpenJDK 25 and Swift 6.3.2 ports. Same
+checksum `599376507`:
+
+| build | peak RSS | wall time | GC |
+|---|---:|---:|---|
+| Tycho | 2.4 MB | **134 ms** | none |
+| C | 2.2 MB | 123 ms | none |
+| Go | 12.7 MB | 1152 ms | 3058 collections |
+| Java | 1067.2 MB | 415 ms | JVM collector |
+| Swift | 9.9 MB | 164 ms | ARC |
+
+Tycho is within the 10% manual-memory band of C and faster than both managed
+runtimes. Java's RSS is JVM baseline; the table is a time comparison.

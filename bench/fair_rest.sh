@@ -25,10 +25,23 @@ tycho() { rm -f "$T/ref.out"; $TYCHOC "$1" --emit-c -o "$T/b" >/dev/null 2>&1 &&
 cc3()  { cc -O3 -o "$T/b" "$1" -lm 2>/dev/null && best "$T/b" || echo "-"; }
 rs3()  { rustc -C opt-level=3 -o "$T/b" "$1" 2>/dev/null && best "$T/b" || echo "-"; }
 go3()  { ( cd "$(dirname "$1")" && go build -o "$T/b" "$(basename "$1")" 2>/dev/null ) && best "$T/b" || echo "-"; }
+java3() {
+  [ -f "$1" ] && command -v javac >/dev/null 2>&1 || { echo "-"; return; }
+  mkdir -p "$T/jc3"
+  javac -d "$T/jc3" "$1" 2>/dev/null || { echo "-"; return; }
+  base=$(basename "$1" .java)
+  printf '#!/bin/sh\nexec java -cp "%s" %s\n' "$T/jc3" "$base" > "$T/jw3"
+  chmod +x "$T/jw3"
+  best "$T/jw3"
+}
+swift3() {
+  [ -f "$1" ] && command -v swiftc >/dev/null 2>&1 || { echo "-"; return; }
+  swiftc -O -o "$T/sw3" "$1" 2>/dev/null && best "$T/sw3" || echo "-"
+}
 
-echo "===== winagg (tycho/C/Rust/Go) ====="
+echo "===== winagg (tycho/C/Rust/Go/Java/Swift) ====="
 W=bench/winagg
-printf "  tycho %s\n  C    %s\n  Rust %s\n  Go   %s\n" "$(tycho $W/winagg.ty)" "$(cc3 $W/winagg.c)" "$(rs3 $W/winagg.rs)" "$(go3 $W/winagg.go)"
+printf "  tycho %s\n  C    %s\n  Rust %s\n  Go   %s\n  Java %s\n  Swift %s\n" "$(tycho $W/winagg.ty)" "$(cc3 $W/winagg.c)" "$(rs3 $W/winagg.rs)" "$(go3 $W/winagg.go)" "$(java3 $W/winagg.java)" "$(swift3 $W/winagg.swift)"
 
 echo "===== invindex side-array  (growth: .{ty,c,go} | count-fill: _exact.{ty,c}) ====="
 I=bench/invindex

@@ -37,8 +37,8 @@ and it is reached with zero manual management.
 
 ### Current GC / ARC rows
 
-The four workload ports are also built for **OpenJDK 25 (GC)** and
-**Swift 6.3.2 (ARC)**. Wall time, same outputs, best-of-three:
+Six workload ports are built for **OpenJDK 25 (GC)** and **Swift 6.3.2
+(ARC)**. Wall time, same outputs, best-of-three:
 
 | workload | Tycho | Java (GC) | Swift (ARC) |
 |---|---:|---:|---:|
@@ -46,16 +46,21 @@ The four workload ports are also built for **OpenJDK 25 (GC)** and
 | array-pipeline | **20 ms** | 72 ms | 50 ms |
 | dispatch | **5 ms** | 66 ms | 156 ms |
 | json-parse | **601 ms** | 698 ms | 3072 ms |
+| winagg | **81 ms** | 262 ms | 371 ms |
+| latency | **134 ms** | 415 ms | 164 ms |
 
 Tycho is faster than both managed-memory runtimes on every port. Java's JVM
 baseline makes its peak RSS uninformative for the small rows; the table is a
 time comparison. Koka results elsewhere in the repository are historical and
 are no longer the headline managed-memory comparison.
 
+The service rows `invindex`, `window`, `dbquery` and `gcscan` still have no
+Java/Swift port and are shown as unported rather than as Tycho wins.
+
 The service-shaped `winagg` row (per-window map of growing lists) now runs at
-**84 ms versus C 97 ms**, Rust 172 ms and Go 250 ms; its peak RSS is 7.3 MB
-versus C 5.6 MB. It is the row the map/list hash and read-only-borrow work was
-targeted at.
+**81 ms versus C 97 ms**, Rust 169 ms, Go 232 ms, Java 262 ms and Swift 371 ms;
+peak RSS is 7.7 MB versus C 5.9 MB. It is the row the map/list hash and
+read-only-borrow work targeted.
 
 ## Arena internals, measured
 

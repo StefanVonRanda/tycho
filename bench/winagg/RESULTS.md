@@ -104,3 +104,21 @@ every language keeps for the hot path.
 
 Tycho is now faster than C on time; the remaining loss is peak RSS from the
 per-key list storage and arena blocks. Java/Swift are not ported to this row.
+
+
+## 2026-10-22 Java and Swift service-row check
+
+OpenJDK 25 (GC) and Swift 6.3.2 (ARC) ports are now included in
+`bench/fair_rest.sh`. Same checksum `windows=40 checksum=505098931`:
+
+| build | peak RSS | wall time |
+|---|---:|---:|
+| Tycho | 7.7 MB | **81 ms** |
+| C | 5.9 MB | 97 ms |
+| Rust | 5.9 MB | 169 ms |
+| Go | 11.7 MB | 232 ms |
+| Java | 428.8 MB | 262 ms |
+| Swift | 13.7 MB | 371 ms |
+
+Java's RSS is dominated by the JVM baseline. Tycho is faster than both managed
+runtimes; the remaining loss is memory, not time.

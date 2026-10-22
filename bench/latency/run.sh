@@ -21,4 +21,10 @@ meas() {  # <label> <binary> <gc?>
 $TYCHOC "$D/latency.ty" --emit-c -o "$T/lh" >/dev/null 2>&1 && $CC -O3 -o "$T/lh" "$T/lh.c" -lm; meas tycho "$T/lh" nogc
 $CC -O3 -o "$T/lc" "$D/latency.c"; meas C "$T/lc" nogc
 if command -v go >/dev/null 2>&1; then cp "$D/latency.go" "$T/lg.go" && ( cd "$T" && go build -o lgo lg.go 2>/dev/null ); meas Go "$T/lgo" gc; fi
+if command -v javac >/dev/null 2>&1 && [ -f "$D/latency.java" ]; then
+    mkdir -p "$T/jc"; javac -d "$T/jc" "$D/latency.java" 2>/dev/null && printf '#!/bin/sh\nexec java -cp "%s" latency\n' "$T/jc" > "$T/lj" && chmod +x "$T/lj" && meas Java "$T/lj" nogc
+fi
+if command -v swiftc >/dev/null 2>&1 && [ -f "$D/latency.swift" ]; then
+    swiftc -O -o "$T/ls" "$D/latency.swift" 2>/dev/null && meas Swift "$T/ls" nogc
+fi
 [ "$FAIL" = 0 ] && echo "latency: ok (checksums agree; tycho/C have zero GC pause)" || { echo "latency: FAIL"; exit 1; }

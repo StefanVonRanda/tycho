@@ -579,9 +579,11 @@ All four outputs are byte-identical to the existing implementations.
 | array-pipeline | **20 ms** | 19 | 23 | 34 | 72 | 50 |
 | dispatch | **5 ms** | 5 | 56 | 58 | 66 | 156 |
 | json-parse | **601 ms** | 889 | 738 | 1309 | 698 | 3072 |
+| winagg | **81 ms** | 97 | 169 | 232 | 262 | 371 |
+| latency | **134 ms** | 123 | — | 1152 | 415 | 164 |
 
 Memory is deliberately not compared for Java: the JVM baseline dominates the
-small rows. Tycho beats Java and Swift on time in all four. The separate
-`winagg` service row now measures **~84 ms versus C ~97 ms** after the map/list
-work; Java and Swift are not ported to that row yet. See
+small rows. Tycho beats Java and Swift on every ported row; `latency` is within
+the 10% manual-memory band of C. `invindex`, `window`, `dbquery` and `gcscan`
+still have no Java/Swift port and are explicitly unported. See
 [`bench/opt/RESULTS.md`](../opt/RESULTS.md#maplist-churn-winagg-post-089-kept).
