@@ -43,19 +43,19 @@ echo "===== winagg (tycho/C/Rust/Go/Java/Swift) ====="
 W=bench/winagg
 printf "  tycho %s\n  C    %s\n  Rust %s\n  Go   %s\n  Java %s\n  Swift %s\n" "$(tycho $W/winagg.ty)" "$(cc3 $W/winagg.c)" "$(rs3 $W/winagg.rs)" "$(go3 $W/winagg.go)" "$(java3 $W/winagg.java)" "$(swift3 $W/winagg.swift)"
 
-echo "===== invindex side-array  (growth: .{ty,c,go} | count-fill: _exact.{ty,c}) ====="
+echo "===== invindex side-array  (growth + count-fill) ====="
 I=bench/invindex
-printf "  growth     tycho %s  C %s  Go %s\n" "$(tycho $I/invindex.ty)" "$(cc3 $I/invindex.c)" "$(go3 $I/invindex.go)"
-printf "  count-fill tycho %s  C %s\n" "$(tycho $I/invindex_exact.ty)" "$(cc3 $I/invindex_exact.c)"
+printf "  growth     tycho %s  C %s  Rust %s  Go %s  Java %s  Swift %s\n" "$(tycho $I/invindex.ty)" "$(cc3 $I/invindex.c)" "$(rs3 $I/invindex.rs)" "$(go3 $I/invindex.go)" "$(java3 $I/invindex.java)" "$(swift3 $I/invindex.swift)"
+printf "  count-fill tycho %s  C %s  Rust %s  Go %s  Java %s  Swift %s\n" "$(tycho $I/invindex_exact.ty)" "$(cc3 $I/invindex_exact.c)" "$(rs3 $I/invindex_exact.rs)" "$(go3 $I/invindex_exact.go)" "$(java3 $I/invindex_exact.java)" "$(swift3 $I/invindex_exact.swift)"
 
-echo "===== invindex map  (growth: _map.{ty,c,go} | count-fill: _map_exact.{ty,c,go}) ====="
-printf "  growth     tycho %s  C %s  Go %s\n" "$(tycho $I/invindex_map.ty)" "$(cc3 $I/invindex_map.c)" "$(go3 $I/invindex_map.go)"
-printf "  count-fill tycho %s  C %s  Go %s\n" "$(tycho $I/invindex_map_exact.ty)" "$(cc3 $I/invindex_map_exact.c)" "$(go3 $I/invindex_map_exact.go)"
+echo "===== invindex map  (growth + count-fill) ====="
+printf "  growth     tycho %s  C %s  Rust %s  Go %s  Java %s  Swift %s\n" "$(tycho $I/invindex_map.ty)" "$(cc3 $I/invindex_map.c)" "$(rs3 $I/invindex_map.rs)" "$(go3 $I/invindex_map.go)" "$(java3 $I/invindex_map.java)" "$(swift3 $I/invindex_map.swift)"
+printf "  count-fill tycho %s  C %s  Rust %s  Go %s  Java %s  Swift %s\n" "$(tycho $I/invindex_map_exact.ty)" "$(cc3 $I/invindex_map_exact.c)" "$(rs3 $I/invindex_map_exact.rs)" "$(go3 $I/invindex_map_exact.go)" "$(java3 $I/invindex_map_exact.java)" "$(swift3 $I/invindex_map_exact.swift)"
 
 echo "===== window (string + int) ====="
 WD=bench/window
-printf "  string tycho %s  C %s  Go %s\n" "$(tycho $WD/window_naive.ty)" "$(cc3 $WD/window.c)" "$(go3 $WD/window.go)"
-printf "  int    tycho %s\n" "$(tycho $WD/window_int.ty)"
+printf "  string tycho %s  C %s  Rust %s  Go %s  Java %s  Swift %s\n" "$(tycho $WD/window_naive.ty)" "$(cc3 $WD/window.c)" "$(rs3 $WD/window.rs)" "$(go3 $WD/window.go)" "$(java3 $WD/window.java)" "$(swift3 $WD/window.swift)"
+printf "  int    tycho %s  C %s  Rust %s  Go %s  Java %s  Swift %s\n" "$(tycho $WD/window_int.ty)" "$(cc3 $WD/window_int.c)" "$(rs3 $WD/window_int.rs)" "$(go3 $WD/window_int.go)" "$(java3 $WD/window_int.java)" "$(swift3 $WD/window_int.swift)"
 
 echo "===== dbquery (real SQLite via FFI; skips if no libsqlite3) ====="
 if pkg-config --exists sqlite3 2>/dev/null || echo '#include <sqlite3.h>' | cc -E - >/dev/null 2>&1; then

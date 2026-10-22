@@ -1,4 +1,4 @@
-# Inverted-index build — head-to-head (tycho vs C vs Go)
+# Inverted-index build — head-to-head (tycho vs C vs Rust vs Go vs Java vs Swift)
 
 A *build-and-hold* workload: build a deterministic inverted index from a corpus
 of 300 000 documents × 12 words drawn from an 8 000-term vocabulary (~3.6 M term
@@ -7,6 +7,23 @@ query and checksum the whole index. Every language runs the identical algorithm
 over the identical LCG sequence, so all variants print the same oracle line:
 
     vocab=8000 checksum=7236429 and01=0
+
+### Cross-language service run (2026-10-22)
+
+Best-of-three wall time in ms, same checksums, `bench/fair_rest.sh` on Linux.
+Java/Swift peak RSS includes runtime baseline; compare their time, not RSS.
+
+| form | Tycho | C | Rust | Go | Java | Swift |
+|---|---:|---:|---:|---:|---:|---:|
+| side-array growth | **253** | 254 | 288 | 312 | 328 | 617 |
+| side-array count-fill | **348** | 373 | 453 | 615 | 469 | 894 |
+| map-native growth | **181** | 192 | 203 | 248 | 285 | 371 |
+| map-native count-fill | 327 | **313** | 359 | 349 | 350 | 664 |
+
+Tycho is C-class on all four forms and faster than Rust/Go/Java/Swift on growth.
+Map count-fill is 4.5% behind C (inside the 10% manual-memory band); Rust/Java/
+Swift are behind Tycho there. The side-array and map-native source ports cover
+the same two architectures.
 
 Peak RSS (via `bench/peakrss.c`), best-of-three, `-O2` / `go build`. Two program
 architectures: **growth** (the naive idiom — `push`/`append`/`realloc` grow each

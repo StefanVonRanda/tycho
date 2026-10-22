@@ -37,8 +37,8 @@ and it is reached with zero manual management.
 
 ### Current GC / ARC rows
 
-Six workload ports are built for **OpenJDK 25 (GC)** and **Swift 6.3.2
-(ARC)**. Wall time, same outputs, best-of-three:
+Six core workload ports are built for **OpenJDK 25 (GC)** and **Swift 6.3.2
+(ARC)**; the service rows below extend the same comparison. Wall time, same outputs, best-of-three:
 
 | workload | Tycho | Java (GC) | Swift (ARC) |
 |---|---:|---:|---:|
@@ -46,16 +46,39 @@ Six workload ports are built for **OpenJDK 25 (GC)** and **Swift 6.3.2
 | array-pipeline | **20 ms** | 72 ms | 50 ms |
 | dispatch | **5 ms** | 66 ms | 156 ms |
 | json-parse | **601 ms** | 698 ms | 3072 ms |
-| winagg | **81 ms** | 262 ms | 371 ms |
-| latency | **124 ms** | 415 ms | 163 ms |
+| winagg | **91 ms** | 262 ms | 374 ms |
+| latency | **134 ms** | 411 ms | 163 ms |
 
 Tycho is faster than both managed-memory runtimes on every port. Java's JVM
 baseline makes its peak RSS uninformative for the small rows; the table is a
 time comparison. Koka results elsewhere in the repository are historical and
 are no longer the headline managed-memory comparison.
 
-Rust is included on `latency`: **103 ms**, ahead of Tycho’s 124 ms and C’s
-123 ms. That is outside the 10% manual-memory band, so it is a real loss.
+Service-row times (ms; same checksums, best-of-three where the runner batches):
+
+| row | Tycho | C | Rust | Go | Java | Swift |
+|---|---:|---:|---:|---:|---:|---:|
+| winagg | **91** | 98 | 166 | 230 | 262 | 374 |
+| latency | 134 | **127** | **103** | 1031 | 411 | 163 |
+| invindex growth | **253** | 254 | 288 | 312 | 328 | 617 |
+| invindex count-fill | **348** | 373 | 453 | 615 | 469 | 894 |
+| invindex map growth | **181** | 192 | 203 | 248 | 285 | 371 |
+| invindex map count-fill | 327 | **313** | 359 | 349 | 350 | 664 |
+| window string | **31** | 59 | 56 | 58 | 54 | 119 |
+| window int | 2 | 2 | **0** | 2 | 17 | 8 |
+| gcscan | **47** | 82 | 104 | 125 | 101 | 135 |
+| dbquery | **230** | 234 | - | 253 | - | - |
+
+Rust is ahead only on `latency` and the fixed-size `window int` microcase. Tycho
+is faster than C on most service rows; C is ahead on `latency` (127 vs 134 ms)
+and `invindex map count-fill` (313 vs 327 ms, 4.5% slower), both inside the 10%
+manual-memory band. Tycho is faster than Java/Swift on every row they cover.
+`dbquery` has no Rust/Java/Swift port on this host, so those `-` cells are not
+managed-runtime claims.
+
+Rust is included on `latency`: **103 ms**, ahead of Tycho’s 134 ms and C’s
+127 ms. Tycho is within the 10% manual-memory band against C but outside it
+against Rust, so the Rust loss is real and not hidden.
 
 ### Service-row coverage
 
@@ -66,16 +89,22 @@ is explicitly unported.
 |---|---|---|---|---|---|---|
 | winagg | Y | Y | Y | Y | Y | Y |
 | latency | Y | Y | Y | Y | Y | Y |
-| invindex | Y | Y | - | Y | - | - |
-| window | Y | Y | - | Y | - | - |
+| invindex growth | Y | Y | Y | Y | Y | Y |
+| invindex count-fill | Y | Y | Y | Y | Y | Y |
+| invindex map growth | Y | Y | Y | Y | Y | Y |
+| invindex map count-fill | Y | Y | Y | Y | Y | Y |
+| window string | Y | Y | Y | Y | Y | Y |
+| window int | Y | Y | Y | Y | Y | Y |
+| gcscan | Y | Y | Y | Y | Y | Y |
 | dbquery | Y | Y | - | Y | - | - |
-| gcscan | Y | Y | - | Y | - | - |
 
-The unported cells are not wins; they are queued work.
+`dbquery` remains unported for Rust/Java/Swift: the Rust port would need a
+libsqlite3 FFI binding, this host has no SQLite JDBC driver for Java, and no
+Swift SQLite module. The `-` cells are queued work, not wins.
 
 The service-shaped `winagg` row (per-window map of growing lists) now runs at
-**81 ms versus C 97 ms**, Rust 169 ms, Go 232 ms, Java 262 ms and Swift 371 ms;
-peak RSS is 7.7 MB versus C 5.9 MB. It is the row the map/list hash and
+**91 ms versus C 98 ms**, Rust 166 ms, Go 230 ms, Java 262 ms and Swift 374 ms;
+peak RSS is 7.4 MB versus C 5.8 MB. It is the row the map/list hash and
 read-only-borrow work targeted.
 
 ## Arena internals, measured

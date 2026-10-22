@@ -1,15 +1,37 @@
 # Large held set — per-object overhead + GC-scan cost
 
-**Headline: tycho holds a 2,000,000-string live set in 65 MB with zero GC work —
-lower memory than hand-written C (78 MB) and ~2× lower than Go's default
-(120 MB), while beating Go on wall time (137 vs 202 ms).** The arena carries no
+**Historical reference-compiler headline: tycho holds a 2,000,000-string live set in
+65 MB with zero GC work — lower memory than hand-written C (78 MB) and ~2× lower
+than Go's default (120 MB), while beating Go on wall time (137 vs 202 ms).** The arena carries no
 per-object header and no GC metadata, so when peak is bound by object *count* it
 wins outright — and unlike Go it never faces a memory-vs-CPU tradeoff (details
-in §1 below). That is the result to lead with; the nuance is in the breakdown.
+in §1 below). The current shipped-compiler table above is the operational result; the
+64.8 MB figure is historical reference-compiler context, not the current claim.
 
 Two angles in one workload: hold a **large live set** (2,000,000 small heap strings,
 retained for the whole run) and **churn** transient arrays alongside it. Same
 checksum across languages.
+
+### Current shipped-compiler service run (2026-10-22)
+
+`bench/gcscan/run.sh` on the shipped `tychoc1`; best-effort timing and peak RSS.
+The historical reference-compiler table below is retained for context, but its
+64.8 MB headline is **not** a current shipped-compiler claim.
+
+| lang | peak RSS | wall | GC |
+|---|---:|---:|---|
+| **Tycho** | **93.6 MB** | **47 ms** | none |
+| C | 77.6 MB | 82 ms | none |
+| Rust | 108.4 MB | 104 ms | none |
+| Go (GOGC=100) | 127.6 MB | 125 ms | 11 cycles |
+| Go (GOGC=10) | 62.2 MB | 282 ms | 101 cycles |
+| Java | 233.8 MB | 101 ms | JVM collector |
+| Swift | 39.6 MB | 135 ms | ARC |
+
+Tycho wins wall time, but on the shipped compiler it is **not** the lowest-memory
+port here: C is 77.6 MB and Swift is 39.6 MB. This row is therefore a time win
+and an explicit memory gap, not a memory win.
+
 
 ## Results (`make bench-gcscan`)
 

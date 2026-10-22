@@ -20,6 +20,14 @@ a time under a hard cap, e.g. `(ulimit -v 12582912; ...)`, and never alongside
 and OOM-killed the host; the scalar-map fix and the 256 MB LRU guard are
 recorded in `bench/lru/RESULTS.md`.
 
+Service-row coverage is now explicit: `winagg`, `latency`, `invindex` (growth
+and count-fill, side-array and map-native), `window` (string and int), and
+`gcscan` have Tycho/C/Rust/Go/Java/Swift ports. `dbquery` still has only
+Tycho/C/Go; its Rust/Java/Swift cells are `-` in the matrix because this host
+has no Rust SQLite binding, SQLite JDBC driver, or Swift SQLite module. The
+service harnesses fail closed on output mismatches; see
+[docs/performance.md](../docs/performance.md#service-row-coverage).
+
 ## Axis 1 — memory (peak RSS)
 
 | workload | what it stresses | tycho vs others | verdict | run |
@@ -31,10 +39,10 @@ recorded in `bench/lru/RESULTS.md`.
 | **json-parse (real)** | recursive-descent parse-and-discard | 66.7 MB vs C 58.1, Rust 58.9, Go 109.8 | **fastest of C/Rust/Go**, ~1.15× C memory (whole tree held per pass) | `bench-prongB` |
 | **iter-transform** | loop-carried reassign (was the arena's worst case) | 4 MB vs C 3 | **3.5 GB → 4 MB** mem (static FBIP reuse, no refcount); time 6.7×→**2.3× C** after push-loop fusion | `bench-prongB` |
 | **invindex** | build-and-hold growth | ~1.7× C, → ~1.07× with `reserve` | honest hold-cost; sizing closes it | `invindex/` |
-| **winagg** | per-window churn-and-discard | 7.3 MB vs C 5.3 (~1.4×), Rust 5.8, Go 12.3; **84 ms vs C 97 ms** | faster than C after the map/list path fix; memory remains the hold-cost | `winagg/` |
+| **winagg** | per-window churn-and-discard | 7.4 MB vs C 5.8 (~1.3×), Rust 5.8, Go 11.0; **91 ms vs C 98 ms** | faster than C after the map/list path fix; memory remains the hold-cost | `winagg/` |
 | **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
 | **window** | sliding-window **eviction** | string: 4.2 MB vs C 3.3 (~1.3×) after **MM-9**; int: 2.3 MB (tie) | **was the clean loss (14×), now closed** — element-overwrite recycle | `bench-window` |
-| **gcscan** | large held set of small objects (per-object overhead) | 125.6 MB vs C 78.1, Go 130.1 (shipped `tychoc1`; reference compiler 65.1) | time win (58 vs 77 ms, below Go), memory gap on the shipped compiler; the reference matches the historical 64.7 MB | `bench-gcscan` |
+| **gcscan** | large held set of small objects (per-object overhead) | 93.6 MB vs C 77.6, Rust 108.4, Go 127.6; **47 vs C 82 ms** (shipped `tychoc1`; reference-compiler historical 65.1) | time win, explicit memory gap on the shipped compiler; the reference matches the historical 64.7 MB | `bench-gcscan` |
 | **json-tree** | a tagged value tree held across a fold | 37 MB (reference) / 50.1 MB (shipped `tychoc1`) vs C 35.1, Go 27.3 | reference ≈ C; shipped compiler retains more on this tree — **value-shaped** data, zero manual mgmt | `json/` |
 | **trie** | pointer-linked recursive nodes (each owns a child map) | 58.3 MB vs C 37.6, Go 33.6; pool 34.0; persistent path 12.4 vs 1.63 GB control | **~1.55× C idiomatic — closed to ~0.9–1.1× C by the index idiom**: children stored by value, not by pointer; the compact indexed-dict map layout removed the empty-slot + order-list waste (was ~3.2× / 119 MB). The flat-pool + integer-index idiom (`trie_pool.ty`, one `reserve`) lands at **34.0 MB**; O6 path-copying makes the persistent twin **12.4 MB** vs **1.63 GB** for the copying control | `trie/` |
 | **dijkstra** | graph as an adjacency list of **indices** | 46.4 MB vs C 30.7, Go 33.1 | ~1.5× C — the index idiom makes the graph value-shaped (the trie's bridge) | `dijkstra/` |

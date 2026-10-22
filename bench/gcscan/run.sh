@@ -22,4 +22,7 @@ if command -v go >/dev/null 2>&1; then
     row "Go (GOGC=100)" "$T/ggo" ""
     row "Go (GOGC=10)"  "$T/ggo" "GOGC=10"
 fi
+if command -v rustc >/dev/null 2>&1; then rustc -C opt-level=3 -o "$T/gr" "$D/gcscan.rs" 2>/dev/null && row "Rust" "$T/gr" ""; fi
+if command -v javac >/dev/null 2>&1; then mkdir -p "$T/jc"; javac -d "$T/jc" "$D/gcscan.java" 2>/dev/null && printf '#!/bin/sh\nexec java -cp "%s" gcscan\n' "$T/jc" > "$T/jg" && chmod +x "$T/jg" && row "Java" "$T/jg" ""; fi
+if command -v swiftc >/dev/null 2>&1; then swiftc -O -o "$T/gs" "$D/gcscan.swift" 2>/dev/null && row "Swift" "$T/gs" ""; fi
 [ "$FAIL" = 0 ] && echo "gcscan: ok (checksums agree)" || { echo "gcscan: FAIL"; exit 1; }

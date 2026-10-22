@@ -15,6 +15,19 @@ checksum `15777800`. Peak RSS via `bench/peakrss`.
 
 From **14× C to ~1.3× C** — now under Go, ~par C, with no manual frees and no GC.
 
+### Cross-language service run (2026-10-22)
+
+Wall time in ms, same checksums, `bench/window/run.sh` on Linux. String values
+are `15777800`; int values are `99999000000`. Java peak RSS is JVM baseline.
+
+| shape | Tycho | C | Rust | Go | Java | Swift |
+|---|---:|---:|---:|---:|---:|---:|
+| string | **31** | 59 | 56 | 58 | 54 | 119 |
+| int | 2 | 2 | **0** | 2 | 17 | 8 |
+
+The string case is the heap-bearing eviction case; the int case is the
+fixed-size contrast where slots are reused in place. Both checksum checks pass.
+
 Re-measured at `-O3` (2026-06-07): peak RSS unchanged (string tycho 4.3 MB, C 3.2 MB,
 Go 7.5 MB; int tycho 2.3 MB — all flag-independent). Wall, best-of-3: string tycho
 106 ms, C 77 ms, Go 81 ms; int tycho 3 ms. `run.sh` now builds at `-O3`.

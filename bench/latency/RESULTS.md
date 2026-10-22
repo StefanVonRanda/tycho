@@ -7,7 +7,7 @@ execution, tail percentiles or a worst-case latency bound for any language.
 
 Workload: 2000 rounds, each builds and discards a 100k-element working set. Tycho
 resets a loop scratch arena for reuse; C `free`s its allocation; Go's GC collects
-the garbage. All three print the same checksum (`599376507`). Reset rewinds the
+the garbage. All ports print the same checksum (`599376507`). Reset rewinds the
 head block and walks overflow blocks into a reuse pool; only the single-block
 fast path is O(1), not arbitrary arena cleanup. Pooled blocks can remain resident.
 
@@ -63,21 +63,24 @@ Together with the memory benchmarks this adds one limited axis of evidence:
 checksums and reports totals; it does not certify jitter-free execution.
 
 
-## 2026-10-22 Java and Swift service-row check
+## 2026-10-22 six-language service-row check
 
-The latency runner now also builds OpenJDK 25 and Swift 6.3.2 ports. Same
+The latency runner now builds OpenJDK 25, Swift 6.3.2 and Rust ports. Same
 checksum `599376507`:
 
 | build | peak RSS | wall time | GC |
 |---|---:|---:|---|
-| Tycho | 2.4 MB | **134 ms** | none |
-| C | 2.2 MB | 123 ms | none |
-| Go | 12.7 MB | 1152 ms | 3058 collections |
-| Java | 1067.2 MB | 415 ms | JVM collector |
-| Swift | 9.9 MB | 164 ms | ARC |
+| Tycho | 2.3 MB | 134 ms | none |
+| C | 2.1 MB | **127 ms** | none |
+| Rust | 2.8 MB | **103 ms** | none |
+| Go | 13.1 MB | 1031 ms | 2992 collections |
+| Java | 1113.7 MB | 411 ms | JVM collector |
+| Swift | 10.2 MB | 163 ms | ARC |
 
-Tycho is within the 10% manual-memory band of C and faster than both managed
-runtimes. Java's RSS is JVM baseline; the table is a time comparison.
+Tycho is within the 10% manual-memory band of C (134 vs 127 ms), but Rust is
+23% faster, so this row is a real loss against the manual-memory bar and is
+reported as such. Tycho is faster than both managed runtimes. Java's RSS is JVM
+baseline; this table is a time comparison.
 
 
 ## 2026-10-22 Rust port

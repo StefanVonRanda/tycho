@@ -1,4 +1,4 @@
-# Windowed group-by — head-to-head (tycho vs C vs Rust vs Go)
+# Windowed group-by — head-to-head (tycho vs C vs Rust vs Go vs Java vs Swift)
 
 A **churn / transient** workload — the honest complement to the inverted index
 (`bench/invindex`, a *build-and-hold* workload). A deterministic 10 M-event stream
@@ -28,6 +28,22 @@ allocation is flag-independent. tycho 190→172 ms; C/Rust/Go within noise.)
 
 2026-10-20 repeat with the shipped `tychoc1`: **7.3 MB / 235 ms**; C 5.3/138,
 Rust 5.8/234, Go 12.3/343; checksum `505098931`.
+
+### 2026-10-22 six-language service run
+
+Best-of-three wall time and peak RSS, same checksum `505098931`:
+
+| lang | peak RSS | time |
+|---|---:|---:|
+| **Tycho** | 7.4 MB | **91 ms** |
+| C | 5.8 MB | 98 ms |
+| Rust | 5.8 MB | 166 ms |
+| Go | 11.0 MB | 230 ms |
+| Java | 429.6 MB | 262 ms |
+| Swift | 13.6 MB | 374 ms |
+
+Tycho now beats C on time for this churn row while remaining ~1.3× C on memory;
+Java/Swift are behind on both axes in time (their RSS includes runtime baseline).
 
 ### macOS (Apple Silicon, Darwin 25.5, clang 21 / rustc 1.95 / go 1.26.4 — 2026-06-09)
 
