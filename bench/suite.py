@@ -43,8 +43,8 @@ LABEL = {"tycho": "Tycho", "c": "C", "rust": "Rust",
          "go": "Go", "java": "Java", "swift": "Swift"}
 
 
-def src(lang, path, pattern, repl):
-    return {"lang": lang, "path": path, "pattern": pattern, "repl": repl}
+def src(lang, path, pattern, repl, **extra):
+    return {"lang": lang, "path": path, "pattern": pattern, "repl": repl, **extra}
 
 
 def variant(label, tier, group, sources):
@@ -63,6 +63,10 @@ SIZES = {
     "arr": [("small", 25_000), ("medium", 100_000), ("large", 400_000)],
     "dispatch": [("small", 500), ("medium", 2_000), ("large", 8_000)],
     "json": [("small", 12_500), ("medium", 50_000), ("large", 200_000)],
+    "maptree": [("small", 14), ("medium", 16), ("large", 18)],
+    "string": [("small", 1_000), ("medium", 4_000), ("large", 16_000)],
+    "iter": [("small", 25_000), ("medium", 100_000), ("large", 400_000)],
+    "dbquery": [("small", 15_000), ("medium", 60_000), ("large", 240_000)],
 }
 
 WORKLOADS = [
@@ -229,6 +233,62 @@ WORKLOADS = [
             ]),
         ],
     },
+    {
+        "name": "maptree",
+        "what": "Persistent tree rewrite: map every node, discard each result.",
+        "variants": [
+            variant("default", "idiomatic", "maptree", [
+                src("tycho", "bench/prongB/maptree.ty", r"(t := build\()\d+", r"\g<1>{n}"),
+                src("c", "bench/prongB/maptree.c", r"(Tree\*t=build\()\d+", r"\g<1>{n}"),
+                src("rust", "bench/prongB/maptree.rs", r"(let t=build\()\d+", r"\g<1>{n}"),
+                src("go", "bench/prongB/maptree.go", r"(t:=build\()\d+", r"\g<1>{n}"),
+                src("java", "bench/prongB/maptree.java", r"(int depth = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/prongB/maptree.swift", r"(let depth = )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
+    {
+        "name": "string",
+        "what": "String pipeline: build and hash many short strings.",
+        "variants": [
+            variant("default", "idiomatic", "string", [
+                src("tycho", "bench/prongB/string_pipe.ty", r"(m := )\d+", r"\g<1>{n}"),
+                src("c", "bench/prongB/string_pipe.c", r"(long m = )\d+", r"\g<1>{n}"),
+                src("rust", "bench/prongB/string_pipe.rs", r"(let m: i64 = )\d+", r"\g<1>{n}"),
+                src("go", "bench/prongB/string_pipe.go", r"(var m, kk, p int64 = )\d+", r"\g<1>{n}"),
+                src("java", "bench/prongB/string_pipe.java", r"(int m = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/prongB/string_pipe.swift", r"(let m = )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
+    {
+        "name": "iter",
+        "what": "Loop-carried array transform: the arena's former worst case.",
+        "variants": [
+            variant("default", "idiomatic", "iter", [
+                src("tycho", "bench/prongB/iter_transform.ty", r"(n := )\d+", r"\g<1>{n}"),
+                src("c", "bench/prongB/iter_transform.c", r"(long n = )\d+", r"\g<1>{n}"),
+                src("rust", "bench/prongB/iter_transform.rs", r"(let n: i64 = )\d+", r"\g<1>{n}"),
+                src("go", "bench/prongB/iter_transform.go", r"(var n, m, p int64 = )\d+", r"\g<1>{n}"),
+                src("java", "bench/prongB/iter_transform.java", r"(int n = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/prongB/iter_transform.swift", r"(let n = )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
+    {
+        "name": "dbquery",
+        "what": "Host-side grouping around a real in-memory SQLite query.",
+        "variants": [
+            variant("default", "expert", "dbquery", [
+                src("tycho", "bench/dbquery/dbquery.ty", r"(n := )\d+", r"\g<1>{n}",
+                    tycho_flags=["--link", "sqlite3"],
+                    tycho_c_flags=["-lsqlite3"]),
+                src("c", "bench/dbquery/dbquery.c", r"(long n = )\d+", r"\g<1>{n}",
+                    c_flags=["-lsqlite3"]),
+                src("go", "bench/dbquery/dbquery.go", r"(const n = )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
 ]
 
 
@@ -263,13 +323,16 @@ def compile_source(source, n, workdir, cc, tychoc):
         if not tool(tychoc):
             return None, "tychoc missing"
         generated = workdir / "tycho_gen"
-        p = run([tychoc, str(dst), "--emit-c", "-o", str(generated)])
+        p = run([tychoc, str(dst), "--emit-c", "-o", str(generated)] +
+                source.get("tycho_flags", []))
         if p.returncode != 0:
             return None, p.stderr.strip().splitlines()[-1] if p.stderr.strip() else "tycho build failed"
-        p = run([cc, "-O3", str(generated) + ".c", "-o", str(exe), "-lm"])
+        p = run([cc, "-O3", str(generated) + ".c", "-o", str(exe)] +
+                source.get("tycho_c_flags", []) + ["-lm"])
         return (exe, None) if p.returncode == 0 else (None, "cc failed")
     if lang == "c":
-        p = run([cc, "-O3", str(dst), "-o", str(exe), "-lm"])
+        p = run([cc, "-O3", str(dst), "-o", str(exe)] +
+                source.get("c_flags", []) + ["-lm"])
         return (exe, None) if p.returncode == 0 else (None, "cc failed")
     if lang == "rust":
         if not tool("rustc"):

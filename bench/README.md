@@ -7,8 +7,10 @@ on memory-heavy work, with **byte-identical output** per workload —
 not a passing test suite. This file is the map; each row links to a `RESULTS.md`
 with detail. The **generated multi-size scorecard** is
 [`RESULTS.md`](RESULTS.md), produced by `python3 bench/suite.py` (or
-`make bench-suite`). It owns the three-size data; the prose pages explain the
-mechanisms and historical context.
+`make bench-suite`). It owns the three-size data for the service rows and all
+seven `prongB` core rows; the specialized benchmarks (`trie`, `dijkstra`, `lru`,
+`interp`, `json-tree`, concurrency and app rows) still have their own runners.
+The prose pages explain the mechanisms and historical context.
 
 All Linux figures below were recorded on **AMD Strix Halo / Ryzen AI MAX+ 395,
 Fedora Linux 44, x86-64** (16 cores, 32 hardware threads); macOS second-machine
