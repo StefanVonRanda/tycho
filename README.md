@@ -342,8 +342,9 @@ array pipelines it is C-class (2 MB / 20 ms against C's 2 MB / 19 ms in the
 current shipped-compiler run). A 220-line recursive JSON parser holds a flat
 10 MB across 5,000,000 documents in a loop, and at scale the model is tight:
 big workloads hold their live set within 0.1–1.3% of what they reserve from
-the OS at 99.8% block reuse. The tables, the measurements, and the costs are
-in **[docs/performance.md](docs/performance.md)**.
+the OS at 99.8% block reuse. The generated three-size benchmark suite is
+**[bench/RESULTS.md](bench/RESULTS.md)**; the analysis and costs are in
+**[docs/performance.md](docs/performance.md)**.
 
 ## FAQ
 

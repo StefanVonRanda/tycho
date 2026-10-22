@@ -4,6 +4,10 @@ Every program in this file runs on `tychoc`, its output checked against a
 golden. Cross-language *ratios* matter more than absolute times, which depend
 on the machine.
 
+The **generated multi-size suite** is [`bench/RESULTS.md`](../bench/RESULTS.md),
+produced by `bench/suite.py`; it is the source of record for the size/tier
+measurements. This page is the analysis and historical context.
+
 ## A real program at flat memory
 
 [`examples/json.ty`](../examples/json.ty) is a 220-line recursive-descent JSON
@@ -54,7 +58,10 @@ baseline makes its peak RSS uninformative for the small rows; the table is a
 time comparison. Koka results elsewhere in the repository are historical and
 are no longer the headline managed-memory comparison.
 
-Service-row times (ms; same checksums, best-of-three where the runner batches):
+Service-row times (ms; same checksums, best-of-three where the runner batches).
+This is a single-size snapshot from the dedicated service harness; the
+three-size generated suite in [`bench/RESULTS.md`](../bench/RESULTS.md) is the
+current source of record.
 
 | row | Tycho | C | Rust | Go | Java | Swift |
 |---|---:|---:|---:|---:|---:|---:|
@@ -80,6 +87,9 @@ Rust is included on `latency`: **103 ms**, ahead of Tycho’s 134 ms and C’s
 against Rust, so the Rust loss is real and not hidden.
 
 ### Relative service scorecard
+
+This is the same single-size snapshot. `bench/RESULTS.md` carries the generated
+three-size version and the core rows.
 
 `Tycho / competitor`; below 1.00 means Tycho is faster. These are the same
 service runs above, plus `latency` and `gcscan` from their own harnesses.
