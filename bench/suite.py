@@ -44,6 +44,7 @@ LABEL = {"tycho": "Tycho", "c": "C", "rust": "Rust",
 CORE_GROUPS = {"binary", "maptree", "arr", "string", "iter", "dispatch", "json"}
 SERVICE_GROUPS = {"latency", "window_string", "window_int", "gcscan",
                   "winagg", "invindex_side", "invindex_map", "dbquery"}
+SPECIAL_GROUPS = {"trie", "dijkstra", "lru", "interp", "json_tree"}
 
 
 def src(lang, path, pattern, repl, **extra):
@@ -70,6 +71,11 @@ SIZES = {
     "string": [("small", 1_000), ("medium", 4_000), ("large", 16_000)],
     "iter": [("small", 25_000), ("medium", 100_000), ("large", 400_000)],
     "dbquery": [("small", 15_000), ("medium", 60_000), ("large", 240_000)],
+    "trie": [("small", 50_000), ("medium", 150_000), ("large", 450_000)],
+    "dijkstra": [("small", 100_000), ("medium", 300_000), ("large", 900_000)],
+    "lru": [("small", 1_250_000), ("medium", 5_000_000), ("large", 10_000_000)],
+    "interp": [("small", 16), ("medium", 20), ("large", 22)],
+    "json_tree": [("small", 12_500), ("medium", 50_000), ("large", 150_000)],
 }
 
 WORKLOADS = [
@@ -320,6 +326,62 @@ WORKLOADS = [
             ]),
         ],
     },
+    {
+        "name": "trie",
+        "what": "Construct a large prefix tree; node count is the checksum.",
+        "variants": [
+            variant("default", "idiomatic", "trie", [
+                src("tycho", "bench/trie/trie.ty", r"(n := )\d+", r"\g<1>{n}"),
+                src("c", "bench/trie/trie.c", r"(int n = )\d+", r"\g<1>{n}"),
+                src("go", "bench/trie/trie.go", r"(n := )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
+    {
+        "name": "dijkstra",
+        "what": "Build and traverse a deterministic weighted graph.",
+        "variants": [
+            variant("default", "idiomatic", "dijkstra", [
+                src("tycho", "bench/dijkstra/dijkstra.ty", r"(n := )\d+", r"\g<1>{n}"),
+                src("c", "bench/dijkstra/dijkstra.c", r"(int n = )\d+", r"\g<1>{n}"),
+                src("go", "bench/dijkstra/dijkstra.go", r"(n, deg := )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
+    {
+        "name": "lru",
+        "what": "Fixed-capacity LRU cache under a deterministic operation stream.",
+        "variants": [
+            variant("default", "idiomatic", "lru", [
+                src("tycho", "bench/lru/lru.ty", r"(nops := )\d+", r"\g<1>{n}"),
+                src("c", "bench/lru/lru.c", r"(#define NOPS     )\d+", r"\g<1>{n}"),
+                src("go", "bench/lru/lru.go", r"(nops     = )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
+    {
+        "name": "interp",
+        "what": "Build, evaluate, fold and compare a recursive expression AST.",
+        "variants": [
+            variant("default", "idiomatic", "interp", [
+                src("tycho", "bench/interp/interp.ty", r"(depth := )\d+", r"\g<1>{n}"),
+                src("c", "bench/interp/interp.c", r"(#define DEPTH )\d+", r"\g<1>{n}", c_flags=["-fwrapv"]),
+                src("go", "bench/interp/interp.go", r"(const depth = )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
+    {
+        "name": "json_tree",
+        "what": "Parse one JSON document into a held tagged tree and fold it.",
+        "variants": [
+            variant("default", "idiomatic", "json_tree", [
+                src("tycho", "bench/json/json.ty", r"(n := )\d+", r"\g<1>{n}",
+                    tycho_c_sources=["corelib/strings/strings_shim.c"]),
+                src("c", "bench/json/json.c", r"(int n = )\d+", r"\g<1>{n}"),
+                src("go", "bench/json/json.go", r"(n := )\d+", r"\g<1>{n}"),
+            ]),
+        ],
+    },
 ]
 
 
@@ -358,7 +420,8 @@ def compile_source(source, n, workdir, cc, tychoc):
                 source.get("tycho_flags", []))
         if p.returncode != 0:
             return None, p.stderr.strip().splitlines()[-1] if p.stderr.strip() else "tycho build failed"
-        p = run([cc, "-O3", str(generated) + ".c", "-o", str(exe)] +
+        p = run([cc, "-O3", "-fwrapv", str(generated) + ".c", "-o", str(exe)] +
+                [str(ROOT / x) for x in source.get("tycho_c_sources", [])] +
                 source.get("tycho_c_flags", []) + ["-lm"])
         return (exe, None) if p.returncode == 0 else (None, "cc failed")
     if lang == "c":
@@ -549,7 +612,8 @@ def render(data):
     add("")
     add("| category | vs C | vs Rust | vs Go | vs Java | vs Swift |")
     add("|---|---:|---:|---:|---:|---:|")
-    for cat, groupset in (("core", CORE_GROUPS), ("service", SERVICE_GROUPS)):
+    for cat, groupset in (("core", CORE_GROUPS), ("service", SERVICE_GROUPS),
+                          ("specialized", SPECIAL_GROUPS)):
         for metric, label in (("ms", "time"), ("rss", "memory")):
             langs = LANGS[1:] if metric == "ms" else MEM_LANGS
             vals = {lang: [] for lang in langs}
@@ -677,6 +741,7 @@ def main():
     tychoc = os.environ.get("TYCHOC", "./tychoc1")
     if not (ROOT / tychoc).exists() and not tool(tychoc):
         raise SystemExit(f"Tycho compiler not found: {tychoc}")
+    os.environ.setdefault("TYCHO_CORELIB", str(ROOT / "corelib"))
     only = [x for x in args.only.split(",") if x]
     selected = [w for w in WORKLOADS if not only or w["name"] in only]
     if not selected:

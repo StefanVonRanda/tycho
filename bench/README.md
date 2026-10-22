@@ -9,9 +9,9 @@ with detail. The **generated multi-size scorecard** is
 [`RESULTS.md`](RESULTS.md) and the clang report
 [`RESULTS-clang.md`](RESULTS-clang.md), produced by `python3 bench/suite.py`
 (or `make bench-suite` / `make bench-suite-backends`). They own the three-size
-data for the service rows and all seven `prongB` core rows; the specialized
-benchmarks (`trie`, `dijkstra`, `lru`, `interp`, `json-tree`, concurrency and
-app rows) still have their own runners.
+data for the service rows, all seven `prongB` core rows, and the specialized
+`trie`, `dijkstra`, `lru`, `interp` and `json_tree` rows where a port exists.
+Concurrency and application rows still have their own runners.
 The prose pages explain the mechanisms and historical context.
 
 All Linux figures below were recorded on **AMD Strix Halo / Ryzen AI MAX+ 395,

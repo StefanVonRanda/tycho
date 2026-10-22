@@ -121,6 +121,20 @@ closure form is still slower than C on `dispatch` (GCC 24 vs 13 ms; clang 32 vs
 22 ms), and the expert struct form does not close it (GCC 28 vs 13 ms). This
 needs a closure environment/array ABI change, not another local codegen tweak.
 
+Follow-up work after the benchmark refresh:
+
+- **Specialized rows:** DONE — `trie`, `dijkstra`, `lru`, `interp` and
+  `json_tree` are in the generated suite; Rust/Java/Swift cells are `-` where
+  no port exists.
+- **Regression gate:** DONE — `make bench-suite-gate` checks saved GCC/clang
+  results for checksum failure, latency relative to C/Rust, service memory and
+  six-language `dbquery` coverage.
+- **Reference compiler parity:** OPEN — the four longstanding codegen
+  optimizations remain `tychoc1`-only; the generated suite still uses the
+  shipped compiler.
+- **External-program check:** DONE — `tools/tycho-hash/run.sh` passes its
+  deterministic, cross-worker SHA-256 and error-path checks.
+
 ## Friction phases from the `tycho-dupe` probe (2026-10-19)
 
 > **Status, 2026-10-19: all seven phases are DONE and gated.** The probe record
