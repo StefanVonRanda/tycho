@@ -134,6 +134,10 @@ Follow-up work after the benchmark refresh:
   shipped compiler.
 - **External-program check:** DONE — `tools/tycho-hash/run.sh` passes its
   deterministic, cross-worker SHA-256 and error-path checks.
+- **`json_tree` fast path:** PARTIAL — a single-scope flat-record parser
+  removes most per-call arena overhead (GCC 97 ms / 106 MB vs C 52 / 103;
+  clang 66 / 106 vs C 46 / 103). It is still slower than C, so this remains a
+  performance target rather than a completed parity claim.
 
 ## Friction phases from the `tycho-dupe` probe (2026-10-19)
 

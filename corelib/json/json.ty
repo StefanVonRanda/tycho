@@ -632,7 +632,134 @@ fn _depth_of(s: string) -> int:
             d = d - 1
     return m
 
+# A flat-record fast path for the common [ {primitive fields...}, ... ]
+# document shape. It stays in one function so every allocation belongs to one
+# parse scope instead of one child arena per recursive helper. Anything nested
+# or malformed returns an error and the general parser below handles it.
+fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
+    n := len(s)
+    pos := 0
+    for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+        pos = pos + 1
+    if pos >= n or s[pos] != 91:
+        return Err(BadByte(pos))
+    pos = pos + 1
+    xs := []Json
+    for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+        pos = pos + 1
+    if pos < n and s[pos] == 93:
+        pos = pos + 1
+        return Ok(JArr(xs))
+    for pos < n:
+        for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+            pos = pos + 1
+        if pos >= n or s[pos] != 123:
+            return Err(BadByte(pos))
+        pos = pos + 1
+        ks := []string
+        vs := []Json
+        for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+            pos = pos + 1
+        if pos < n and s[pos] == 125:
+            pos = pos + 1
+        else:
+            for true:
+                for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+                    pos = pos + 1
+                if pos >= n or s[pos] != 34:
+                    return Err(BadKey(pos))
+                pos = pos + 1
+                k := ""
+                for pos < n and s[pos] != 34:
+                    if s[pos] == 92:
+                        return Err(BadByte(pos))
+                    k = k + chr(s[pos])
+                    pos = pos + 1
+                if pos >= n:
+                    return Err(Truncated(pos))
+                pos = pos + 1
+                for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+                    pos = pos + 1
+                if pos >= n or s[pos] != 58:
+                    return Err(MissingColon(pos))
+                pos = pos + 1
+                for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+                    pos = pos + 1
+                if pos >= n:
+                    return Err(Truncated(pos))
+                c := s[pos]
+                v := JNull
+                if c == 34:
+                    pos = pos + 1
+                    r := ""
+                    for pos < n and s[pos] != 34:
+                        if s[pos] == 92:
+                            return Err(BadByte(pos))
+                        r = r + chr(s[pos])
+                        pos = pos + 1
+                    if pos >= n:
+                        return Err(Truncated(pos))
+                    pos = pos + 1
+                    v = JStr(r)
+                elif c == 45 or (c >= 48 and c <= 57):
+                    neg := false
+                    if c == 45:
+                        neg = true
+                        pos = pos + 1
+                    iv := 0
+                    if pos >= n or s[pos] < 48 or s[pos] > 57:
+                        return Err(BadNumber(pos))
+                    for pos < n and s[pos] >= 48 and s[pos] <= 57:
+                        iv = iv * 10 + (s[pos] - 48)
+                        pos = pos + 1
+                    if neg:
+                        iv = 0 - iv
+                    v = JNum(iv)
+                elif c == 116 and pos + 3 < n and s[pos:pos + 4] == "true":
+                    pos = pos + 4
+                    v = JBool(true)
+                elif c == 102 and pos + 4 < n and s[pos:pos + 5] == "false":
+                    pos = pos + 5
+                    v = JBool(false)
+                elif c == 110 and pos + 3 < n and s[pos:pos + 4] == "null":
+                    pos = pos + 4
+                    v = JNull
+                else:
+                    return Err(BadByte(pos))
+                for ki := 0; ki < len(ks); ki += 1:
+                    if ks[ki] == k:
+                        return Err(BadByte(pos))   # duplicate-key semantics: use generic path
+                push(ks, k)
+                push(vs, v)
+                for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+                    pos = pos + 1
+                if pos < n and s[pos] == 44:
+                    pos = pos + 1
+                elif pos < n and s[pos] == 125:
+                    pos = pos + 1
+                    break
+                else:
+                    return Err(MissingSep(pos))
+        push(xs, JObj(ks, vs))
+        for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+            pos = pos + 1
+        if pos < n and s[pos] == 44:
+            pos = pos + 1
+        elif pos < n and s[pos] == 93:
+            pos = pos + 1
+            for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+                pos = pos + 1
+            if pos != n:
+                return Err(TrailingText(pos))
+            return Ok(JArr(xs))
+        else:
+            return Err(MissingSep(pos))
+    return Err(Truncated(pos))
+
 fn parse_checked(s: string) -> Result(Json, JsonErr):
+    match _parse_flat_checked(s):
+        Ok(v): return Ok(v)
+        Err(fe): pass
     if _depth_of(s) > 2000:
         return Err(TooDeep(0))
     n := len(s)
