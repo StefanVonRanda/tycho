@@ -21,6 +21,7 @@ meas() {  # <label> <binary> <gc?>
 $TYCHOC "$D/latency.ty" --emit-c -o "$T/lh" >/dev/null 2>&1 && $CC -O3 -o "$T/lh" "$T/lh.c" -lm; meas tycho "$T/lh" nogc
 $CC -O3 -o "$T/lc" "$D/latency.c"; meas C "$T/lc" nogc
 if command -v go >/dev/null 2>&1; then cp "$D/latency.go" "$T/lg.go" && ( cd "$T" && go build -o lgo lg.go 2>/dev/null ); meas Go "$T/lgo" gc; fi
+if command -v rustc >/dev/null 2>&1; then rustc -C opt-level=3 -o "$T/lr" "$D/latency.rs" 2>/dev/null && meas Rust "$T/lr" nogc; else echo "  Rust  (not built)"; fi
 if command -v javac >/dev/null 2>&1 && [ -f "$D/latency.java" ]; then
     mkdir -p "$T/jc"; javac -d "$T/jc" "$D/latency.java" 2>/dev/null && printf '#!/bin/sh\nexec java -cp "%s" latency\n' "$T/jc" > "$T/lj" && chmod +x "$T/lj" && meas Java "$T/lj" nogc
 fi

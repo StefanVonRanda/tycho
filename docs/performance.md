@@ -47,15 +47,31 @@ Six workload ports are built for **OpenJDK 25 (GC)** and **Swift 6.3.2
 | dispatch | **5 ms** | 66 ms | 156 ms |
 | json-parse | **601 ms** | 698 ms | 3072 ms |
 | winagg | **81 ms** | 262 ms | 371 ms |
-| latency | **134 ms** | 415 ms | 164 ms |
+| latency | **124 ms** | 415 ms | 163 ms |
 
 Tycho is faster than both managed-memory runtimes on every port. Java's JVM
 baseline makes its peak RSS uninformative for the small rows; the table is a
 time comparison. Koka results elsewhere in the repository are historical and
 are no longer the headline managed-memory comparison.
 
-The service rows `invindex`, `window`, `dbquery` and `gcscan` still have no
-Java/Swift port and are shown as unported rather than as Tycho wins.
+Rust is included on `latency`: **103 ms**, ahead of Tycho’s 124 ms and C’s
+123 ms. That is outside the 10% manual-memory band, so it is a real loss.
+
+### Service-row coverage
+
+`Y` means the row is implemented and run by the service harness; `-` means it
+is explicitly unported.
+
+| row | Tycho | C | Rust | Go | Java | Swift |
+|---|---|---|---|---|---|---|
+| winagg | Y | Y | Y | Y | Y | Y |
+| latency | Y | Y | Y | Y | Y | Y |
+| invindex | Y | Y | - | Y | - | - |
+| window | Y | Y | - | Y | - | - |
+| dbquery | Y | Y | - | Y | - | - |
+| gcscan | Y | Y | - | Y | - | - |
+
+The unported cells are not wins; they are queued work.
 
 The service-shaped `winagg` row (per-window map of growing lists) now runs at
 **81 ms versus C 97 ms**, Rust 169 ms, Go 232 ms, Java 262 ms and Swift 371 ms;

@@ -78,3 +78,21 @@ checksum `599376507`:
 
 Tycho is within the 10% manual-memory band of C and faster than both managed
 runtimes. Java's RSS is JVM baseline; the table is a time comparison.
+
+
+## 2026-10-22 Rust port
+
+The missing Rust row was a harness omission, not a result. `latency.rs` now
+exists and the runner prints it:
+
+| build | peak RSS | wall time |
+|---|---:|---:|
+| Tycho | 2.3 MB | 124 ms |
+| C | 2.2 MB | 123 ms |
+| Rust | 2.8 MB | **103 ms** |
+| Go | 13.8 MB | 861 ms |
+| Java | 1052.5 MB | 414 ms |
+| Swift | 10.0 MB | 163 ms |
+
+Rust is faster than Tycho by ~20% here; that is outside the 10% manual-memory
+bar and is recorded as a failure. Go is far behind; Java/Swift are behind.
