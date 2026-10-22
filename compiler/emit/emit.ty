@@ -171,9 +171,10 @@ struct C:
     share_place: bool                  # O6: this _rhs3 is a bind; share instead of copying
     shared_get: bool                   # O6: the last top-level _ex was a shallow map read
     copyless_get: bool                 # a read-only map.get local can borrow the descriptor
+    pcap: [string]                     # arrays whose presized push loop has proven capacity
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string)
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -2062,6 +2063,79 @@ fn _stmt_bs(s: ast.Stmt) -> [[ast.Stmt]]:
                 push(out, x.body)
         _: pass
     return out
+
+# A direct `push(xs, ...)` at the top level of a loop body is the one shape
+# whose capacity proof is simple enough to use without a runtime check. Nested
+# pushes and pushes under conditions keep the checked path.
+fn _direct_push_b(b: [ast.Stmt], nm: string) -> bool:
+    for st in b:
+        match st:
+            ast.ExprStmt(l, es):
+                for e in es:
+                    match e:
+                        ast.Call(l2, q, n, ts, args):
+                            if len(q) == 0 and n == "push" and len(args) >= 2:
+                                match args[0]:
+                                    ast.Name(l3, n3):
+                                        if n3 == nm:
+                                            return true
+                                    _: pass
+                        _: pass
+            _: pass
+    return false
+
+fn _nested_loop_b(b: [ast.Stmt]) -> bool:
+    for st in b:
+        match st:
+            ast.WhileS(l, c, bb): return true
+            ast.For3(l, ip, c, bb): return true
+            ast.ForIn(l, n, c, bb, z): return true
+            ast.ForRange(l, n, c, bb): return true
+            ast.ParallelS(l, w, bb): return true
+            ast.IfS(l, arms, e):
+                for a in arms:
+                    if _nested_loop_b(a.body):
+                        return true
+                if _nested_loop_b(e):
+                    return true
+            ast.MatchS(l, c, arms):
+                for a in arms:
+                    if _nested_loop_b(a.body):
+                        return true
+            ast.SelectS(l, arms):
+                for a in arms:
+                    if _nested_loop_b(a.body):
+                        return true
+            _: pass
+    return false
+
+fn _stable_counter(b: [ast.Stmt], iv: string, allow_last: bool) -> bool:
+    n := len(b)
+    for i := 0; i < n; i += 1:
+        if allow_last and i == n - 1:
+            continue
+        if _defs_s(b[i], iv):
+            return false
+    return true
+
+fn _pcap(cs: inout C, name: string) -> bool:
+    for x in cs.pcap:
+        if x == name:
+            return true
+    return false
+
+# GCC does not unroll the fused push loop from the capacity proof even after
+# the checked path is removed. Clang does not need this hint; keep it GCC-only.
+fn _unroll_hint(cs: inout C, ind: string, b: [ast.Stmt]) -> string:
+    # The capacity-proof loop is always eligible. A reduction loop nested in
+    # the same body (no further loop) is the other hot shape worth unrolling.
+    if len(cs.pcap) == 0 and _nested_loop_b(b):
+        return ""
+    return ind + "    #if defined(__clang__)\n" +
+        ind + "    #pragma clang loop unroll_count(4)\n" +
+        ind + "    #elif defined(__GNUC__)\n" +
+        ind + "    #pragma GCC unroll 4\n" +
+        ind + "    #endif\n"
 
 # Emits the cursor declarations for every fusible array in `b`; returns the code
 # and how many were opened, which _fuse_close pops.
@@ -5367,6 +5441,9 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             # corelib zip, tycho-ledger and tycho-snap, all string pushes.
             if _apfx(&cs, et) == "tycho_arr_str" and not didcp and not mv:
                 vc = "tycho_str_copy(" + ow + ", " + vc + ")"
+            tgt := _pname(args[0])
+            if len(tgt) > 0 and _pcap(&cs, _vcname(&cs, tgt)):
+                return ("({ " + fdn + "[" + fdn + "l++] = " + vc + "; })", "void")
             return ("({ if (" + fdn + "l == " + fdn + "c) " + _arrf(&cs, et, "_grow") +
                 "(" + ow + ", &" + fdn + ", &" + fdn + "c, " + fdn + "l); " +
                 fdn + "[" + fdn + "l++] = " + vc + "; })", "void")
@@ -6838,6 +6915,52 @@ fn _while_bounds(cs: inout C, ctr: ast.Stmt, w: ast.Stmt) -> (string, string):
         _: return ("", "")
     return ("", "")
 
+# The capacity proof used by the fused push emitter. The loop must have exactly
+# one syntactic push to this array, and that push must be a direct top-level
+# statement in the loop body; then one reservation of the loop's upper bound is
+# enough for every iteration. Nested work after the push is irrelevant.
+fn _proof_direct(prev: ast.Stmt, loop: ast.Stmt, ctr: ast.Stmt) -> bool:
+    nm := ""
+    match prev:
+        ast.Decl(l, n, a, r, v):
+            nm = n
+        _: return false
+    if len(nm) == 0 or _pushn_b(_loop_body(loop), nm) != 1:
+        return false
+    if not _direct_push_b(_loop_body(loop), nm):
+        return false
+    match loop:
+        ast.WhileS(l, c, b):
+            match ctr:
+                ast.Decl(l2, iv, a2, r2, v2):
+                    return _stable_counter(b, iv, true)
+                _: return false
+            return false
+        ast.For3(l, ip, c, b):
+            if len(ip) == 0:
+                return false
+            match ip[0]:
+                ast.Decl(l2, iv, a2, r2, v2):
+                    return _stable_counter(b, iv, false)
+                _: return false
+            return false
+        _: return false
+    return false
+
+fn _loop_body(s: ast.Stmt) -> [ast.Stmt]:
+    match s:
+        ast.WhileS(l, c, b): return b
+        ast.For3(l, ip, c, b): return b
+        _: return []
+    return []
+
+fn _decl_cname(cs: inout C, s: ast.Stmt) -> string:
+    match s:
+        ast.Decl(l, n, a, r, v):
+            return _vcname(&cs, n)
+        _: return ""
+    return ""
+
 fn _presize_pair(cs: inout C, prev: ast.Stmt, s: ast.Stmt) -> string:
     if len(getenv("TYCHOC_NO_PRESIZE")) > 0:
         return ""
@@ -7029,6 +7152,7 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
     cs.ret_placed = false
     cs.projection = []string
     out := ""
+    pcap_active := false
     for i := 0; i < len(body); i += 1:
         s := body[i]
         # Keep obsolete builder versions local; only the final write escapes.
@@ -7070,6 +7194,11 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
                     wpr := _while_presize(&cs, body[i - 2], body[i - 1], s)
                     if len(wpr) > 0:
                         out = out + ind + wpr + "\n"
+                        if _proof_direct(body[i - 2], s, body[i - 1]):
+                            pc := _decl_cname(&cs, body[i - 2])
+                            if len(pc) > 0:
+                                push(cs.pcap, pc)
+                                pcap_active = true
                     wiv, war := _while_bounds(&cs, body[i - 1], s)
                     if len(war) > 0:
                         wb = wiv + "|" + war
@@ -7086,10 +7215,18 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
         if len(wb) > 0:
             pop(cs.elv)
             pop(cs.ela)
+        if pcap_active:
+            pop(cs.pcap)
+            pcap_active = false
         if i + 1 < len(body):
             pr := _presize_pair(&cs, s, body[i + 1])
             if len(pr) > 0:
                 out = out + ind + pr + "\n"
+                if _proof_direct(s, body[i + 1], s):
+                    pc := _decl_cname(&cs, s)
+                    if len(pc) > 0:
+                        push(cs.pcap, pc)
+                        pcap_active = true
     out = out + _finalizers(&cs, m, ind)
     _restore(&cs, m)
     cs.ret_local = oldlocal
@@ -8298,7 +8435,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             elif fidw:
                 bdw = _replace(bdw, "arena_free(&" + idw + "); ", "")
             fcw := _fuse_close(&cs, fnw, ind + "    ")
-            return ind + "{\n" + openw + fow + ind + "    while (" + cc + ") {\n" + resw +
+            return ind + "{\n" + openw + fow + _unroll_hint(&cs, ind, b) + ind + "    while (" + cc + ") {\n" + resw +
                 bdw + ind + "    }\n" + fcw + closw + ind + "}\n"
         ast.For3(l, ip, c, b):
             m := _mark(&cs)
@@ -8358,7 +8495,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 post = _replace(post, "arena_free(&" + id3 + "); ", "")
             fc3 := _fuse_close(&cs, fn3, ind + "    ")
             out := ind + "{\n" + ind + "    " + _trim_nl(init) + open3 + fo3 +
-                ind + "    while (" + cc + ") {\n" + res3 +
+                _unroll_hint(&cs, ind, b) + ind + "    while (" + cc + ") {\n" + res3 +
                 ind + "        {\n" + bd3 + ind + "        }\n" + lab3 + post +
                 ind + "    }\n" + fc3 + clos3 + ind + "}\n"
             _restore(&cs, m)

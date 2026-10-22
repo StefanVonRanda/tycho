@@ -6,7 +6,10 @@ on the machine.
 
 The **generated multi-size suite** is [`bench/RESULTS.md`](../bench/RESULTS.md),
 produced by `bench/suite.py`; it is the source of record for the size/tier
-measurements. This page is the analysis and historical context.
+measurements. This page is the analysis and historical context. The generated
+suite now compares both idiomatic and expert manual-memory rows: on `binary`,
+the expert C arena beats Tycho (`1.47x` at the large GCC run), so the older
+single-tier tree headline is not a claim against the best manual implementation.
 
 ## A real program at flat memory
 
@@ -76,15 +79,13 @@ current source of record.
 | gcscan | **47** | 82 | 104 | 125 | 101 | 135 |
 | dbquery | **231** | 233 | - | 254 | - | - |
 
-Rust is ahead only on `latency` and the fixed-size `window int` microcase. Tycho
-is faster than C on most service rows; C is ahead on `latency` (127 vs 134 ms)
-and ties/aheads on the one-millisecond `window int` row. Tycho is faster than
-Java/Swift on every row they cover. `dbquery` has no Rust/Java/Swift port on
-this host, so those `-` cells are not managed-runtime claims.
+This snapshot predates the final 2026-10-22 codegen and expert-tier run; use
+`bench/RESULTS.md` for current row-level claims. The current generated suite
+has Tycho faster than C and Rust on `latency` at the large GCC size.
 
-Rust is included on `latency`: **103 ms**, ahead of Tycho’s 134 ms and C’s
-127 ms. Tycho is within the 10% manual-memory band against C but outside it
-against Rust, so the Rust loss is real and not hidden.
+In the final generated suite, Tycho is faster than Rust on `latency` at the
+large GCC size. The earlier Rust loss was tied to the pre-unroll codegen and is
+no longer the current claim.
 
 ### Relative service scorecard
 
@@ -112,9 +113,9 @@ include process startup and are directional only.
 | **geometric mean** | **0.91x** | **0.72x** | **0.52x** | **0.45x** | **0.39x** |
 
 The aggregate is useful but not a claim that every row wins: Tycho loses to
-C on `latency` (1.06x slower) and loses to Rust on `latency` (1.30x slower).
-`window int` is a sub-millisecond row; do not read its 2.00x as a stable
-throughput loss. Missing cells remain `-`.
+The older single-size snapshot above is historical. The generated suite now
+separates idiomatic and expert tiers; see `bench/RESULTS.md` for the current
+losses. Missing cells remain `-`.
 
 The empty-process floor on this Linux host is `<1 ms` for Tycho/C/Rust/Go,
 11 ms for Java and 1 ms for Swift (`make bench-floor`). Rows near that floor
@@ -227,8 +228,10 @@ set, only the slack (≤4% either way here), and wall time is flat. The 64 KiB
 default is not retuned.
 
 ## Speed
-On allocation-heavy tree workloads and the JSON parser Tycho beats hand-written
-C on time and memory; it trails C and Rust on flat array pipelines
+Against **idiomatic** per-node C/Rust allocation, Tycho wins the allocation-heavy
+tree workloads on time and memory. The generated expert-tier controls change
+the `binary` result: an expert C arena is faster than Tycho, while Tycho keeps
+the memory edge. Tycho trails C and Rust on flat array pipelines
 (per-element bounds checks, not the memory model). The in-place append (an
 `acc = acc + x` loop growing one buffer) is guarded by `make bench`: ~1.5 MB
 where the un-optimized path is ~825 MB at the same N, so a 32 MB bound sits

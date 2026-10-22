@@ -79,6 +79,48 @@ Foundation before feature breadth. In rough priority:
 3. **Overloading — open, demand-gated.** A name may have exactly one definition.
    The trigger is a real program that needs it, not a design impulse.
 
+## Benchmark follow-ups (2026-10-22)
+
+The generated suite in [`bench/RESULTS.md`](bench/RESULTS.md) makes the
+remaining performance work measurable. These are engineering targets, not
+promises of dates.
+
+1. **Backend portability.** Tycho is measured through GCC here. The earlier
+   same-source check showed its emitted C losing to C under clang while being
+   C-class under GCC. Make the generated suite report GCC and clang, then close
+   the clang gap on `latency` without regressing GCC.
+   **Done when:** the suite can run both backends, the result is stored in the
+   generated report, and Tycho is within 10% of C on `latency` under both.
+2. **Dispatch.** The one clear C time loss on a non-micro row (`1.62x` at the
+   large size) needs a profile. Determine whether it is closure-env allocation,
+   closure array layout, or call overhead; fix the actual cost and keep the
+   output identical.
+   **Done when:** the generated suite shows Tycho within 10% of C on `dispatch`
+   without changing the checksum or the other rows.
+3. **Rust/LLVM latency.** Tycho is C-class on `latency` under GCC but slower
+   than Rust (`1.25x`). After the backend split, target the remaining loop and
+   codegen difference rather than relying on a single backend.
+   **Done when:** Tycho is within 10% of Rust on `latency` in the generated
+   suite, under the backend named in the report.
+4. **Service memory hold-cost.** The generated suite shows Tycho at `1.11x`
+   C/Rust memory on service rows, with the clearest losses in `winagg`,
+   `gcscan`, `json`, and growing `invindex`. Preserve the tree-memory wins and
+   bring the service aggregate within 10% of C and Rust.
+   **Done when:** the generated suite reports service memory at or below
+   `1.10x` C and Rust, with the large retained/growth rows individually
+   explained or fixed.
+5. **`dbquery` six-language coverage.** Tycho/C/Go exist; Rust/Java/Swift are
+   explicit gaps because the host has no SQLite binding for them. Add bindings
+   or FFI ports and include them in the generated suite.
+   **Done when:** all six implementations print the same SQLite checksum and
+   the coverage matrix has no `dbquery` gaps.
+
+**Status 2026-10-22:** targets 1, 3, 4 and 5 are done and verified by the
+generated GCC/clang suite and `make test`. Target 2 is **OPEN**: the idiomatic
+closure form is still slower than C on `dispatch` (GCC 24 vs 13 ms; clang 32 vs
+22 ms), and the expert struct form does not close it (GCC 28 vs 13 ms). This
+needs a closure environment/array ABI change, not another local codegen tweak.
+
 ## Friction phases from the `tycho-dupe` probe (2026-10-19)
 
 > **Status, 2026-10-19: all seven phases are DONE and gated.** The probe record

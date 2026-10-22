@@ -6,10 +6,12 @@ The evidence is numbers next to C, Rust, Go (GC), Java (GC) and Swift (ARC)
 on memory-heavy work, with **byte-identical output** per workload —
 not a passing test suite. This file is the map; each row links to a `RESULTS.md`
 with detail. The **generated multi-size scorecard** is
-[`RESULTS.md`](RESULTS.md), produced by `python3 bench/suite.py` (or
-`make bench-suite`). It owns the three-size data for the service rows and all
-seven `prongB` core rows; the specialized benchmarks (`trie`, `dijkstra`, `lru`,
-`interp`, `json-tree`, concurrency and app rows) still have their own runners.
+[`RESULTS.md`](RESULTS.md) and the clang report
+[`RESULTS-clang.md`](RESULTS-clang.md), produced by `python3 bench/suite.py`
+(or `make bench-suite` / `make bench-suite-backends`). They own the three-size
+data for the service rows and all seven `prongB` core rows; the specialized
+benchmarks (`trie`, `dijkstra`, `lru`, `interp`, `json-tree`, concurrency and
+app rows) still have their own runners.
 The prose pages explain the mechanisms and historical context.
 
 All Linux figures below were recorded on **AMD Strix Halo / Ryzen AI MAX+ 395,
@@ -48,8 +50,9 @@ service harnesses fail closed on output mismatches; see
   means. Missing measurements stay `-`; Java/Swift memory is excluded because
   their peak RSS includes runtime baselines.
 - **Explicit losses.** A row is not a win because the aggregate is below 1.0.
-  The scorecard names the loss rows; `latency` is the current manual-memory
-  loss against Rust.
+  The scorecard names the loss rows. The expert-tier report is separate from
+  the idiomatic one; an expert C/Rust result is not allowed to be presented as
+  the idiomatic comparison.
 - **Not yet multi-size.** Goose runs each algorithm at three sizes. Tycho
   currently reports its established size per row; adding size sweeps is the
   next comparison-methodology change, not a claim that one size is enough.
@@ -58,7 +61,7 @@ service harnesses fail closed on output mismatches; see
 
 | workload | what it stresses | tycho vs others | verdict | run |
 |----------|------------------|----------------|---------|-----|
-| **binary-trees** | transient alloc/discard, deep recursion | 13.6 MB vs C 33.7, Rust 33.4, Go 37.8 | **beats hand-written C** on both axes (one arena reset/iter) | `bench-prongB` |
+| **binary-trees** | transient alloc/discard, deep recursion | 13.6 MB vs C 33.7, Rust 33.4, Go 37.8 | **beats idiomatic C/Rust**; the generated expert C arena is faster on time, while Tycho keeps the memory edge | `bench-prongB` |
 | **tree-rewrite** | rewrite pass over a tree | 6.4 MB vs C 13.8, Rust 9.2, Go 22.8 | lowest of C/Rust/Go; Java/Swift not ported to this row | `bench-prongB` |
 | **array-pipeline** | bulk transform | 4.4 MB vs C 3.5, Rust 3.1, Go 7.6 | ~1.25× C mem; **19 vs 21 ms** in the 2026-10-20 repeat — O7 closed the old ~2× gap | `bench-prongB` |
 | **string-pipeline** | string building | 1 MB | parity | `bench-prongB` |
@@ -171,9 +174,9 @@ Not cleanly benchmarkable, and why (honest negative space):
   (`cur = rest` deep-copies the tail), and a multi-million-deep recursive enum
   overflows any recursive descent. tycho steers you to **arrays** (contiguous in
   every language → no locality gap) and **bounded-depth trees** (already in
-  `binary-trees`, where the arena's contiguous layout is part of why tycho beats C
-  25 vs 33 MB). So the arena's locality benefit is real but already captured, not a
-  separable number.
+  `binary-trees`, where the arena's contiguous layout is why Tycho uses less
+  memory; the generated expert C arena is faster on time). So the arena's locality
+  benefit is real but already captured, not a separable number.
 - ~~**Concurrency/parallelism**~~ — no longer a gap: `spawn`/`wait`,
   `parallel for`, and channels shipped, and `conc/`
   measures them head-to-head — `parallel for` lands at exact C-pthreads

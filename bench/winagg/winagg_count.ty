@@ -1,0 +1,33 @@
+# Windowed group-by, expert count-fill: count each group's events, reserve exact
+# lists once, then replay the window to fill them. Same oracle as winagg.ty.
+fn main():
+    nw := 40
+    w := 250000
+    g := 8000
+    seed := 1
+    checksum := 0
+    for win := 0; win < nw; win += 1:
+        counts := []int: int
+        seed0 := seed
+        for e := 0; e < w; e += 1:
+            seed = (seed * 1103515245 + 12345) % 2147483647
+            gid := seed % g
+            counts[gid] = counts.get(gid, 0) + 1
+        m := []int: [int]
+        reserve(m, g)
+        ck := keys(counts)
+        for ki := 0; ki < len(ck); ki += 1:
+            reserve(m[ck[ki]], counts.get(ck[ki], 0))
+        seed = seed0
+        for e := 0; e < w; e += 1:
+            seed = (seed * 1103515245 + 12345) % 2147483647
+            gid := seed % g
+            v := (seed / g) % 100
+            push(m[gid], v)
+        ks := keys(m)
+        for ki := 0; ki < len(ks); ki += 1:
+            lst := m.get(ks[ki], []int)
+            checksum = checksum + len(lst)
+            for li := 0; li < len(lst); li += 1:
+                checksum = checksum + lst[li]
+    println("windows=" + str(nw) + " checksum=" + str(checksum))

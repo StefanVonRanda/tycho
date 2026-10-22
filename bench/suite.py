@@ -41,6 +41,9 @@ LANGS = ["tycho", "c", "rust", "go", "java", "swift"]
 MEM_LANGS = ["c", "rust", "go"]
 LABEL = {"tycho": "Tycho", "c": "C", "rust": "Rust",
          "go": "Go", "java": "Java", "swift": "Swift"}
+CORE_GROUPS = {"binary", "maptree", "arr", "string", "iter", "dispatch", "json"}
+SERVICE_GROUPS = {"latency", "window_string", "window_int", "gcscan",
+                  "winagg", "invindex_side", "invindex_map", "dbquery"}
 
 
 def src(lang, path, pattern, repl, **extra):
@@ -88,7 +91,7 @@ WORKLOADS = [
         "name": "window",
         "what": "Sliding-window eviction: heap strings and fixed-size ints.",
         "variants": [
-            variant("string", "heap", "window_string", [
+            variant("string", "idiomatic", "window_string", [
                 src("tycho", "bench/window/window_naive.ty", r"(n := )\d+", r"\g<1>{n}"),
                 src("c", "bench/window/window.c", r"(long n = )\d+", r"\g<1>{n}"),
                 src("rust", "bench/window/window.rs", r"(let n: \w+ = )[\d_]+", r"\g<1>{n}"),
@@ -96,7 +99,7 @@ WORKLOADS = [
                 src("java", "bench/window/window.java", r"(int n = )[\d_]+", r"\g<1>{n}"),
                 src("swift", "bench/window/window.swift", r"(let n = )[\d_]+", r"\g<1>{n}"),
             ]),
-            variant("int", "fixed", "window_int", [
+            variant("int", "idiomatic", "window_int", [
                 src("tycho", "bench/window/window_int.ty", r"(n := )\d+", r"\g<1>{n}"),
                 src("c", "bench/window/window_int.c", r"(long n = )\d+", r"\g<1>{n}"),
                 src("rust", "bench/window/window_int.rs", r"(let n: \w+ = )[\d_]+", r"\g<1>{n}"),
@@ -110,7 +113,7 @@ WORKLOADS = [
         "name": "gcscan",
         "what": "Large retained string set plus transient-array churn.",
         "variants": [
-            variant("default", "retained", "gcscan", [
+            variant("default", "idiomatic", "gcscan", [
                 src("tycho", "bench/gcscan/gcscan.ty", r"(m := )\d+", r"\g<1>{n}"),
                 src("c", "bench/gcscan/gcscan.c", r"(long m = )\d+", r"\g<1>{n}"),
                 src("rust", "bench/gcscan/gcscan.rs", r"(let m: usize = )[\d_]+", r"\g<1>{n}"),
@@ -124,7 +127,7 @@ WORKLOADS = [
         "name": "winagg",
         "what": "Windowed group-by: fresh map of growing lists per window.",
         "variants": [
-            variant("default", "churn", "winagg", [
+            variant("default", "idiomatic", "winagg", [
                 src("tycho", "bench/winagg/winagg.ty", r"(\bw := )\d+", r"\g<1>{n}"),
                 src("c", "bench/winagg/winagg.c", r"(long nw=40, w=)\d+", r"\g<1>{n}"),
                 src("rust", "bench/winagg/winagg.rs", r"(const W: i64 = )\d+", r"\g<1>{n}"),
@@ -132,13 +135,21 @@ WORKLOADS = [
                 src("java", "bench/winagg/winagg.java", r"(int nw = 40, w = )\d+", r"\g<1>{n}"),
                 src("swift", "bench/winagg/winagg.swift", r"(let w = )\d+", r"\g<1>{n}"),
             ]),
+            variant("count-fill", "expert", "winagg", [
+                src("tycho", "bench/winagg/winagg_count.ty", r"(\bw := )\d+", r"\g<1>{n}"),
+                src("c", "bench/winagg/winagg_count.c", r"(long nw=40, w=)\d+", r"\g<1>{n}"),
+                src("rust", "bench/winagg/winagg_count.rs", r"(let \(nw, w, g\) = \(40i64, )\d+", r"\g<1>{n}"),
+                src("go", "bench/winagg/winagg_count.go", r"(const nw, w, g = 40, )\d+", r"\g<1>{n}"),
+                src("java", "bench/winagg/winagg_count.java", r"(int nw = 40, w = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/winagg/winagg_count.swift", r"(let w = )\d+", r"\g<1>{n}"),
+            ]),
         ],
     },
     {
         "name": "invindex",
         "what": "Build-and-hold inverted index, side-array and map-native forms.",
         "variants": [
-            variant("side-growth", "growth", "invindex_side", [
+            variant("side-growth", "idiomatic", "invindex_side", [
                 src("tycho", "bench/invindex/invindex.ty", r"(n := )\d+", r"\g<1>{n}"),
                 src("c", "bench/invindex/invindex.c", r"(long n=)\d+", r"\g<1>{n}"),
                 src("rust", "bench/invindex/invindex.rs", r"(let n: i64 = )[\d_]+", r"\g<1>{n}"),
@@ -154,7 +165,7 @@ WORKLOADS = [
                 src("java", "bench/invindex/invindex_exact.java", r"(int n=)[\d_]+", r"\g<1>{n}"),
                 src("swift", "bench/invindex/invindex_exact.swift", r"(let n=)[\d_]+", r"\g<1>{n}"),
             ]),
-            variant("map-growth", "growth", "invindex_map", [
+            variant("map-growth", "idiomatic", "invindex_map", [
                 src("tycho", "bench/invindex/invindex_map.ty", r"(n := )\d+", r"\g<1>{n}"),
                 src("c", "bench/invindex/invindex_map.c", r"(long n=)\d+", r"\g<1>{n}"),
                 src("rust", "bench/invindex/invindex_map.rs", r"(let n: i64 = )[\d_]+", r"\g<1>{n}"),
@@ -184,6 +195,11 @@ WORKLOADS = [
                 src("java", "bench/prongB/binary_trees.java", r"(int mind = 4, maxd = )\d+", r"\g<1>{n}"),
                 src("swift", "bench/prongB/binary_trees.swift", r"(let maxd = )\d+", r"\g<1>{n}"),
             ]),
+            variant("arena", "expert", "binary", [
+                src("tycho", "bench/prongB/binary_trees.ty", r"(maxd := )\d+", r"\g<1>{n}"),
+                src("c", "bench/prongB/binary_trees_arena.c", r"(int mind = 4, maxd = )\d+", r"\g<1>{n}"),
+                src("rust", "bench/prongB/binary_trees_arena.rs", r"(let \(mind, maxd\) = \(4i64, )\d+", r"\g<1>{n}"),
+            ]),
         ],
     },
     {
@@ -211,6 +227,10 @@ WORKLOADS = [
                 src("go", "bench/prongB/dispatch.go", r"(var n,k,total int64 = )\d+", r"\g<1>{n}"),
                 src("java", "bench/prongB/dispatch.java", r"(int n = )\d+", r"\g<1>{n}"),
                 src("swift", "bench/prongB/dispatch.swift", r"(let n = )\d+", r"\g<1>{n}"),
+            ]),
+            variant("expert", "expert", "dispatch", [
+                src("tycho", "bench/prongB/dispatch_expert.ty", r"(n := )\d+", r"\g<1>{n}"),
+                src("c", "bench/prongB/dispatch.c", r"(long n = )\d+", r"\g<1>{n}"),
             ]),
         ],
     },
@@ -244,6 +264,11 @@ WORKLOADS = [
                 src("go", "bench/prongB/maptree.go", r"(t:=build\()\d+", r"\g<1>{n}"),
                 src("java", "bench/prongB/maptree.java", r"(int depth = )\d+", r"\g<1>{n}"),
                 src("swift", "bench/prongB/maptree.swift", r"(let depth = )\d+", r"\g<1>{n}"),
+            ]),
+            variant("arena", "expert", "maptree", [
+                src("tycho", "bench/prongB/maptree.ty", r"(t := build\()\d+", r"\g<1>{n}"),
+                src("c", "bench/prongB/maptree_arena.c", r"(build\(&live, )\d+", r"\g<1>{n}"),
+                src("rust", "bench/prongB/maptree_arena.rs", r"(let t = build\(&mut live, )\d+", r"\g<1>{n}"),
             ]),
         ],
     },
@@ -279,13 +304,19 @@ WORKLOADS = [
         "name": "dbquery",
         "what": "Host-side grouping around a real in-memory SQLite query.",
         "variants": [
-            variant("default", "expert", "dbquery", [
+            variant("default", "idiomatic", "dbquery", [
                 src("tycho", "bench/dbquery/dbquery.ty", r"(n := )\d+", r"\g<1>{n}",
                     tycho_flags=["--link", "sqlite3"],
                     tycho_c_flags=["-lsqlite3"]),
                 src("c", "bench/dbquery/dbquery.c", r"(long n = )\d+", r"\g<1>{n}",
                     c_flags=["-lsqlite3"]),
                 src("go", "bench/dbquery/dbquery.go", r"(const n = )\d+", r"\g<1>{n}"),
+                src("rust", "bench/dbquery/dbquery.rs", r"(let n: i64 = )\d+", r"\g<1>{n}",
+                    rustc_flags=["-l", "sqlite3"]),
+                src("java", "bench/dbquery/dbquery.java", r"(long n = )\d+", r"\g<1>{n}",
+                    java_flags=["--enable-native-access=ALL-UNNAMED"]),
+                src("swift", "bench/dbquery/dbquery.swift", r"(let n: Int64 = )\d+", r"\g<1>{n}",
+                    swiftc_flags=["-lsqlite3"]),
             ]),
         ],
     },
@@ -337,7 +368,8 @@ def compile_source(source, n, workdir, cc, tychoc):
     if lang == "rust":
         if not tool("rustc"):
             return None, "rustc missing"
-        p = run([tool("rustc"), "-C", "opt-level=3", str(dst), "-o", str(exe)])
+        p = run([tool("rustc"), "-C", "opt-level=3", str(dst), "-o", str(exe)] +
+                source.get("rustc_flags", []))
         return (exe, None) if p.returncode == 0 else (None, "rustc failed")
     if lang == "go":
         if not tool("go"):
@@ -352,11 +384,13 @@ def compile_source(source, n, workdir, cc, tychoc):
         p = run([tool("javac"), "-d", str(classes), str(dst)])
         if p.returncode != 0:
             return None, "javac failed"
-        return (("java", "-cp", str(classes), srcpath.stem), None)
+        return (("java",) + tuple(source.get("java_flags", [])) +
+                ("-cp", str(classes), srcpath.stem), None)
     if lang == "swift":
         if not tool("swiftc"):
             return None, "swiftc missing"
-        p = run([tool("swiftc"), "-O", str(dst), "-o", str(exe)])
+        p = run([tool("swiftc"), "-O", str(dst), "-o", str(exe)] +
+                source.get("swiftc_flags", []))
         return (exe, None) if p.returncode == 0 else (None, "swiftc failed")
     return None, "unknown language"
 
@@ -417,10 +451,10 @@ def ratio(a, b):
     return None if a is None or b is None or b <= 0 else a / b
 
 
-def best_in_group(rows, group, size, lang):
+def best_in_group(rows, group, size, lang, tier=""):
     vals = []
     for v in rows.values():
-        if v["group"] != group:
+        if v["group"] != group or (tier and v["tier"] != tier):
             continue
         m = v["rows"].get(size, {}).get(lang)
         if m and m.get("ok"):
@@ -479,27 +513,61 @@ def render(data):
     add("")
     all_sizes = [s for rows in data["sizes"].values() for s, _ in rows]
     report_size = "large" if "large" in all_sizes else (all_sizes[-1] if all_sizes else "large")
+    groups = sorted({v["group"] for w in data["workloads"].values()
+                     for v in w["variants"].values()})
     add(f"## Relative time at the {report_size} size")
     add("")
-    add("Tycho / competitor; below 1.00 is faster. `best` picks the fastest "
-        "Tycho variant and the fastest competitor variant in each group.")
+    add("Tycho / competitor; below 1.00 is faster. Rows are tier-matched: an "
+        "idiomatic competitor is compared to the idiomatic Tycho variant, and "
+        "an expert competitor to the expert Tycho variant. A tier with no "
+        "paired variant stays `-`.")
     add("")
-    add("| group | vs C | vs Rust | vs Go | vs Java | vs Swift |")
+    for tier in ("idiomatic", "expert"):
+        add(f"### {tier.capitalize()}")
+        add("")
+        add("| group | vs C | vs Rust | vs Go | vs Java | vs Swift |")
+        add("|---|---:|---:|---:|---:|---:|")
+        group_ratios = {lang: [] for lang in LANGS[1:]}
+        for group in groups:
+            tycho = best_in_group(best_all_rows(data), group, report_size, "tycho", tier)
+            cells = []
+            for lang in LANGS[1:]:
+                other = best_in_group(best_all_rows(data), group, report_size, lang, tier)
+                r = ratio(tycho, other)
+                cells.append(fmt(r, "x"))
+                if r is not None:
+                    group_ratios[lang].append(r)
+            add(f"| {group} | " + " | ".join(cells) + " |")
+        add("| **geometric mean** | " +
+            " | ".join(fmt(geomean(group_ratios[l]), "x") for l in LANGS[1:]) + " |")
+        add("")
+    add("## Aggregate by category")
+    add("")
+    add("These use the best measured variant in each group, independently for "
+        "Tycho and each competitor. They are the headline cross-language "
+        "aggregates; the tier tables above are the matched comparison.")
+    add("")
+    add("| category | vs C | vs Rust | vs Go | vs Java | vs Swift |")
     add("|---|---:|---:|---:|---:|---:|")
-    group_ratios = {lang: [] for lang in LANGS[1:]}
-    for group in sorted({v["group"] for w in data["workloads"].values()
-                         for v in w["variants"].values()}):
-        tycho = best_in_group(best_all_rows(data), group, report_size, "tycho")
-        cells = []
-        for lang in LANGS[1:]:
-            other = best_in_group(best_all_rows(data), group, report_size, lang)
-            r = ratio(tycho, other)
-            cells.append(fmt(r, "x"))
-            if r is not None:
-                group_ratios[lang].append(r)
-        add(f"| {group} | " + " | ".join(cells) + " |")
-    add("| **geometric mean** | " +
-        " | ".join(fmt(geomean(group_ratios[l]), "x") for l in LANGS[1:]) + " |")
+    for cat, groupset in (("core", CORE_GROUPS), ("service", SERVICE_GROUPS)):
+        for metric, label in (("ms", "time"), ("rss", "memory")):
+            langs = LANGS[1:] if metric == "ms" else MEM_LANGS
+            vals = {lang: [] for lang in langs}
+            for group in groups:
+                if group not in groupset:
+                    continue
+                t = best_in_group(best_all_rows(data), group, report_size, "tycho")
+                if metric == "rss":
+                    t = best_mem_in_group(best_all_rows(data), group, report_size, "tycho")
+                for lang in langs:
+                    o = (best_in_group(best_all_rows(data), group, report_size, lang)
+                         if metric == "ms" else
+                         best_mem_in_group(best_all_rows(data), group, report_size, lang))
+                    r = ratio(t, o)
+                    if r is not None:
+                        vals[lang].append(r)
+            cells = [fmt(geomean(vals[l]), "x") for l in langs]
+            add(f"| {cat} {label} | " + " | ".join(cells) + " |")
     add("")
     losses = []
     for group in sorted({v["group"] for w in data["workloads"].values()
@@ -591,14 +659,18 @@ def main():
     ap.add_argument("--warmups", type=int, default=2)
     ap.add_argument("--cc", default=os.environ.get("CC", "cc"))
     ap.add_argument("--report-only", action="store_true")
+    ap.add_argument("--results", default=str(RESULTS_MD))
+    ap.add_argument("--json", default=str(RESULT_JSON))
     args = ap.parse_args()
+    results_md = Path(args.results)
+    result_json = Path(args.json)
     wanted_sizes = [s for s in args.sizes.split(",") if s]
     if args.report_only:
-        if not RESULT_JSON.exists():
-            raise SystemExit(f"no saved results at {RESULT_JSON}")
-        data = json.loads(RESULT_JSON.read_text(encoding="utf-8"))
-        RESULTS_MD.write_text(render(data), encoding="utf-8")
-        print(f"wrote {RESULTS_MD}")
+        if not result_json.exists():
+            raise SystemExit(f"no saved results at {result_json}")
+        data = json.loads(result_json.read_text(encoding="utf-8"))
+        results_md.write_text(render(data), encoding="utf-8")
+        print(f"wrote {results_md}")
         return 0
     if not tool(args.cc):
         raise SystemExit(f"C compiler not found: {args.cc}")
@@ -610,6 +682,8 @@ def main():
     if not selected:
         raise SystemExit(f"no workloads matched --only {args.only}")
     GEN.mkdir(exist_ok=True)
+    result_json.parent.mkdir(parents=True, exist_ok=True)
+    results_md.parent.mkdir(parents=True, exist_ok=True)
     td = Path(tempfile.mkdtemp(prefix="tycho-suite-"))
     peakrss = td / "peakrss"
     p = run([args.cc, "-O2", str(HERE / "peakrss.c"), "-o", str(peakrss)])
@@ -702,10 +776,10 @@ def main():
     # Exclude rows not selected from sizes in render.
     data["sizes"] = {k: [x for x in v if x[0] in wanted_sizes]
                      for k, v in data["sizes"].items()}
-    RESULT_JSON.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    RESULTS_MD.write_text(render(data), encoding="utf-8")
+    result_json.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    results_md.write_text(render(data), encoding="utf-8")
     shutil.rmtree(td)
-    print(f"wrote {RESULTS_MD} and {RESULT_JSON}")
+    print(f"wrote {results_md} and {result_json}")
     if data["mismatch"]:
         print("checksum mismatches: " + ", ".join(data["mismatch"]))
         return 1

@@ -337,7 +337,7 @@ On the allocation-heavy tree workloads Tycho uses the least memory of the
 manual-memory group measured head-to-head — 40% of C's on binary-trees, half on
 tree-rewrite — with no GC and no reference counting, only lexical arenas and
 value semantics. The current managed-memory comparison includes OpenJDK 25
-(GC) and Swift 6.3.2 (ARC); Tycho is at least as fast as Java/Swift/Go on every service row they cover, and Rust is ahead on `latency` (103 vs 134 ms) and that row is not claimed. Java/Swift/Rust `dbquery` remains explicitly unported. On flat
+(GC) and Swift 6.3.2 (ARC); Tycho is at least as fast as Java/Swift/Go on every service row they cover. The generated suite also compares expert C/Rust arena controls: against those, the earlier tree advantage over idiomatic manual allocation shrinks, so use the row-level generated table rather than the old single-tier tree headline. All six `dbquery` ports now run. On flat
 array pipelines it is C-class (2 MB / 20 ms against C's 2 MB / 19 ms in the
 current shipped-compiler run). A 220-line recursive JSON parser holds a flat
 10 MB across 5,000,000 documents in a loop, and at scale the model is tight:

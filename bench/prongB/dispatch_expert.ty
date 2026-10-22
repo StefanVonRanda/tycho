@@ -1,0 +1,17 @@
+struct Clo:
+    i: int
+    p: int
+    f: fn(int, int, int) -> int
+fn body(i: int, p: int, x: int) -> int:
+    return x * (i + 1) + p
+fn main():
+    n := 2000
+    k := 2000
+    total := 0
+    for p := 0; p < k; p += 1:
+        fs := []Clo
+        for i := 0; i < n; i += 1:
+            push(fs, Clo(i, p, body))
+        for i := 0; i < n; i += 1:
+            total = (total + fs[i].f(fs[i].i, fs[i].p, 7)) & 1048575
+    println(str(total))

@@ -1,0 +1,2620 @@
+{
+  "generated": "2026-10-22 15:11 UTC",
+  "cc": "clang",
+  "reps": 3,
+  "warmups": 2,
+  "environment": {
+    "cpu": "x86_64",
+    "os": "Linux 7.2.11-200.fc44.x86_64",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28) (Fedora 1.99.0-1.fc44)",
+    "go": "go version go1.26.10-X:nodwarf5 linux/amd64",
+    "java": "openjdk version \"25.0.4.1\" 2026-08-18",
+    "swift": "Build config: +assertions"
+  },
+  "sizes": {
+    "latency": [
+      [
+        "small",
+        500
+      ],
+      [
+        "medium",
+        2000
+      ],
+      [
+        "large",
+        8000
+      ]
+    ],
+    "window": [
+      [
+        "small",
+        500000
+      ],
+      [
+        "medium",
+        2000000
+      ],
+      [
+        "large",
+        8000000
+      ]
+    ],
+    "gcscan": [
+      [
+        "small",
+        500000
+      ],
+      [
+        "medium",
+        2000000
+      ],
+      [
+        "large",
+        8000000
+      ]
+    ],
+    "winagg": [
+      [
+        "small",
+        62500
+      ],
+      [
+        "medium",
+        250000
+      ],
+      [
+        "large",
+        1000000
+      ]
+    ],
+    "invindex": [
+      [
+        "small",
+        75000
+      ],
+      [
+        "medium",
+        300000
+      ],
+      [
+        "large",
+        900000
+      ]
+    ],
+    "binary": [
+      [
+        "small",
+        14
+      ],
+      [
+        "medium",
+        18
+      ],
+      [
+        "large",
+        20
+      ]
+    ],
+    "arr": [
+      [
+        "small",
+        25000
+      ],
+      [
+        "medium",
+        100000
+      ],
+      [
+        "large",
+        400000
+      ]
+    ],
+    "dispatch": [
+      [
+        "small",
+        500
+      ],
+      [
+        "medium",
+        2000
+      ],
+      [
+        "large",
+        8000
+      ]
+    ],
+    "json": [
+      [
+        "small",
+        12500
+      ],
+      [
+        "medium",
+        50000
+      ],
+      [
+        "large",
+        200000
+      ]
+    ],
+    "maptree": [
+      [
+        "small",
+        14
+      ],
+      [
+        "medium",
+        16
+      ],
+      [
+        "large",
+        18
+      ]
+    ],
+    "string": [
+      [
+        "small",
+        1000
+      ],
+      [
+        "medium",
+        4000
+      ],
+      [
+        "large",
+        16000
+      ]
+    ],
+    "iter": [
+      [
+        "small",
+        25000
+      ],
+      [
+        "medium",
+        100000
+      ],
+      [
+        "large",
+        400000
+      ]
+    ],
+    "dbquery": [
+      [
+        "small",
+        15000
+      ],
+      [
+        "medium",
+        60000
+      ],
+      [
+        "large",
+        240000
+      ]
+    ]
+  },
+  "workloads": {
+    "latency": {
+      "name": "latency",
+      "what": "Allocation churn: build and discard a fixed working set each round.",
+      "variants": {
+        "default": {
+          "group": "latency",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 30,
+                "rss": 2.6875,
+                "out": "885149832",
+                "ok": true
+              },
+              "c": {
+                "ms": 23,
+                "rss": 2.7734375,
+                "out": "885149832",
+                "ok": true
+              },
+              "rust": {
+                "ms": 25,
+                "rss": 2.765625,
+                "out": "885149832",
+                "ok": true
+              },
+              "go": {
+                "ms": 227,
+                "rss": 13.59375,
+                "out": "885149832",
+                "ok": true
+              },
+              "java": {
+                "ms": 125,
+                "rss": 334.5859375,
+                "out": "885149832",
+                "ok": true
+              },
+              "swift": {
+                "ms": 43,
+                "rss": 10.5546875,
+                "out": "885149832",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 95,
+                "rss": 2.6875,
+                "out": "599376507",
+                "ok": true
+              },
+              "c": {
+                "ms": 92,
+                "rss": 2.80078125,
+                "out": "599376507",
+                "ok": true
+              },
+              "rust": {
+                "ms": 98,
+                "rss": 2.70703125,
+                "out": "599376507",
+                "ok": true
+              },
+              "go": {
+                "ms": 915,
+                "rss": 13.796875,
+                "out": "599376507",
+                "ok": true
+              },
+              "java": {
+                "ms": 365,
+                "rss": 1128.50390625,
+                "out": "599376507",
+                "ok": true
+              },
+              "swift": {
+                "ms": 161,
+                "rss": 10.375,
+                "out": "599376507",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 376,
+                "rss": 2.6328125,
+                "out": "397570814",
+                "ok": true
+              },
+              "c": {
+                "ms": 369,
+                "rss": 2.7421875,
+                "out": "397570814",
+                "ok": true
+              },
+              "rust": {
+                "ms": 397,
+                "rss": 2.87109375,
+                "out": "397570814",
+                "ok": true
+              },
+              "go": {
+                "ms": 3659,
+                "rss": 15.30859375,
+                "out": "397570814",
+                "ok": true
+              },
+              "java": {
+                "ms": 1180,
+                "rss": 1187.41015625,
+                "out": "397570814",
+                "ok": true
+              },
+              "swift": {
+                "ms": 638,
+                "rss": 10.42578125,
+                "out": "397570814",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "window": {
+      "name": "window",
+      "what": "Sliding-window eviction: heap strings and fixed-size ints.",
+      "variants": {
+        "string": {
+          "group": "window_string",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 8,
+                "rss": 4.16796875,
+                "out": "3944450",
+                "ok": true
+              },
+              "c": {
+                "ms": 15,
+                "rss": 3.89453125,
+                "out": "3944450",
+                "ok": true
+              },
+              "rust": {
+                "ms": 13,
+                "rss": 4.43359375,
+                "out": "3944450",
+                "ok": true
+              },
+              "go": {
+                "ms": 17,
+                "rss": 7.37109375,
+                "out": "3944450",
+                "ok": true
+              },
+              "java": {
+                "ms": 31,
+                "rss": 66.86328125,
+                "out": "3944450",
+                "ok": true
+              },
+              "swift": {
+                "ms": 29,
+                "rss": 10.28515625,
+                "out": "3944450",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 34,
+                "rss": 3.9375,
+                "out": "15777800",
+                "ok": true
+              },
+              "c": {
+                "ms": 58,
+                "rss": 3.8984375,
+                "out": "15777800",
+                "ok": true
+              },
+              "rust": {
+                "ms": 51,
+                "rss": 4.7578125,
+                "out": "15777800",
+                "ok": true
+              },
+              "go": {
+                "ms": 62,
+                "rss": 8.2890625,
+                "out": "15777800",
+                "ok": true
+              },
+              "java": {
+                "ms": 58,
+                "rss": 134.8046875,
+                "out": "15777800",
+                "ok": true
+              },
+              "swift": {
+                "ms": 114,
+                "rss": 10.37890625,
+                "out": "15777800",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 130,
+                "rss": 4.09765625,
+                "out": "63111200",
+                "ok": true
+              },
+              "c": {
+                "ms": 231,
+                "rss": 3.91796875,
+                "out": "63111200",
+                "ok": true
+              },
+              "rust": {
+                "ms": 198,
+                "rss": 4.609375,
+                "out": "63111200",
+                "ok": true
+              },
+              "go": {
+                "ms": 227,
+                "rss": 9.3125,
+                "out": "63111200",
+                "ok": true
+              },
+              "java": {
+                "ms": 128,
+                "rss": 318.1015625,
+                "out": "63111200",
+                "ok": true
+              },
+              "swift": {
+                "ms": 439,
+                "rss": 9.98046875,
+                "out": "63111200",
+                "ok": true
+              }
+            }
+          }
+        },
+        "int": {
+          "group": "window_int",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 0,
+                "rss": 2.88671875,
+                "out": "24999750000",
+                "ok": true
+              },
+              "c": {
+                "ms": 0,
+                "rss": 1.9453125,
+                "out": "24999750000",
+                "ok": true
+              },
+              "rust": {
+                "ms": 0,
+                "rss": 2.12109375,
+                "out": "24999750000",
+                "ok": true
+              },
+              "go": {
+                "ms": 1,
+                "rss": 2.62109375,
+                "out": "24999750000",
+                "ok": true
+              },
+              "java": {
+                "ms": 13,
+                "rss": 41.29296875,
+                "out": "24999750000",
+                "ok": true
+              },
+              "swift": {
+                "ms": 2,
+                "rss": 10.046875,
+                "out": "24999750000",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 1,
+                "rss": 2.90625,
+                "out": "99999000000",
+                "ok": true
+              },
+              "c": {
+                "ms": 1,
+                "rss": 1.953125,
+                "out": "99999000000",
+                "ok": true
+              },
+              "rust": {
+                "ms": 0,
+                "rss": 2.0078125,
+                "out": "99999000000",
+                "ok": true
+              },
+              "go": {
+                "ms": 2,
+                "rss": 2.62109375,
+                "out": "99999000000",
+                "ok": true
+              },
+              "java": {
+                "ms": 15,
+                "rss": 41.0859375,
+                "out": "99999000000",
+                "ok": true
+              },
+              "swift": {
+                "ms": 6,
+                "rss": 10.2265625,
+                "out": "99999000000",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 3,
+                "rss": 2.8828125,
+                "out": "399996000000",
+                "ok": true
+              },
+              "c": {
+                "ms": 4,
+                "rss": 1.9140625,
+                "out": "399996000000",
+                "ok": true
+              },
+              "rust": {
+                "ms": 1,
+                "rss": 1.98046875,
+                "out": "399996000000",
+                "ok": true
+              },
+              "go": {
+                "ms": 7,
+                "rss": 2.62109375,
+                "out": "399996000000",
+                "ok": true
+              },
+              "java": {
+                "ms": 23,
+                "rss": 41.73828125,
+                "out": "399996000000",
+                "ok": true
+              },
+              "swift": {
+                "ms": 19,
+                "rss": 9.8046875,
+                "out": "399996000000",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "gcscan": {
+      "name": "gcscan",
+      "what": "Large retained string set plus transient-array churn.",
+      "variants": {
+        "default": {
+          "group": "gcscan",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 16,
+                "rss": 25.109375,
+                "out": "457669951 1945000",
+                "ok": true
+              },
+              "c": {
+                "ms": 23,
+                "rss": 21.3359375,
+                "out": "457669951 1945000",
+                "ok": true
+              },
+              "rust": {
+                "ms": 32,
+                "rss": 29.01953125,
+                "out": "457669951 1945000",
+                "ok": true
+              },
+              "go": {
+                "ms": 76,
+                "rss": 42.64453125,
+                "out": "457669951 1945000",
+                "ok": true
+              },
+              "java": {
+                "ms": 61,
+                "rss": 125.7421875,
+                "out": "457669951 1945000",
+                "ok": true
+              },
+              "swift": {
+                "ms": 41,
+                "rss": 17.0078125,
+                "out": "457669951 1945000",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 40,
+                "rss": 94.5859375,
+                "out": "457669951 7780000",
+                "ok": true
+              },
+              "c": {
+                "ms": 73,
+                "rss": 78.390625,
+                "out": "457669951 7780000",
+                "ok": true
+              },
+              "rust": {
+                "ms": 101,
+                "rss": 109.12890625,
+                "out": "457669951 7780000",
+                "ok": true
+              },
+              "go": {
+                "ms": 111,
+                "rss": 128.5390625,
+                "out": "457669951 7780000",
+                "ok": true
+              },
+              "java": {
+                "ms": 106,
+                "rss": 233.63671875,
+                "out": "457669951 7780000",
+                "ok": true
+              },
+              "swift": {
+                "ms": 132,
+                "rss": 39.80078125,
+                "out": "457669951 7780000",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 132,
+                "rss": 371.4375,
+                "out": "457669951 31120000",
+                "ok": true
+              },
+              "c": {
+                "ms": 272,
+                "rss": 307.14453125,
+                "out": "457669951 31120000",
+                "ok": true
+              },
+              "rust": {
+                "ms": 376,
+                "rss": 428.8828125,
+                "out": "457669951 31120000",
+                "ok": true
+              },
+              "go": {
+                "ms": 277,
+                "rss": 390.078125,
+                "out": "457669951 31120000",
+                "ok": true
+              },
+              "java": {
+                "ms": 188,
+                "rss": 501.0625,
+                "out": "457669951 31120000",
+                "ok": true
+              },
+              "swift": {
+                "ms": 496,
+                "rss": 131.76171875,
+                "out": "457669951 31120000",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "winagg": {
+      "name": "winagg",
+      "what": "Windowed group-by: fresh map of growing lists per window.",
+      "variants": {
+        "default": {
+          "group": "winagg",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 26,
+                "rss": 2.9453125,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "c": {
+                "ms": 40,
+                "rss": 3.41015625,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "rust": {
+                "ms": 55,
+                "rss": 3.51171875,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "go": {
+                "ms": 88,
+                "rss": 8.3671875,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "java": {
+                "ms": 97,
+                "rss": 142.31640625,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "swift": {
+                "ms": 122,
+                "rss": 11.26171875,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 87,
+                "rss": 6.890625,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "c": {
+                "ms": 98,
+                "rss": 5.9296875,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "rust": {
+                "ms": 171,
+                "rss": 5.86328125,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "go": {
+                "ms": 232,
+                "rss": 12.0703125,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "java": {
+                "ms": 277,
+                "rss": 429.66015625,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "swift": {
+                "ms": 374,
+                "rss": 13.9453125,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 267,
+                "rss": 22.9453125,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "c": {
+                "ms": 270,
+                "rss": 14.9375,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "rust": {
+                "ms": 536,
+                "rss": 15.328125,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "go": {
+                "ms": 662,
+                "rss": 28.42578125,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "java": {
+                "ms": 898,
+                "rss": 1006.375,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "swift": {
+                "ms": 1294,
+                "rss": 22.66796875,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              }
+            }
+          }
+        },
+        "count-fill": {
+          "group": "winagg",
+          "tier": "expert",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 29,
+                "rss": 3.3828125,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "c": {
+                "ms": 27,
+                "rss": 3.12109375,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "rust": {
+                "ms": 58,
+                "rss": 3.5703125,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "go": {
+                "ms": 73,
+                "rss": 8.07421875,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "java": {
+                "ms": 112,
+                "rss": 147.765625,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              },
+              "swift": {
+                "ms": 129,
+                "rss": 11.13671875,
+                "out": "windows=40 checksum=126285311",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 89,
+                "rss": 4.9453125,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "c": {
+                "ms": 79,
+                "rss": 4.5625,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "rust": {
+                "ms": 187,
+                "rss": 4.75390625,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "go": {
+                "ms": 222,
+                "rss": 9.07421875,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "java": {
+                "ms": 324,
+                "rss": 522.80859375,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              },
+              "swift": {
+                "ms": 450,
+                "rss": 12.875,
+                "out": "windows=40 checksum=505098931",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 484,
+                "rss": 10.4453125,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "c": {
+                "ms": 287,
+                "rss": 10.28125,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "rust": {
+                "ms": 705,
+                "rss": 10.4609375,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "go": {
+                "ms": 776,
+                "rss": 23.42578125,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "java": {
+                "ms": 1021,
+                "rss": 1173.7890625,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              },
+              "swift": {
+                "ms": 1751,
+                "rss": 18.54296875,
+                "out": "windows=40 checksum=2019941281",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "invindex": {
+      "name": "invindex",
+      "what": "Build-and-hold inverted index, side-array and map-native forms.",
+      "variants": {
+        "side-growth": {
+          "group": "invindex_side",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 61,
+                "rss": 34.921875,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "c": {
+                "ms": 63,
+                "rss": 22.1953125,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "rust": {
+                "ms": 70,
+                "rss": 22.62109375,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "go": {
+                "ms": 83,
+                "rss": 33.07421875,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "java": {
+                "ms": 118,
+                "rss": 143.00390625,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "swift": {
+                "ms": 152,
+                "rss": 30.234375,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 245,
+                "rss": 126.6953125,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "c": {
+                "ms": 261,
+                "rss": 71.9453125,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "rust": {
+                "ms": 291,
+                "rss": 72.7109375,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "go": {
+                "ms": 298,
+                "rss": 105.32421875,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "java": {
+                "ms": 343,
+                "rss": 342.53125,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "swift": {
+                "ms": 642,
+                "rss": 79.8046875,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 754,
+                "rss": 479.1875,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "c": {
+                "ms": 806,
+                "rss": 264.16015625,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "rust": {
+                "ms": 885,
+                "rss": 264.11328125,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "go": {
+                "ms": 901,
+                "rss": 384.82421875,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "java": {
+                "ms": 950,
+                "rss": 1172.44921875,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "swift": {
+                "ms": 1988,
+                "rss": 270.1875,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              }
+            }
+          }
+        },
+        "side-count-fill": {
+          "group": "invindex_side",
+          "tier": "expert",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 79,
+                "rss": 17.1875,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "c": {
+                "ms": 91,
+                "rss": 16.4453125,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "rust": {
+                "ms": 109,
+                "rss": 17.88671875,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "go": {
+                "ms": 164,
+                "rss": 29.734375,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "java": {
+                "ms": 162,
+                "rss": 167.7578125,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              },
+              "swift": {
+                "ms": 209,
+                "rss": 25.25,
+                "out": "vocab=8000 checksum=1838260 and01=0",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 331,
+                "rss": 59.6875,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "c": {
+                "ms": 389,
+                "rss": 57.89453125,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "rust": {
+                "ms": 460,
+                "rss": 59.2421875,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "go": {
+                "ms": 633,
+                "rss": 120.8671875,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "java": {
+                "ms": 432,
+                "rss": 441.046875,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              },
+              "swift": {
+                "ms": 890,
+                "rss": 66.70703125,
+                "out": "vocab=8000 checksum=7236429 and01=0",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 1020,
+                "rss": 172.6875,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "c": {
+                "ms": 1180,
+                "rss": 167.4453125,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "rust": {
+                "ms": 1365,
+                "rss": 169.1484375,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "go": {
+                "ms": 1757,
+                "rss": 339.1640625,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "java": {
+                "ms": 1265,
+                "rss": 1153.70703125,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              },
+              "swift": {
+                "ms": 2705,
+                "rss": 176.15625,
+                "out": "vocab=8000 checksum=21631499 and01=1",
+                "ok": true
+              }
+            }
+          }
+        },
+        "map-growth": {
+          "group": "invindex_map",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 42,
+                "rss": 18.40625,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "c": {
+                "ms": 49,
+                "rss": 12.453125,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "rust": {
+                "ms": 53,
+                "rss": 12.859375,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "go": {
+                "ms": 64,
+                "rss": 19.32421875,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "java": {
+                "ms": 105,
+                "rss": 123.37890625,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "swift": {
+                "ms": 97,
+                "rss": 20.23828125,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 163,
+                "rss": 64.421875,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "c": {
+                "ms": 191,
+                "rss": 37.1953125,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "rust": {
+                "ms": 211,
+                "rss": 37.8359375,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "go": {
+                "ms": 201,
+                "rss": 57.82421875,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "java": {
+                "ms": 286,
+                "rss": 285.3125,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "swift": {
+                "ms": 371,
+                "rss": 45.6328125,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 500,
+                "rss": 239.921875,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "c": {
+                "ms": 587,
+                "rss": 133.4453125,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "rust": {
+                "ms": 639,
+                "rss": 133.5859375,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "go": {
+                "ms": 626,
+                "rss": 187.57421875,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "java": {
+                "ms": 749,
+                "rss": 1165.49609375,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "swift": {
+                "ms": 1149,
+                "rss": 142.4609375,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              }
+            }
+          }
+        },
+        "map-count-fill": {
+          "group": "invindex_map",
+          "tier": "expert",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 70,
+                "rss": 10.4375,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "c": {
+                "ms": 75,
+                "rss": 9.6953125,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "rust": {
+                "ms": 88,
+                "rss": 10.80078125,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "go": {
+                "ms": 106,
+                "rss": 20.4921875,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "java": {
+                "ms": 127,
+                "rss": 139.73046875,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              },
+              "swift": {
+                "ms": 166,
+                "rss": 17.99609375,
+                "out": "vocab=8000 checksum=33750488890",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 307,
+                "rss": 31.1640625,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "c": {
+                "ms": 311,
+                "rss": 30.1953125,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "rust": {
+                "ms": 373,
+                "rss": 31.29296875,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "go": {
+                "ms": 347,
+                "rss": 67.4140625,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "java": {
+                "ms": 365,
+                "rss": 344.390625,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              },
+              "swift": {
+                "ms": 662,
+                "rss": 38.72265625,
+                "out": "vocab=8000 checksum=540001838890",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 926,
+                "rss": 87.9375,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "c": {
+                "ms": 932,
+                "rss": 84.8359375,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "rust": {
+                "ms": 1131,
+                "rss": 86.32421875,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "go": {
+                "ms": 1058,
+                "rss": 180.48828125,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "java": {
+                "ms": 1064,
+                "rss": 1129.07421875,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              },
+              "swift": {
+                "ms": 2017,
+                "rss": 93.65625,
+                "out": "vocab=8000 checksum=4860005438890",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "binary": {
+      "name": "binary",
+      "what": "Computer Language Benchmarks Game binary trees: build, check, discard.",
+      "variants": {
+        "default": {
+          "group": "binary",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 6,
+                "rss": 2.91796875,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              },
+              "c": {
+                "ms": 39,
+                "rss": 3.8984375,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              },
+              "rust": {
+                "ms": 47,
+                "rss": 3.9609375,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              },
+              "go": {
+                "ms": 57,
+                "rss": 8.17578125,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              },
+              "java": {
+                "ms": 38,
+                "rss": 122.5546875,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              },
+              "swift": {
+                "ms": 106,
+                "rss": 12.19921875,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 120,
+                "rss": 13.87109375,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              },
+              "c": {
+                "ms": 819,
+                "rss": 33.9453125,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              },
+              "rust": {
+                "ms": 1078,
+                "rss": 33.62890625,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              },
+              "go": {
+                "ms": 1123,
+                "rss": 35.6953125,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              },
+              "java": {
+                "ms": 325,
+                "rss": 1021.50390625,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              },
+              "swift": {
+                "ms": 2334,
+                "rss": 56.9609375,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 524,
+                "rss": 49.82421875,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              },
+              "c": {
+                "ms": 3854,
+                "rss": 129.671875,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              },
+              "rust": {
+                "ms": 5250,
+                "rss": 129.87890625,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              },
+              "go": {
+                "ms": 4563,
+                "rss": 133.9375,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              },
+              "java": {
+                "ms": 1082,
+                "rss": 3394.69921875,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              },
+              "swift": {
+                "ms": 11173,
+                "rss": 200.57421875,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              }
+            }
+          }
+        },
+        "arena": {
+          "group": "binary",
+          "tier": "expert",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 7,
+                "rss": 2.890625,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              },
+              "c": {
+                "ms": 6,
+                "rss": 3.40234375,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              },
+              "rust": {
+                "ms": 6,
+                "rss": 2.62109375,
+                "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 116,
+                "rss": 14.1875,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              },
+              "c": {
+                "ms": 111,
+                "rss": 25.71875,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              },
+              "rust": {
+                "ms": 126,
+                "rss": 14.18359375,
+                "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 521,
+                "rss": 50.07421875,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              },
+              "c": {
+                "ms": 474,
+                "rss": 97.93359375,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              },
+              "rust": {
+                "ms": 577,
+                "rss": 50.00390625,
+                "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "arr": {
+      "name": "arr",
+      "what": "Flat array pipeline: repeated transform and sum passes.",
+      "variants": {
+        "default": {
+          "group": "arr",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 4,
+                "rss": 2.1953125,
+                "out": "440806",
+                "ok": true
+              },
+              "c": {
+                "ms": 4,
+                "rss": 2.33984375,
+                "out": "440806",
+                "ok": true
+              },
+              "rust": {
+                "ms": 4,
+                "rss": 2.43359375,
+                "out": "440806",
+                "ok": true
+              },
+              "go": {
+                "ms": 11,
+                "rss": 7.01953125,
+                "out": "440806",
+                "ok": true
+              },
+              "java": {
+                "ms": 28,
+                "rss": 80.70703125,
+                "out": "440806",
+                "ok": true
+              },
+              "swift": {
+                "ms": 9,
+                "rss": 10.0234375,
+                "out": "440806",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 15,
+                "rss": 3.3828125,
+                "out": "218777",
+                "ok": true
+              },
+              "c": {
+                "ms": 15,
+                "rss": 3.55078125,
+                "out": "218777",
+                "ok": true
+              },
+              "rust": {
+                "ms": 15,
+                "rss": 3.5546875,
+                "out": "218777",
+                "ok": true
+              },
+              "go": {
+                "ms": 36,
+                "rss": 7.53125,
+                "out": "218777",
+                "ok": true
+              },
+              "java": {
+                "ms": 73,
+                "rss": 134.9453125,
+                "out": "218777",
+                "ok": true
+              },
+              "swift": {
+                "ms": 35,
+                "rss": 11.02734375,
+                "out": "218777",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 59,
+                "rss": 7.9140625,
+                "out": "164028",
+                "ok": true
+              },
+              "c": {
+                "ms": 62,
+                "rss": 8.12109375,
+                "out": "164028",
+                "ok": true
+              },
+              "rust": {
+                "ms": 62,
+                "rss": 7.84375,
+                "out": "164028",
+                "ok": true
+              },
+              "go": {
+                "ms": 117,
+                "rss": 21.9375,
+                "out": "164028",
+                "ok": true
+              },
+              "java": {
+                "ms": 251,
+                "rss": 576.40625,
+                "out": "164028",
+                "ok": true
+              },
+              "swift": {
+                "ms": 136,
+                "rss": 15.85546875,
+                "out": "164028",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "dispatch": {
+      "name": "dispatch",
+      "what": "Array of callable records rebuilt and applied each pass.",
+      "variants": {
+        "default": {
+          "group": "dispatch",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 3,
+                "rss": 1.8828125,
+                "out": "488000",
+                "ok": true
+              },
+              "c": {
+                "ms": 1,
+                "rss": 1.95703125,
+                "out": "488000",
+                "ok": true
+              },
+              "rust": {
+                "ms": 14,
+                "rss": 1.94140625,
+                "out": "488000",
+                "ok": true
+              },
+              "go": {
+                "ms": 13,
+                "rss": 7.58203125,
+                "out": "488000",
+                "ok": true
+              },
+              "java": {
+                "ms": 30,
+                "rss": 76.71875,
+                "out": "488000",
+                "ok": true
+              },
+              "swift": {
+                "ms": 38,
+                "rss": 9.33984375,
+                "out": "488000",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 8,
+                "rss": 2.1875,
+                "out": "23296",
+                "ok": true
+              },
+              "c": {
+                "ms": 6,
+                "rss": 1.96875,
+                "out": "23296",
+                "ok": true
+              },
+              "rust": {
+                "ms": 59,
+                "rss": 2.00390625,
+                "out": "23296",
+                "ok": true
+              },
+              "go": {
+                "ms": 51,
+                "rss": 7.74609375,
+                "out": "23296",
+                "ok": true
+              },
+              "java": {
+                "ms": 47,
+                "rss": 139.63671875,
+                "out": "23296",
+                "ok": true
+              },
+              "swift": {
+                "ms": 150,
+                "rss": 9.578125,
+                "out": "23296",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 32,
+                "rss": 2.4375,
+                "out": "691200",
+                "ok": true
+              },
+              "c": {
+                "ms": 22,
+                "rss": 2.2109375,
+                "out": "691200",
+                "ok": true
+              },
+              "rust": {
+                "ms": 256,
+                "rss": 1.9296875,
+                "out": "691200",
+                "ok": true
+              },
+              "go": {
+                "ms": 196,
+                "rss": 9.01953125,
+                "out": "691200",
+                "ok": true
+              },
+              "java": {
+                "ms": 135,
+                "rss": 499.20703125,
+                "out": "691200",
+                "ok": true
+              },
+              "swift": {
+                "ms": 647,
+                "rss": 9.83984375,
+                "out": "691200",
+                "ok": true
+              }
+            }
+          }
+        },
+        "expert": {
+          "group": "dispatch",
+          "tier": "expert",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 2,
+                "rss": 1.921875,
+                "out": "488000",
+                "ok": true
+              },
+              "c": {
+                "ms": 1,
+                "rss": 1.9375,
+                "out": "488000",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 8,
+                "rss": 1.84765625,
+                "out": "23296",
+                "ok": true
+              },
+              "c": {
+                "ms": 6,
+                "rss": 1.9453125,
+                "out": "23296",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 31,
+                "rss": 2.390625,
+                "out": "691200",
+                "ok": true
+              },
+              "c": {
+                "ms": 24,
+                "rss": 2.1953125,
+                "out": "691200",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "json": {
+      "name": "json",
+      "what": "Recursive-descent JSON parse and walk over a generated document.",
+      "variants": {
+        "default": {
+          "group": "json",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 115,
+                "rss": 17.9453125,
+                "out": "checksum=9386666730",
+                "ok": true
+              },
+              "c": {
+                "ms": 179,
+                "rss": 16.01171875,
+                "out": "checksum=9386666730",
+                "ok": true
+              },
+              "rust": {
+                "ms": 148,
+                "rss": 16.50390625,
+                "out": "checksum=9386666730",
+                "ok": true
+              },
+              "go": {
+                "ms": 297,
+                "rss": 31.42578125,
+                "out": "checksum=9386666730",
+                "ok": true
+              },
+              "java": {
+                "ms": 226,
+                "rss": 592.2890625,
+                "out": "checksum=9386666730",
+                "ok": true
+              },
+              "swift": {
+                "ms": 743,
+                "rss": 32.86328125,
+                "out": "checksum=9386666730",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 474,
+                "rss": 66.88671875,
+                "out": "checksum=262547666730",
+                "ok": true
+              },
+              "c": {
+                "ms": 824,
+                "rss": 58.86328125,
+                "out": "checksum=262547666730",
+                "ok": true
+              },
+              "rust": {
+                "ms": 718,
+                "rss": 59.5,
+                "out": "checksum=262547666730",
+                "ok": true
+              },
+              "go": {
+                "ms": 1043,
+                "rss": 113.46484375,
+                "out": "checksum=262547666730",
+                "ok": true
+              },
+              "java": {
+                "ms": 639,
+                "rss": 1269.66796875,
+                "out": "checksum=262547666730",
+                "ok": true
+              },
+              "swift": {
+                "ms": 3069,
+                "rss": 82.9921875,
+                "out": "checksum=262547666730",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 1910,
+                "rss": 264.9453125,
+                "out": "checksum=4650194666730",
+                "ok": true
+              },
+              "c": {
+                "ms": 3358,
+                "rss": 231.07421875,
+                "out": "checksum=4650194666730",
+                "ok": true
+              },
+              "rust": {
+                "ms": 2962,
+                "rss": 232.9375,
+                "out": "checksum=4650194666730",
+                "ok": true
+              },
+              "go": {
+                "ms": 4786,
+                "rss": 441.00390625,
+                "out": "checksum=4650194666730",
+                "ok": true
+              },
+              "java": {
+                "ms": 2121,
+                "rss": 3444.34375,
+                "out": "checksum=4650194666730",
+                "ok": true
+              },
+              "swift": {
+                "ms": 12303,
+                "rss": 284.890625,
+                "out": "checksum=4650194666730",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "maptree": {
+      "name": "maptree",
+      "what": "Persistent tree rewrite: map every node, discard each result.",
+      "variants": {
+        "default": {
+          "group": "maptree",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 12,
+                "rss": 3.171875,
+                "out": "6553600",
+                "ok": true
+              },
+              "c": {
+                "ms": 89,
+                "rss": 4.9609375,
+                "out": "6553600",
+                "ok": true
+              },
+              "rust": {
+                "ms": 123,
+                "rss": 3.87109375,
+                "out": "6553600",
+                "ok": true
+              },
+              "go": {
+                "ms": 124,
+                "rss": 9.0703125,
+                "out": "6553600",
+                "ok": true
+              },
+              "java": {
+                "ms": 57,
+                "rss": 150.18359375,
+                "out": "6553600",
+                "ok": true
+              },
+              "swift": {
+                "ms": 260,
+                "rss": 11.69921875,
+                "out": "6553600",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 53,
+                "rss": 6.9375,
+                "out": "26214400",
+                "ok": true
+              },
+              "c": {
+                "ms": 368,
+                "rss": 13.9453125,
+                "out": "26214400",
+                "ok": true
+              },
+              "rust": {
+                "ms": 509,
+                "rss": 9.7421875,
+                "out": "26214400",
+                "ok": true
+              },
+              "go": {
+                "ms": 615,
+                "rss": 22.73828125,
+                "out": "26214400",
+                "ok": true
+              },
+              "java": {
+                "ms": 202,
+                "rss": 757.26171875,
+                "out": "26214400",
+                "ok": true
+              },
+              "swift": {
+                "ms": 1074,
+                "rss": 23.53125,
+                "out": "26214400",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 199,
+                "rss": 21.6328125,
+                "out": "104857600",
+                "ok": true
+              },
+              "c": {
+                "ms": 3626,
+                "rss": 49.91796875,
+                "out": "104857600",
+                "ok": true
+              },
+              "rust": {
+                "ms": 3257,
+                "rss": 33.9609375,
+                "out": "104857600",
+                "ok": true
+              },
+              "go": {
+                "ms": 3738,
+                "rss": 71.2890625,
+                "out": "104857600",
+                "ok": true
+              },
+              "java": {
+                "ms": 509,
+                "rss": 1086.2109375,
+                "out": "104857600",
+                "ok": true
+              },
+              "swift": {
+                "ms": 11984,
+                "rss": 71.51953125,
+                "out": "104857600",
+                "ok": true
+              }
+            }
+          }
+        },
+        "arena": {
+          "group": "maptree",
+          "tier": "expert",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 12,
+                "rss": 3.1875,
+                "out": "6553600",
+                "ok": true
+              },
+              "c": {
+                "ms": 19,
+                "rss": 3.56640625,
+                "out": "6553600",
+                "ok": true
+              },
+              "rust": {
+                "ms": 17,
+                "rss": 3.50390625,
+                "out": "6553600",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 51,
+                "rss": 6.91796875,
+                "out": "26214400",
+                "ok": true
+              },
+              "c": {
+                "ms": 69,
+                "rss": 9.91796875,
+                "out": "26214400",
+                "ok": true
+              },
+              "rust": {
+                "ms": 74,
+                "rss": 7.90234375,
+                "out": "26214400",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 203,
+                "rss": 21.890625,
+                "out": "104857600",
+                "ok": true
+              },
+              "c": {
+                "ms": 656,
+                "rss": 33.6953125,
+                "out": "104857600",
+                "ok": true
+              },
+              "rust": {
+                "ms": 376,
+                "rss": 25.97265625,
+                "out": "104857600",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "string": {
+      "name": "string",
+      "what": "String pipeline: build and hash many short strings.",
+      "variants": {
+        "default": {
+          "group": "string",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 0,
+                "rss": 1.9375,
+                "out": "439961",
+                "ok": true
+              },
+              "c": {
+                "ms": 0,
+                "rss": 1.90234375,
+                "out": "439961",
+                "ok": true
+              },
+              "rust": {
+                "ms": 0,
+                "rss": 2.12109375,
+                "out": "439961",
+                "ok": true
+              },
+              "go": {
+                "ms": 1,
+                "rss": 2.62109375,
+                "out": "439961",
+                "ok": true
+              },
+              "java": {
+                "ms": 15,
+                "rss": 42.046875,
+                "out": "439961",
+                "ok": true
+              },
+              "swift": {
+                "ms": 2,
+                "rss": 9.51953125,
+                "out": "439961",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 1,
+                "rss": 1.9453125,
+                "out": "759841",
+                "ok": true
+              },
+              "c": {
+                "ms": 1,
+                "rss": 1.9609375,
+                "out": "759841",
+                "ok": true
+              },
+              "rust": {
+                "ms": 1,
+                "rss": 1.9921875,
+                "out": "759841",
+                "ok": true
+              },
+              "go": {
+                "ms": 2,
+                "rss": 4.37109375,
+                "out": "759841",
+                "ok": true
+              },
+              "java": {
+                "ms": 19,
+                "rss": 43.546875,
+                "out": "759841",
+                "ok": true
+              },
+              "swift": {
+                "ms": 5,
+                "rss": 9.546875,
+                "out": "759841",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 5,
+                "rss": 1.9453125,
+                "out": "39355",
+                "ok": true
+              },
+              "c": {
+                "ms": 3,
+                "rss": 1.9453125,
+                "out": "39355",
+                "ok": true
+              },
+              "rust": {
+                "ms": 4,
+                "rss": 2.0234375,
+                "out": "39355",
+                "ok": true
+              },
+              "go": {
+                "ms": 8,
+                "rss": 6.87109375,
+                "out": "39355",
+                "ok": true
+              },
+              "java": {
+                "ms": 26,
+                "rss": 47.68359375,
+                "out": "39355",
+                "ok": true
+              },
+              "swift": {
+                "ms": 17,
+                "rss": 9.609375,
+                "out": "39355",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "iter": {
+      "name": "iter",
+      "what": "Loop-carried array transform: the arena's former worst case.",
+      "variants": {
+        "default": {
+          "group": "iter",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 41,
+                "rss": 2.4375,
+                "out": "744527",
+                "ok": true
+              },
+              "c": {
+                "ms": 42,
+                "rss": 2.203125,
+                "out": "744527",
+                "ok": true
+              },
+              "rust": {
+                "ms": 51,
+                "rss": 2.3671875,
+                "out": "744527",
+                "ok": true
+              },
+              "go": {
+                "ms": 75,
+                "rss": 7.6953125,
+                "out": "744527",
+                "ok": true
+              },
+              "java": {
+                "ms": 145,
+                "rss": 331.1015625,
+                "out": "744527",
+                "ok": true
+              },
+              "swift": {
+                "ms": 75,
+                "rss": 9.875,
+                "out": "744527",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 161,
+                "rss": 3.32421875,
+                "out": "104306",
+                "ok": true
+              },
+              "c": {
+                "ms": 168,
+                "rss": 3.5625,
+                "out": "104306",
+                "ok": true
+              },
+              "rust": {
+                "ms": 204,
+                "rss": 3.5625,
+                "out": "104306",
+                "ok": true
+              },
+              "go": {
+                "ms": 228,
+                "rss": 8.21484375,
+                "out": "104306",
+                "ok": true
+              },
+              "java": {
+                "ms": 469,
+                "rss": 958.69140625,
+                "out": "104306",
+                "ok": true
+              },
+              "swift": {
+                "ms": 289,
+                "rss": 11.0234375,
+                "out": "104306",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 650,
+                "rss": 8.1328125,
+                "out": "919734",
+                "ok": true
+              },
+              "c": {
+                "ms": 671,
+                "rss": 8.140625,
+                "out": "919734",
+                "ok": true
+              },
+              "rust": {
+                "ms": 811,
+                "rss": 8.05078125,
+                "out": "919734",
+                "ok": true
+              },
+              "go": {
+                "ms": 870,
+                "rss": 22.30078125,
+                "out": "919734",
+                "ok": true
+              },
+              "java": {
+                "ms": 1488,
+                "rss": 1188.56640625,
+                "out": "919734",
+                "ok": true
+              },
+              "swift": {
+                "ms": 1151,
+                "rss": 15.859375,
+                "out": "919734",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "dbquery": {
+      "name": "dbquery",
+      "what": "Host-side grouping around a real in-memory SQLite query.",
+      "variants": {
+        "default": {
+          "group": "dbquery",
+          "tier": "idiomatic",
+          "rows": {
+            "small": {
+              "tycho": {
+                "ms": 57,
+                "rss": 3.80078125,
+                "out": "123721694",
+                "ok": true
+              },
+              "c": {
+                "ms": 57,
+                "rss": 3.89453125,
+                "out": "123721694",
+                "ok": true
+              },
+              "go": {
+                "ms": 64,
+                "rss": 6.3515625,
+                "out": "123721694",
+                "ok": true
+              },
+              "rust": {
+                "ms": 58,
+                "rss": 4.296875,
+                "out": "123721694",
+                "ok": true
+              },
+              "java": {
+                "ms": 160,
+                "rss": 82.609375,
+                "out": "123721694",
+                "ok": true
+              },
+              "swift": {
+                "ms": 60,
+                "rss": 19.25390625,
+                "out": "123721694",
+                "ok": true
+              }
+            },
+            "medium": {
+              "tycho": {
+                "ms": 230,
+                "rss": 4.80078125,
+                "out": "495113400",
+                "ok": true
+              },
+              "c": {
+                "ms": 232,
+                "rss": 4.546875,
+                "out": "495113400",
+                "ok": true
+              },
+              "go": {
+                "ms": 252,
+                "rss": 8.1953125,
+                "out": "495113400",
+                "ok": true
+              },
+              "rust": {
+                "ms": 232,
+                "rss": 4.88671875,
+                "out": "495113400",
+                "ok": true
+              },
+              "java": {
+                "ms": 368,
+                "rss": 108.98828125,
+                "out": "495113400",
+                "ok": true
+              },
+              "swift": {
+                "ms": 238,
+                "rss": 18.7109375,
+                "out": "495113400",
+                "ok": true
+              }
+            },
+            "large": {
+              "tycho": {
+                "ms": 926,
+                "rss": 8.57421875,
+                "out": "1980453600",
+                "ok": true
+              },
+              "c": {
+                "ms": 933,
+                "rss": 8.546875,
+                "out": "1980453600",
+                "ok": true
+              },
+              "go": {
+                "ms": 1014,
+                "rss": 14.40625,
+                "out": "1980453600",
+                "ok": true
+              },
+              "rust": {
+                "ms": 933,
+                "rss": 8.82421875,
+                "out": "1980453600",
+                "ok": true
+              },
+              "java": {
+                "ms": 1113,
+                "rss": 156.28125,
+                "out": "1980453600",
+                "ok": true
+              },
+              "swift": {
+                "ms": 947,
+                "rss": 22.6953125,
+                "out": "1980453600",
+                "ok": true
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "mismatch": [],
+  "failures": []
+}
