@@ -35,16 +35,37 @@ WL="-"                                         # current workload slug (set by w
 # The `md5=` label on the digest below is load-bearing, not decoration: a bare
 # 8-hex token is indistinguishable from a short commit hash once it is pasted
 # into RESULTS.md, and CONTRIBUTING.md:88-91 requires the label for that reason.
-run_one() {                                   # <label> <binary>
-    lbl="$1"; bin="$2"
+run_one() {                                   # <label> <binary> [stdin]
+    lbl="$1"; bin="$2"; input="${3:-}"
     [ -x "$bin" ] || { printf '%-12s %10s   (not built)\n' "$lbl" "-"; return; }
-    "$T/peakrss" "$bin" > "$T/out" 2> "$T/m"
-    read rss ms < "$T/m"; kb="$(to_kb "$rss")"
-    h="md5=$(md5sum < "$T/out" | cut -c1-8)"
-    [ -z "$ref" ] && ref="$h"
-    [ "$h" = "$ref" ] && ok="ok" || { ok="OUTPUT DIFFERS"; fail=1; }
-    printf '%-12s %8dMB %6dms   %s %s\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
-    printf '%s %s %d %d\n' "$WL" "$lbl" "$(( kb / 1024 ))" "$ms" >> "$REC"
+    bestms=9999999; maxkb=0; h=""
+    # Two discarded warm-ups, then best time / worst peak over three runs.
+    # This is the Goose discipline: process startup and page-in must not be
+    # mistaken for the workload, and a single fast sample is not a result.
+    for r in 1 2 3 4 5; do
+        if [ -n "$input" ]; then
+            "$T/peakrss" "$bin" < "$input" > "$T/out" 2> "$T/m"
+        else
+            "$T/peakrss" "$bin" > "$T/out" 2> "$T/m"
+        fi
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+            printf '%-12s %10s   FAILED(exit %s)\n' "$lbl" "-" "$rc"
+            fail=1; return
+        fi
+        read rss ms < "$T/m"; kb="$(to_kb "$rss")"
+        h="md5=$(md5sum < "$T/out" | cut -c1-8)"
+        if [ -z "$ref" ]; then ref="$h"; elif [ "$h" != "$ref" ]; then
+            printf '%-12s %8dMB %6dms   %s OUTPUT DIFFERS\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h"
+            fail=1; return
+        fi
+        if [ "$r" -ge 3 ]; then
+            [ "$ms" -lt "$bestms" ] && bestms="$ms"
+            [ "$kb" -gt "$maxkb" ] && maxkb="$kb"
+        fi
+    done
+    printf '%-12s %8dMB %6dms   %s ok\n' "$lbl" "$(( maxkb / 1024 ))" "$bestms" "$h"
+    printf '%s\t%s\t%d\t%d\n' "$WL" "$lbl" "$(( maxkb / 1024 ))" "$bestms" >> "$REC"
 }
 
 workload() {                                  # <title> <hi/c/rs/go base> <kk base>
@@ -70,17 +91,9 @@ workload() {                                  # <title> <hi/c/rs/go base> <kk ba
 # The json-parse workload reads a generated doc: the four C-family parsers take
 # it on stdin; the Java/Swift runners use the same stdin path.
 json_run() {                                  # <label> <binary> <stdin|arg>
-    lbl="$1"; bin="$2"; m="$3"
-    [ -x "$bin" ] || { printf '%-12s %10s   (not built)\n' "$lbl" "-"; return; }
-    if [ "$m" = stdin ]; then "$T/peakrss" "$bin" < "$T/json_in" > "$T/out" 2> "$T/m"
-    else                     "$T/peakrss" "$bin" "$T/json_in"   > "$T/out" 2> "$T/m"; fi
-    read rss ms < "$T/m"; kb="$(to_kb "$rss")"
-    h="md5=$(md5sum < "$T/out" | cut -c1-8)"
-    [ -z "$ref" ] && ref="$h"
-    [ "$h" = "$ref" ] && ok="ok" || { ok="OUTPUT DIFFERS"; fail=1; }
-    printf '%-12s %8dMB %6dms   %s %s\n' "$lbl" "$(( kb / 1024 ))" "$ms" "$h" "$ok"
-    printf '%s %s %d %d\n' "$WL" "$lbl" "$(( kb / 1024 ))" "$ms" >> "$REC"
+    run_one "$1" "$2" "$T/json_in"
 }
+
 json_workload() {
     ref=""; WL="json_parse"
     echo "== json-parse (recursive-descent: K parse-and-discard passes over a ~4.4MB doc) =="
@@ -134,5 +147,8 @@ workload "dispatch (array of closures rebuilt + applied each pass; per-pass recl
 json_workload
 
 summary
+if command -v python3 >/dev/null 2>&1; then
+    python3 bench/score.py "$REC"
+fi
 echo "-----------------------------------------------------------"
 [ "$fail" -eq 0 ] && echo "all outputs identical within each workload" || { echo "OUTPUT MISMATCH"; exit 1; }

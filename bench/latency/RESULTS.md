@@ -82,6 +82,20 @@ Tycho is within the 10% manual-memory band of C (134 vs 127 ms), but Rust is
 reported as such. Tycho is faster than both managed runtimes. Java's RSS is JVM
 baseline; this table is a time comparison.
 
+### Backend check (2026-10-22)
+
+Tycho emits C, so `CC` changes the comparison. Same source, same checksum,
+one run each:
+
+| C backend | Tycho | C | Rust (rustc/LLVM) |
+|---|---:|---:|---:|
+| GCC | 127 ms | 124 ms | 100 ms |
+| clang | 159 ms | 102 ms | 105 ms |
+
+The GCC result is C-class; under clang Tycho's generated C loses both
+comparisons. The headline must therefore name the backend, and a clang codegen
+gap is a separate target (`make bench-backends`).
+
 
 ## 2026-10-22 Rust port
 

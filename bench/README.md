@@ -28,6 +28,27 @@ has no Rust SQLite binding, SQLite JDBC driver, or Swift SQLite module. The
 service harnesses fail closed on output mismatches; see
 [docs/performance.md](../docs/performance.md#service-row-coverage).
 
+### Comparison controls
+
+- **Same backend for Tycho and C.** Tycho emits C; compare its generated C and
+  the C port under the same compiler. `sh bench/backends.sh bench/latency/run.sh`
+  runs the same source under GCC and clang. Rust is always rustc/LLVM, so the
+  clang column is the closer backend comparison for it.
+- **Warm-ups and whole-process time.** `prongB` and `fair_rest` discard two
+  warm-up runs before three measured runs. Time still includes input
+  generation, construction and teardown. `make bench-floor` measures the
+  empty-process floor so short rows are not over-read.
+- **Ratios, not just absolutes.** `bench/score.py` turns a TSV of
+  `workload/language/RSS/ms` rows into Tycho-relative tables and geometric
+  means. Missing measurements stay `-`; Java/Swift memory is excluded because
+  their peak RSS includes runtime baselines.
+- **Explicit losses.** A row is not a win because the aggregate is below 1.0.
+  The scorecard names the loss rows; `latency` is the current manual-memory
+  loss against Rust.
+- **Not yet multi-size.** Goose runs each algorithm at three sizes. Tycho
+  currently reports its established size per row; adding size sweeps is the
+  next comparison-methodology change, not a claim that one size is enough.
+
 ## Axis 1 — memory (peak RSS)
 
 | workload | what it stresses | tycho vs others | verdict | run |
