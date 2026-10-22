@@ -31,7 +31,7 @@ recorded in `bench/lru/RESULTS.md`.
 | **json-parse (real)** | recursive-descent parse-and-discard | 66.7 MB vs C 58.1, Rust 58.9, Go 109.8 | **fastest of C/Rust/Go**, ~1.15× C memory (whole tree held per pass) | `bench-prongB` |
 | **iter-transform** | loop-carried reassign (was the arena's worst case) | 4 MB vs C 3 | **3.5 GB → 4 MB** mem (static FBIP reuse, no refcount); time 6.7×→**2.3× C** after push-loop fusion | `bench-prongB` |
 | **invindex** | build-and-hold growth | ~1.7× C, → ~1.07× with `reserve` | honest hold-cost; sizing closes it | `invindex/` |
-| **winagg** | per-window churn-and-discard | 7.3 MB vs C 5.3 (~1.4×), Rust 5.8, Go 12.3 | hold-cost on per-key lists; win on bulk-free teardown | `winagg/` |
+| **winagg** | per-window churn-and-discard | 7.3 MB vs C 5.3 (~1.4×), Rust 5.8, Go 12.3; **84 ms vs C 97 ms** | faster than C after the map/list path fix; memory remains the hold-cost | `winagg/` |
 | **dbquery (real SQLite)** | host data-handling around a real C lib | 4.4 MB ≈ C 4.3 < Go 7.8 | C-class on real DB work, no manual frees | `bench-dbquery` |
 | **window** | sliding-window **eviction** | string: 4.2 MB vs C 3.3 (~1.3×) after **MM-9**; int: 2.3 MB (tie) | **was the clean loss (14×), now closed** — element-overwrite recycle | `bench-window` |
 | **gcscan** | large held set of small objects (per-object overhead) | 125.6 MB vs C 78.1, Go 130.1 (shipped `tychoc1`; reference compiler 65.1) | time win (58 vs 77 ms, below Go), memory gap on the shipped compiler; the reference matches the historical 64.7 MB | `bench-gcscan` |

@@ -6,7 +6,10 @@ memory-heavy workload? This is the empirical half of the thesis: not "it
 passes a 40-program suite", but "here are the numbers next to the other
 memory models."
 
-## Headline numbers — fair standard-opt comparison
+## Historical headline numbers — reference-compiler baseline
+
+> This table is historical and includes Koka. The current shipped-compiler
+> scorecard is below in the 2026-10-21 and Java/Swift sections.
 
 | workload      | tycho (tychoc)   | C            | Rust         | Go (GC)        | Koka (ARC)     |
 |---------------|---------------:|-------------:|-------------:|---------------:|---------------:|
@@ -578,6 +581,7 @@ All four outputs are byte-identical to the existing implementations.
 | json-parse | **601 ms** | 889 | 738 | 1309 | 698 | 3072 |
 
 Memory is deliberately not compared for Java: the JVM baseline dominates the
-small rows. Tycho beats Java and Swift on time in all four. The manual-memory
-bar is still red on `winagg` (C ~97 ms versus Tycho ~165 ms); that row is not
-averaged into a pass.
+small rows. Tycho beats Java and Swift on time in all four. The separate
+`winagg` service row now measures **~84 ms versus C ~97 ms** after the map/list
+work; Java and Swift are not ported to that row yet. See
+[`bench/opt/RESULTS.md`](../opt/RESULTS.md#maplist-churn-winagg-post-089-kept).

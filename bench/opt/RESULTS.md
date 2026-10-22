@@ -500,10 +500,9 @@ and `TYCHOC_NO_BOUNDS_ELISION=1` are the controls.
 
 Output `599376507` everywhere. Latency is now at C parity; Go is 990 ms.
 
-The remaining manual-memory violation in the service rows is `winagg`
-(~164 ms vs C ~140 ms in the latest noisy run), which is still above the 10%
-bar. It is not being averaged into a pass. The Koka column also needs a current
-run; Koka is not installed here.
+The remaining manual-memory service row was `winagg`; the map/list work below
+now measures ~84 ms against C ~97 ms. Koka is historical; Java and Swift are
+the current managed-memory columns.
 
 ## Map/list churn: `winagg` (post-0.8.9, kept)
 

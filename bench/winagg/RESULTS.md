@@ -88,3 +88,19 @@ every language keeps for the hot path.
     cc -O2 -o /tmp/c bench/winagg/winagg.c && /tmp/peakrss /tmp/c
     rustc -O -o /tmp/r bench/winagg/winagg.rs && /tmp/peakrss /tmp/r
     ( cd bench/winagg && go build -o /tmp/g winagg.go ) && /tmp/peakrss /tmp/g
+
+
+## 2026-10-22 current shipped compiler
+
+`bench/winagg/winagg.ty`, 10M events / 40 windows, checksum
+`505098931`, medians of five:
+
+| build | peak RSS | wall time |
+|---|---:|---:|
+| Tycho (`tychoc1`, map/list path) | 7.3 MB | **84 ms** |
+| C reference | 5.6 MB | 97 ms |
+| Rust | 5.8 MB | 172 ms |
+| Go | 11.4 MB | 250 ms |
+
+Tycho is now faster than C on time; the remaining loss is peak RSS from the
+per-key list storage and arena blocks. Java/Swift are not ported to this row.

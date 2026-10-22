@@ -12,7 +12,11 @@ parser over a recursive `Json` sum type — real recursion, zero
 loop holds at a **flat 10 MB**: each document's tree is reclaimed when its loop
 iteration's arena resets. Clean under ASan + LeakSanitizer.
 
-## Head-to-head, manual and managed memory
+## Historical memory snapshot
+
+> This memory table predates the Java/Swift ports; the current managed-memory
+> time comparison is in the GC/ARC section below. The older Koka column is kept
+> only as history.
 
 Per-workload timings are in [`bench/prongB/RESULTS.md`](../bench/prongB/RESULTS.md).
 Peak resident memory (MB) — every binary computes the same checksum; lower is
@@ -47,6 +51,11 @@ Tycho is faster than both managed-memory runtimes on every port. Java's JVM
 baseline makes its peak RSS uninformative for the small rows; the table is a
 time comparison. Koka results elsewhere in the repository are historical and
 are no longer the headline managed-memory comparison.
+
+The service-shaped `winagg` row (per-window map of growing lists) now runs at
+**84 ms versus C 97 ms**, Rust 172 ms and Go 250 ms; its peak RSS is 7.3 MB
+versus C 5.6 MB. It is the row the map/list hash and read-only-borrow work was
+targeted at.
 
 ## Arena internals, measured
 
