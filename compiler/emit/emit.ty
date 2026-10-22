@@ -170,9 +170,10 @@ struct C:
     own_cf: [int]                      # each variant's declaring file index
     share_place: bool                  # O6: this _rhs3 is a bind; share instead of copying
     shared_get: bool                   # O6: the last top-level _ex was a shallow map read
+    copyless_get: bool                 # a read-only map.get local can borrow the descriptor
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false)
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -593,7 +594,7 @@ fn _khash(cs: inout C, k: string, e: string) -> string:
     if c == "str":
         return "tycho_si_hash(" + e + ")"
     if c == "int" or c == "enum":
-        return "tycho_ik_hash((tycho_int)(" + e + "))"
+        return "tycho_ik_hash_map((tycho_int)(" + e + "))"
     return _hash(&cs, k, e)
 
 fn _kmatch(cs: inout C, k: string, ek: string, q: string) -> string:
@@ -3951,6 +3952,8 @@ fn _mapget(cs: inout C, mc: string, mt: string, args: [ast.Expr]) -> (string, st
         d = dc
     g := _mpfx(&cs, mt) + "_get(" + mc + ", " + _keyrt(&cs, _mkey(&cs, mt), kc) +
         ", " + d + ")"
+    if cs.copyless_get:
+        return (g, vt)
     return (_copy(&cs, g, vt, cs.arena), vt)
 
 fn _callval(cs: inout C, k: [ast.Expr]) -> (string, string):
@@ -6872,6 +6875,136 @@ fn _presize_pair(cs: inout C, prev: ast.Stmt, s: ast.Stmt) -> string:
 fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
     return _block_projection(&cs, body, ind, false, -1)
 
+# Is `e` a read of `name` (or a len/index read of it) that cannot escape?
+fn _read_ok_e(e: ast.Expr, name: string) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.Index(l, k):
+            if len(k) == 2:
+                match k[0]:
+                    ast.Name(l2, n2):
+                        if n2 == name:
+                            return _read_ok_e(k[1], name)
+                    _: pass
+            return true
+        ast.Call(l, q, n, ts, args):
+            if len(q) == 0 and n == "len" and len(args) == 1:
+                match args[0]:
+                    ast.Name(l2, n2): return n2 == name
+                    _: return true
+            return _creads_l(args, name) == 0
+        ast.CallVal(l, args): return _creads_l(args, name) == 0
+        ast.Lambda(l, ps, r, b):
+            return _creads_l(b, name) == 0
+        ast.SpawnE(l, args): return _creads_l(args, name) == 0
+        ast.ChanE(l, t, args): return _creads_l(args, name) == 0
+        ast.Binop(l, o, k):
+            for x in k:
+                if not _read_ok_e(x, name):
+                    return false
+            return true
+        ast.Unop(l, o, k): return _read_ok_e(k[0], name)
+        ast.Tuple(l, k):
+            for x in k:
+                if not _read_ok_e(x, name):
+                    return false
+            return true
+        _: return true
+    return true
+
+fn _read_ok_b(b: [ast.Stmt], name: string) -> bool:
+    for st in b:
+        match st:
+            ast.Assign(l, n, r):
+                if n == name:
+                    return false
+                for x in r:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.PlaceSet(l, k):
+                if _creads_l(k, name) > 0:
+                    return false
+            ast.ReturnS(l, k):
+                if _creads_l(k, name) > 0:
+                    return false
+            ast.MDecl(l, d, ns, r):
+                for n in ns:
+                    if n == name:
+                        return false
+                for x in r:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.ExprStmt(l, k):
+                for x in k:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    for x in arm.cond:
+                        if not _read_ok_e(x, name):
+                            return false
+                    if not _read_ok_b(arm.body, name):
+                        return false
+                if not _read_ok_b(e, name):
+                    return false
+            ast.WhileS(l, c, b):
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+                if not _read_ok_b(b, name):
+                    return false
+            ast.For3(l, ip, c, b):
+                if not _read_ok_b(ip, name) or not _read_ok_b(b, name):
+                    return false
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.ForIn(l, n, c, b, zpf):
+                if n == name or not _read_ok_b(b, name):
+                    return false
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.ForRange(l, n, c, b):
+                if n == name or not _read_ok_b(b, name):
+                    return false
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.MatchS(l, c, a):
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+                for arm in a:
+                    if not _read_ok_b(arm.body, name):
+                        return false
+            ast.DeleteS(l, k):
+                if _creads_l(k, name) > 0:
+                    return false
+            _: pass
+    return true
+
+fn _safe_map_get_local(cs: inout C, body: [ast.Stmt], i: int) -> bool:
+    match body[i]:
+        ast.Decl(l, n, ann, rhs, vv):
+            if len(rhs) != 1 or len(vv) > 0:
+                return false
+            match rhs[0]:
+                ast.Call(l2, q, fnn, ts, args):
+                    if fnn != "get" or len(q) == 0 or not _is_map(_vtype(&cs, q)):
+                        return false
+                    # The map must not be mentioned again in this block, and
+                    # the bound local must be read-only in the suffix.
+                    rest := body[i + 1:len(body)]
+                    if _creads_b(rest, q) > 0:
+                        return false
+                    if not _read_ok_b(rest, n):
+                        return false
+                    return _is_arr(_mval(&cs, _vtype(&cs, q)))
+                _: return false
+        _: return false
+    return false
+
 fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, update: int) -> string:
     m := _mark(&cs)
     oldlocal := cs.ret_local
@@ -6945,7 +7078,11 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
             wparts := split(wb, "|")
             push(cs.elv, wparts[0])
             push(cs.ela, wparts[1])
+        copyget := _safe_map_get_local(&cs, body, i)
+        oldcopyget := cs.copyless_get
+        cs.copyless_get = copyget
         out = out + _stmt(&cs, s, ind)
+        cs.copyless_get = oldcopyget
         if len(wb) > 0:
             pop(cs.elv)
             pop(cs.ela)
@@ -9349,7 +9486,7 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
             "    if ((m->len + 1) * 2 > m->icap) " + p + "_idxgrow(a, m);\n" +
             "    tycho_int ne = " + p + "_append(a, m, " + kcp + ", " + vcp + "); m->len++; " + p + "_idxput(m, ne);\n}\n" +
             "static " + vc + "*" + p + "_slotptr(Arena *a, " + ct + " *m, " + kp + ") {\n" +
-            "    (void)" + p + "_cow(a, m);\n" +
+            "    if (m->ecap < 0) (void)" + p + "_cow(a, m);\n" +
             "    tycho_int e = " + p + "_find(*m, k); if (e >= 0) return &m->evals[e];\n" +
             "    if ((m->len + 1) * 2 > m->icap) " + p + "_idxgrow(a, m);\n" +
             "    tycho_int ne = " + p + "_append(a, m, " + kcp + ", " + _copy(&cs, _zero(&cs, vt), vt, "a") + "); m->len++; " + p + "_idxput(m, ne);\n" +
@@ -9856,7 +9993,7 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                     fl = fl + " " + _ctyz(&cs, ps[j]) + "f" + str(j) + ";"
                 defs = defs + "typedef struct {" + fl + " } " + _vpaytype(n, vn) + ";\n"
                 un = un + " " + _vpaytype(n, vn) + " " + _vfield(vn) + ";"
-            defs = defs + "struct E_" + n + " { unsigned char tag; union {" + un + " } u; } __attribute__((packed));\n"
+            defs = defs + "struct E_" + n + " { int tag; union {" + un + " } u; };\n"
             allbare := true
             for t := 0; t < len(cs.eds[i].vnames); t += 1:
                 if len(cs.eds[i].vpay[t].ptypes) == 0:

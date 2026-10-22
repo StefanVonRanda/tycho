@@ -15409,7 +15409,7 @@ static char *mapc_kparam_own(Type k) {
 }
 static char *mapc_khash(Type k, const char *e) {   /* hash of a key expression e */
     if (mapkey_composite(k)) return gen_hash(k, e);
-    if (mapkey_intrep(k))    return sfmt("tycho_ik_hash(%s)", e);
+    if (mapkey_intrep(k))    return sfmt("tycho_ik_hash_map(%s)", e);
     return sfmt("tycho_si_hash(%s)", e);
 }
 static char *mapc_kmatch(Type k, const char *ek, const char *q) {   /* stored key ek == query q */

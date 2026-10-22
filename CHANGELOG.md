@@ -32,6 +32,11 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - **Canonical `while` loops get the same presize and bounds proof as `for`**
   (`i := 0; while i < bound; i += 1`). The latency workload went from
   176 ms to 126 ms, at C parity (128 ms).
+- **Map/list churn is now competitive.** Read-only `m.get` locals borrow the
+  map value when the suffix only reads them, map `slotptr` avoids the COW call
+  on an unshared map, integer `push` has an inline fast path, and integer map
+  keys use a collision-free permutation hash. `winagg` went from ~165 ms to
+  ~84 ms against C ~97 ms. Public `hash()` keeps SplitMix64.
 
 ## [0.8.9] — 2026-10-21
 

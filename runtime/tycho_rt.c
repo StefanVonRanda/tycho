@@ -2107,16 +2107,19 @@ void tycho_arr_int_reserve(Arena *a, TychoArrInt *xs, tycho_int n) {
     xs->data = nd; xs->cap = n;
 }
 
-void tycho_arr_int_push(Arena *a, TychoArrInt *xs, tycho_int v) {
-    if (xs->len == xs->cap) {
-        tycho_int ncap = xs->cap ? xs->cap * 2 : 4;
-        tycho_int *nd = (tycho_int *)arena_alloc(a, (size_t)ncap * sizeof(tycho_int));
-        if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(tycho_int));
-        if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(tycho_int));  /* old buffer is dead+unique */
-        xs->data = nd;
-        xs->cap = ncap;
-    }
+static void tycho_arr_int_push_slow(Arena *a, TychoArrInt *xs, tycho_int v) {
+    tycho_int ncap = xs->cap ? xs->cap * 2 : 4;
+    tycho_int *nd = (tycho_int *)arena_alloc(a, (size_t)ncap * sizeof(tycho_int));
+    if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(tycho_int));
+    if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(tycho_int));  /* old buffer is dead+unique */
+    xs->data = nd;
+    xs->cap = ncap;
     xs->data[xs->len++] = v;
+}
+/* The common case is inlined at the call site; only growth calls out. */
+static inline void tycho_arr_int_push(Arena *a, TychoArrInt *xs, tycho_int v) {
+    if (xs->len < xs->cap) { xs->data[xs->len++] = v; return; }
+    tycho_arr_int_push_slow(a, xs, v);
 }
 
 /* pop: shrink + return the last element. int/float pass through (no heap); the
@@ -3026,6 +3029,14 @@ static uint64_t tycho_ik_hash(tycho_int k) {        /* seeded SplitMix64 finaliz
     x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
     return x ^ (x >> 31);
 }
+/* Integer map keys do not need the SplitMix finalizer. With a power-of-two
+ * table and odd multiplier, k -> k*odd is a permutation modulo 2^64, so
+ * distinct 64-bit keys cannot collide; XOR with the per-process seed is also
+ * bijective. This is the same property the C table uses, without weakening
+ * hash-flood resistance for integer keys. */
+static uint64_t tycho_ik_hash_map(tycho_int k) {
+    return ((uint64_t)k * UINT64_C(0x9e3779b97f4a7c15)) ^ tycho_ik_seed;
+}
 static uint64_t tycho_ik_hash_det(tycho_int k) {    /* deterministic twin: fixed seed (the golden ratio gamma) */
     uint64_t x = ((uint64_t)k ^ UINT64_C(0x9e3779b97f4a7c15)) + UINT64_C(0x9e3779b97f4a7c15);
     x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
@@ -3096,7 +3107,7 @@ TychoMapII tycho_map_ii_with_cap(Arena *a, tycho_int cap) {
 static tycho_int tycho_map_ii_find(TychoMapII m, tycho_int k) {
     if (m.icap == 0) return -1;
     uint64_t mask = (uint64_t)m.icap - 1;
-    tycho_int i = (tycho_int)(tycho_ik_hash(k) & mask); int e;
+    tycho_int i = (tycho_int)(tycho_ik_hash_map(k) & mask); int e;
     while ((e = m.idx[i]) != 0) {
         if (m.ekeys[e - 1] == k) return e - 1;
         i = (tycho_int)((i + 1) & mask);
@@ -3105,7 +3116,7 @@ static tycho_int tycho_map_ii_find(TychoMapII m, tycho_int k) {
 }
 static void tycho_map_ii_idx_put(TychoMapII *m, tycho_int ei) {   /* place entry ei into the (tombstone-free) index */
     uint64_t mask = (uint64_t)m->icap - 1;
-    tycho_int i = (tycho_int)(tycho_ik_hash(m->ekeys[ei]) & mask);
+    tycho_int i = (tycho_int)(tycho_ik_hash_map(m->ekeys[ei]) & mask);
     while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask);
     m->idx[i] = (int)(ei + 1);
 }
@@ -3181,7 +3192,7 @@ tycho_int *tycho_map_ii_slotptr(Arena *a, TychoMapII *m, tycho_int k) {
 void tycho_map_ii_del(TychoMapII *m, tycho_int k) {
     if (m->icap == 0) return;
     uint64_t mask = (uint64_t)m->icap - 1;
-    tycho_int i = (tycho_int)(tycho_ik_hash(k) & mask), found = -1;   /* locate k's index slot */
+    tycho_int i = (tycho_int)(tycho_ik_hash_map(k) & mask), found = -1;   /* locate k's index slot */
     while (m->idx[i] != 0) {
         if (m->ekeys[m->idx[i] - 1] == k) { found = i; break; }
         i = (tycho_int)((i + 1) & mask);
@@ -3196,7 +3207,7 @@ void tycho_map_ii_del(TychoMapII *m, tycho_int k) {
         for (;;) {
             j = (tycho_int)((j + 1) & mask);
             if (m->idx[j] == 0) return;                     /* chain ended at an empty slot */
-            tycho_int h = (tycho_int)(tycho_ik_hash(m->ekeys[m->idx[j] - 1]) & mask);   /* home slot of the entry at j */
+            tycho_int h = (tycho_int)(tycho_ik_hash_map(m->ekeys[m->idx[j] - 1]) & mask);   /* home slot of the entry at j */
             if (g <= j) { if (g < h && h <= j) continue; }  /* h cyclically in (g,j]: must stay */
             else        { if (g < h || h <= j) continue; }
             break;                                          /* entry at j can slide back into the gap */
@@ -3252,7 +3263,7 @@ TychoMapIF tycho_map_if_with_cap(Arena *a, tycho_int cap) {
 static tycho_int tycho_map_if_find(TychoMapIF m, tycho_int k) {
     if (m.icap == 0) return -1;
     uint64_t mask = (uint64_t)m.icap - 1;
-    tycho_int i = (tycho_int)(tycho_ik_hash(k) & mask); int e;
+    tycho_int i = (tycho_int)(tycho_ik_hash_map(k) & mask); int e;
     while ((e = m.idx[i]) != 0) {
         if (m.ekeys[e - 1] == k) return e - 1;
         i = (tycho_int)((i + 1) & mask);
@@ -3261,7 +3272,7 @@ static tycho_int tycho_map_if_find(TychoMapIF m, tycho_int k) {
 }
 static void tycho_map_if_idx_put(TychoMapIF *m, tycho_int ei) {
     uint64_t mask = (uint64_t)m->icap - 1;
-    tycho_int i = (tycho_int)(tycho_ik_hash(m->ekeys[ei]) & mask);
+    tycho_int i = (tycho_int)(tycho_ik_hash_map(m->ekeys[ei]) & mask);
     while (m->idx[i] != 0) i = (tycho_int)((i + 1) & mask);
     m->idx[i] = (int)(ei + 1);
 }
@@ -3337,7 +3348,7 @@ double *tycho_map_if_slotptr(Arena *a, TychoMapIF *m, tycho_int k) {
 void tycho_map_if_del(TychoMapIF *m, tycho_int k) {
     if (m->icap == 0) return;
     uint64_t mask = (uint64_t)m->icap - 1;
-    tycho_int i = (tycho_int)(tycho_ik_hash(k) & mask), found = -1;
+    tycho_int i = (tycho_int)(tycho_ik_hash_map(k) & mask), found = -1;
     while (m->idx[i] != 0) {
         if (m->ekeys[m->idx[i] - 1] == k) { found = i; break; }
         i = (tycho_int)((i + 1) & mask);
@@ -3352,7 +3363,7 @@ void tycho_map_if_del(TychoMapIF *m, tycho_int k) {
         for (;;) {
             j = (tycho_int)((j + 1) & mask);
             if (m->idx[j] == 0) return;
-            tycho_int h = (tycho_int)(tycho_ik_hash(m->ekeys[m->idx[j] - 1]) & mask);
+            tycho_int h = (tycho_int)(tycho_ik_hash_map(m->ekeys[m->idx[j] - 1]) & mask);
             if (g <= j) { if (g < h && h <= j) continue; }
             else        { if (g < h || h <= j) continue; }
             break;

@@ -504,3 +504,42 @@ The remaining manual-memory violation in the service rows is `winagg`
 (~164 ms vs C ~140 ms in the latest noisy run), which is still above the 10%
 bar. It is not being averaged into a pass. The Koka column also needs a current
 run; Koka is not installed here.
+
+## Map/list churn: `winagg` (post-0.8.9, kept)
+
+The weak row was the per-window `[int: [int]]` workload, not a loop shape.
+Four changes, each measured against the same checksum:
+
+- a read-only local bound from `m.get` borrows the array descriptor when the
+  rest of its block only reads it and never mentions the map again;
+- map `slotptr` skips the COW call when the map is not shared;
+- integer arrays use an inline fast path for `push`, with growth out of line;
+- integer map keys use a permutation hash (`k * odd ^ seed`) rather than the
+  SplitMix64 finalizer. This is collision-free for distinct 64-bit integer
+  keys under the power-of-two table; the public `hash()` remains SplitMix64.
+
+`bench/winagg/winagg.ty`, 10M events, 40 windows, medians of five:
+
+| build | peak RSS | wall time |
+|---|---:|---:|
+| old | 7.3 MB | 165 ms |
+| read-only get + COW fast path + inline push | 7.3 MB | 151 ms |
+| + integer map hash | 7.3 MB | **84 ms** |
+| C reference | 5.6 MB | 97 ms |
+
+Output `windows=40 checksum=505098931` in every build. `winagg` is now below
+C on time, while Java/Swift are not the manual-memory comparison here.
+
+## JSON memory experiment (post-0.8.9, rejected)
+
+A packed recursive enum-cell header (byte tag plus packed union) changed
+`json_parse` peak RSS from about 69.8 MB to 69.3 MB, within noise, and did not
+close the C/Rust ~58–59 MB gap. It was reverted; the remaining gap is not the
+enum tag. JSON time remains faster than C/Rust.
+
+## Reference compiler parity (partial)
+
+The reference compiler received the integer map-key hash (its `winagg` run is
+~93–102 ms). Inline scalar enums, counted/while presizing and the closure-scope
+elision are still `tychoc1` only; that is the remaining fifth item, not a
+finished parity claim.
