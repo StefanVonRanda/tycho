@@ -143,7 +143,7 @@ struct Pend:
 # One branch result of a value if/match -- src/tychoc.c@ctrl_collect_tails.
 # `_value_type` returns ONE type, so a void tail, an all-diverging if/match and
 # a bare `None` tail are the same observation to it; the LIST is what tells them
-# apart (src/tychoc.c:4131@diverges, src/tychoc.c:2239@infer, src/tychoc.c:129@void).
+# apart (src/tychoc.c:4138@diverges, src/tychoc.c:2239@infer, src/tychoc.c:129@void).
 struct Tail:
     line: int
     ty: string
@@ -2511,7 +2511,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         m := _prefix_of(&cs, q) + n
         return _call_named(&cs, l, m, n, args, want)
     # The shape-directed builtins are resolved BEFORE the Sig table, exactly as
-    # src/tychoc.c:7645-7913 sits before its sig_find at src/tychoc.c:6071@sig_find -- a user `fn len`
+    # src/tychoc.c:7645-7913 sits before its sig_find at src/tychoc.c:6078@sig_find -- a user `fn len`
     # in the entry package is registered UNMANGLED, so without this ordering the
     # bare `len(b)` inside core:strings found it and refused a program ./tychoc
     # accepts (tests/warn/pkg/corelib_mute/main.ty).
@@ -2652,7 +2652,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     keep := cs.in_arg
     cs.in_arg = true
     # src/tychoc.c:986@T_PENDING and src/tychoc.c:986@T_PENDING -- `push(xs, v)` and `map_set(m, k, v)` GROUND a
-    # pending receiver, so its read here is not the ungrounded one src/tychoc.c:2862@inferred refuses.
+    # pending receiver, so its read here is not the ungrounded one src/tychoc.c:2869@inferred refuses.
     # Both C sites ground before resolving args[0]; the composed type is only
     # available after the arg walk here, so the read is EXEMPTED instead and the
     # grounding runs below, off `ats` -- walking args[1] twice would double every
@@ -3049,7 +3049,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                         _cerr(&cs, "duplicate " + no + " arm")
                     nested = _nested_of(&cs, a, _targs(st)[1])
                 else:
-                    # None is nullary: src/tychoc.c:4285@duplicate and src/tychoc.c:4049@nbinds word it apart
+                    # None is nullary: src/tychoc.c:4292@duplicate and src/tychoc.c:4056@nbinds word it apart
                     # from the Err side, which does carry a payload.
                     if seen1:
                         _cerr(&cs, "duplicate None arm")
@@ -3561,7 +3561,7 @@ fn _place_ty(cs: inout C, e: ast.Expr) -> string:
             rt := _base(&cs, _ex(&cs, k[0]))
             h := _head(rt)
             cs.line = l
-            # src/tychoc.c:5024@root (the root walk), src/tychoc.c:6594@is_lvalue,
+            # src/tychoc.c:5031@root (the root walk), src/tychoc.c:6601@is_lvalue,
             # then src/tychoc.c:976@immutable
             # (the container type) -- three rules in that order, where this arm
             # used to test the container first and fold the other two together.
@@ -4069,9 +4069,9 @@ fn _fill_decls(cs: inout C, p: Program):
 # Option, Result or tuple that closes a cycle names ITSELF
 # (src/tychoc.c:1350@Option, src/tychoc.c:987@Result, src/tychoc.c:1236@tuple). Walking struct
 # DECLARATIONS alone, as this did until 2026-09-04, could only ever reach the
-# struct arm (src/tychoc.c:4518@infinite).
+# struct arm (src/tychoc.c:4523@infinite).
 # The line reported is the declaration whose fields were being walked when the
-# cycle closed -- g_emit_line, saved and restored per struct at src/tychoc.c:3140@save / src/tychoc.c:3140@save.
+# cycle closed -- g_emit_line, saved and restored per struct at src/tychoc.c:3147@save / src/tychoc.c:3147@save.
 fn _fin_dfs(cs: inout C, t0: string, ln: int, fl: string, col: inout [string: int]) -> bool:
     t := _base(&cs, t0)
     h := _head(t)
@@ -4222,7 +4222,7 @@ fn check_on2(p: Program, syms: bool, tgt: string) -> C:
             cs.errbase = -1
             _vrestore(&cs, m)
             cs.ret = "?"
-    # `main`: src/tychoc.c:2515@parameters and src/tychoc.c:987@Result, a whole-program rule like `no 'main'`.
+    # `main`: src/tychoc.c:2522@parameters and src/tychoc.c:987@Result, a whole-program rule like `no 'main'`.
     mi := _sigidx(&cs, "main")
     if mi >= 0:
         cs.file = cs.sg[mi].file

@@ -9093,7 +9093,7 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:9088@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:9095@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
      * required value, and it matches the lambda-lift twin at src/tychoc.c:4954@is_sink which sets
@@ -12359,6 +12359,7 @@ static int simple_call_place(Expr *e) {
             (e->rhs->kind == E_IDENT || e->rhs->kind == E_INT))
             return 1;
     }
+    if (e->kind == E_FIELD && e->lhs) return simple_call_place(e->lhs);
     return 0;
 }
 static char *gen_call(Expr *e, const char *arena) {

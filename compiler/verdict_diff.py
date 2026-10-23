@@ -94,7 +94,7 @@ KNOWN_TYPE_MISS = set()
 # GENERIC_RECUR_GROW left this list on 2026-09-05: `_inst_body`'s depth guard
 # bailed silently, so a recursion at a growing type was never reported.
 # THE PENDING-TYPE RULES left this list when src/tychoc.c's B-3 grounding
-# walk (src/tychoc.c:123@use, src/tychoc.c:2862@inferred, src/tychoc.c:986@grounding) was ported to compiler/types/tcheck.ty as a
+# walk (src/tychoc.c:123@use, src/tychoc.c:2869@inferred, src/tychoc.c:986@grounding) was ported to compiler/types/tcheck.ty as a
 # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
 # SET R21f-11 built could carry none of the three.
 # THE CONCURRENCY RULES left this list under R21c, which ported the five

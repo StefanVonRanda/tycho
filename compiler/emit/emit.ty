@@ -1206,7 +1206,7 @@ fn _tmang(cs: inout C, t: string) -> string:
         return _tname(t)
     return ""
 
-# src/tychoc.c:2609@g_structs and src/tychoc.c:2668@g_enums append one `__<type>` per type PARAMETER.
+# src/tychoc.c:2611@g_structs and src/tychoc.c:2668@g_enums append one `__<type>` per type PARAMETER.
 fn _instname(cs: inout C, gn: string, targs: [string]) -> string:
     base := gn
     for i := 0; i < len(targs); i += 1:
@@ -3937,7 +3937,7 @@ fn _retval(cs: inout C, e: ast.Expr) -> string:
         return c
     if _shared_get_expr(&cs, e):
         return c
-    # src/tychoc.c:10734@cv_in_parent -- a return-slot local already
+    # src/tychoc.c:10806@cv_in_parent -- a return-slot local already
     # lives in the caller's arena, so the copy would duplicate it.
     projected := cs.ret_placed and _projection_fields(e, cs.ret_local) == cs.ret_fields
     if projected and len(cs.ret_loop_bound) > 0:
@@ -4232,6 +4232,7 @@ fn _simple_call_place(e: ast.Expr) -> bool:
         ast.Name(l, n): return true
         ast.Index(l, k):
             return _simple_ex(k[0]) and _simple_ex(k[1])
+        ast.Field(l, r, f): return _simple_call_place(r[0])
         _: return false
     return false
 
@@ -6886,7 +6887,7 @@ fn _projection_span(cs: inout C, body: [ast.Stmt], start: int, root: string, fie
 
 # O7: `xs := []T` immediately followed by a counted loop that pushes into it.
 # Reserve the loop's proven upper bound once; over-reserving is safe because
-# reserve only grows. Mirrors src/tychoc.c@presize_loop_src.
+# reserve only grows. Mirrors src/tychoc.c@presize_loop_limit.
 # A counted fresh-array builder whose bound is a runtime value `n`:
 # `out := []; for i := 0; i < n; i += 1 { push(out, ...) }`.
 # Reserving n (clamped at zero) is an upper bound even with break/continue, and

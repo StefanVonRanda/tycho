@@ -658,6 +658,8 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
         pos = pos + 1
         ks := []string
         vs := []Json
+        reserve(ks, 4)
+        reserve(vs, 4)
         for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
             pos = pos + 1
         if pos < n and s[pos] == 125:
@@ -669,14 +671,14 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
                 if pos >= n or s[pos] != 34:
                     return Err(BadKey(pos))
                 pos = pos + 1
-                k := ""
+                kstart := pos
                 for pos < n and s[pos] != 34:
                     if s[pos] == 92:
                         return Err(BadByte(pos))
-                    k = k + chr(s[pos])
                     pos = pos + 1
                 if pos >= n:
                     return Err(Truncated(pos))
+                k := substr(s, kstart, pos)
                 pos = pos + 1
                 for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
                     pos = pos + 1
@@ -691,14 +693,14 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
                 v := JNull
                 if c == 34:
                     pos = pos + 1
-                    r := ""
+                    rstart := pos
                     for pos < n and s[pos] != 34:
                         if s[pos] == 92:
                             return Err(BadByte(pos))
-                        r = r + chr(s[pos])
                         pos = pos + 1
                     if pos >= n:
                         return Err(Truncated(pos))
+                    r := substr(s, rstart, pos)
                     pos = pos + 1
                     v = JStr(r)
                 elif c == 45 or (c >= 48 and c <= 57):

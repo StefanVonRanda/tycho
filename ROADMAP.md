@@ -136,15 +136,18 @@ Follow-up work after the benchmark refresh:
   place reads the descriptor in place instead of copying it. `tests/closures.ty`
   covers inline, heap, escaping and container cases; the compiler self-build
   also exercises function-value map equality.
-- **Reference compiler parity:** OPEN — the closure ABI, destination construction
-  and the longstanding codegen optimizations remain `tychoc1`-only; the saved
-  generated results use `TYCHOC=./tychoc1`.
+- **Reference compiler parity:** PARTIAL — the C bootstrap now has the 24-byte
+  closure ABI, in-place simple-place calls, counted/while presizing and
+  allocation-free loop-scope elision; its full generated suite is checksum-clean.
+  Inline scalar enums and destination construction remain `tychoc1`-only, so the
+  saved generated results still use `TYCHOC=./tychoc1`.
 - **External-program check:** DONE — `tools/tycho-hash/run.sh` passes its
   deterministic, cross-worker SHA-256 and error-path checks.
 - **`json_tree` fast path:** PARTIAL — a single-scope flat-record parser
   removes most per-call arena overhead, and destination-arena construction now
   moves each object's key/value arrays into the returned array instead of
-  copying them (GCC 87 ms / 107 MB vs C 46 / 103; clang 57 / 106 vs C 41 / 103).
+  copying them, and key/value strings are sliced once instead of built byte by
+  byte (GCC 73 ms / 107 MB vs C 47 / 103; clang 54 / 107 vs C 45 / 103).
   The move is gated on the constructor push being the array's last use and on
   the destination escaping the function; `tests/dest_move_last_use.ty` pins the
   move and the copy-after-constructor case. It is still slower than C, so this

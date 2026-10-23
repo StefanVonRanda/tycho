@@ -219,8 +219,8 @@ fn _vec_width(cs: inout C, n: string, el: string):
 
 # ------------------------------------------------------------------- the FFI
 #
-# src/tychoc.c:5143@ffi_scalar_type and the two die sites at
-# src/tychoc.c:1238@parameter / src/tychoc.c:5271@ret_opt_str. The sized
+# src/tychoc.c:5150@ffi_scalar_type and the two die sites at
+# src/tychoc.c:1238@parameter / src/tychoc.c:5278@ret_opt_str. The sized
 # numerics are accepted because parse_type consumes the sized-type NAME in an
 # extern signature and hands back `int`; tychoc1 keeps the spelling, so the
 # names are listed.
@@ -1330,7 +1330,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.line = l
     if bad >= 0:
         if len(badb) > 0:
-            # src/tychoc.c:2515@mismatch / src/tychoc.c:2515@mismatch -- stage two, after instantiation. The
+            # src/tychoc.c:2522@mismatch / src/tychoc.c:2522@mismatch -- stage two, after instantiation. The
             # subject is the TEMPLATE's name here; the bootstrap names the
             # instance (`Box__int`), which tychoc1 does not materialise.
             if len(vn) > 0:
@@ -1339,7 +1339,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
                 _cerr(&cs, "field type mismatch: field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
                     " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
             return "?"
-        # src/tychoc.c:2807@fit / src/tychoc.c:2807@fit -- name the argument that failed, not "1"
+        # src/tychoc.c:2814@fit / src/tychoc.c:2814@fit -- name the argument that failed, not "1"
         if len(vn) > 0:
             _cerr(&cs, vn + " payload " + str(bad + 1) + " does not fit a " + _show(&cs, ats[bad]) + " argument")
         else:

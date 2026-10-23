@@ -152,10 +152,10 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # (`expected indented match arms`, `... select arms`, `an indented field list`,
 # `an indented variant list`).
 # The last is the SELF-DEFEATING GUARD shape: `expected `if` or `match`` at
-# src/tychoc.c:2405@expected is the fall-through of parse_value_ctrl, and all FIVE of its
-# call sites (src/tychoc.c:4384@parse_value_ctrl,
-# src/tychoc.c:4687@parse_value_ctrl, src/tychoc.c:4687@parse_value_ctrl,
-# src/tychoc.c:4687@parse_value_ctrl, src/tychoc.c:4687@parse_value_ctrl) are inside an
+# src/tychoc.c:2412@expected is the fall-through of parse_value_ctrl, and all FIVE of its
+# call sites (src/tychoc.c:4391@parse_value_ctrl,
+# src/tychoc.c:4694@parse_value_ctrl, src/tychoc.c:4694@parse_value_ctrl,
+# src/tychoc.c:4694@parse_value_ctrl, src/tychoc.c:4694@parse_value_ctrl) are inside an
 # `if (at(ps, TK_IF) || at(ps, TK_MATCH))`. It cannot be entered on any other
 # token.
 # Three more, measured 2026-09-03 by enumerating each site's producers rather
@@ -166,7 +166,7 @@ REMOVED = ["map_set(m, key, value)", "map_set's first argument", "map_set key mu
 # E_NONE` into the pending-inference list -- so the guard is handed only the
 # thing it exists to reject, and never receives it. `x := None` and `x := (None)`
 # both died on the pending arm's own `could not infer the type of 'x'`.
-# `a counting `for` needs int bounds` (src/tychoc.c:4603@bounds) has three S_FORRANGE
+# `a counting `for` needs int bounds` (src/tychoc.c:4610@bounds) has three S_FORRANGE
 # producers (src/tychoc.c:2277@S_FORRANGE, src/tychoc.c:2277@S_FORRANGE,
 # src/tychoc.c:2277@S_FORRANGE) and no fourth: the first two are
 # the `parallel for` forms, whose `s->parallel` sends them to resolve_parfor and
