@@ -877,20 +877,32 @@ void *arena_alloc(Arena *a, size_t n) { return arena_alloc_i(a, n); }
  * block and just rewind it (off=0), releasing only any overflow blocks to the
  * pool. The common case -- a loop body whose per-iteration allocations fit in
  * one block -- then does zero pool traffic per iteration, only a pointer rewind. */
-void arena_reset(Arena *a) {
+static inline void arena_reset_i(Arena *a) {
+    HBlock *b = a->head;
+    /* A loop whose body allocated nothing has no state to rewind. This is the
+     * common apply/read loop: the scratch arena is passed through a call but
+     * never touched, and the old reset still paid a real call per iteration. */
+    if (__builtin_expect(!g_arena_stats && !b && !a->bkt && !a->freelist, 1))
+        return;
+    if (__builtin_expect(!g_arena_stats && b && b->off == 0 && !b->next &&
+                         !a->bkt && !a->freelist, 1))
+        return;
     /* chunks live in blocks we're about to rewind/pool, so drop every free-list.
      * Keep the bucket table itself (the arena is being reused) -- just clear its
      * entries; only recycling arenas ever allocated one, so this is skipped wholesale
      * for the common non-recycling scratch arena. */
     if (a->bkt) for (int i = 0; i < TYCHO_NBKT; i++) a->bkt[i] = NULL;
     a->freelist = NULL; a->nfree = 0;
-    HBlock *b = a->head;
     if (!b) return;
     if (g_arena_stats) st_drop_live(a);   /* head rewound + overflow pooled: whole chain's live goes to 0 */
     block_release_chain(b->next);   /* overflow blocks -> pool */
     b->next = NULL;
     b->off = 0;                     /* keep & reuse the head block */
 }
+/* Kept as a real symbol for separately compiled shims; generated C gets the
+ * inline form through the macro below. */
+void arena_reset(Arena *a) { arena_reset_i(a); }
+#define arena_reset(a) arena_reset_i((a))
 
 /* Release the arena entirely (scope/call end): all blocks go to the pool. */
 /* Split hot/cold on purpose. arena_free runs at EVERY scope exit, and merely

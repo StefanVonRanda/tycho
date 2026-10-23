@@ -72,7 +72,7 @@ RUNTIME = os.path.join(ROOT, "runtime", "tycho_rt.c")
 # wrote down.
 
 # runtime/tycho_rt.c:633@TYCHO_ARENA_STATS, runtime/tycho_rt.c:638@TYCHO_BLOCK,
-# runtime/tycho_rt.c:1009@TYCHO_MAX_TASKS, runtime/tycho_rt.c:1293@TYCHO_THREADS --
+# runtime/tycho_rt.c:1021@TYCHO_MAX_TASKS, runtime/tycho_rt.c:1305@TYCHO_THREADS --
 # the only literal getenv() names in the
 # runtime. The wrapper Tycho code calls takes a runtime string (getenv(name)), so
 # a user program's own env reads cannot land here.
@@ -105,7 +105,7 @@ EXPECT_MSG_RUNTIME = {
     r"tycho: [string:float] map exceeds 2^31 entries\n",
     r"tycho: [string:int] map exceeds 2^31 entries\n",
     # Both from `51dcb45b` (packed): from_bytes() validates the layout at RUN
-    # time rather than reinterpreting the bytes. runtime/tycho_rt.c:2029@width, runtime/tycho_rt.c:2031@sum.
+    # time rather than reinterpreting the bytes. runtime/tycho_rt.c:2041@width, runtime/tycho_rt.c:2043@sum.
     r"tycho: a packed field width is not 1, 2, 4 or 8",
     r"tycho: a packed struct's field widths do not sum to its size",
     r"tycho: channel already closed\n",

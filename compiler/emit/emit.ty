@@ -172,13 +172,14 @@ struct C:
     shared_get: bool                   # O6: the last top-level _ex was a shallow map read
     copyless_get: bool                 # a read-only map.get local can borrow the descriptor
     pcap: [string]                     # arrays whose presized push loop has proven capacity
+    fheap: [string]                    # lambda wrappers with heap environments
     destn: [string]                    # active declaration: allocate this name in a push destination
     desta: [string]
     destvi: [int]                      # persistent: variable indices whose buffer may move there
     destva: [string]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []int, []string)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []string, []int, []string)
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -2377,9 +2378,9 @@ fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
             return code
         return "tycho_str_copy(" + arena + ", " + code + ")"
     if _is_fn(t):
-        # re-home a returned closure's captures; a plain fn ref has env == 0
-        return "({ " + _ctyz(&cs, t) + "_fcp = (" + code + "); if (_fcp.env) _fcp.env = _fcp.copyenv(" +
-            arena + ", _fcp.env); _fcp; })"
+        # re-home a returned closure's captures; a plain fn ref has c0/c1 == 0
+        return "({ " + _ctyz(&cs, t) + "_fcp = (" + code + "); tycho_fn_copy(" + arena +
+            ", (void *)_fcp.call, &_fcp.c0); _fcp; })"
     if _is_arr(t):
         return _arrf(&cs, _elem(t), "_copy") + "(" + arena + ", " + code + ")"
     if _is_enum(t):
@@ -2534,8 +2535,8 @@ fn _zero(cs: inout C, t: string) -> string:
 
 fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
     if _is_fn(t):
-        # identity: same thunk and same env -- src/tychoc.c:13435
-        return "((" + a + ").call == (" + b + ").call && (" + a + ").env == (" + b + ").env)"
+        # identity: same thunk and same captures/env -- src/tychoc.c:13435
+        return "((" + a + ").call == (" + b + ").call && (" + a + ").c0 == (" + b + ").c0 && (" + a + ").c1 == (" + b + ").c1)"
     if t == "string" or t == "bytes":
         # EQUALITY, not order: tycho_str_eq settles on the length headers and
         # never touches the bytes when they differ, which is the common case.
@@ -2819,7 +2820,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             if fi2 >= 0:
                 _need_clo(&cs, fi2)
                 ft2 := _fn_of(&cs, cs.fds[fi2].ret, cs.fds[fi2].ptypes)
-                return ("(" + _cty(&cs, ft2) + "){0, " + cs.fds[fi2].name + "__clo, 0, 0}", ft2)
+                return ("(" + _cty(&cs, ft2) + "){" + cs.fds[fi2].name + "__clo, 0, 0}", ft2)
             _bad("unknown name '" + n + "'")
         ast.Field(l, r, f):
             pm, pt2 := _pkgmember(&cs, r[0], f)
@@ -3256,12 +3257,11 @@ fn _fchain(cs: inout C, ps: [string], n: int) -> string:
     return "({ " + pre + out + "); })"
 
 # --- function values --------------------------------------------------------
-# A fn value is the same 3-word FAT POINTER src/tychoc.c:17230 emits:
-# `{ void *env; RET (*call)(void*, Arena*, P...); void *(*copyenv)(Arena*, void*); }`.
-# A reference to a named function has env == 0; a capturing lambda allocates an
-# Env in the arena that owns the value and carries a copier so a returned
-# closure re-homes its captures. The registry key is "ret|p0|p1|...", the type
-# string "F~<index>", stamped exactly as a tuple kind is.
+# A fn value is `{ RET (*call)(void*, Arena*, P...); tycho_int c0, c1; }`.
+# Up to two integer captures live directly in c0/c1; every other capture gets
+# an Env in a header-carrying allocation, with the payload pointer in c0. A
+# reference to a named function has c0/c1 == 0. The registry key is
+# "ret|p0|p1|...", the type string "F~<index>", stamped as a tuple kind is.
 fn _is_fn(t: string) -> bool:
     return strings.starts_with(t, "F~")
 
@@ -3318,13 +3318,25 @@ fn _clo_defs(cs: inout C) -> (string, string):
     return (pr, bd)
 
 fn _fn_defs(cs: inout C) -> string:
-    out := ""
+    out := "typedef struct { void *(*copy)(Arena *, void *); void (*drop)(Arena *, void *); } TychoEnvHdr;\n" +
+        "static int tycho_fn_is_heap(void *);\n" +
+        "static void tycho_fn_copy(Arena *, void *, tycho_int *);\n" +
+        "static void tycho_fn_recycle(Arena *, void *, tycho_int *);\n" +
+        "static void tycho_fn_copy(Arena *a, void *call, tycho_int *slot) {\n" +
+        "    if (!tycho_fn_is_heap(call)) return;\n" +
+        "    void *env = (void *)*slot;\n" +
+        "    if (!env) return;\n" +
+        "    *slot = (tycho_int)((TychoEnvHdr *)env)[-1].copy(a, env);\n}\n" +
+        "static void tycho_fn_recycle(Arena *a, void *call, tycho_int *slot) {\n" +
+        "    if (!tycho_fn_is_heap(call)) return;\n" +
+        "    void *env = (void *)*slot;\n" +
+        "    if (env) ((TychoEnvHdr *)env)[-1].drop(a, env);\n}\n"
     for i := 0; i < len(cs.fks); i += 1:
         ps := split(cs.fks[i], "|")
-        s := "typedef struct { void *env; " + _ctyz(&cs, ps[0]) + "(*call)(void *, Arena *"
+        s := "typedef struct { " + _ctyz(&cs, ps[0]) + "(*call)(void *, Arena *"
         for j := 1; j < len(ps); j += 1:
             s = s + ", " + _cty(&cs, ps[j])
-        out = out + s + "); void *(*copyenv)(Arena *, void *); void (*dropenv)(Arena *, void *); } FnC" + str(i) + ";\n"
+        out = out + s + "); tycho_int c0; tycho_int c1; } FnC" + str(i) + ";\n"
     return out
 
 # A lambda body is one EXPRESSION (parse/parse.ty:310), so the only binder
@@ -3581,9 +3593,16 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
     cs.ascope = sas
     ft := _fn_of(&cs, rt, pts)
     fid := _tname(ft)
+    inl := len(caps) <= 2
+    for i := 0; i < len(caps); i += 1:
+        if capt[i] != "int":
+            inl = false
     pre := ""
-    if len(caps) > 0:
+    if len(caps) > 0 and inl:
         pre = "    Env" + id + " *_ec = (Env" + id + " *)_env;\n"
+    if len(caps) > 0 and not inl:
+        pre = "    Env" + id + " *_ec = *(Env" + id + " **)_env;\n"
+        push(cs.fheap, "__lam" + id + "__clo")
     # The thunk's own scope must be released, exactly as a named fn's is: the
     # result is copied into _parent first, so the copy outlives the free.
     noalloc := not _heap(&cs, rt) and _noalloc_e(body)
@@ -3597,10 +3616,15 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
             ret2 = "    " + bc + ";\n"
     d := ""
     if len(caps) > 0:
-        d = "typedef struct { \n" + env + "} Env" + id + ";\n" +
+        # `may_alias`: the inline path points an Env pointer at c0/c1. The
+        # object there is an FnC field, so GCC/clang need this on the Env type.
+        d = "typedef struct __attribute__((may_alias)) { \n" + env + "} Env" + id + ";\n" +
+            "static void Env" + id + "_drop(Arena *_a, void *_p);\n" +
             "static void *Env" + id + "_copy(Arena *_a, void *_p) {\n" +
             "    Env" + id + " *_s = (Env" + id + " *)_p;\n" +
-            "    Env" + id + " *_d = (Env" + id + " *)arena_alloc(_a, sizeof(Env" + id + "));\n"
+            "    TychoEnvHdr *_h = (TychoEnvHdr *)arena_alloc(_a, sizeof(TychoEnvHdr) + sizeof(Env" + id + "));\n" +
+            "    _h->copy = Env" + id + "_copy; _h->drop = Env" + id + "_drop;\n" +
+            "    Env" + id + " *_d = (Env" + id + " *)(_h + 1);\n"
         for i := 0; i < len(caps); i += 1:
             d = d + "    _d->c" + str(i) + " = " + _copy(&cs, "(_s->c" + str(i) + ")", capt[i], "_a") + ";\n"
         d = d + "    return _d;\n}\n" +
@@ -3611,7 +3635,7 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
             rc := _recycle_call(&cs, "_a", "_e->c" + str(i), capt[i])
             if len(rc) > 0:
                 d = d + "    " + rc + "\n"
-        d = d + "    arena_recycle(_a, _e, sizeof(*_e));\n}\n"
+        d = d + "    arena_recycle(_a, (TychoEnvHdr *)_e - 1, sizeof(TychoEnvHdr) + sizeof(*_e));\n}\n"
     scope_decl := "    Arena _scope = arena_child(_parent);\n"
     if noalloc:
         scope_decl = ""
@@ -3620,14 +3644,20 @@ fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (stri
     push(cs.lamd, d)
     push(cs.lamp, _ctyz(&cs, rt) + "__lam" + id + "__clo" + sig + ";\n")
     if len(caps) == 0:
-        return ("(FnC" + fid + "){0, __lam" + id + "__clo, 0, 0}", ft)
-    mk := "({ Env" + id + " *_e = (Env" + id + " *)arena_alloc(" + cs.arena + ", sizeof(Env" + id + "));"
+        return ("(FnC" + fid + "){__lam" + id + "__clo, 0, 0}", ft)
+    if inl:
+        mk := "({ (FnC" + fid + "){__lam" + id + "__clo"
+        for i := 0; i < len(caps); i += 1:
+            mk = mk + ", (tycho_int)(" + _vcname(&cs, caps[i]) + ")"
+        mk = mk + "}; })"
+        return (mk, ft)
+    mk := "({ TychoEnvHdr *_h = (TychoEnvHdr *)arena_alloc(" + cs.arena + ", sizeof(TychoEnvHdr) + sizeof(Env" + id + ")); _h->copy = Env" + id + "_copy; _h->drop = Env" + id + "_drop; Env" + id + " *_e = (Env" + id + " *)(_h + 1);"
     for i := 0; i < len(caps); i += 1:
         cv := _vcname(&cs, caps[i])
         if _heap(&cs, capt[i]):
             cv = _copy(&cs, cv, capt[i], cs.arena)
         mk = mk + " _e->c" + str(i) + " = " + cv + ";"
-    return (mk + " (FnC" + fid + "){_e, __lam" + id + "__clo, Env" + id + "_copy, Env" + id + "_drop}; })", ft)
+    return (mk + " (FnC" + fid + "){__lam" + id + "__clo, (tycho_int)_e, 0}; })", ft)
 
 # As _ex_scope, but in the INNERMOST live scratch. A transient built for a push
 # inside a loop belongs to that iteration: &_scope is the function arena and is
@@ -3789,7 +3819,7 @@ fn _pkgmember(cs: inout C, r: ast.Expr, f: string) -> (string, string):
     if fi >= 0:
         _need_clo(&cs, fi)
         ft := _fn_of(&cs, cs.fds[fi].ret, cs.fds[fi].ptypes)
-        return ("(" + _cty(&cs, ft) + "){0, " + cs.fds[fi].name + "__clo, 0, 0}", ft)
+        return ("(" + _cty(&cs, ft) + "){" + cs.fds[fi].name + "__clo, 0, 0}", ft)
     _bad("unknown package member '" + q + "." + f + "'")
     return ("", "")
 
@@ -4189,13 +4219,39 @@ fn _callval(cs: inout C, k: [ast.Expr]) -> (string, string):
         _: pass
     return _callfv(&cs, k)
 
+fn _simple_ex(e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.IntLit(l, n): return true
+        ast.StrLit(l, s): return true
+        _: return false
+    return false
+
+fn _simple_call_place(e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.Index(l, k):
+            return _simple_ex(k[0]) and _simple_ex(k[1])
+        _: return false
+    return false
+
 fn _callfv(cs: inout C, k: [ast.Expr]) -> (string, string):
     fc, ft := _ex(&cs, k[0])
     if not _is_fn(ft):
         _bad("call of a value that is not a function")
+    # A simple place is already an lvalue. Calling through a pointer avoids
+    # copying the whole function descriptor (24 bytes) just to read `call` and
+    # the inline environment out of the copy.
+    direct := _simple_call_place(k[0]) and _place(k[0])
     fv := _fresh(&cs, "_fv")
-    out := "({ " + _ctyz(&cs, ft) + "" + fv + " = " + fc + "; " + fv + ".call(" + fv +
-        ".env, " + cs.arena
+    out := ""
+    if direct:
+        lv, _lt := _lvalue(&cs, k[0])
+        out = "({ " + _ctyz(&cs, ft) + " *" + fv + " = &(" + lv + "); " +
+            fv + "->call((void *)&" + fv + "->c0, " + cs.arena
+    else:
+        out = "({ " + _ctyz(&cs, ft) + "" + fv + " = " + fc + "; " + fv +
+            ".call((void *)&" + fv + ".c0, " + cs.arena
     fps := _fps(&cs, ft)
     sw := cs.want
     for i := 1; i < len(k); i += 1:
@@ -9953,7 +10009,7 @@ fn _recycle_defs(cs: inout C) -> (string, string):
                 continue
             proto = proto + "static void " + nm + "(Arena *, FnC" + str(i) + ");\n"
             body = body + "static void " + nm + "(Arena *a, FnC" + str(i) + " v) { " +
-                "if (v.env && v.dropenv) v.dropenv(a, v.env); }\n"
+                "tycho_fn_recycle(a, (void *)v.call, &v.c0); }\n"
     return (proto, body)
 
 # A deep hash per hashable struct/tuple, folded FNV-style from the per-process
@@ -11443,4 +11499,8 @@ fn program_in(program: types.Program, dbgf: string) -> string:
         "    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n" +
         "    Arena _root = arena_new(0);  /* root arena; default block size */\n" +
         mcall + mtail + "}\n"
-    return head + xpro + protos + cpr + lpr + "\n" + chd + spd + cbd + lbd + fns + entry
+    hfd := "static int tycho_fn_is_heap(void *p) {\n"
+    for nm in cs.fheap:
+        hfd = hfd + "    if (p == (void *)" + nm + ") return 1;\n"
+    hfd = hfd + "    return 0;\n}\n"
+    return head + xpro + protos + cpr + lpr + "\n" + hfd + chd + spd + cbd + lbd + fns + entry

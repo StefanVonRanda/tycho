@@ -115,11 +115,12 @@ promises of dates.
    **Done when:** all six implementations print the same SQLite checksum and
    the coverage matrix has no `dbquery` gaps.
 
-**Status 2026-10-22:** targets 1, 3, 4 and 5 are done and verified by the
-generated GCC/clang suite and `make test`. Target 2 is **OPEN**: the idiomatic
-closure form is still slower than C on `dispatch` (GCC 24 vs 13 ms; clang 32 vs
-22 ms), and the expert struct form does not close it (GCC 28 vs 13 ms). This
-needs a closure environment/array ABI change, not another local codegen tweak.
+**Status 2026-10-23:** targets 1 through 5 are done and verified by the
+generated GCC/clang suite and `make test`. Target 2 is **DONE for the idiomatic
+default row**: the generated group is `1.08x` C under GCC and `1.00x` under
+clang. The expert struct variant is an explicit alternate, not part of that
+claim, and remains slower (`1.38x` GCC / `1.27x` clang); the report lists it
+rather than hiding it.
 
 Follow-up work after the benchmark refresh:
 
@@ -129,15 +130,21 @@ Follow-up work after the benchmark refresh:
 - **Regression gate:** DONE — `make bench-suite-gate` checks saved GCC/clang
   results for checksum failure, latency relative to C/Rust, service memory and
   six-language `dbquery` coverage.
-- **Reference compiler parity:** OPEN — the four longstanding codegen
-  optimizations remain `tychoc1`-only; the generated suite still uses the
-  shipped compiler.
+- **Closure ABI:** DONE for the default dispatch row — function descriptors are
+  now 24 bytes, with up to two integer captures stored inline and a
+  header-carrying heap environment for other captures. A call through a simple
+  place reads the descriptor in place instead of copying it. `tests/closures.ty`
+  covers inline, heap, escaping and container cases; the compiler self-build
+  also exercises function-value map equality.
+- **Reference compiler parity:** OPEN — the closure ABI, destination construction
+  and the longstanding codegen optimizations remain `tychoc1`-only; the saved
+  generated results use `TYCHOC=./tychoc1`.
 - **External-program check:** DONE — `tools/tycho-hash/run.sh` passes its
   deterministic, cross-worker SHA-256 and error-path checks.
 - **`json_tree` fast path:** PARTIAL — a single-scope flat-record parser
   removes most per-call arena overhead, and destination-arena construction now
   moves each object's key/value arrays into the returned array instead of
-  copying them (GCC 89 ms / 107 MB vs C 48 / 103; clang 57 / 107 vs C 42 / 103).
+  copying them (GCC 87 ms / 107 MB vs C 46 / 103; clang 57 / 106 vs C 41 / 103).
   The move is gated on the constructor push being the array's last use and on
   the destination escaping the function; `tests/dest_move_last_use.ty` pins the
   move and the copy-after-constructor case. It is still slower than C, so this

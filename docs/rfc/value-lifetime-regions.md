@@ -52,8 +52,8 @@ The three exceptions in the tree are the ones that prove the rule, because each 
   `tycho_task_free` (`runtime/tycho_rt.c@tycho_task_new`,
   `runtime/tycho_rt.c@tycho_task_free`);
 - a channel cell's payload arena, one per ring slot, created at channel construction
-  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:1125@arena_new`,
-  `runtime/tycho_rt.c:1175@arena_free`);
+  and freed when a later send reclaims the slot (`runtime/tycho_rt.c:1137@arena_new`,
+  `runtime/tycho_rt.c:1187@arena_free`);
 - a typed FFI handle's destructor, which is emitted into exactly the slot the task
   finaliser uses.
 
@@ -209,7 +209,7 @@ and deep-copies each heap argument into it, after which spawner and task share z
 bytes (`src/tychoc.c:14887-14895`, `runtime/tycho_rt.c@tycho_task_new`); `wait` copies
 the result out and frees the root eagerly
 (`src/tychoc.c:12511@arena_free(&_tk->root)`). A channel does the same per payload
-into a per-cell arena (`runtime/tycho_rt.c:1076@payload bytes live here`). An `@r` value
+into a per-cell arena (`runtime/tycho_rt.c:1088@payload bytes live here`). An `@r` value
 offers neither option: copying it means copying the whole region (unbounded — the
 region exists *because* it is the long-lived structure), and passing the region pointer
 shares mutable storage across threads, which is the exact hypothesis the race-freedom
@@ -267,7 +267,7 @@ Blocks crossing threads is already the status quo — the block pool is thread-l
 frees them (`runtime/tycho_rt.c:684@HBlock *nx`), and a spawned thread flushes its pool
 before exiting so nothing leaks with the TLS (`runtime/tycho_rt.c@tycho_pool_flush`). Channels need nothing new
 either: a region payload deep-copies into the cell arena like any other value
-(`runtime/tycho_rt.c:1076@payload bytes live here`).
+(`runtime/tycho_rt.c:1088@payload bytes live here`).
 
 The limit is that this makes regions **cheap to free and no cheaper to send**.
 A 1 GB region crosses a channel as 1 GB of deep copy. Today you would send an index
