@@ -645,6 +645,7 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
         return Err(BadByte(pos))
     pos = pos + 1
     xs := []Json
+    reserve(xs, 4096)
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
     if pos < n and s[pos] == 93:
