@@ -135,9 +135,13 @@ Follow-up work after the benchmark refresh:
 - **External-program check:** DONE — `tools/tycho-hash/run.sh` passes its
   deterministic, cross-worker SHA-256 and error-path checks.
 - **`json_tree` fast path:** PARTIAL — a single-scope flat-record parser
-  removes most per-call arena overhead (GCC 97 ms / 106 MB vs C 52 / 103;
-  clang 66 / 106 vs C 46 / 103). It is still slower than C, so this remains a
-  performance target rather than a completed parity claim.
+  removes most per-call arena overhead, and destination-arena construction now
+  moves each object's key/value arrays into the returned array instead of
+  copying them (GCC 89 ms / 107 MB vs C 48 / 103; clang 57 / 107 vs C 42 / 103).
+  The move is gated on the constructor push being the array's last use and on
+  the destination escaping the function; `tests/dest_move_last_use.ty` pins the
+  move and the copy-after-constructor case. It is still slower than C, so this
+  remains a performance target rather than a completed parity claim.
 
 ## Friction phases from the `tycho-dupe` probe (2026-10-19)
 

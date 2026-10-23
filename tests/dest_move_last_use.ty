@@ -1,0 +1,51 @@
+# Destination moves for a loop-local array handed to an aggregate are allowed
+# only when that push is the array's last use. A later push or read must keep
+# the constructor's copy independent.
+
+enum Box:
+    One([int])
+    Empty
+
+fn bstr(b: Box) -> string:
+    match b:
+        One(a):
+            s := ""
+            for j := 0; j < len(a); j += 1:
+                if j > 0:
+                    s = s + ","
+                s = s + str(a[j])
+            return s
+        Empty:
+            return "-"
+
+fn build_positive() -> [Box]:
+    ys := []Box
+    # Last use is the constructor push: the buffer may move into the box.
+    for i := 0; i < 3; i += 1:
+        xs := []int
+        push(xs, i)
+        push(xs, i + 10)
+        push(ys, One(xs))
+    return ys
+
+fn main():
+    ys := build_positive()
+
+    # A push after the constructor makes the constructor copy; growing xs must
+    # not grow the box's array.
+    for i := 0; i < 2; i += 1:
+        zs := []int
+        push(zs, i)
+        push(ys, One(zs))
+        push(zs, 99)
+
+    # Two constructor uses take copies; a later mutation must not alias either.
+    for i := 0; i < 2; i += 1:
+        qs := []int
+        push(qs, i)
+        push(ys, One(qs))
+        push(ys, One(qs))
+        push(qs, 77)
+
+    for i := 0; i < len(ys); i += 1:
+        println(str(i) + ":" + bstr(ys[i]))

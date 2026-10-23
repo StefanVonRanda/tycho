@@ -172,9 +172,13 @@ struct C:
     shared_get: bool                   # O6: the last top-level _ex was a shallow map read
     copyless_get: bool                 # a read-only map.get local can borrow the descriptor
     pcap: [string]                     # arrays whose presized push loop has proven capacity
+    destn: [string]                    # active declaration: allocate this name in a push destination
+    desta: [string]
+    destvi: [int]                      # persistent: variable indices whose buffer may move there
+    destva: [string]
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []int, []string)
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -1742,7 +1746,12 @@ fn _push(cs: inout C, n: string, t: string) -> string:
     push(cs.vtypes, t)
     push(cs.vcn, cn)
     push(cs.vcaps, 0)
-    push(cs.vown, _curown(&cs))
+    own := _curown(&cs)
+    for i := len(cs.destn) - 1; i >= 0; i -= 1:
+        if cs.destn[i] == n:
+            own = cs.desta[i]
+            break
+    push(cs.vown, own)
     push(cs.vlocal, false)
     push(cs.vloop, cs.loopdepth)
     push(cs.vacc, "")
@@ -1855,6 +1864,113 @@ fn _inparent(cs: inout C, e: ast.Expr) -> bool:
                 if cs.vnames[i] == n:
                     return cs.vown[i] == "_parent"
             return false
+        _: return false
+    return false
+
+fn _expr_has_name(e: ast.Expr, n: string) -> bool:
+    match e:
+        ast.Name(l, x):
+            if x == n:
+                return true
+        _: pass
+    for c in ast.kids(e):
+        if _expr_has_name(c, n):
+            return true
+    return false
+
+fn _find_push_dest_e(e: ast.Expr, n: string) -> string:
+    match e:
+        ast.Call(l, q, fname, ts, args):
+            if len(q) == 0 and fname == "push" and len(args) >= 2 and _expr_has_name(args[1], n):
+                match args[0]:
+                    ast.Name(l2, t):
+                        return t
+                    _: pass
+        _: pass
+    for c in ast.kids(e):
+        r := _find_push_dest_e(c, n)
+        if len(r) > 0:
+            return r
+    return ""
+
+fn _find_push_dest_b(b: [ast.Stmt], n: string) -> string:
+    # Only a use INSIDE the value of a push can hand the array to a container.
+    # Walk backwards so the last textual use must be that push: anything after
+    # it could still read the array and the move would be wrong.
+    for i := len(b) - 1; i >= 0; i -= 1:
+        st := b[i]
+        for e in _stmt_es(st):
+            if _expr_has_name(e, n):
+                return _find_push_dest_e(e, n)
+        for sb in _stmt_bs(st):
+            r := _find_push_dest_b(sb, n)
+            if len(r) > 0:
+                return r
+    return ""
+
+fn _count_push_value_e(e: ast.Expr, n: string) -> int:
+    c := 0
+    match e:
+        ast.Call(l, q, fname, ts, args):
+            if len(q) == 0 and fname == "push" and len(args) >= 2 and _expr_has_name(args[1], n):
+                c = 1
+        _: pass
+    for k in ast.kids(e):
+        c = c + _count_push_value_e(k, n)
+    return c
+
+fn _count_push_value_b(b: [ast.Stmt], n: string) -> int:
+    c := 0
+    for st in b:
+        for e in _stmt_es(st):
+            c = c + _count_push_value_e(e, n)
+        for sb in _stmt_bs(st):
+            c = c + _count_push_value_b(sb, n)
+    return c
+
+fn _returned_name_b(b: [ast.Stmt], n: string) -> bool:
+    for st in b:
+        match st:
+            ast.ReturnS(l, es):
+                for e in es:
+                    if _expr_has_name(e, n):
+                        return true
+            _: pass
+        for sb in _stmt_bs(st):
+            if _returned_name_b(sb, n):
+                return true
+    return false
+
+fn _dest_owner(cs: inout C, body: [ast.Stmt], idx: int, n: string) -> string:
+    t := _find_push_dest_b(body[idx + 1:len(body)], n)
+    if len(t) == 0 or not _is_arr(_vtype(&cs, t)):
+        return ""
+    # Exactly one push may take this array as part of its value. Two would mean
+    # the same buffer is handed to two containers, and moving it at the first
+    # would alias the second.
+    if _count_push_value_b(body[idx + 1:len(body)], n) != 1:
+        return ""
+    # The destination array must escape the function. A purely local container
+    # would keep the moved buffers alive until its loop's scope dies, trading a
+    # copy for memory that the loop scratch arena would otherwise recycle.
+    if not _returned_name_b(cs.pbody, t):
+        return ""
+    ow := _ownerof(&cs, ast.Name(0, t))
+    if ow == _curown(&cs):
+        return ""
+    return ow
+
+fn _move_same_array(cs: inout C, e: ast.Expr, t: string, arena: string) -> bool:
+    if not _is_arr(t) or not _place(e):
+        return false
+    match e:
+        ast.Name(l, n):
+            for vi := len(cs.vnames) - 1; vi >= 0; vi -= 1:
+                if cs.vnames[vi] == n:
+                    for i := len(cs.destvi) - 1; i >= 0; i -= 1:
+                        if cs.destvi[i] == vi and cs.destva[i] == arena:
+                            return true
+                    return false
         _: return false
     return false
 
@@ -3737,7 +3853,8 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
             ac = "(double)(" + ac + ")"
         if _place(args[i]) and _heap(&cs, pay[i]) and not _shares(&cs, args[i], pay[i], cs.arena) and
                 not _own_path_ok(&cs, args[i]) and not _shared_get_expr(&cs, args[i]) and
-                not _canmove(&cs, args[i], cs.arena):
+                not _canmove(&cs, args[i], cs.arena) and
+                not _move_same_array(&cs, args[i], pay[i], cs.arena):
             ac = _copy(&cs, ac, pay[i], cs.arena)
         if inl:
             out = out + v + ".u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
@@ -7153,6 +7270,7 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
     cs.projection = []string
     out := ""
     pcap_active := false
+    dest_start := len(cs.destvi)
     for i := 0; i < len(body); i += 1:
         s := body[i]
         # Keep obsolete builder versions local; only the final write escapes.
@@ -7210,7 +7328,36 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
         copyget := _safe_map_get_local(&cs, body, i)
         oldcopyget := cs.copyless_get
         cs.copyless_get = copyget
+        dest := ""
+        dname := ""
+        match s:
+            ast.Decl(l, n, ann, rhs, vv):
+                if len(rhs) == 1 and len(vv) == 0:
+                    match rhs[0]:
+                        ast.EmptyArr(l2, ts):
+                            dname = n
+                            dest = _dest_owner(&cs, body, i, n)
+                        _: pass
+            _: pass
+        if len(dest) > 0:
+            push(cs.destn, dname)
+            push(cs.desta, dest)
+        oldarena := cs.arena
+        if len(dest) > 0:
+            cs.arena = dest
         out = out + _stmt(&cs, s, ind)
+        cs.arena = oldarena
+        if len(dest) > 0:
+            pop(cs.destn)
+            pop(cs.desta)
+            vi := -1
+            for j := len(cs.vnames) - 1; j >= 0; j -= 1:
+                if cs.vnames[j] == dname:
+                    vi = j
+                    break
+            if vi >= 0:
+                push(cs.destvi, vi)
+                push(cs.destva, dest)
         cs.copyless_get = oldcopyget
         if len(wb) > 0:
             pop(cs.elv)
@@ -7227,6 +7374,9 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
                     if len(pc) > 0:
                         push(cs.pcap, pc)
                         pcap_active = true
+    for len(cs.destvi) > dest_start:
+        pop(cs.destvi)
+        pop(cs.destva)
     out = out + _finalizers(&cs, m, ind)
     _restore(&cs, m)
     cs.ret_local = oldlocal
