@@ -11,7 +11,9 @@ fn main():
     acc := 0
     i = 0
     for i < n:
-        ring[i % w] = i % 100000
-        acc = acc + ring[i % w]
+        s := i % 50000
+        v := i % 100000
+        ring[s] = v
+        acc = acc + v
         i = i + 1
     println(str(acc))
