@@ -2049,7 +2049,7 @@ static void recycle_emit_body(FILE *o, Type t) {
             fprintf(o, "    if (v.cap > 0) arena_recycle(a, v.f%d, (size_t)v.cap * sizeof(*v.f%d));\n", i, i);
         }
     } else if (IS_FUNC(t)) {
-        fprintf(o, "    if (v.env && v.dropenv) v.dropenv(a, v.env);\n");
+        fprintf(o, "    tycho_fn_recycle(a, (void *)v.call, &v.c0);\n");
     }
     fprintf(o, "}\n");
 }
@@ -2371,6 +2371,13 @@ static Subscript *g_subs = NULL; static int g_nsubs = 0, g_nsubs_cap = 0;
  * ordinary). `ncap` captures lead; the rest are the lambda's own params. */
 typedef struct { Proc *proc; int ncap; Type ftype; } LamInfo;
 static LamInfo *g_laminfo;
+static int lam_inline(int id) {
+    LamInfo *li = &g_laminfo[id];
+    if (li->ncap == 0 || li->ncap > 2) return 0;
+    for (int j = 0; j < li->ncap; j++)
+        if (li->proc->params[j].type != T_INT) return 0;
+    return 1;
+}
 static int g_laminfo_cap = 0;
 static int g_nlaminfo = 0;
 static ProcVec g_lambda_procs;   /* lifted lambda procs, emitted after the user procs */
@@ -10628,7 +10635,19 @@ static const char *for3_elidable_arr(Stmt *s) {
  * bounds-check elision uses; over-reserving is safe (reserve only grows, and a
  * conditional or multiple push still grows). TYCHOC_NO_PRESIZE is the control. */
 static int body_pushcount(Stmt **body, int n, const char *nm);
-static const char *presize_loop_src(Stmt *decl, Stmt *loop) {
+static int is_inout_param(const char *name);
+static int is_ptr_param(const char *name);
+static char *bound_expr(Expr *b) {
+    if (!b) return NULL;
+    if (b->kind == E_INT && b->ival > 0) return sfmt("%lld", (long long)b->ival);
+    if (b->kind == E_IDENT) {
+        if (is_inout_param(b->sval) || is_ptr_param(b->sval))
+            return sfmt("(*h_%s)", b->sval);
+        return sfmt("h_%s", b->sval);
+    }
+    return NULL;
+}
+static char *presize_loop_limit(Stmt *decl, Stmt *loop) {
     if (getenv("TYCHOC_NO_PRESIZE")) return NULL;
     if (!decl || decl->kind != S_DECL || !decl->name || !decl->expr) return NULL;
     if (!is_array(decl->decl_type) || IS_INLINE_ARR(decl->decl_type)) return NULL;
@@ -10636,11 +10655,64 @@ static const char *presize_loop_src(Stmt *decl, Stmt *loop) {
     if (!loop || loop->kind != S_FOR3) return NULL;
     if (body_pushcount(loop->body, loop->nbody, decl->name) == 0) return NULL;
     const char *src = for3_elidable_arr(loop);
-    if (!src || !strcmp(src, decl->name)) return NULL;
-    Expr *b = loop->expr ? loop->expr->rhs : NULL;
-    if (!b || b->kind != E_CALL || b->nargs != 1 || !b->args[0]
-        || !is_array(b->args[0]->type)) return NULL;
-    return src;
+    if (src) {
+        if (!strcmp(src, decl->name)) return NULL;
+        Expr *b = loop->expr ? loop->expr->rhs : NULL;
+        if (!b || b->kind != E_CALL || b->nargs != 1 || !b->args[0]
+            || !is_array(b->args[0]->type)) return NULL;
+        return sfmt("((%s)>0 ? (tycho_int)(%s) : 0)",
+                    is_inout_param(src) ? sfmt("(*h_%s).len", src) : sfmt("h_%s.len", src),
+                    is_inout_param(src) ? sfmt("(*h_%s).len", src) : sfmt("h_%s.len", src));
+    }
+    /* counted `for i := 0; i < n; i += 1` -- n may be a runtime value */
+    if (loop->nels != 1 || loop->nbody < 1) return NULL;
+    Stmt *init = loop->els[0], *post = loop->body[loop->nbody - 1];
+    if (!init || init->kind != S_DECL || !init->name || init->ctrl ||
+        !init->expr || init->expr->kind != E_INT || init->expr->ival != 0) return NULL;
+    const char *iv = init->name;
+    Expr *c = loop->expr;
+    if (!c || c->kind != E_BINOP || c->op != TK_LT || !c->lhs || c->lhs->kind != E_IDENT ||
+        strcmp(c->lhs->sval, iv)) return NULL;
+    Expr *b = c->rhs;
+    char *lim = bound_expr(b);
+    if (!lim) return NULL;
+    if (b->kind == E_IDENT && !strcmp(b->sval, iv))
+        return NULL;
+    if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, iv) ||
+        !post->expr || post->expr->kind != E_BINOP || post->expr->op != TK_PLUS ||
+        !post->expr->lhs || post->expr->lhs->kind != E_IDENT ||
+        strcmp(post->expr->lhs->sval, iv) || !post->expr->rhs ||
+        post->expr->rhs->kind != E_INT || post->expr->rhs->ival != 1) return NULL;
+    if (stmts_unsafe(loop->body, loop->nbody - 1, iv,
+                     b->kind == E_IDENT ? b->sval : "")) return NULL;
+    return sfmt("((%s)>0 ? (tycho_int)(%s) : 0)", lim, lim);
+}
+static char *while_presize_limit(Stmt *arr, Stmt *ctr, Stmt *w) {
+    if (getenv("TYCHOC_NO_PRESIZE")) return NULL;
+    if (!arr || arr->kind != S_DECL || !arr->name || !arr->expr ||
+        !is_array(arr->decl_type) || IS_INLINE_ARR(arr->decl_type) ||
+        arr->expr->kind != E_ARRLIT || arr->expr->nargs != 0) return NULL;
+    if (!ctr || ctr->kind != S_DECL || !ctr->name || !ctr->expr ||
+        ctr->expr->kind != E_INT || ctr->expr->ival != 0) return NULL;
+    if (!w || w->kind != S_WHILE || !w->expr || w->expr->kind != E_BINOP ||
+        w->expr->op != TK_LT || !w->expr->lhs || w->expr->lhs->kind != E_IDENT ||
+        strcmp(w->expr->lhs->sval, ctr->name) || !w->body || w->nbody < 1)
+        return NULL;
+    if (body_pushcount(w->body, w->nbody, arr->name) == 0) return NULL;
+    Stmt *post = w->body[w->nbody - 1];
+    if (!post || post->kind != S_ASSIGN || !post->name || strcmp(post->name, ctr->name) ||
+        !post->expr || post->expr->kind != E_BINOP || post->expr->op != TK_PLUS ||
+        !post->expr->lhs || post->expr->lhs->kind != E_IDENT ||
+        strcmp(post->expr->lhs->sval, ctr->name) || !post->expr->rhs ||
+        post->expr->rhs->kind != E_INT || post->expr->rhs->ival != 1) return NULL;
+    Expr *b = w->expr->rhs;
+    char *lim = bound_expr(b);
+    if (!lim) return NULL;
+    if (b->kind == E_IDENT && !strcmp(b->sval, ctr->name))
+        return NULL;
+    if (stmts_unsafe(w->body, w->nbody - 1, ctr->name,
+                     b->kind == E_IDENT ? b->sval : "")) return NULL;
+    return sfmt("((%s)>0 ? (tycho_int)(%s) : 0)", lim, lim);
 }
 
 /* A `vector[N]T` lane named by an integer LITERAL inside 0..N-1 cannot be out
@@ -11500,7 +11572,7 @@ static char *copy_into(Type t, const char *arena, char *val) {
                  * (e.g. retrieving a closure-valued map entry inside a print block),
                  * and a `_t` temp here would shadow it so copyenv(&_t,...) passes the
                  * FnC* instead of the Arena*. */
-                return sfmt("({ FnC%d _fcp = (%s); if (_fcp.env) _fcp.env = _fcp.copyenv(%s, _fcp.env); _fcp; })", FUNC_ID(t), val, arena);
+                return sfmt("({ FnC%d _fcp = (%s); tycho_fn_copy(%s, (void *)_fcp.call, &_fcp.c0); _fcp; })", FUNC_ID(t), val, arena);
             if (IS_STRUCT(t) && type_is_heap(t))
                 return sfmt("tycho_copy_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, arena, val);
             if (IS_SOA(t))   /* deep-copy each field buffer into `arena` */
@@ -12110,7 +12182,7 @@ static char *gen_eq(Type t, const char *a, const char *b) {
     if (IS_STRUCT(t))        return sfmt("tycho_eq_S_%s(%s, %s)", g_structs[STRUCT_ID(t)].name, a, b);
     if (IS_SOA(t))           return sfmt("Soa%d_eq(%s, %s)", SOA_ID(t), a, b);
     if (IS_FUNC(t))          /* fn values: identity equality (same thunk + same env) — closures aren't structurally comparable */
-        return sfmt("((%s).call == (%s).call && (%s).env == (%s).env)", a, b, a, b);
+        return sfmt("((%s).call == (%s).call && (%s).c0 == (%s).c0 && (%s).c1 == (%s).c1)", a, b, a, b, a, b);
     return sfmt("(%s == %s)", a, b);   /* int/bool/float */
 }
 
@@ -12279,19 +12351,36 @@ static char *packed_field_byteptr(Expr *e, const char *arena) {
     return NULL;
 }
 
+static int simple_call_place(Expr *e) {
+    if (!e) return 0;
+    if (e->kind == E_IDENT) return 1;
+    if (e->kind == E_INDEX && e->lhs && e->rhs) {
+        if ((e->lhs->kind == E_IDENT || e->lhs->kind == E_INT) &&
+            (e->rhs->kind == E_IDENT || e->rhs->kind == E_INT))
+            return 1;
+    }
+    return 0;
+}
 static char *gen_call(Expr *e, const char *arena) {
     if (e->op == TK_TYPE)     /* newtype wrap Meters(x): zero-cost, just the value */
         return gen_expr(e->args[0], arena);
     if (e->op == TK_FN) {     /* indirect call through a function value: g.call(g.env, arena, args) */
-        if (e->lhs) {         /* call-on-expression: bind the callee to a temp first (it may have side effects / be an index) */
+        if (e->lhs) {         /* call-on-expression: simple places stay lvalues; effectful callees get a temp */
+            if (simple_call_place(e->lhs)) {
+                char *lv = gen_lvalue(e->lhs, g_cur_scope);
+                char *out = sfmt("({ %s *_f = &(%s); _f->call((void *)&_f->c0, %s", c_type(e->lhs->type), lv, arena);
+                for (int i = 0; i < e->nargs; i++)
+                    out = sfmt("%s, %s", out, gen_expr(e->args[i], g_cur_scope));
+                return sfmt("%s); })", out);
+            }
             char *cv = gen_expr(e->lhs, g_cur_scope);
-            char *out = sfmt("({ %s_f = %s; _f.call(_f.env, %s", c_type(e->lhs->type), cv, arena);
+            char *out = sfmt("({ %s_f = %s; _f.call((void *)&_f.c0, %s", c_type(e->lhs->type), cv, arena);
             for (int i = 0; i < e->nargs; i++)
                 out = sfmt("%s, %s", out, gen_expr(e->args[i], g_cur_scope));
             return sfmt("%s); })", out);
         }
         char *g = sfmt("h_%s", e->sval);
-        char *out = sfmt("%s.call(%s.env, %s", g, g, arena);
+        char *out = sfmt("%s.call((void *)&%s.c0, %s", g, g, arena);
         g_call_arg_depth++;
         int sv_ind = g_slice_view; g_slice_view = 1;
         for (int i = 0; i < e->nargs; i++)
@@ -13056,13 +13145,23 @@ static char *gen_expr(Expr *e, const char *arena) {
             LamInfo *li = &g_laminfo[e->ival];
             int fid = FUNC_ID(li->ftype), id = (int)e->ival;
             if (li->ncap == 0)
-                return sfmt("(FnC%d){0, __lam%d__clo, 0, 0}", fid, id);
+                return sfmt("(FnC%d){__lam%d__clo, 0, 0}", fid, id);
             /* env in the OWNER arena (where this closure value is stored) — so a
              * loop-local closure is reclaimed each iteration with the rest of its
              * block, not retained in the function arena for the whole call. Every
              * escape (return / store in an escaping container / assign to a longer-
              * lived var) re-homes the env via Env_<id>_copy (the 3rd field). */
-            char *out = sfmt("({ Env_%d *_e = (Env_%d *)arena_alloc(%s, sizeof(Env_%d));", id, id, arena, id);
+            if (lam_inline(id)) {
+                char *out = sfmt("({ (FnC%d){__lam%d__clo", fid, id);
+                for (int i = 0; i < li->ncap; i++) {
+                    const char *cn = li->proc->params[i].name;
+                    char *cv = (is_inout_param(cn) || is_ptr_param(cn))
+                        ? sfmt("(*h_%s)", cn) : sfmt("h_%s", cn);
+                    out = sfmt("%s, (tycho_int)(%s)", out, cv);
+                }
+                return sfmt("%s}; })", out);
+            }
+            char *out = sfmt("({ TychoEnvHdr *_h = (TychoEnvHdr *)arena_alloc(%s, sizeof(TychoEnvHdr) + sizeof(Env_%d)); _h->copy = Env_%d_copy; _h->drop = Env_%d_drop; Env_%d *_e = (Env_%d *)(_h + 1);", arena, id, id, id, id, id);
             for (int i = 0; i < li->ncap; i++) {
                 const char *cn = li->proc->params[i].name;
                 Type ct = li->proc->params[i].type;
@@ -13071,11 +13170,11 @@ static char *gen_expr(Expr *e, const char *arena) {
                 if (type_is_heap(ct)) cv = copy_into(ct, arena, cv);   /* value semantics: own a deep copy in the env arena */
                 out = sfmt("%s _e->c%d = %s;", out, i, cv);
             }
-            return sfmt("%s (FnC%d){_e, __lam%d__clo, Env_%d_copy, Env_%d_drop}; })", out, fid, id, id, id);
+            return sfmt("%s (FnC%d){__lam%d__clo, (tycho_int)_e, 0}; })", out, fid, id);
         }
         case E_IDENT:
             if (e->op == TK_FN)   /* a function reference -> the fat value {0, <name>__clo, 0} (no env to re-home) */
-                return sfmt("(FnC%d){0, %s__clo, 0, 0}", FUNC_ID(e->type), e->sval);
+                return sfmt("(FnC%d){%s__clo, 0, 0}", FUNC_ID(e->type), e->sval);
             return (is_inout_param(e->sval) || is_ptr_param(e->sval)) ? sfmt("(*h_%s)", e->sval)
                                            : sfmt("h_%s", e->sval);
         case E_ADDR: /* &place as an inout arg: address of the underlying
@@ -13797,6 +13896,44 @@ static void gen_parfor(FILE *o, Stmt *s, int ind, const char *scope) {
     indent(o, ind); fprintf(o, "}\n");
 }
 
+/* Conservative "this loop body can allocate". A call may allocate (len is the
+ * one builtin that cannot); constructors, pushes, slices and literals do. When
+ * false, the loop needs no per-iteration scratch arena at all. */
+static int expr_allocates(Expr *e) {
+    if (!e) return 0;
+    switch (e->kind) {
+        case E_CALL:
+            return !(e->sval && !strcmp(e->sval, "len") && e->nargs == 1);
+        case E_ARRLIT: case E_STRUCTLIT: case E_TUPLE: case E_SOME: case E_OK:
+        case E_ERR: case E_SLICE: case E_LAMBDA: case E_SPAWN:
+            return 1;
+        case E_ORRETURN: return 1;
+        case E_BINOP:
+            if (e->type == T_STRING || e->type == T_BYTES) return 1;
+            return expr_allocates(e->lhs) || expr_allocates(e->rhs);
+        case E_INDEX: case E_FIELD: case E_TUPIDX: case E_ADDR:
+            return expr_allocates(e->lhs) || (e->rhs && expr_allocates(e->rhs));
+        default: return 0;
+    }
+}
+static int stmt_allocates(Stmt *s) {
+    if (!s) return 0;
+    if (expr_allocates(s->expr) || expr_allocates(s->target) ||
+        expr_allocates(s->r_start) || expr_allocates(s->r_stop)) return 1;
+    for (int i = 0; i < s->narms; i++) if (s->sel_ch && expr_allocates(s->sel_ch[i])) return 1;
+    for (int i = 0; i < s->nbody; i++) if (stmt_allocates(s->body[i])) return 1;
+    for (int i = 0; i < s->nels; i++) if (stmt_allocates(s->els[i])) return 1;
+    for (int i = 0; i < s->narms; i++)
+        for (int j = 0; j < s->arms[i].nbody; j++) if (stmt_allocates(s->arms[i].body[j])) return 1;
+    if (s->ctrl && stmt_allocates(s->ctrl)) return 1;
+    return 0;
+}
+static int block_allocates(Stmt **body, int n) {
+    for (int i = 0; i < n; i++)
+        if (stmt_allocates(body[i])) return 1;
+    return 0;
+}
+
 static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
     /* call arguments in this statement's expressions are transients owned by
      * the current scope (see g_cur_scope). Set before generating any expr;
@@ -14440,7 +14577,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                  * copyenv==0 and env==0, so this is a no-op for it. */
                 char *v = gen_expr(s->expr, "&_scope");
                 indent(o, ind);
-                fprintf(o, "{ %s_ret = %s; if (_ret.env) _ret.env = _ret.copyenv(_parent, _ret.env); %s return _ret; }\n",
+                fprintf(o, "{ %s_ret = %s; tycho_fn_copy(_parent, (void *)_ret.call, &_ret.c0); %s return _ret; }\n",
                         c_type(ret), v, rf);
             } else {
                 /* int/bool, or a pure-value struct: a value, nothing on the
@@ -14691,30 +14828,34 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
         }
         case S_WHILE: {
             int id = g_blk++;
+            int use_scr = block_allocates(s->body, s->nbody);
             indent(o, ind); fprintf(o, "{\n");
-            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, g_loop_lbl++);
+            if (use_scr) {
+                indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, g_loop_lbl++);
+            }
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, s->expr);
             char *c = cond_unwrap(gen_expr(s->expr, scope));
             indent(o, ind + 1); fprintf(o, "while (%s) {\n", c);
-            indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
-            char *ss = sfmt("&_scr%d", id);
-            ascope_push(ss);   /* a return inside the loop must free _scrN too */
+            if (use_scr) { indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id); }
+            char *ss = use_scr ? sfmt("&_scr%d", id) : sfmt("%s", scope);
+            if (use_scr) ascope_push(ss);   /* a return inside the loop must free _scrN too */
             g_loop_taskmark[g_loop_depth] = g_ntaskvars;   /* break/continue finish tasks above this */
             g_loop_post[g_loop_depth] = -1;                /* no post clause: `continue` is a C continue */
             g_loop_depth++;    /* moves are unsafe inside a loop (single read runs N times) */
             gen_block(o, s->body, s->nbody, ind + 2, ss, ret);
             g_loop_depth--;
-            g_nascope--;
+            if (use_scr) g_nascope--;
             indent(o, ind + 1); fprintf(o, "}\n");
             fuse_close(o, _fo, ind + 1);   /* break falls through to here; flush the cursors */
-            indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
+            if (use_scr) { indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id); }
             indent(o, ind); fprintf(o, "}\n");
             break;
         }
         case S_FOR3: {   /* `for init; cond; post:` */
             int id = g_blk++;
             int m = cv_mark();
-            char *ss = sfmt("&_scr%d", id);
+            int use_scr = block_allocates(s->body, s->nbody);
+            char *ss = use_scr ? sfmt("&_scr%d", id) : sfmt("%s", scope);
             indent(o, ind); fprintf(o, "{\n");
             /* init runs once, inside the loop's own C block and in the ENCLOSING
              * arena: the C block scoping is what makes the loop variable die with
@@ -14723,12 +14864,12 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
              * storage must not be the per-iteration scratch that arena_reset
              * recycles. An if-body decl is placed the same way. */
             gen_stmt(o, s->els[0], ind + 1, scope, ret);
-            indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, g_loop_lbl++);
+            if (use_scr) { indent(o, ind + 1); fprintf(o, "Arena _scr%d = arena_child(%s); _scr%d.name = \"%s:%d\";\n", id, scope, id, g_cur_proc_name, g_loop_lbl++); }
             int _fo = fuse_open(o, s->body, s->nbody, ind + 1, s->expr);
             char *c = cond_unwrap(gen_expr(s->expr, scope));
             indent(o, ind + 1); fprintf(o, "while (%s) {\n", c);
-            indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id);
-            ascope_push(ss);   /* a return inside the loop must free _scrN too */
+            if (use_scr) { indent(o, ind + 2); fprintf(o, "arena_reset(&_scr%d);\n", id); }
+            if (use_scr) ascope_push(ss);   /* a return inside the loop must free _scrN too */
             g_loop_taskmark[g_loop_depth] = g_ntaskvars;   /* break/continue finish tasks above this */
             g_loop_post[g_loop_depth] = id;                /* `continue` -> goto _postN */
             g_loop_depth++;    /* moves are unsafe inside a loop (single read runs N times) */
@@ -14750,10 +14891,10 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             gen_stmt(o, s->body[s->nbody - 1], ind + 2, ss, ret);   /* the post clause, every iteration */
             if (el_arr) g_nelide--;
             g_loop_depth--;
-            g_nascope--;
+            if (use_scr) g_nascope--;
             indent(o, ind + 1); fprintf(o, "}\n");
             fuse_close(o, _fo, ind + 1);   /* break falls through to here; flush the cursors */
-            indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id);
+            if (use_scr) { indent(o, ind + 1); fprintf(o, "arena_free(&_scr%d);\n", id); }
             indent(o, ind); fprintf(o, "}\n");
             cv_restore(m);     /* the init variable leaves scope with the loop */
             break;
@@ -14892,17 +15033,15 @@ static void gen_block(FILE *o, Stmt **body, int n, int ind,
     for (int i = 0; i < n; i++) {
         if (body[i] == projection.decl) g_return_projection = projection;
         gen_stmt(o, body[i], ind, scope, ret);
-        if (i + 1 < n) {
-            const char *src = presize_loop_src(body[i], body[i + 1]);
-            if (src) {
-                const char *owner = cv_arena(body[i]->name);
-                if (!owner) owner = scope;
-                char *lenexpr = is_inout_param(src) ? sfmt("(*h_%s).len", src)
-                                                    : sfmt("h_%s.len", src);
-                indent(o, ind);
-                fprintf(o, "tycho_arr_%s_reserve(%s, &(h_%s), (tycho_int)%s);\n",
-                        arr_fn(body[i]->decl_type), owner, body[i]->name, lenexpr);
-            }
+        char *lim = NULL;
+        if (i + 1 < n) lim = presize_loop_limit(body[i], body[i + 1]);
+        if (!lim && i + 2 < n) lim = while_presize_limit(body[i], body[i + 1], body[i + 2]);
+        if (lim) {
+            const char *owner = cv_arena(body[i]->name);
+            if (!owner) owner = scope;
+            indent(o, ind);
+            fprintf(o, "tycho_arr_%s_reserve(%s, &(h_%s), (tycho_int)(%s));\n",
+                    arr_fn(body[i]->decl_type), owner, body[i]->name, lim);
         }
     }
     g_return_projection = saved_projection;
@@ -15627,12 +15766,27 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * the composite-array/struct bodies that embed it. A fn(P...)->R value is a
      * 4-word FAT POINTER {env, call, copyenv, dropenv}; common param/ret types (scalars,
      * strings, scalar arrays) are complete here. */
+    if (g_nfunctypes) {
+        fputs("typedef struct { void *(*copy)(Arena *, void *); void (*drop)(Arena *, void *); } TychoEnvHdr;\n"
+              "static int tycho_fn_is_heap(void *);\n"
+              "static void tycho_fn_copy(Arena *, void *, tycho_int *);\n"
+              "static void tycho_fn_recycle(Arena *, void *, tycho_int *);\n"
+              "static void tycho_fn_copy(Arena *a, void *call, tycho_int *slot) {\n"
+              "    if (!tycho_fn_is_heap(call)) return;\n"
+              "    void *env = (void *)*slot;\n"
+              "    if (!env) return;\n"
+              "    *slot = (tycho_int)((TychoEnvHdr *)env)[-1].copy(a, env);\n}\n"
+              "static void tycho_fn_recycle(Arena *a, void *call, tycho_int *slot) {\n"
+              "    if (!tycho_fn_is_heap(call)) return;\n"
+              "    void *env = (void *)*slot;\n"
+              "    if (env) ((TychoEnvHdr *)env)[-1].drop(a, env);\n}\n", o);
+    }
     for (int i = 0; i < g_nfunctypes; i++) {
         if (has_typaram(T_FUNC_BASE + i)) continue;   /* a `fn($T)->...` lives only in a generic template; instances use a concrete fn type. Emitting it would be invalid C (a `void` param). */
         FuncTy *f = &g_functypes[i];
-        fprintf(o, "typedef struct { void *env; %s(*call)(void*, Arena*", c_type(f->ret));
+        fprintf(o, "typedef struct { %s(*call)(void*, Arena*", c_type(f->ret));
         for (int j = 0; j < f->n; j++) fprintf(o, ", %s", c_type(f->params[j]));
-        fprintf(o, "); void *(*copyenv)(Arena*, void*); void (*dropenv)(Arena*, void*); } FnC%d;\n", i);   /* copyenv re-homes captures and dropenv reclaims their owned graph */
+        fprintf(o, "); tycho_int c0; tycho_int c1; } FnC%d;\n", i);
     }
     if (g_nfunctypes) fputs("\n", o);
     for (int i = 0; i < g_narrtypes; i++) {         /* (2b) DYNAMIC composite-array bodies (tags forward-declared above). */
@@ -15656,7 +15810,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nsoatypes; i++) {
         if (has_typaram(g_soatypes[i].st)) continue;   /* generics: a template's `soa [Box($T)]` -- transient, the instance interned its own concrete soa */
         StructDef *sd = &g_structs[STRUCT_ID(g_soatypes[i].st)];
-        fprintf(o, "typedef struct {");
+        fprintf(o, "typedef struct __attribute__((may_alias)) {");
         for (int f = 0; f < sd->nfields; f++)
             fprintf(o, " %s*f%d;", c_type(sd->fields[f].type), f);
         fprintf(o, " tycho_int len; tycho_int cap; } Soa%d;\n", i);
@@ -16549,7 +16703,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         for (int j = 0; j < li->ncap; j++) fprintf(o, " %sc%d;", c_type(li->proc->params[j].type), j);
         fprintf(o, " } Env_%d;\n", i);
         /* re-home the env (and deep-copy its heap captures) into `a` on closure return */
-        fprintf(o, "static void *Env_%d_copy(Arena *a, void *_s) { Env_%d *s = (Env_%d *)_s; Env_%d *d = (Env_%d *)arena_alloc(a, sizeof(Env_%d));", i, i, i, i, i, i);
+        fprintf(o, "static void Env_%d_drop(Arena *a, void *_p);\n", i);
+        fprintf(o, "static void *Env_%d_copy(Arena *a, void *_s) { Env_%d *s = (Env_%d *)_s; TychoEnvHdr *_h = (TychoEnvHdr *)arena_alloc(a, sizeof(TychoEnvHdr) + sizeof(Env_%d)); _h->copy = Env_%d_copy; _h->drop = Env_%d_drop; Env_%d *d = (Env_%d *)(_h + 1);", i, i, i, i, i, i, i, i);
         for (int j = 0; j < li->ncap; j++) {
             Type ct = li->proc->params[j].type;
             fprintf(o, " d->c%d = %s;", j, copy_into(ct, "a", sfmt("s->c%d", j)));
@@ -16560,7 +16715,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
             Type ct = li->proc->params[j].type;
             if (type_is_heap(ct)) fprintf(o, " %s(a, e->c%d);", recycle_name(ct), j);
         }
-        fprintf(o, " arena_recycle(a, e, sizeof(*e)); }\n");
+        fprintf(o, " arena_recycle(a, (TychoEnvHdr *)e - 1, sizeof(TychoEnvHdr) + sizeof(*e)); }\n");
     }
     for (int i = 0; i < prog->n; i++) {
         if (prog->v[i]->generic) continue;   /* generics: a template emits no code; its instances do (below) */
@@ -16640,7 +16795,8 @@ static void gen_program(FILE *o, ProcVec *prog) {
         fprintf(o, "static %s__lam%d__clo(void *_env, Arena *_p", c_type(pr->ret), i);
         for (int j = 0; j < nlam; j++) fprintf(o, ", %sa%d", c_type(pr->params[li->ncap + j].type), j);
         fprintf(o, ") {");
-        if (li->ncap > 0) fprintf(o, " Env_%d *_e = (Env_%d *)_env;", i, i);
+        if (li->ncap > 0 && lam_inline(i)) fprintf(o, " Env_%d *_e = (Env_%d *)_env;", i, i);
+        else if (li->ncap > 0) fprintf(o, " Env_%d *_e = *(Env_%d **)_env;", i, i);
         else fprintf(o, " (void)_env;");
         fprintf(o, " %sh___lam%d(_p", pr->ret == T_VOID ? "" : "return ", i);   /* gen_proc prefixes the proc name with h_ */
         for (int j = 0; j < li->ncap; j++)
@@ -16653,6 +16809,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
                      && !pr->params[li->ncap + j].is_inout
                      && ptr_param_type(pr->params[li->ncap + j].type)) ? "&a" : "a", j);
         fprintf(o, "); }\n");
+    }
+    if (g_nfunctypes) {
+        fputs("static int tycho_fn_is_heap(void *p) {\n", o);
+        for (int i = 0; i < g_nlaminfo; i++)
+            if (g_laminfo[i].ncap > 0 && !lam_inline(i))
+                fprintf(o, "    if (p == (void *)__lam%d__clo) return 1;\n", i);
+        fputs("    return 0;\n}\n", o);
     }
     if (g_nfnval || g_nlaminfo) fputs("\n", o);
     for (int i = 0; i < prog->n; i++) if (!prog->v[i]->is_extern && !prog->v[i]->generic) gen_proc(o, prog->v[i]);   /* FFI externs have no body; generic templates emit instances below */
