@@ -2956,6 +2956,9 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
         ast.Binop(l, op, k):
             return _binop(&cs, op, k[0], k[1])
         ast.Call(l, q, n, tas, args):
+            if len(q) == 0 and n == "_json_intern" and len(args) == 1:
+                ic, _it := _ex(&cs, args[0])
+                return ("tycho_str_intern(" + ic + ")", "string")
             return _call(&cs, l, q, n, tas, args)
         ast.ArrLit(l, k):
             return _arrlit(&cs, k)

@@ -1494,6 +1494,36 @@ static const struct { tycho_int n; char z[8]; } ty_str_empty = { 0, { 0 } };
  * AVX memcpy costs more than the move. The 8- and 4-byte forms OVERLAP their
  * two halves rather than reading past the end, so nothing outside [s, s+n) is
  * touched. */
+#define TYCHO_INTERN_MAX 1024
+static char *tycho_intern_tab[TYCHO_INTERN_MAX];
+static int tycho_intern_n;
+char *tycho_str_intern(char *s) {
+    if (!s || tycho_str_is_view(s)) return s;
+    tycho_int raw = ((const tycho_int *)s)[-1];
+    if (raw < 0) return s;
+    tycho_int n = raw;
+    if (n <= 0 || n > 4096) return s;
+    uint64_t h = 1469598103934665603ULL;
+    for (tycho_int i = 0; i < n; i++) { h ^= (unsigned char)s[i]; h *= 1099511628211ULL; }
+    unsigned slot = (unsigned)(h & (TYCHO_INTERN_MAX - 1));
+    for (int probe = 0; probe < 16; probe++) {
+        char *e = tycho_intern_tab[(slot + probe) & (TYCHO_INTERN_MAX - 1)];
+        if (!e) break;
+        if (tycho_str_len(e) == n && memcmp(e, s, (size_t)n) == 0) return e;
+    }
+    if (tycho_intern_n >= TYCHO_INTERN_MAX) return s;
+    char *p = (char *)malloc((size_t)(8 + n + 1));
+    if (!p) return s;
+    *(tycho_int *)p = ~n;
+    memcpy(p + 8, s, (size_t)n); p[8 + n] = 0;
+    char *r = p + 8;
+    for (int probe = 0; probe < 16; probe++) {
+        unsigned ix = (slot + probe) & (TYCHO_INTERN_MAX - 1);
+        if (!tycho_intern_tab[ix]) { tycho_intern_tab[ix] = r; tycho_intern_n++; break; }
+    }
+    return r;
+}
+
 char *tycho_str_copy(Arena *a, const char *s) {
     /* A C-zero composite (notably a map-miss `(V){0}` default or a slotptr-inserted
      * zero) carries NULL string members; NULL is the empty string here, sharing the

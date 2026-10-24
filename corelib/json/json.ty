@@ -1,6 +1,9 @@
 package json
 import "core:strings"
 
+fn _json_intern(s: string) -> string:
+    return s
+
 enum Json:
     JNull
     JBool(bool)
@@ -656,6 +659,7 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
     pos = pos + 1
     xs := []Json
     reserve(xs, 4096)
+    seen_keys := []string
     for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
         pos = pos + 1
     if pos < n and s[pos] == 93:
@@ -687,7 +691,16 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
                     pos = pos + 1
                 if pos >= n:
                     return Err(Truncated(pos))
-                k := substr(s, kstart, pos)
+                kview := s[kstart:pos]
+                k := ""
+                found := false
+                for si := 0; si < len(seen_keys); si += 1:
+                    if seen_keys[si] == kview:
+                        k = seen_keys[si]
+                        found = true
+                if not found:
+                    k = _json_intern(substr(s, kstart, pos))
+                    push(seen_keys, k)
                 pos = pos + 1
                 for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
                     pos = pos + 1
