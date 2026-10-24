@@ -2525,6 +2525,8 @@ fn _zero(cs: inout C, t: string) -> string:
         return "TYCHO_LIT(\"\")"
     if _is_sized(t):
         return "0"
+    if _is_map(t):
+        return "(" + _cty(&cs, t) + "){&tycho_mapM" + _tname(t) + "_empty, 0}"
     if _is_fn(t):
         return "(" + _cty(&cs, t) + "){0, 0, 0}"
     if t == "float":
@@ -9738,12 +9740,15 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
         # keys() builds its answer with the key array's with_cap and push
         kwc := _arrf(&cs, kt, "_with_cap")
         kpu := _arrf(&cs, kt, "_push")
-        kel := "m.ekeys[e]"
+        kel := "m.m_ekeys[e]"
         if _kclass(&cs, kt) == "enum":
-            kel = "_sing_tab_" + _tname(kt) + "[m.ekeys[e]]"
+            kel = "_sing_tab_" + _tname(kt) + "[m.m_ekeys[e]]"
         td = td + "typedef struct " + ct + "_ " + ct + ";\n"
-        sb = sb + "struct " + ct + "_ { " + ks + "*ekeys; " + vc +
-            "*evals; unsigned char *elive; int *idx; int32_t len; int32_t ecount; int32_t ecap; int32_t icap; };\n"
+        sb = sb + "typedef struct " + ct + "_Data " + ct + "_Data;\n" +
+            "typedef struct " + ct + "_ { " + ct + "_Data *d; int32_t len; } " + ct + ";\n" +
+            "struct " + ct + "_Data { " + ks + "*ekeys; " + vc +
+            "*evals; unsigned char *elive; int *idx; int32_t ecount; int32_t ecap; int32_t icap; };\n" +
+            "static " + ct + "_Data " + p + "_empty;\n"
         pf := ""
         if _can_share_raw(&cs, vt):
             pf = "static void " + p + "_put_fresh(Arena *, " + ct + " *, " + kp + ", " + vc + "v);\n" +
@@ -9770,17 +9775,18 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
             "static char *tycho_str_mapM" + str(i) + "(Arena *, " + ct + ");\n"
         fb = fb +
             "static " + ct + " " + p + "_with_cap(Arena *a, tycho_int cap) {\n" +
-            "    " + ct + " m; m.len = 0; m.ecount = 0;\n" +
+            "    " + ct + " m; m.d = &" + p + "_empty; m.len = 0;\n" +
             "    tycho_map_cap_check(cap);\n" +
-            "    if (cap == 0) { m.ekeys = 0; m.evals = 0; m.elive = 0; m.idx = 0; m.ecap = 0; m.icap = 0; return m; }\n" +
-            "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2; m.ecap = ec; m.icap = ic;\n" +
-            "    tycho_cap_check(ec, sizeof(*m.ekeys)); tycho_cap_check(ec, sizeof(*m.evals));\n" +
-            "    m.ekeys = (" + ks + "*)arena_alloc(a, (size_t)ec * sizeof(" + ks + "));\n" +
-            "    m.evals = (" + vc + "*)arena_alloc(a, (size_t)ec * sizeof(" + vc + "));\n" +
-            "    m.elive = (unsigned char *)arena_alloc(a, (size_t)ec);\n" +
-            "    m.idx = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n" +
-            "    for (tycho_int i = 0; i < ic; i++) m.idx[i] = 0; return m;\n}\n" +
-            "static void " + p + "_share(" + ct + " *m) { if (m->ecap >= 0) m->ecap = ~m->ecap; }\n" +
+            "    if (cap == 0) return m;\n" +
+            "    m.d = (" + ct + "_Data *)arena_alloc(a, sizeof(" + ct + "_Data)); *m.d = " + p + "_empty;\n" +
+            "    tycho_int ec = 4; while (ec < cap) ec *= 2; tycho_int ic = 8; while (ic < cap * 2) ic *= 2; m.m_ecap = ec; m.m_icap = ic;\n" +
+            "    tycho_cap_check(ec, sizeof(*m.m_ekeys)); tycho_cap_check(ec, sizeof(*m.m_evals));\n" +
+            "    m.m_ekeys = (" + ks + "*)arena_alloc(a, (size_t)ec * sizeof(" + ks + "));\n" +
+            "    m.m_evals = (" + vc + "*)arena_alloc(a, (size_t)ec * sizeof(" + vc + "));\n" +
+            "    m.m_elive = (unsigned char *)arena_alloc(a, (size_t)ec);\n" +
+            "    m.m_idx = (int *)arena_alloc(a, (size_t)ic * sizeof(int));\n" +
+            "    for (tycho_int i = 0; i < ic; i++) m.m_idx[i] = 0; return m;\n}\n" +
+            "static void " + p + "_share(" + ct + " *m) { if (m->d && m->d != &" + p + "_empty && m->ecap >= 0) m->ecap = ~m->ecap; }\n" +
             "static void " + p + "_reserve(Arena *a, " + ct + " *m, tycho_int cap) {\n" +
             "    tycho_map_cap_check(cap);\n" +
             "    if (cap == 0) return;\n" +
@@ -9798,9 +9804,9 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
             "    m->idx = ni; m->icap = ic;\n" +
             "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) " + p + "_idxput(m, e);\n}\n" +
             "static tycho_int " + p + "_find(" + ct + " m, " + kp + ") {\n" +
-            "    if (m.icap == 0) return -1; uint64_t mask = (uint64_t)m.icap - 1; tycho_int i = (tycho_int)(" +
+            "    if (m.m_icap == 0) return -1; uint64_t mask = (uint64_t)m.m_icap - 1; tycho_int i = (tycho_int)(" +
             _khash(&cs, kt, "k") + " & mask); int e;\n" +
-            "    while ((e = m.idx[i]) != 0) { if (" + _kmatch(&cs, kt, "m.ekeys[e - 1]", "k") +
+            "    while ((e = m.m_idx[i]) != 0) { if (" + _kmatch(&cs, kt, "m.m_ekeys[e - 1]", "k") +
             ") return e - 1; i = (tycho_int)((i + 1) & mask); }\n    return -1;\n}\n" +
             "static void " + p + "_idxput(" + ct + " *m, tycho_int ei) {\n" +
             "    uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(" +
@@ -9830,13 +9836,13 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
             "    if ((m->len + 1) * 2 > m->icap) " + p + "_idxgrow(a, m);\n" +
             "    tycho_int ne = " + p + "_append(a, m, " + kcp + ", " + vcp + "); m->len++; " + p + "_idxput(m, ne);\n}\n" +
             "static " + vc + "*" + p + "_slotptr(Arena *a, " + ct + " *m, " + kp + ") {\n" +
-            "    if (m->ecap < 0) (void)" + p + "_cow(a, m);\n" +
+            "    if (!m->d || m->d == &" + p + "_empty || m->ecap < 0) (void)" + p + "_cow(a, m);\n" +
             "    tycho_int e = " + p + "_find(*m, k); if (e >= 0) return &m->evals[e];\n" +
             "    if ((m->len + 1) * 2 > m->icap) " + p + "_idxgrow(a, m);\n" +
             "    tycho_int ne = " + p + "_append(a, m, " + kcp + ", " + _copy(&cs, _zero(&cs, vt), vt, "a") + "); m->len++; " + p + "_idxput(m, ne);\n" +
             "    return &m->evals[ne];\n}\n" +
             "static void " + p + "_del(Arena *a, " + ct + " *m, " + kp + ") {\n" +
-            "    if (m->icap == 0) return; int _was = " + p + "_cow(a, m); uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(" +
+            "    if (!m->d || m->icap == 0) return; int _was = " + p + "_cow(a, m); uint64_t mask = (uint64_t)m->icap - 1; tycho_int i = (tycho_int)(" +
             _khash(&cs, kt, "k") + " & mask), found = -1;\n" +
             "    while (m->idx[i] != 0) { if (" + _kmatch(&cs, kt, "m->ekeys[m->idx[i] - 1]", "k") +
             ") { found = i; break; } i = (tycho_int)((i + 1) & mask); }\n" +
@@ -9851,6 +9857,7 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
             "        m->idx[g] = m->idx[j]; g = j; }\n}\n"
         vs := _share_call(&cs, vt, "c.evals[ne]")
         fb = fb + "static int " + p + "_cow(Arena *a, " + ct + " *m) {\n" +
+            "    if (!m->d || m->d == &" + p + "_empty) { m->d = (" + ct + "_Data *)arena_alloc(a, sizeof(" + ct + "_Data)); *m->d = " + p + "_empty; return 1; }\n" +
             "    if (m->ecap >= 0) return 0;\n" +
             "    tycho_int oldcap = ~m->ecap; " + ct + " c = " + p + "_with_cap(a, oldcap ? oldcap : 1);\n" +
             "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) {\n" +
@@ -9870,30 +9877,39 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
                 "    if (m->ecap >= 0) m->ecap = ~m->ecap; " + vc + " v = m->evals[e]; " + vs2 + "; return v;\n}\n"
         fb = fb +
             "static " + ct + " " + p + "_copy(Arena *a, " + ct + " src) {\n" +
+            "    if (!src.d) return " + p + "_with_cap(a, 0);\n" +
             "    " + ct + " r = " + p + "_with_cap(a, src.len ? src.len : 0);\n" +
             "    for (tycho_int e = 0; e < src.ecount; e++) if (src.elive[e]) " + p +
             "_put(a, &r, src.ekeys[e], src.evals[e]);\n    return r;\n}\n" +
             "static " + vc + p + "_get(" + ct + " m, " + kp + ", " + vc + "dflt) {\n" +
-            "    tycho_int e = " + p + "_find(m, k); return e < 0 ? dflt : m.evals[e];\n}\n" +
+            "    tycho_int e = " + p + "_find(m, k); return e < 0 ? dflt : m.m_evals[e];\n}\n" +
             "static int " + p + "_has(" + ct + " m, " + kp + ") { return " + p + "_find(m, k) >= 0; }\n" +
             "static " + kat + " " + p + "_keys(Arena *a, " + ct + " m) {\n" +
             "    " + kat + " r = " + kwc + "(a, m.len);\n" +
-            "    for (tycho_int e = 0; e < m.ecount; e++) if (m.elive[e]) " + kpu +
+            "    if (!m.d) return r;\n" +
+            "    for (tycho_int e = 0; e < m.m_ecount; e++) if (m.m_elive[e]) " + kpu +
             "(a, &r, " + kel + ");\n    return r;\n}\n" +
             "static int " + p + "_eq(" + ct + " x, " + ct + " y) {\n" +
-            "    if (x.len != y.len) return 0;\n" +
+            "    if (x.len != y.len) return 0; if (x.len == 0) return 1;\n" +
+            "    if (!x.d || !y.d) return 0;\n" +
             "    for (tycho_int e = 0; e < x.ecount; e++) if (x.elive[e]) { tycho_int s = " + p +
             "_find(y, x.ekeys[e]); if (s < 0 || !(" + _eq(&cs, "y.evals[s]", "x.evals[e]", vt) +
             ")) return 0; }\n    return 1;\n}\n" +
             "static char *tycho_str_mapM" + str(i) + "(Arena *a, " + ct + " m) {\n" +
-            "    char *r = tycho_str_from_c(a, \"[\"); int first = 1;\n" +
-            "    for (tycho_int e = 0; e < m.ecount; e++) if (m.elive[e]) {\n" +
+            "    char *r = tycho_str_from_c(a, \"[\"); int first = 1; if (!m.d) return tycho_str_concat(a, r, tycho_str_from_c(a, \"]\"));\n" +
+            "    for (tycho_int e = 0; e < m.m_ecount; e++) if (m.m_elive[e]) {\n" +
             "        if (!first) r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \")); first = 0;\n" +
             "        r = tycho_str_concat(a, r, " + _tostr_a(&cs, kel, kt) + ");\n" +
             "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \": \"));\n" +
-            "        r = tycho_str_concat(a, r, " + _tostr_a(&cs, "m.evals[e]", vt) + ");\n" +
+            "        r = tycho_str_concat(a, r, " + _tostr_a(&cs, "m.m_evals[e]", vt) + ");\n" +
             "    }\n    return tycho_str_concat(a, r, tycho_str_from_c(a, \"]\"));\n}\n"
         i += 1
+    for fld in [".ekeys", ".evals", ".elive", ".idx", ".ecount", ".ecap", ".icap"]:
+        fb = strings.replace(fb, fld, ".m_" + fld[1:])
+    for fld in ["->ekeys", "->evals", "->elive", "->idx", "->ecount", "->ecap", "->icap"]:
+        fb = strings.replace(fb, fld, "->m_" + fld[2:])
+    macro := "#define m_ekeys d->ekeys\n#define m_evals d->evals\n#define m_elive d->elive\n#define m_idx d->idx\n#define m_ecount d->ecount\n#define m_ecap d->ecap\n#define m_icap d->icap\n"
+    sb = sb + macro
     return (td, sb, pr, fb)
 
 # Emit typed destruction helpers for values owned by map entries. Unlike a
@@ -9973,20 +9989,20 @@ fn _recycle_defs(cs: inout C) -> (string, string):
             ct := "TychoMapM" + str(i)
             proto = proto + "static void " + nm + "(Arena *, " + ct + ");\n"
             b := "static void " + nm + "(Arena *a, " + ct + " m) {\n" +
-                "    for (tycho_int e = 0; e < m.ecount; e++) if (m.elive[e]) {\n"
+                "    for (tycho_int e = 0; e < m.m_ecount; e++) if (m.m_elive[e]) {\n"
             rk := ""
             if _kclass(&cs, kt) != "enum":
-                rk = _recycle_call(&cs, "a", "m.ekeys[e]", kt)
-            rv := _recycle_call(&cs, "a", "m.evals[e]", vt)
+                rk = _recycle_call(&cs, "a", "m.m_ekeys[e]", kt)
+            rv := _recycle_call(&cs, "a", "m.m_evals[e]", vt)
             if len(rk) > 0:
                 b = b + "        " + rk + "\n"
             if len(rv) > 0:
                 b = b + "        " + rv + "\n"
-            b = b + "    }\n    if (m.ecap > 0) {\n" +
-                "        arena_recycle(a, m.ekeys, (size_t)m.ecap * sizeof(*m.ekeys));\n" +
-                "        arena_recycle(a, m.evals, (size_t)m.ecap * sizeof(*m.evals));\n" +
-                "        arena_recycle(a, m.elive, (size_t)m.ecap);\n    }\n" +
-                "    if (m.icap > 0) arena_recycle(a, m.idx, (size_t)m.icap * sizeof(*m.idx));\n}\n"
+            b = b + "    }\n    if (m.m_ecap > 0) {\n" +
+                "        arena_recycle(a, m.m_ekeys, (size_t)m.m_ecap * sizeof(*m.m_ekeys));\n" +
+                "        arena_recycle(a, m.m_evals, (size_t)m.m_ecap * sizeof(*m.m_evals));\n" +
+                "        arena_recycle(a, m.m_elive, (size_t)m.m_ecap);\n    }\n" +
+                "    if (m.m_icap > 0) arena_recycle(a, m.m_idx, (size_t)m.m_icap * sizeof(*m.m_idx));\n}\n"
             body = body + b
         for i := 0; i < len(cs.oks); i += 1:
             nm := "Soa" + str(i) + "_recycle"
