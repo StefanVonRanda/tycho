@@ -8,7 +8,11 @@ enum Json:
     JFloat(float, string)         # binary64 value + the ORIGINAL lexeme (NUMBERS, above)
     JStr(string)
     JArr([Json])
-    JObj([string], [Json])        # parallel keys / values
+    JObj([JsonField])             # compact key/value field spine
+
+struct JsonField:
+    k: string
+    v: Json
 
 # ---- the error channel -----------------------------------------------------
 #
@@ -283,6 +287,12 @@ fn _utf8_len(s: string, pos: int, n: int) -> int:
         return 4
     return -1                       # F5-FF: above U+10FFFF
 
+fn _mkobj(ks: [string], vs: [Json]) -> Json:
+    fs := []JsonField
+    for i := 0; i < len(ks); i += 1:
+        push(fs, JsonField(ks[i], vs[i]))
+    return JObj(fs)
+
 fn _parse_string(s: string, n: int, pos: inout int, ecode: inout int) -> string:
     pos = pos + 1                              # skip opening "
     start := pos
@@ -512,17 +522,17 @@ fn _parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
         before := pos
         if s[pos] != 34:                       # a member must start with a key
             ecode = JE_KEY
-            return JObj(ks, vs)
+            return _mkobj(ks, vs)
         k := _parse_string(s, n, &pos, &ecode)
         if ecode != JE_OK:
-            return JObj(ks, vs)
+            return _mkobj(ks, vs)
         _skip_ws(s, n, &pos)
         if pos >= n:
             ecode = JE_TRUNC
-            return JObj(ks, vs)
+            return _mkobj(ks, vs)
         if s[pos] != 58:                       # :
             ecode = JE_COLON
-            return JObj(ks, vs)
+            return _mkobj(ks, vs)
         pos = pos + 1                          # skip :
         # DUPLICATE KEYS: last value wins, at the FIRST key's position. RFC 8259
         # leaves this to the implementation; Python, JavaScript and Go all keep
@@ -538,14 +548,14 @@ fn _parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             push(ks, k)
             push(vs, kv)
         if ecode != JE_OK:
-            return JObj(ks, vs)
+            return _mkobj(ks, vs)
         if pos == before:                      # cannot happen today -- see above
             ecode = JE_STUCK
-            return JObj(ks, vs)
+            return _mkobj(ks, vs)
         _skip_ws(s, n, &pos)
         if pos >= n:
             ecode = JE_TRUNC
-            return JObj(ks, vs)
+            return _mkobj(ks, vs)
         if s[pos] == 44:                       # ,
             cpos := pos                        # remembered so the error can name it
             pos = pos + 1
@@ -553,17 +563,17 @@ fn _parse_object(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
             if pos < n and s[pos] == 125:      # `{"a":1,}` -- a comma promises a member
                 pos = cpos
                 ecode = JE_COMMA
-                return JObj(ks, vs)
+                return _mkobj(ks, vs)
         elif s[pos] != 125:                    # neither , nor }
             ecode = JE_SEP
-            return JObj(ks, vs)
+            return _mkobj(ks, vs)
     if ecode != JE_OK:
-        return JObj(ks, vs)
+        return _mkobj(ks, vs)
     if pos >= n:
         ecode = JE_TRUNC                       # `{"a":1` -- no closing }
-        return JObj(ks, vs)
+        return _mkobj(ks, vs)
     pos = pos + 1                              # skip }
-    return JObj(ks, vs)
+    return _mkobj(ks, vs)
 
 fn _parse_value(s: string, n: int, pos: inout int, ecode: inout int) -> Json:
     _skip_ws(s, n, &pos)
@@ -657,10 +667,8 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
         if pos >= n or s[pos] != 123:
             return Err(BadByte(pos))
         pos = pos + 1
-        ks := []string
-        vs := []Json
-        reserve(ks, 4)
-        reserve(vs, 4)
+        fs := []JsonField
+        reserve(fs, 4)
         for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
             pos = pos + 1
         if pos < n and s[pos] == 125:
@@ -729,11 +737,10 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
                     v = JNull
                 else:
                     return Err(BadByte(pos))
-                for ki := 0; ki < len(ks); ki += 1:
-                    if ks[ki] == k:
+                for ki := 0; ki < len(fs); ki += 1:
+                    if fs[ki].k == k:
                         return Err(BadByte(pos))   # duplicate-key semantics: use generic path
-                push(ks, k)
-                push(vs, v)
+                push(fs, JsonField(k, v))
                 for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
                     pos = pos + 1
                 if pos < n and s[pos] == 44:
@@ -743,7 +750,7 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
                     break
                 else:
                     return Err(MissingSep(pos))
-        push(xs, JObj(ks, vs))
+        push(xs, JObj(fs))
         for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
             pos = pos + 1
         if pos < n and s[pos] == 44:
@@ -856,12 +863,12 @@ fn stringify(j: Json) -> string:
                     out = out + ","
                 out = out + stringify(xs[i])
             return out + "]"
-        JObj(ks, vs):
+        JObj(fs):
             out := "{"
-            for i := 0; i < len(ks); i += 1:
+            for i := 0; i < len(fs); i += 1:
                 if i > 0:
                     out = out + ","
-                out = out + "\"" + _esc(ks[i]) + "\":" + stringify(vs[i])
+                out = out + "\"" + _esc(fs[i].k) + "\":" + stringify(fs[i].v)
             return out + "}"
 
 # ---- accessors (typed queries into the document) ---------------------------
@@ -880,7 +887,7 @@ fn kind(j: Json) -> string:
             return "str"
         JArr(xs):
             return "arr"
-        JObj(ks, vs):
+        JObj(fs):
             return "obj"
 
 # Object field, else JNull. A parsed object holds each key ONCE -- the parser
@@ -888,10 +895,10 @@ fn kind(j: Json) -> string:
 # first-vs-last question to answer here.
 fn get(j: Json, key: string) -> Json:          # object field, else JNull
     match j:
-        JObj(ks, vs):
-            for i := 0; i < len(ks); i += 1:
-                if ks[i] == key:
-                    return vs[i]
+        JObj(fs):
+            for i := 0; i < len(fs); i += 1:
+                if fs[i].k == key:
+                    return fs[i].v
             return JNull
         JNull:
             return JNull
@@ -922,13 +929,16 @@ fn at(j: Json, i: int) -> Json:                # array element i, else JNull
             return JNull
         JStr(s):
             return JNull
-        JObj(ks, vs):
+        JObj(fs):
             return JNull
 
 fn keys(j: Json) -> [string]:                  # object keys (in order), else []
     match j:
-        JObj(ks, vs):
-            return ks
+        JObj(fs):
+            out := []string
+            for i := 0; i < len(fs); i += 1:
+                push(out, fs[i].k)
+            return out
         JNull:
             return []string
         JBool(b):
@@ -946,8 +956,8 @@ fn len_of(j: Json) -> int:                     # array/object element count, str
     match j:
         JArr(xs):
             return len(xs)
-        JObj(ks, vs):
-            return len(ks)
+        JObj(fs):
+            return len(fs)
         JStr(s):
             return len(s)
         JNull:
