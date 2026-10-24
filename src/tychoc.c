@@ -15801,7 +15801,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * containment DFS, alongside the struct/Option/Result/tuple bodies. */
     for (int i = 0; i < g_nmaptypes; i++) {         /* (2b') composite-map bodies [K: V] -- COMPACT indexed-dict: int32 index table -> dense insertion-ordered entries */
         if (has_typaram(T_MAPC_BASE + i)) continue; /* generics: same skip (2b) gives arrays -- a `[string: fn($T)->$T]` field named the FnC<id> that (2a') deliberately skipped, and cc rejected the program */
-        fprintf(o, "struct TychoMapC%d_ { %s*ekeys; %s*evals; unsigned char *elive; int *idx; tycho_int len; tycho_int ecount; tycho_int ecap; tycho_int icap; };\n",
+        fprintf(o, "struct TychoMapC%d_ { %s*ekeys; %s*evals; unsigned char *elive; int *idx; int32_t len; int32_t ecount; int32_t ecap; int32_t icap; };\n",
                 i, mapc_kslot(g_maptypes[i].key), c_type(g_maptypes[i].val));
     }
     /* (2c) soa typedefs: one field-buffer POINTER per struct field + len/cap.

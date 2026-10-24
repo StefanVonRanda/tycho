@@ -9743,7 +9743,7 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
             kel = "_sing_tab_" + _tname(kt) + "[m.ekeys[e]]"
         td = td + "typedef struct " + ct + "_ " + ct + ";\n"
         sb = sb + "struct " + ct + "_ { " + ks + "*ekeys; " + vc +
-            "*evals; unsigned char *elive; int *idx; tycho_int len; tycho_int ecount; tycho_int ecap; tycho_int icap; };\n"
+            "*evals; unsigned char *elive; int *idx; int32_t len; int32_t ecount; int32_t ecap; int32_t icap; };\n"
         pf := ""
         if _can_share_raw(&cs, vt):
             pf = "static void " + p + "_put_fresh(Arena *, " + ct + " *, " + kp + ", " + vc + "v);\n" +
