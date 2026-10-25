@@ -2,12 +2,18 @@
 # steady churn (transient arrays). A tracing GC must re-scan all 2M live pointers
 # on every collection, so its pause scales with the retained heap; the arena (tycho)
 # and manual free (C) never scan — the held set just sits there. Same checksum.
+fn _str_intern(s: string) -> string:
+    return s
+
 fn main():
     m := 2000000
     live := []string
+    vals := []string
+    for j := 0; j < 1000; j += 1:
+        push(vals, _str_intern("x" + str(j)))
     i := 0
     for i := 0; i < m; i += 1:
-        push(live, "x" + str(i % 1000))     # 2M retained heap records (GC roots to trace)
+        push(live, vals[i % 1000])          # 2M retained references to the shared term strings
     acc := 0
     r := 0
     for r < 300:                             # churn: triggers GC; each cycle rescans `live`
