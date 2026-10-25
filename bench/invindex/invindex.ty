@@ -17,6 +17,8 @@ fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: 
         push(p.docs, doc)
         push(p.freqs, 1)
         push(postings, p)
+        reserve(postings[len(postings) - 1].docs, 768)
+        reserve(postings[len(postings) - 1].freqs, 768)
         tidx[term] = len(postings) - 1
     else:
         n := len(postings[pi].docs)
