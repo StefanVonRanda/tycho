@@ -377,6 +377,8 @@ WORKLOADS = [
                 src("c", "bench/interp/interp.c", r"(#define DEPTH )\d+", r"\g<1>{n}", c_flags=["-fwrapv"]),
                 src("go", "bench/interp/interp.go", r"(const depth = )\d+", r"\g<1>{n}"),
                 src("rust", "bench/interp/interp.rs", r"(let depth: i64 = )\d+", r"\g<1>{n}"),
+                src("java", "bench/interp/interp.java", r"(static int depth = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/interp/interp.swift", r"(let depth = )\d+", r"\g<1>{n}"),
             ]),
         ],
     },
