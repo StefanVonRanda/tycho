@@ -3886,10 +3886,12 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
         cs.want = sw
         if pay[i] == "float" and at == "int":
             ac = "(double)(" + ac + ")"
+        same_enum := _is_enum(pay[i]) and _place(args[i]) and
+            _ownerof(&cs, args[i]) == cs.arena
         if _place(args[i]) and _heap(&cs, pay[i]) and not _shares(&cs, args[i], pay[i], cs.arena) and
                 not _own_path_ok(&cs, args[i]) and not _shared_get_expr(&cs, args[i]) and
                 not _canmove(&cs, args[i], cs.arena) and
-                not _move_same_array(&cs, args[i], pay[i], cs.arena):
+                not _move_same_array(&cs, args[i], pay[i], cs.arena) and not same_enum:
             ac = _copy(&cs, ac, pay[i], cs.arena)
         if inl:
             out = out + v + ".u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
@@ -7420,11 +7422,27 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
         if len(dest) > 0:
             push(cs.destn, dname)
             push(cs.desta, dest)
+        enumdst := false
+        edname := ""
+        if len(dest) == 0 and _is_enum(cs.cur_ret):
+            match s:
+                ast.Decl(l, n, ann, rhs, vv):
+                    if len(rhs) == 1 and len(vv) == 0 and len(ann) > 0 and _ty(&cs, ann[0]) == cs.cur_ret:
+                        enumdst = true
+                        edname = n
+                _: pass
         oldarena := cs.arena
         if len(dest) > 0:
             cs.arena = dest
+        elif enumdst:
+            cs.arena = "_parent"
         out = out + _stmt(&cs, s, ind)
         cs.arena = oldarena
+        if enumdst:
+            for j := len(cs.vnames) - 1; j >= 0; j -= 1:
+                if cs.vnames[j] == edname:
+                    cs.vown[j] = "_parent"
+                    break
         if len(dest) > 0:
             pop(cs.destn)
             pop(cs.desta)

@@ -69,8 +69,8 @@ fn fold(e: Expr) -> Expr:                # constant-folding rewrite -> a NEW AST
         Lit(v):
             return Lit(v)
         Bin(op, l, r):
-            fl := fold(l)
-            fr := fold(r)
+            fl: Expr = fold(l)
+            fr: Expr = fold(r)
             if is_lit(fl) and is_lit(fr):
                 a := lit_val(fl)
                 b := lit_val(fr)
