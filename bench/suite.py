@@ -335,6 +335,8 @@ WORKLOADS = [
                 src("c", "bench/trie/trie.c", r"(int n = )\d+", r"\g<1>{n}"),
                 src("go", "bench/trie/trie.go", r"(n := )\d+", r"\g<1>{n}"),
                 src("rust", "bench/trie/trie.rs", r"(let n: i64 = )\d+", r"\g<1>{n}"),
+                src("java", "bench/trie/trie.java", r"(int n = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/trie/trie.swift", r"(let n = )\d+", r"\g<1>{n}"),
             ]),
         ],
     },
