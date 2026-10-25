@@ -363,6 +363,8 @@ WORKLOADS = [
                 src("c", "bench/lru/lru.c", r"(#define NOPS     )\d+", r"\g<1>{n}"),
                 src("go", "bench/lru/lru.go", r"(nops     = )\d+", r"\g<1>{n}"),
                 src("rust", "bench/lru/lru.rs", r"(let nops: i64 = )\d+", r"\g<1>{n}"),
+                src("java", "bench/lru/lru.java", r"(static int nops = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/lru/lru.swift", r"(let nops = )\d+", r"\g<1>{n}"),
             ]),
         ],
     },
