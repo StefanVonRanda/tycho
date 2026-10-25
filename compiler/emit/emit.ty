@@ -5598,8 +5598,17 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         # push into an array owned by the SAME arena needs nothing; the q
         # defect this once guarded against was upstream, at the declaration.
         fi9 := -1
+        mapidx := false
         match args[0]:
             ast.Name(l9, n9): fi9 = _fuse_idx(&cs, n9)
+            ast.Index(l9, k9):
+                if len(k9) >= 2:
+                    bn9 := _rootname(k9[0])
+                    if len(bn9) > 0:
+                        mt9 := _vtype(&cs, bn9)
+                        if _is_map(mt9) and _mkey(&cs, mt9) == "string" and
+                                _is_arr(_mval(&cs, mt9)) and _elem(_mval(&cs, mt9)) == "int":
+                            mapidx = true
             _: pass
         # tycho_arr_str_push already copies the bytes into the owner arena, so an
         # emit-side copy on top is a second allocation of the same string --
@@ -5630,6 +5639,13 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         if et == "string" and mv:
             pfn = _arrf(&cs, et, "_push_move")
         pc9 := pfn + "(" + ow + ", &(" + rc + "), " + vc + ")"
+        if mapidx and cap9 == 0 and fi9 < 0:
+            apt9 := _ctyz(&cs, rt) + " *"
+            mb9 := _vcname(&cs, _rootname(args[0]))
+            cond9 := "(" + mb9 + ").len < 8192 && _mapv->len == 0"
+            return ("({ " + apt9 + "_mapv = &(" + rc + "); if (" + cond9 + ") " +
+                _arrf(&cs, et, "_reserve") + "(" + ow + ", _mapv, 1024); " +
+                pfn + "(" + ow + ", _mapv, " + vc + "); })", "void")
         if cap9 > 0:
             # the capacity trap: a bounded array refuses the push that would
             # exceed its declared N (src/tychoc.c's per-capacity push helper)
