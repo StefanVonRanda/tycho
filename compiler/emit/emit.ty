@@ -620,7 +620,7 @@ fn _kmatch(cs: inout C, k: string, ek: string, q: string) -> string:
 fn _kcopy(cs: inout C, k: string) -> string:
     c := _kclass(&cs, k)
     if c == "str":
-        return "tycho_str_copy(a, k)"
+        return "tycho_str_intern_copy(a, k)"
     if c == "int" or c == "enum":
         return "k"
     return _copy(&cs, "k", k, "a")

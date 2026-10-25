@@ -1497,6 +1497,14 @@ static const struct { tycho_int n; char z[8]; } ty_str_empty = { 0, { 0 } };
 #define TYCHO_INTERN_MAX 1024
 static char *tycho_intern_tab[TYCHO_INTERN_MAX];
 static int tycho_intern_n;
+char *tycho_str_intern(char *s);
+char *tycho_str_intern_copy(Arena *a, char *s) {
+    if (tycho_str_is_view(s)) s = tycho_str_copy(a, s);
+    if (((const tycho_int *)s)[-1] < 0) return s;
+    char *r = tycho_str_intern(s);
+    return r == s ? tycho_str_copy(a, s) : r;
+}
+
 char *tycho_str_intern(char *s) {
     if (!s || tycho_str_is_view(s)) return s;
     tycho_int raw = ((const tycho_int *)s)[-1];
