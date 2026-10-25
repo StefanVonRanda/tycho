@@ -349,6 +349,8 @@ WORKLOADS = [
                 src("c", "bench/dijkstra/dijkstra.c", r"(int n = )\d+", r"\g<1>{n}"),
                 src("go", "bench/dijkstra/dijkstra.go", r"(n, deg := )\d+", r"\g<1>{n}"),
                 src("rust", "bench/dijkstra/dijkstra.rs", r"(let n: usize = )\d+", r"\g<1>{n}"),
+                src("java", "bench/dijkstra/dijkstra.java", r"(int n = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/dijkstra/dijkstra.swift", r"(let n = )\d+", r"\g<1>{n}"),
             ]),
         ],
     },
