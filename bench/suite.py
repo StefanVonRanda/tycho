@@ -384,6 +384,8 @@ WORKLOADS = [
                 src("c", "bench/json/json.c", r"(int n = )\d+", r"\g<1>{n}"),
                 src("go", "bench/json/json.go", r"(n := )\d+", r"\g<1>{n}"),
                 src("rust", "bench/json/json.rs", r"(let n: i64 = )\d+", r"\g<1>{n}"),
+                src("java", "bench/json/json.java", r"(int n = )\d+", r"\g<1>{n}"),
+                src("swift", "bench/json/json.swift", r"(let n = )\d+", r"\g<1>{n}"),
             ]),
         ],
     },
