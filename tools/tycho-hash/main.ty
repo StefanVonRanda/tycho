@@ -121,8 +121,12 @@ fn main():
         println("0 files")
         exit(0)
 
-    jobs := channel(Job, 32)
-    out := channel(Res, 32)
+    # Capacity N: main enqueues every job before it drains results. A bounded
+    # 32-slot result channel deadlocked once workers filled it while main was
+    # still blocked sending job N; the external lane only used 12 files and did
+    # not reach it. N slots keep both sides independent for the whole walk.
+    jobs := channel(Job, n)
+    out := channel(Res, n)
 
     # Fixed fan-out: a task cannot be stored in an array, so a worker count is a
     # set of NAMED tasks, not a loop. Eight is the cap the option enforces.

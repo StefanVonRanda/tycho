@@ -110,6 +110,19 @@ ncpu=$( (nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8) | head -1
 [ "$best" -ge 6 ] || echo "  note [3b] best of $tries attempts was $best of 8 workers ($ncpu cores, and the box is busy); >= 2 is the property, 6 is what an idle 8-core box shows"
 
 # ---------------------------------------------------------------------------
+# [3c] more jobs than the channel's old 32-slot bounds. Main enqueues all jobs
+# before draining results; a bounded result channel deadlocked here while the
+# 12-file golden tree never reached the threshold.
+# ---------------------------------------------------------------------------
+mkdir "$T/stress"
+i=0
+while [ "$i" -lt 96 ]; do : > "$T/stress/f$i"; i=$((i+1)); done
+rc=0
+( cd "$T" && timeout 10 "$H" stress --workers=8 ) > "$T/stress.out" 2> "$T/stress.err" || rc=$?
+[ "$rc" -eq 0 ] || bad "[3c] 96-file stress run exited $rc"
+[ "$(grep -c '^[0-9a-f]' "$T/stress.out")" -eq 96 ] || bad "[3c] 96-file stress run lost files"
+
+# ---------------------------------------------------------------------------
 # [4] every hash against sha256sum(1)
 # ---------------------------------------------------------------------------
 if command -v sha256sum >/dev/null 2>&1; then

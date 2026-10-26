@@ -54,8 +54,19 @@ is covered separately in the generated suite.
 ## CLI and external programs
 
 `make external-check` runs `tools/tycho-hash` under varied worker counts and
-checks byte-identical SHA-256 results plus seven error paths. It is a
-correctness/determinism gate, not a cross-language time claim.
+checks byte-identical SHA-256 results plus seven error paths. A CLI peer check
+also hashes a deterministic 256-file / 64 MB tree with eight workers:
+
+| | Time | Peak RSS |
+|---|---:|---:|
+| Tycho `tycho-hash` | 0.05 s | 74.7 MB |
+| Go stdlib peer | 0.01 s | 6.8 MB |
+
+This is a real CLI weakness: Tycho's pure-Tycho SHA-256 and per-file channel
+bookkeeping are much slower and heavier than Go's stdlib implementation. The
+run also exposed and fixed a `tycho-hash` deadlock when a tree exceeded the old
+32-slot job/result channel bounds; a 96-file stress case now gates that path.
+
 
 ## Hardening run
 
