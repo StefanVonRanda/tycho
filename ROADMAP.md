@@ -128,8 +128,10 @@ Follow-up work after the benchmark refresh:
   `json_tree` are in the generated suite with Tycho/C/Rust/Go ports; Java/Swift
   cells are `-` because those ports do not exist.
 - **Regression gate:** DONE — `make bench-suite-gate` checks saved GCC/clang
-  results for checksum failure, latency relative to C/Rust, service memory and
-  six-language `dbquery` coverage.
+  results for checksum failure, managed Go/Java/Swift time and memory, missing
+  coverage, repetition noise and a reviewed self-regression baseline. C/Rust
+  remain advisory diagnostics. Refresh the baseline deliberately with
+  `make bench-suite-baseline`.
 - **Closure ABI:** DONE for the default dispatch row — function descriptors are
   now 24 bytes, with up to two integer captures stored inline and a
   header-carrying heap environment for other captures. A call through a simple
