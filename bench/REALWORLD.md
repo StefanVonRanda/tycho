@@ -57,6 +57,16 @@ is covered separately in the generated suite.
 checks byte-identical SHA-256 results plus seven error paths. It is a
 correctness/determinism gate, not a cross-language time claim.
 
+## Hardening run
+
+The current real-program pass also ran:
+
+- `make fuzz-quick`: 60 seeds across native and ASan/UBSan builds, 0 failures;
+- `make asan-self`: 1170 corpus programs compiled with the sanitizer-built
+  compiler, 0 failures;
+- `make parity-fuzz`: composite/newtype equality, unary operators and
+  parallel-for gate cases all match the reference oracle.
+
 ## Server workloads
 
 The server test lanes verify behavior, routing, shutdown and HTTP guards, but
