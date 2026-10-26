@@ -20,6 +20,13 @@ as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on i
 | `die(msg)` | `string -> void` | Print `msg` to stderr and exit with status 1. |
 | `exit(code)` | `int -> void` | Terminate with status `code`, printing nothing; never returns. `exit(0)` is an ordinary answered exit, not a failure. |
 
+`input()` cannot distinguish EOF from a blank line: both return `""`. When that
+matters, use `io.open_lines` / `io.read_line`, whose `None` is EOF.
+
+`print`/`println` are stdio-backed. When stdout is a pipe or file, the buffer
+may not reach the reader until the process exits; call `io.flush_stdout()` when
+the reader must see a line while the program is still running.
+
 ## Conversions
 
 | Builtin | Type | Notes |

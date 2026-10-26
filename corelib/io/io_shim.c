@@ -34,6 +34,10 @@
 #ifndef O_BINARY
 #define O_BINARY 0
 #endif
+
+/* Flush the process stdout buffer. print/println are stdio-backed and can sit
+ * in the buffer while a pipe reader waits; this is the explicit hand-off. */
+int iox_flush_stdout(void) { return fflush(stdout) == 0 ? 1 : 0; }
 #ifdef _WIN32
 #include <windows.h>           /* GetFileAttributesExA -- the UTC file time */
 #include <io.h>                 /* _lseeki64 -- the pread/pwrite stand-ins */

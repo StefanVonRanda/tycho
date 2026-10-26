@@ -13,6 +13,16 @@ gate (`make ci`); `FRICTION n` is entry n in the defect log
 (`docs/internals/FRICTION.md`); a *probe* is a small program written against the
 docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
+## [Unreleased]
+
+### Corelib
+
+- **`io.flush_stdout()`** flushes the runtime's buffered stdout, for a CLI whose
+  pipe reader must see a startup line while the process is still running. The
+  cold binary-protocol probe found `print`/`println` block-buffered on a pipe;
+  its record and the doc corrections are in
+  [`docs/internals/cold-probe-binary-2026-10-26.md`](docs/internals/cold-probe-binary-2026-10-26.md).
+
 ## [0.9.0] — 2026-10-26
 
 ### Compiler

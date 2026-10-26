@@ -176,6 +176,11 @@ fn write_lines(p: string, lines: [string]) -> bool:
         out = out + lines[i] + "\n"
     return write_file(p, out)
 
+# Flush buffered stdout so a pipe reader sees a line printed before the process
+# exits. Returns false when the C stream refuses the flush.
+fn flush_stdout() -> bool:
+    return iox_flush_stdout() != 0
+
 # ---- streaming line reader (shim: libc getline, in io_shim.c) ---------------
 # read_lines() above slurps the WHOLE file into an array, so peak memory tracks
 # the file size. This reader pulls ONE line at a time into a single reused
@@ -225,6 +230,8 @@ extern fn iox_remove(path: string) -> int
 # fsync(2), same code space plus FS_UNSUP. No `inout`: there is no payload, only
 # a verdict, so the status keeps the return.
 extern fn iox_sync(path: string) -> int
+# fflush(stdout): 1 on success, 0 when the stream reports failure.
+extern fn iox_flush_stdout() -> int
 
 # The shim's read_file status codes, named once so read_bytes reads as prose.
 const RF_MISS = 0

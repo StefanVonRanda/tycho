@@ -290,6 +290,7 @@
   "io.close_lines": "(r: LineReader)",
   "io.copy": "(src: string, dst: string)-> Result(void, IoErr)",
   "io.exists": "(p: string)-> bool",
+  "io.flush_stdout": "()-> bool",
   "io.fold_lines": "(path: string, init: $A, f: fn($A, string)-> $A) -> $A",
   "io.is_dir": "(p: string)-> Result(bool, IoErr)",
   "io.list": "(p: string)-> [string]",

@@ -311,6 +311,25 @@ ready item, and a reduction inside an arm folds at the join like any other. An
 early exit still cannot cross a chunk boundary, so `return` in an arm is
 rejected just as it is anywhere else in a `parallel for` body.
 
+### Server shape
+
+`select` waits on channels, not on socket readiness; socket I/O still belongs in
+a task. Because a task handle cannot be stored, a server usually pre-spawns a
+fixed worker pool and feeds it accepted descriptors through a channel, rather
+than spawning one task per connection inside the accept loop.
+
+Three rules keep that shape correct under load:
+
+- **Identify a connection by a generation-bearing ID, not by its raw fd.** The
+  OS can reuse a closed descriptor immediately; a queued event keyed only by fd
+  can then be applied to the new connection.
+- **Order all replies for one connection through one writer.** If normal
+  requests go through a dispatcher but errors are written directly by the
+  reader, pipelined requests can return out of order or lose a valid reply.
+- **Never block the `select` loop on a peer write.** Put the blocking write in a
+  per-connection writer task, or bound it; otherwise one client that stops
+  reading stalls every other connection and new accepts.
+
 ### Measured
 
 `make bench-conc` runs the same

@@ -29,6 +29,9 @@ measurements, and they assume you already know the codebase.
   writing real programs against this language. The primary source for what is
   actually hard here.
 - [`audit-brief.md`](audit-brief.md) — what a third-party reviewer would need.
+- [`cold-probe-binary-2026-10-26.md`](cold-probe-binary-2026-10-26.md) — a
+  docs-only binary-protocol server/client probe, its friction and the doc or
+  corelib fixes it produced.
 - [`ffi-review-2026-08-14.md`](ffi-review-2026-08-14.md) — an FFI boundary review.
 - [`audit-2026-08-16.md`](audit-2026-08-16.md) — security audit across the whole
   threat model: two vulnerabilities found and fixed, and what it did not cover.

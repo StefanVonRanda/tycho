@@ -331,14 +331,22 @@ done; §31.1). `docs/reference/corelib.md:207-213`.
 
 TCP and UDP sockets via a **libc-only shim** (`net_shim.c`, pure POSIX sockets; no
 `deps`, same self-contained model as `core:os`). Core tier. A socket is a file
-descriptor (`int`); every open/move call returns a **negative int on failure**;
-payloads are `bytes` (binary-safe). TCP: `listen(host, port)` (port 0 ⇒
-ephemeral), `accept(fd)`, `connect(host, port)`, `port_of(fd)` (getsockname — the
-LOCAL port), `peer_addr(fd)` (getpeername — the REMOTE address as text, the field
-an access log leads with), `write(fd, data)`,
-`read(fd, max)`, `close_fd(fd)`. UDP: `udp_bind(host, port)`,
-`udp_send(fd, host, port, data)`, `udp_read(fd, max)`. Source
-`corelib/net/net.ty`, `corelib/net/net_shim.c`.
+descriptor (`int`); every fallible call returns `Result(..., NetErr)` rather
+than a negative-int sentinel, and payloads are binary-safe `bytes`. TCP:
+`listen(host, port) -> Result(int, NetErr)` (port 0 ⇒ ephemeral),
+`accept(fd) -> Result(int, NetErr)`, `connect(host, port) ->
+Result(int, NetErr)`, `port_of(fd) -> Result(int, NetErr)` (getsockname — the
+LOCAL port), `peer_addr(fd) -> Result(string, NetErr)` (getpeername — the
+REMOTE address as text, the field an access log leads with), `write(fd, data) ->
+Result(int, NetErr)` (bytes sent), `read(fd, max) -> Result(bytes, NetErr)`,
+`close_fd(fd)`, `accept_wait(fd, ms) -> Result(int, NetErr)` and
+`wait_readable(fds, ms) -> Result([int], NetErr)` for bounded readiness.
+`set_read_timeout_ms(fd, ms) -> bool` arms a receive deadline. `NetErr` is
+`Eof` / `Timeout` / `Failed`; `read` distinguishes a clean hangup from a
+deadline and a hard error. UDP (`udp_bind`, `udp_send`, `udp_read`) is still
+sentinel-based on purpose: a zero-length datagram is a legal success value.
+Source `corelib/net/net.ty`, `corelib/net/net_shim.c`; the catalogue entry in
+[`docs/reference/corelib.md`](../reference/corelib.md) is the full API list.
 
 ### 32.25 `bignum`
 

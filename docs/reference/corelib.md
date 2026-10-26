@@ -479,7 +479,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   `KindOther`), `size`, `mtime`, `inode` and `device`; `stat` follows symlinks and
   `lstat` does not. `same_file(a, b) -> Result(bool, io.IoErr)` compares device +
   inode (volume + file index on Windows), so two names of one hard link answer `true`.
-  Nothing aborts.
+  `flush_stdout() -> bool` flushes the runtime's buffered stdout; use it when a
+  pipe reader must see a startup line before the process exits (`print`/`println`
+  are block-buffered when stdout is not a terminal). Nothing aborts.
 - **`os`** — `is_windows()` reports the host family at runtime — run external commands via
   a **libc-only FFI shim** (no `deps`, nothing to install). `os.system(cmd)` runs `cmd`
   through the shell with stdout/stderr inherited, returning its exit code (0..255,

@@ -79,6 +79,11 @@ numeric-polymorphic like `str`.
 `print`, `println`, `eprint`, and `eprintln` accept a `string` only; they do not implicitly
 stringify. All nine are `Sig` builtins with fixed signatures.
 
+`input()` cannot distinguish EOF from an empty line; both produce `""`. Use the
+streaming `core:io` line reader when EOF is a distinct outcome. `print` and
+`println` are stdio-buffered, so a pipe reader may not see output until the
+process exits; `io.flush_stdout()` is the explicit flush.
+
 
 ## 29.4 Conversions
 

@@ -167,6 +167,16 @@ fn main():
     println(str(len(b)) + " " + str(b[2]))   # 3 3
 ```
 
+`bounded[N]T = []` is valid and starts with **count 0**; it does not reserve or
+initialise the `N` slots. There is no repeat/fill literal for a `bounded` — to use
+one as a pre-sized ring, `push` a seed `N` times before indexing. For large
+buffers, a dynamic `[T]` filled with `arrays.fill(n, seed)` (or grown with
+`reserve`) is usually cheaper than seed-pushing a `bounded`.
+
+A generic struct cannot also take a size generic: `[$N]T` is a function-parameter
+const generic, not a struct parameter. A generic `Ring($T)` must use a plain
+`const` capacity or carry a dynamic `[T]` plus an explicit capacity.
+
 - The capacity is a positive integer **literal** or the name of a positive `int` `const` —
   the same two spellings `[C]T` accepts. `0`, a negative, a non-`const` name, and a `const`
   that is not a positive integer are each rejected.
