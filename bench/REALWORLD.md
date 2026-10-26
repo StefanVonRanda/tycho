@@ -69,9 +69,21 @@ The current real-program pass also ran:
 
 ## Server workloads
 
-The server test lanes verify behavior, routing, shutdown and HTTP guards, but
-there is not yet a managed-language load comparison. That remains an explicit
-gap rather than an implied win.
+`bench/server/run.sh` runs a minimal HTTP/1.1 keep-alive service under one
+sequential client connection, so the comparison isolates per-core request
+handling rather than client concurrency:
+
+| server | requests | time | RPS | RSS |
+|---|---:|---:|---:|---:|
+| Tycho | 20,000 | 0.731 s | 27,373 | 2.6 MB |
+| Go (`GOMAXPROCS=1`) | 20,000 | 0.487 s | 41,092 | 12.5 MB |
+
+Tycho uses ~4.8x less memory but is ~1.5x slower on this single-connection
+request loop. This is a real server-side gap, not a microbenchmark: the current
+accept loop is single-threaded, while Go's HTTP server has a goroutine per
+connection even with one P. The next server step is a multi-worker/poll model
+before making a server performance claim; the functional server lanes remain
+separate and green.
 
 ## Reading rule
 

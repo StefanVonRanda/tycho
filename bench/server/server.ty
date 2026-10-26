@@ -1,0 +1,37 @@
+# Minimal HTTP/1.1 keep-alive service used for the real-program server check.
+package main
+
+import "core:httpd"
+import "core:net"
+import "core:result"
+import "core:strings"
+
+fn main():
+    port := 18080
+    raw := getenv("PORT")
+    if raw != "":
+        match strings.parse_int(raw):
+            Ok(v): port = v
+            Err(e): die("server: bad PORT")
+    lr := net.listen("127.0.0.1", port)
+    if result.is_err(lr):
+        die("server: cannot listen")
+    srv := result.unwrap_or(lr, -1)
+    eprint("server: ready " + str(port) + "\n")
+    for true:
+        ar := net.accept(srv)
+        conn := result.unwrap_or(ar, -1)
+        if conn < 0:
+            continue
+        alive := true
+        for alive:
+            match httpd.read_request(conn):
+                Err(e):
+                    alive = false
+                Ok(req):
+                    alive = not httpd.connection_close(req)
+                    wr := httpd.write_response(conn,
+                        httpd.with_connection(httpd.text_response(200, "hello\n"), alive))
+                    if result.is_err(wr):
+                        alive = false
+        net.close_fd(conn)
