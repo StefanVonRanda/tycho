@@ -196,3 +196,9 @@ fn final_hex(st: inout State) -> string:
     for i := 0; i < 32; i += 1:
         out = out + _hex2(b[i])
     return out
+
+# C fast path for whole-file hashing (the streaming pure implementation stays above).
+extern fn tycho_sha256_hex_bytes(data: bytes) -> string
+
+fn hex_bytes(data: bytes) -> string:
+    return tycho_sha256_hex_bytes(data)

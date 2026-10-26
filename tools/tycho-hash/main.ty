@@ -76,9 +76,7 @@ fn worker(id: int, live: int, jobs: Channel(Job), out: Channel(Res)) -> int:
         n := 0
         match io.read_bytes(j.abs):
             Ok(b):
-                st := sha256.init()
-                sha256.update(&st, b)
-                h = sha256.final_hex(&st)
+                h = sha256.hex_bytes(b)
                 n = len(b)
             Err(e):
                 h = "unreadable"

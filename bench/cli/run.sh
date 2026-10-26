@@ -11,7 +11,7 @@ python3 - "$T/tree" <<'PY'
 from pathlib import Path
 import sys
 r=Path(sys.argv[1])
-for i in range(256):
+for i in range(512):
     (r/f"f{i:03}.bin").write_bytes(bytes([i%251])*(256*1024))
 PY
 "$T/tycho-hash" "$T/tree" --workers=8 > "$T/tycho.out"
