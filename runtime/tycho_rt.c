@@ -61,6 +61,7 @@
 #include <fcntl.h>      /* _O_BINARY for the same */
 #endif
 #include <pthread.h>   /* spawn/wait tasks; on modern glibc pthread_* lives in libc */
+#include <dlfcn.h>     /* optional OpenSSL SHA-256 acceleration; falls back below */
 #include <signal.h>    /* the stack-overflow guard (sigaltstack/sigaction) */
 #ifndef _WIN32
 #if defined(__APPLE__)
@@ -3576,6 +3577,30 @@ static void tycho_ew_len(tycho_int a, tycho_int b) {
  * available for streaming users; this C path is a per-file fast path. */
 static uint32_t tycho_sha_rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
 char *tycho_sha256_hex_bytes(const unsigned char *data, tycho_int len) {
+#ifndef _WIN32
+    typedef unsigned char *(*sha256_fn)(const unsigned char *, size_t, unsigned char *);
+    static sha256_fn accel;
+    static int tried;
+    if (!tried) {
+        void *lib = dlopen("libcrypto.so.3", RTLD_LAZY);
+        if (!lib) lib = dlopen("libcrypto.so", RTLD_LAZY);
+        if (lib) accel = (sha256_fn)dlsym(lib, "SHA256");
+        tried = 1;
+    }
+    if (accel) {
+        unsigned char d[32];
+        if (accel(data, (size_t)len, d)) {
+            static const char hx[] = "0123456789abcdef";
+            static __thread char out[65];
+            for (int i = 0; i < 32; i++) {
+                out[i*2] = hx[d[i] >> 4];
+                out[i*2+1] = hx[d[i] & 15];
+            }
+            out[64] = 0;
+            return out;
+        }
+    }
+#endif
     static const uint32_t k[64] = {
         0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
         0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,

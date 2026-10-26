@@ -950,7 +950,7 @@ handling, and the difference is deliberate rather than unfinished.
   , which the `register_conn` / `retire_conn` additions pushed down): calling a Tycho function from
   handler context is a *language* feature, because every Tycho value lives in a
   bump-allocated arena that is not re-entrant and channel operations park behind a mutex
-  (`runtime/tycho_rt.c:1158@mu`) — a handler that interrupts the allocator or the lock
+  (`runtime/tycho_rt.c:1159@mu`) — a handler that interrupts the allocator or the lock
   holder and then allocates or touches a channel deadlocks or corrupts the process it was
   invoked to shut down. **What a general version would need, so the next person costs it
   rather than rediscovers it:** (1) an async-signal-safe hand-off out of handler context —
@@ -6520,8 +6520,8 @@ and the `osx_is_batch_ref` pointer deleted. The dodge converted an unused
 *function* into an unused *variable*; the attribute states the same fact and
 creates nothing for either compiler to warn about. It is harmless where the
 function IS used — the Windows spawn path at `:341`, and the unit gate. The
-tree already uses `__attribute__` (`runtime/tycho_rt.c:237@constructor`,
-`:920@noinline`), and the Windows build is mingw, which is gcc, so no target
+tree already uses `__attribute__` (`runtime/tycho_rt.c:238@constructor`,
+`:921@noinline`), and the Windows build is mingw, which is gcc, so no target
 loses it. Option 3 stays rejected for the reason given above.
 
 **Measured, both compilers, same tree:**

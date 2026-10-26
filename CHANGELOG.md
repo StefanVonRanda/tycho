@@ -40,7 +40,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - **CLI hash scheduling and SHA:** a producer task feeds bounded channels,
   removing the 96-file deadlock and cutting `tycho-hash` RSS from 74.7 MB to
   11.2 MB on a 128 MB tree. Whole-file hashing uses a C SHA-256 fast path;
-  streaming SHA remains pure Tycho. Go stdlib is still faster.
+  streaming SHA remains pure Tycho. Whole-file CLI hashing uses optional
+  OpenSSL SHA acceleration and now matches the Go stdlib peer on time.
 
 - **Fixed-size user enums with scalar payloads are inline in both compilers.**
   They are emitted as a packed tag plus variant union instead of a pointer to
