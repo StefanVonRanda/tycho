@@ -59,13 +59,14 @@ also hashes a deterministic 256-file / 64 MB tree with eight workers:
 
 | | Time | Peak RSS |
 |---|---:|---:|
-| Tycho `tycho-hash` | 0.05 s | 74.7 MB |
-| Go stdlib peer | 0.01 s | 6.8 MB |
+| Tycho `tycho-hash` | 0.06 s | 22.7 MB |
+| Go stdlib peer | 0.01 s | 7.1 MB |
 
-This is a real CLI weakness: Tycho's pure-Tycho SHA-256 and per-file channel
-bookkeeping are much slower and heavier than Go's stdlib implementation. The
-run also exposed and fixed a `tycho-hash` deadlock when a tree exceeded the old
-32-slot job/result channel bounds; a 96-file stress case now gates that path.
+Tycho is still ~6x slower and ~3.2x heavier, but the earlier 74.7 MB result was
+mostly the fixed N-slot queues. A producer task now feeds 32-slot queues while
+main drains results, preserving the 96-file stress fix without scaling memory
+with the file count. The remaining CLI gap is the pure-Tycho SHA-256
+implementation versus Go's optimized stdlib, not channel scheduling.
 
 
 ## Hardening run

@@ -87,6 +87,12 @@ fn worker(id: int, live: int, jobs: Channel(Job), out: Channel(Res)) -> int:
         did = did + 1
     return did
 
+fn feed(root: string, rels: [string], jobs: Channel(Job)) -> int:
+    for i := 0; i < len(rels); i += 1:
+        send(jobs, Job(i, rels[i], path.join(root, rels[i])))
+    close(jobs)
+    return len(rels)
+
 fn main():
     av := args()
     root := ""
@@ -121,12 +127,10 @@ fn main():
         println("0 files")
         exit(0)
 
-    # Capacity N: main enqueues every job before it drains results. A bounded
-    # 32-slot result channel deadlocked once workers filled it while main was
-    # still blocked sending job N; the external lane only used 12 files and did
-    # not reach it. N slots keep both sides independent for the whole walk.
-    jobs := channel(Job, n)
-    out := channel(Res, n)
+    # A producer task feeds the bounded queues while main drains results, so
+    # neither side can deadlock and the queues do not grow with the file count.
+    jobs := channel(Job, 32)
+    out := channel(Res, 32)
 
     # Fixed fan-out: a task cannot be stored in an array, so a worker count is a
     # set of NAMED tasks, not a loop. Eight is the cap the option enforces.
@@ -139,9 +143,7 @@ fn main():
     w7 := spawn worker(6, nw, jobs, out)
     w8 := spawn worker(7, nw, jobs, out)
 
-    for i := 0; i < n; i += 1:
-        send(jobs, Job(i, rels[i], path.join(root, rels[i])))
-    close(jobs)
+    producer := spawn feed(root, rels, jobs)
 
     # Collect by INDEX. Results arrive in completion order; the report does not.
     hashes := []string
@@ -169,6 +171,7 @@ fn main():
     d7 := wait(w7)
     d8 := wait(w8)
     done := d1 + d2 + d3 + d4 + d5 + d6 + d7 + d8
+    wait(producer)
     # The per-worker split, on STDERR so it cannot disturb the report. Without it
     # "identical at every worker count" is vacuous: it would also hold if one
     # worker did every file. The lane reads this to assert the pool really shares.
