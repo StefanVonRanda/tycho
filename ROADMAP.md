@@ -125,8 +125,9 @@ rather than hiding it.
 Follow-up work after the benchmark refresh:
 
 - **Specialized rows:** DONE — `trie`, `dijkstra`, `lru`, `interp` and
-  `json_tree` are in the generated suite with Tycho/C/Rust/Go ports; Java/Swift
-  cells are `-` because those ports do not exist.
+  `json_tree` have Tycho/C/Rust/Go/Java/Swift ports in the generated suite.
+  Expert/arena control variants remain explicit exceptions without managed
+  peers.
 - **Regression gate:** DONE — `make bench-suite-gate` checks saved GCC/clang
   results for checksum failure, managed Go/Java/Swift time and memory, missing
   coverage, repetition noise and a reviewed self-regression baseline. C/Rust
@@ -149,12 +150,23 @@ Follow-up work after the benchmark refresh:
 - **`json_tree` fast path:** PARTIAL — a single-scope flat-record parser
   removes most per-call arena overhead, and destination-arena construction now
   moves each object's key/value arrays into the returned array instead of
-  copying them, and key/value strings are sliced once instead of built byte by
-  byte (GCC 73 ms / 107 MB vs C 47 / 103; clang 54 / 107 vs C 45 / 103).
-  The move is gated on the constructor push being the array's last use and on
-  the destination escaping the function; `tests/dest_move_last_use.ty` pins the
-  move and the copy-after-constructor case. It is still slower than C, so this
-  remains a performance target rather than a completed parity claim.
+  copying them, key/value strings are sliced once instead of built byte by
+  byte, and repeated keys are interned (GCC 84 ms / 81 MB vs C 59 / 103; clang
+  61 / 81 vs C 63 / 102). The move is gated on the constructor push being the
+  array's last use and on the destination escaping the function;
+  `tests/dest_move_last_use.ty` pins the move and the copy-after-constructor
+  case. It remains a native-time diagnostic, not a managed-language loss.
+
+## Known remaining performance gaps
+
+- **CLI SHA-256:** `tycho-hash` is ~6x slower and ~3x heavier than Go's stdlib
+  on a 64 MB tree. Channel memory is fixed; the remaining cost is pure-Tycho
+  SHA-256 compute. See [`bench/REALWORLD.md`](bench/REALWORLD.md).
+- **Minimal single-loop server:** does not scale with connections; use the
+  production multi-worker `server/main.ty`, which is competitive with Go.
+- **Native C/Rust:** still faster on some recursive/pointer-heavy rows,
+  especially `json_tree`, `trie` and `dijkstra`. This is diagnostic, not a
+  managed-language blocker.
 
 ## Friction phases from the `tycho-dupe` probe (2026-10-19)
 

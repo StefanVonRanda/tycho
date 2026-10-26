@@ -17,6 +17,30 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ### Compiler
 
+- **Reference-compiler parity is complete for the tracked features.** The C
+  bootstrap now has the closure ABI, simple-place calls, counted/while
+  presizing, loop-scope elision, inline scalar-payload enums and nested push
+  destination inference. The generated benchmark reports still measure
+  `tychoc1` as the optimized path.
+- **Nested push destinations** are inferred for loop-local arrays used inside a
+  pushed enum value; reference `json_tree` drops from 107 ms to 80 ms with
+  identical output.
+- **Inline scalar-payload enums** are emitted as a packed tag plus union in
+  `tychoc1` and `./tychoc`;
+  `TYCHOC_NO_INLINE_ENUM=1` restores pointer cells.
+
+### Benchmarks
+
+- **Managed-language gate:** 18 workloads at three sizes, complete managed
+  coverage for specialized rows, 1.10x Go/Java/Swift time and memory limits,
+  repetition-noise checks and a reviewed self-regression baseline. C/Rust are
+  advisory diagnostics.
+- **Memory reductions:** `trie` 132.7 -> 76 MB, `json_tree` 107 -> 81 MB,
+  `gcscan` 372 -> 127 MB, `invindex` growth rows down to 150–194 MB.
+- **CLI hash scheduling:** a producer task feeds bounded channels, removing the
+  96-file deadlock and cutting `tycho-hash` RSS from 74.7 MB to 22.4 MB. Pure
+  SHA-256 compute remains slower than Go stdlib.
+
 - **Fixed-size user enums with scalar payloads are inline in both compilers.**
   They are emitted as a packed tag plus variant union instead of a pointer to
   an arena cell. Recursive, generic, fieldless, package-mangled and heap-payload
