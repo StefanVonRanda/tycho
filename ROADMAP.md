@@ -138,11 +138,12 @@ Follow-up work after the benchmark refresh:
   place reads the descriptor in place instead of copying it. `tests/closures.ty`
   covers inline, heap, escaping and container cases; the compiler self-build
   also exercises function-value map equality.
-- **Reference compiler parity:** PARTIAL — the C bootstrap now has the 24-byte
-  closure ABI, in-place simple-place calls, counted/while presizing and
-  allocation-free loop-scope elision; its full generated suite is checksum-clean.
-  Inline scalar enums and destination construction remain `tychoc1`-only, so the
-  saved generated results still use `TYCHOC=./tychoc1`.
+- **Reference compiler parity:** DONE for the tracked features — the C bootstrap
+  now has the 24-byte closure ABI, in-place simple-place calls, counted/while
+  presizing, allocation-free loop-scope elision, inline scalar-payload enums and
+  nested push destination inference. Its full generated suite is checksum-clean.
+  The saved generated report still uses `TYCHOC=./tychoc1` as the measured
+  optimized path; reference parity is a compiler-completeness claim.
 - **External-program check:** DONE — `tools/tycho-hash/run.sh` passes its
   deterministic, cross-worker SHA-256 and error-path checks.
 - **`json_tree` fast path:** PARTIAL — a single-scope flat-record parser
