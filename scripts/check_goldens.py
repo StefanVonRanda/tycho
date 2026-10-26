@@ -122,6 +122,7 @@ import sys
 # anything should be an edit to this list, not a silent absence.
 NO_GOLDEN = {
     "bench/run.sh": "driver: dispatches the per-bench runners, asserts a time/rss limit",
+    "bench/cli/run.sh": "comparison: the Tycho and Go reports must match byte-for-byte, then it prints best time/RSS",
     "bench/conc/run.sh": "self-consistency: the three builds' checksums must agree with each other",
     "bench/dbquery/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/dijkstra/run.sh": "self-consistency checksum, as bench/conc/run.sh",
@@ -134,6 +135,7 @@ NO_GOLDEN = {
     "bench/lru/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/prongB/run.sh": "timing/rss only",
     "bench/raytrace/run.sh": "self-consistency checksum, as bench/conc/run.sh",
+    "bench/server/run.sh": "asserts live HTTP responses and prints RPS/RSS; no recorded stdout",
     "bench/site/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/trie/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/window/run.sh": "timing only",
