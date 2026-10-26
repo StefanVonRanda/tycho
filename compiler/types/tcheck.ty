@@ -143,7 +143,7 @@ struct Pend:
 # One branch result of a value if/match -- src/tychoc.c@ctrl_collect_tails.
 # `_value_type` returns ONE type, so a void tail, an all-diverging if/match and
 # a bare `None` tail are the same observation to it; the LIST is what tells them
-# apart (src/tychoc.c:4138@diverges, src/tychoc.c:2239@infer, src/tychoc.c:129@void).
+# apart (src/tychoc.c:4147@diverges, src/tychoc.c:2258@infer, src/tychoc.c:129@void).
 struct Tail:
     line: int
     ty: string
@@ -210,7 +210,7 @@ struct C:
     symfn: int                         # the enclosing fn's line, the row's 4th field
     callee: bool                       # this expression is the CALLEE of a CallVal:
                                        # `a.b.get(v, 0)` is a method call, not a
-                                       # field read, so src/tychoc.c:2120@nominal_name must not fire on it
+                                       # field read, so src/tychoc.c:2128@nominal_name must not fire on it
     symfnm: string                     # ...and its MANGLED name: two files can put
                                        # two functions on the same line (cli__is_short
                                        # and main are both line 44 in tycho-stat), and
@@ -264,7 +264,7 @@ fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     return ""
 
 # Typo suggestions, same threshold as resolve.ty@_dym and the same source:
-# src/tychoc.c:1634@edit_dist accepts the best candidate when
+# src/tychoc.c:1653@edit_dist accepts the best candidate when
 # bestd <= (strlen(name) <= 4 ? 1 : 2).
 fn _tedit(a: string, b: string) -> int:
     la := len(a)
@@ -1024,7 +1024,7 @@ fn _ffi_pod_struct(cs: inout C, t: string) -> bool:
             return false
     return true
 
-# src/tychoc.c:1774@IS_STRUCT and src/tychoc.c:1774@IS_STRUCT, IS_STRUCT(el). An SOA splits its element into one
+# src/tychoc.c:1793@IS_STRUCT and src/tychoc.c:1793@IS_STRUCT, IS_STRUCT(el). An SOA splits its element into one
 # array per FIELD, so an enum, a newtype, a handle or a scalar has nothing to
 # split. `?` is an unground generic and says nothing either way.
 fn _soa_elem_ok(cs: inout C, el: string) -> bool:
@@ -1764,11 +1764,11 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                     _cerr(&cs, "spawn requires a direct call to a named function (closures/constructors cannot be spawned yet)")
                 elif si < 0 or cs.sg[si].builtin:                   # src/tychoc.c:1232@defined
                     _cerr(&cs, "spawn requires a user-defined function ('" + _spawn_callee(k[0]) + "' is not one)")
-                elif _spawn_extern(&cs, k[0]):                        # src/tychoc.c:2318@extern
+                elif _spawn_extern(&cs, k[0]):                        # src/tychoc.c:2328@extern
                     _cerr(&cs, "cannot spawn an extern (FFI) function")
                 elif rt == "void":                                    # src/tychoc.c:1198@spawned
                     _cerr(&cs, "a spawned function must return a value (wait(t) yields it)")
-                elif _has_inout(cs.sg[si]):                         # src/tychoc.c:2352@inout
+                elif _has_inout(cs.sg[si]):                         # src/tychoc.c:2371@inout
                     _cerr(&cs, "cannot spawn a function with inout parameters (no shared state across threads)")
             return "task(" + rt + ")"
         ast.OrRet(l, b, k):
@@ -2511,7 +2511,7 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
         m := _prefix_of(&cs, q) + n
         return _call_named(&cs, l, m, n, args, want)
     # The shape-directed builtins are resolved BEFORE the Sig table, exactly as
-    # src/tychoc.c:7645-7913 sits before its sig_find at src/tychoc.c:6078@sig_find -- a user `fn len`
+    # src/tychoc.c:7645-7913 sits before its sig_find at src/tychoc.c:6097@sig_find -- a user `fn len`
     # in the entry package is registered UNMANGLED, so without this ordering the
     # bare `len(b)` inside core:strings found it and refused a program ./tychoc
     # accepts (tests/warn/pkg/corelib_mute/main.ty).
@@ -2652,7 +2652,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     keep := cs.in_arg
     cs.in_arg = true
     # src/tychoc.c:986@T_PENDING and src/tychoc.c:986@T_PENDING -- `push(xs, v)` and `map_set(m, k, v)` GROUND a
-    # pending receiver, so its read here is not the ungrounded one src/tychoc.c:2869@inferred refuses.
+    # pending receiver, so its read here is not the ungrounded one src/tychoc.c:2888@inferred refuses.
     # Both C sites ground before resolving args[0]; the composed type is only
     # available after the arg walk here, so the read is EXEMPTED instead and the
     # grounding runs below, off `ats` -- walking args[1] twice would double every
@@ -3049,7 +3049,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                         _cerr(&cs, "duplicate " + no + " arm")
                     nested = _nested_of(&cs, a, _targs(st)[1])
                 else:
-                    # None is nullary: src/tychoc.c:4292@duplicate and src/tychoc.c:4056@nbinds word it apart
+                    # None is nullary: src/tychoc.c:4311@duplicate and src/tychoc.c:4075@nbinds word it apart
                     # from the Err side, which does carry a payload.
                     if seen1:
                         _cerr(&cs, "duplicate None arm")
@@ -3561,7 +3561,7 @@ fn _place_ty(cs: inout C, e: ast.Expr) -> string:
             rt := _base(&cs, _ex(&cs, k[0]))
             h := _head(rt)
             cs.line = l
-            # src/tychoc.c:5031@root (the root walk), src/tychoc.c:6601@is_lvalue,
+            # src/tychoc.c:5050@root (the root walk), src/tychoc.c:6620@is_lvalue,
             # then src/tychoc.c:976@immutable
             # (the container type) -- three rules in that order, where this arm
             # used to test the container first and fold the other two together.
@@ -3901,7 +3901,7 @@ fn _assign_check(cs: inout C, name: string, t: string):
     vt := _vtype(&cs, name)
     if len(vt) == 0:
         return
-    # src/tychoc.c:1843@declared and src/tychoc.c:1350@None -- a bare `[]` or `None` decl is PENDING and
+    # src/tychoc.c:1862@declared and src/tychoc.c:1350@None -- a bare `[]` or `None` decl is PENDING and
     # its first typed use grounds it; only an array/map/soa grounds the first,
     # only an Option the second. tcheck types the bare `[]` "?" and the bare
     # `None` "opt(?)", so without these two the family is accepted (`[]`) or
@@ -4069,9 +4069,9 @@ fn _fill_decls(cs: inout C, p: Program):
 # Option, Result or tuple that closes a cycle names ITSELF
 # (src/tychoc.c:1350@Option, src/tychoc.c:987@Result, src/tychoc.c:1236@tuple). Walking struct
 # DECLARATIONS alone, as this did until 2026-09-04, could only ever reach the
-# struct arm (src/tychoc.c:4523@infinite).
+# struct arm (src/tychoc.c:4542@infinite).
 # The line reported is the declaration whose fields were being walked when the
-# cycle closed -- g_emit_line, saved and restored per struct at src/tychoc.c:3147@save / src/tychoc.c:3147@save.
+# cycle closed -- g_emit_line, saved and restored per struct at src/tychoc.c:3166@save / src/tychoc.c:3166@save.
 fn _fin_dfs(cs: inout C, t0: string, ln: int, fl: string, col: inout [string: int]) -> bool:
     t := _base(&cs, t0)
     h := _head(t)
@@ -4222,7 +4222,7 @@ fn check_on2(p: Program, syms: bool, tgt: string) -> C:
             cs.errbase = -1
             _vrestore(&cs, m)
             cs.ret = "?"
-    # `main`: src/tychoc.c:2522@parameters and src/tychoc.c:987@Result, a whole-program rule like `no 'main'`.
+    # `main`: src/tychoc.c:2541@parameters and src/tychoc.c:987@Result, a whole-program rule like `no 'main'`.
     mi := _sigidx(&cs, "main")
     if mi >= 0:
         cs.file = cs.sg[mi].file

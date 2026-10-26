@@ -102,7 +102,7 @@ fn _builtins() -> [string: bool]:
 # `fn pow` is unprefixed there) and the same file compiled as a dependency is
 # not (`bignum__pow` collides with nothing). The shape-directed builtins above
 # are not in that table and do not collide.
-# src/tychoc.c:4921@shadows_builtin, copied name for name. A user fn by one of
+# src/tychoc.c:4940@shadows_builtin, copied name for name. A user fn by one of
 # these names does NOT win an unqualified call -- the builtin does -- so the
 # declaration warns and the procedure is unreachable by that name. The one
 # exclusion is deliberate there and kept here: no `zero` (core:bignum's, not a
@@ -162,7 +162,7 @@ fn _excerpt(rs: inout R, file: string, line: int) -> string:
         return "\n" + pad + num + " | " + ls[line - 1]
     return ""
 
-# Typo suggestions. src/tychoc.c:1634@edit_dist is a bounded Levenshtein and
+# Typo suggestions. src/tychoc.c:1653@edit_dist is a bounded Levenshtein and
 # its caller accepts the best candidate when
 #     bestd <= (strlen(name) <= 4 ? 1 : 2)
 # -- that threshold is copied, not invented, because it decides which
@@ -384,7 +384,7 @@ fn _addl(rs: inout R, name: string, kind: string, file: string, pkg: string, dn:
     # src/tychoc.c:4987 makes a builtin collision a WARNING, not an error: the
     # builtin wins every unqualified call, so the procedure is merely
     # unreachable by that name. A CONSTRUCTOR collision stays fatal there
-    # (is_builtin_ctor, src/tychoc.c:4920@is_builtin_ctor), which is the branch below.
+    # (is_builtin_ctor, src/tychoc.c:4928@is_builtin_ctor), which is the branch below.
     # ORDER MATTERS. A name with a builtin SIGNATURE (rs.bsigs -- die, pow,
     # find, ...) stays a hard error, which is what ./tychoc does: measured as
     # leg8 disagreements on corelib/bignum.ty@pow, corelib/regex.ty@find and

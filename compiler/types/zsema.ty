@@ -219,8 +219,8 @@ fn _vec_width(cs: inout C, n: string, el: string):
 
 # ------------------------------------------------------------------- the FFI
 #
-# src/tychoc.c:5150@ffi_scalar_type and the two die sites at
-# src/tychoc.c:1238@parameter / src/tychoc.c:5278@ret_opt_str. The sized
+# src/tychoc.c:5169@ffi_scalar_type and the two die sites at
+# src/tychoc.c:1238@parameter / src/tychoc.c:5297@ret_opt_str. The sized
 # numerics are accepted because parse_type consumes the sized-type NAME in an
 # extern signature and hands back `int`; tychoc1 keeps the spelling, so the
 # names are listed.
@@ -280,7 +280,7 @@ fn _aff_param_check(cs: inout C, name: string, t: string, flag: string):
 # every body diagnostic in the build.
 
 # A `[$N]T` size parameter is meaningful only in a generic fn parameter, where
-# the argument fixes N. src/tychoc.c:164@struct / src/tychoc.c:621@enum / src/tychoc.c:1508@newtype.
+# the argument fixes N. src/tychoc.c:164@struct / src/tychoc.c:621@enum / src/tychoc.c:1527@newtype.
 fn _has_sizeparam(t: ast.Ty) -> bool:
     match t:
         ast.TFix(sz, k):
@@ -395,7 +395,7 @@ fn _aff_reassign_check(cs: inout C, name: string, vt: string):
 # ------------------------------------------------------- generic instantiation
 #
 # src/tychoc.c@instantiate_generic and the Stage-2 deep clone at
-# src/tychoc.c:1858@Stage. What is reproduced here is the INFERENCE, not the clone: a call to a
+# src/tychoc.c:1877@Stage. What is reproduced here is the INFERENCE, not the clone: a call to a
 # generic binds each `$T` by unifying the written parameter pattern against the
 # argument's type, checks the `where` predicates against the bindings, and
 # answers the SUBSTITUTED return type instead of `?`.
@@ -1086,7 +1086,7 @@ fn _place_root(e: ast.Expr) -> string:
 # ------------------------------------------------- generic AGGREGATE instances
 #
 # src/tychoc.c@struct_instantiate / enum_instantiate, and the Stage-2 deep clone
-# at src/tychoc.c:1858@Stage. `subst_type` there rebuilds every field type FROM SCRATCH, which is
+# at src/tychoc.c:1877@Stage. `subst_type` there rebuilds every field type FROM SCRATCH, which is
 # the seam that lost `bounded` once (FRICTION #51-54): the instance is not the
 # template, and a rule checked on the template sees `$T`, never the type it was
 # bound to. So an instance here is stamped as a real TDecl whose field types are
@@ -1330,7 +1330,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
     cs.line = l
     if bad >= 0:
         if len(badb) > 0:
-            # src/tychoc.c:2522@mismatch / src/tychoc.c:2522@mismatch -- stage two, after instantiation. The
+            # src/tychoc.c:2541@mismatch / src/tychoc.c:2541@mismatch -- stage two, after instantiation. The
             # subject is the TEMPLATE's name here; the bootstrap names the
             # instance (`Box__int`), which tychoc1 does not materialise.
             if len(vn) > 0:
@@ -1339,7 +1339,7 @@ fn _inst_ctor(cs: inout C, l: int, ti: int, args: [ast.Expr], at0: int, npay: in
                 _cerr(&cs, "field type mismatch: field '" + cs.tds[ti].fnames[bad] + "' of " + _short(cs.tds[ti].name) +
                     " is " + _show(&cs, badb) + ", got " + _show(&cs, ats[bad]))
             return "?"
-        # src/tychoc.c:2814@fit / src/tychoc.c:2814@fit -- name the argument that failed, not "1"
+        # src/tychoc.c:2833@fit / src/tychoc.c:2833@fit -- name the argument that failed, not "1"
         if len(vn) > 0:
             _cerr(&cs, vn + " payload " + str(bad + 1) + " does not fit a " + _show(&cs, ats[bad]) + " argument")
         else:

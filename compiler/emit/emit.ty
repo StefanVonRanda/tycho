@@ -1206,7 +1206,7 @@ fn _tmang(cs: inout C, t: string) -> string:
         return _tname(t)
     return ""
 
-# src/tychoc.c:2611@g_structs and src/tychoc.c:2668@g_enums append one `__<type>` per type PARAMETER.
+# src/tychoc.c:2619@g_structs and src/tychoc.c:2670@g_enums append one `__<type>` per type PARAMETER.
 fn _instname(cs: inout C, gn: string, targs: [string]) -> string:
     base := gn
     for i := 0; i < len(targs); i += 1:
@@ -3944,7 +3944,7 @@ fn _retval(cs: inout C, e: ast.Expr) -> string:
         return c
     if _shared_get_expr(&cs, e):
         return c
-    # src/tychoc.c:10806@cv_in_parent -- a return-slot local already
+    # src/tychoc.c:10825@cv_in_parent -- a return-slot local already
     # lives in the caller's arena, so the copy would duplicate it.
     projected := cs.ret_placed and _projection_fields(e, cs.ret_local) == cs.ret_fields
     if projected and len(cs.ret_loop_bound) > 0:
