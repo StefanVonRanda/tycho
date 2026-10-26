@@ -157,20 +157,22 @@ extern fn netx_read(fd: int, max: int, status: inout int) -> bytes
 **Written parameters are passed in
 written order**, an `inout` becoming a `T*` (§24.1); a `bytes` or array *return*
 is a `void` function with **two trailing** out-params
-(`unsigned char **out, tycho_int *outlen`) appended after all of them. So the
+(`unsigned char **out, int64_t *outlen`) appended after all of them. So the
 classification pointer sits **ahead** of the payload out-params even though it is
-written last, and the C definition must match that order exactly:
+written last, and the C definition must match that order exactly
+(`int64_t` comes from `<stdint.h>`; shims do not include the compiler's internal
+typedef):
 
 ```c
-void netx_read(tycho_int fd, tycho_int max, tycho_int *status,
-               unsigned char **out, tycho_int *outlen);
+void netx_read(int64_t fd, int64_t max, int64_t *status,
+               unsigned char **out, int64_t *outlen);
 ```
 
 Emitted prototype, for a `bytes` return and for a `string` parameter respectively:
 
 ```c
-extern void netx_read(tycho_int , tycho_int , tycho_int *, unsigned char **, tycho_int *);
-extern void iox_read_file(char *, tycho_int *, unsigned char **, tycho_int *);
+extern void netx_read(int64_t , int64_t , int64_t *, unsigned char **, int64_t *);
+extern void iox_read_file(char *, int64_t *, unsigned char **, int64_t *);
 ```
 
 Rules that follow from §24.1 and are not optional:
@@ -219,7 +221,7 @@ the classification as the C function's own return value. No reordering surprise 
 that only arises when a `bytes` return appends its two out-params.
 
 ```c
-tycho_int iox_stat_mtime(const char *path, tycho_int *mtime);
+int64_t iox_stat_mtime(const char *path, int64_t *mtime);
 ```
 
 So the two arrangements are one rule seen from both sides: **the classification

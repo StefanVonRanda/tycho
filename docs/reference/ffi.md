@@ -70,19 +70,25 @@ rejected at compile time rather than corrupted at run time.
   `h` in the same block (a second `close`, `is_null(h)` included) is a
   **compile error**. A `close` inside an `if` or loop reaches only the end of
   that block, so a use after it compiles: it passes null to C if the branch ran,
-  a logic bug, not memory corruption.
+  a logic bug, not memory corruption. `exit()` and `die()` do not run scope-exit
+  destructors; close the handle explicitly before either. A failed opener returns
+  a null handle (`is_null` checks it); an `inout int status` out-param or a
+  separate error function reports why.
 - **POD structs** — a non-packed, non-aligned struct of numeric scalar fields
   may cross **by value**, as a **return**, and as an **`inout`** pointer. A
   dynamic array of one (`[T]`) crosses as a `(const T*, length)` parameter,
   borrowed for the call. Use fixed-width fields (`i32`, `u8`, `f32`) to match
   the C header; `int` is 64-bit and `float` is C `double`.
+- **`[string]` parameter** — crosses as a `(const char *const *, length)` pair,
+  borrowed for the call. It is not `NULL`-terminated and carries no per-element
+  length; a return is rejected.
 - **`inout` out-parameters** — a numeric scalar, `ptr`, or a **POD struct**. The
   C function gets a pointer to the struct. A `string`, `bytes`, handle, map,
   array or non-POD struct `inout` is **rejected**.
 
-Maps, non-POD structs, and non-scalar arrays are **rejected** at the boundary —
-fail closed. (The scalar arrays `[int]`/`[float]` and arrays of POD structs do
-cross, above.)
+Maps, non-POD structs, and other non-scalar arrays are **rejected** at the
+boundary — fail closed. (The scalar arrays `[int]`/`[float]`, arrays of POD
+structs, and `[string]` parameters do cross, above.)
 
 ## Threads
 
@@ -341,8 +347,8 @@ world.
   never touches what it points at. A `ptr` rides the scalar paths, so it can
   also be a local, a struct field, or an array element (copied by value).
 - **No variadics.** A `printf`-style function needs a fixed-arity C wrapper.
-- **No struct-by-value and no callbacks into Tycho** — a Tycho function value
-  cannot cross out.
+- **No non-POD struct-by-value and no callbacks into Tycho** — a Tycho function
+  value cannot cross out.
 
 What can still go wrong, plainly: passing a bad handle crashes inside C, not in
 Tycho; C code with shared state races across tasks (see [Threads](#threads));
@@ -384,7 +390,7 @@ The flags, all on the `tychoc` command line (`tychoc --help` groups them the sam
 | `--pkg <name>` | add `pkg-config --cflags --libs <name>` |
 | `--shim <file.c>` | compile and link a companion C file |
 | `-L<dir>`, `-I<dir>` | library and include search paths |
-| `--cc <compiler>` | use another C compiler |
+| `--cc <compiler>` | use another C compiler; may name a wrapper that adds `-fsanitize=address,undefined` |
 | `--print-shims` | print the `<pkg>_shim.c` files the program needs, transitively, and exit: what a hand-written `cc` line must pass |
 | `--print-deps` | print the pkg-config names it needs, transitively, and exit |
 
@@ -412,10 +418,11 @@ library instead.
 
 These limits are deliberate:
 
-- **No composite types across the boundary.** Arrays, maps, structs,
+- **No arbitrary composite types across the boundary.** Maps, non-POD structs,
   `Option`/`Result`, and tuples are rejected; they have no stable C ABI. Marshal
-  through scalars, strings, and `ptr`, or use a shim.
-- **No struct-by-value.** Pass an opaque `ptr` handle instead.
+  through scalars, strings, and `ptr`, or use a shim. Scalar arrays, arrays of
+  POD structs, and `[string]` parameters are the stated exceptions.
+- **No non-POD struct-by-value.** Pass an opaque `ptr` handle instead.
 - **No variadics.** Wrap variadic C functions (like `printf`) in a fixed-arity C
   shim.
 - **No callbacks into Tycho.** A Tycho function value cannot cross out, so C
