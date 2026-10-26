@@ -1,4 +1,7 @@
-# Performance and memory
+# Performance
+
+> Current reviewed claim and gate: [`bench/PERFORMANCE.md`](../bench/PERFORMANCE.md). Some historical tables below predate the multi-size suite and the Java/Swift ports.
+ and memory
 
 Every program in this file runs on `tychoc`, its output checked against a
 golden. Cross-language *ratios* matter more than absolute times, which depend
@@ -160,11 +163,10 @@ is explicitly unported.
 | window string | Y | Y | Y | Y | Y | Y |
 | window int | Y | Y | Y | Y | Y | Y |
 | gcscan | Y | Y | Y | Y | Y | Y |
-| dbquery | Y | Y | - | Y | - | - |
+| dbquery | Y | Y | Y | Y | Y | Y |
 
-`dbquery` remains unported for Rust/Java/Swift: the Rust port would need a
-libsqlite3 FFI binding, this host has no SQLite JDBC driver for Java, and no
-Swift SQLite module. The `-` cells are queued work, not wins.
+The current generated suite has all six `dbquery` ports; older tables below
+record the period when Rust/Java/Swift coverage was still missing.
 
 The service-shaped `winagg` row (per-window map of growing lists) now runs at
 **82 ms versus C 97 ms**, Rust 176 ms, Go 296 ms, Java 277 ms and Swift 374 ms;

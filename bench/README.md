@@ -8,7 +8,9 @@ not a passing test suite. This file is the map; each row links to a `RESULTS.md`
 with detail. The **generated multi-size scorecard** is
 [`RESULTS.md`](RESULTS.md) and the clang report
 [`RESULTS-clang.md`](RESULTS-clang.md), produced by `python3 bench/suite.py`
-(or `make bench-suite` / `make bench-suite-backends`). They own the three-size
+(or `make bench-suite` / `make bench-suite-backends`). The reviewed claim,
+release criterion, gate policy and remaining edges are in
+[`PERFORMANCE.md`](PERFORMANCE.md). They own the three-size
 data for the service rows, all seven `prongB` core rows, and the specialized
 `trie`, `dijkstra`, `lru`, `interp` and `json_tree` rows where a port exists.
 Concurrency and application rows still have their own runners.
@@ -16,9 +18,10 @@ The prose pages explain the mechanisms and historical context.
 
 All Linux figures below were recorded on **AMD Strix Halo / Ryzen AI MAX+ 395,
 Fedora Linux 44, x86-64** (16 cores, 32 hardware threads); macOS second-machine
-results are called out separately in each `RESULTS.md`. Figures were refreshed
-2026-10-20 for the O1–O7 sweep and the O6 fix; rows not rerun in that sweep
-retain their earlier measurements.
+results are called out separately in each `RESULTS.md`. The current generated
+suite is the authoritative three-size measurement. The prose pages in this
+directory include older O1-O7 measurements and are historical context where
+they differ.
 
 The O5/O6 before-controls are deliberately pathological: the trie path control
 peaks at ~1.67 GB, treeupdate at ~2.25 GB and editorupdate at ~9 GB. Run one at
@@ -29,11 +32,9 @@ recorded in `bench/lru/RESULTS.md`.
 
 Service-row coverage is now explicit: `winagg`, `latency`, `invindex` (growth
 and count-fill, side-array and map-native), `window` (string and int), and
-`gcscan` have Tycho/C/Rust/Go/Java/Swift ports. `dbquery` still has only
-Tycho/C/Go; its Rust/Java/Swift cells are `-` in the matrix because this host
-has no Rust SQLite binding, SQLite JDBC driver, or Swift SQLite module. The
-service harnesses fail closed on output mismatches; see
-[docs/performance.md](../docs/performance.md#service-row-coverage).
+`gcscan` have Tycho/C/Rust/Go/Java/Swift ports. `dbquery` also has all six
+ports in the generated suite. The service harnesses fail closed on output
+mismatches; see [docs/performance.md](../docs/performance.md#service-row-coverage).
 
 ### Comparison controls
 
@@ -53,9 +54,9 @@ service harnesses fail closed on output mismatches; see
   The scorecard names the loss rows. The expert-tier report is separate from
   the idiomatic one; an expert C/Rust result is not allowed to be presented as
   the idiomatic comparison.
-- **Not yet multi-size.** Goose runs each algorithm at three sizes. Tycho
-  currently reports its established size per row; adding size sweeps is the
-  next comparison-methodology change, not a claim that one size is enough.
+- **Three sizes per row.** The generated suite reports small, medium and large
+  for every workload. Whole-process time and peak RSS are stored for each
+  size; ratios use the large row unless a table says otherwise.
 
 ## Axis 1 — memory (peak RSS)
 
