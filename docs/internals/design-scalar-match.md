@@ -25,7 +25,7 @@ Two shapes the arms actually need, both already written as `if`:
   and c <= 57)` — the range is **inclusive** (`<=`, not `<`).
 
 Every ladder subject is `int`: string indexing returns the byte **value as an
-int** (`src/tychoc.c:1901@T_BYTES`), so the char-position ladders all compare ints.
+int** (`src/tychoc.c:1902@T_BYTES`), so the char-position ladders all compare ints.
 **No ladder in the tree dispatches on `string` or `bytes`.**
 
 ## How `match` works today
@@ -34,7 +34,7 @@ int** (`src/tychoc.c:1901@T_BYTES`), so the char-position ladders all compare in
   arm: "a match arm `Variant(bindings):` or `Variant:`". A scalar literal dies
   there with that message, which is why `match` on an int is currently a parse
   error.
-- **Resolve** — the `S_MATCH` case of `resolve_stmt` (`src/tychoc.c:2318@S_MATCH`) already enforces
+- **Resolve** — the `S_MATCH` case of `resolve_stmt` (`src/tychoc.c:2325@S_MATCH`) already enforces
   wildcard-last (`tests/reject/match_wildcard_not_last.ty`), duplicate arms
   (`tests/reject/match_dup_arm.ty`), and exhaustiveness
   (`tests/reject/match_non_exhaustive.ty`) — all enum machinery, all reusable.
@@ -50,7 +50,7 @@ int** (`src/tychoc.c:1901@T_BYTES`), so the char-position ladders all compare in
 
 - **`int`** — the only type with customers (the table above). Primary.
 - **`char`** — the same machine type as `int` (both emit as `tycho_int`,
-  `src/tychoc.c:2103@T_CHAR`). Arm literals are `'a'`-spelled; the byte-value ladders
+  `src/tychoc.c:2110@T_CHAR`). Arm literals are `'a'`-spelled; the byte-value ladders
   use `int` and stay `int`. No customer for the distinct `char` type today,
   but the cost is zero once the int machinery exists.
 - **`bool`** — a two-value domain, so exhaustiveness is provable (D2).
@@ -170,14 +170,14 @@ per-compare figure assumed. Neither number is a reason to build for speed.
   (`lit | lit | ...`), and a range (`lit..lit`). The diagnostic widens from
   "a match arm `Variant(bindings):` or `Variant:`" to name the new forms.
   String and float literals stay rejected at parse.
-- **Resolve** (`src/tychoc.c:2318@S_MATCH`) — a scalar subject path: subject is
+- **Resolve** (`src/tychoc.c:2325@S_MATCH`) — a scalar subject path: subject is
   `int`/`char`/`bool`; arm literals typed against the subject exactly as
   assignment would type them (newtype rules unchanged — a newtype over int
   is its own type and takes its own spellings); literal arms on an enum
   subject and variant arms on a scalar subject are distinct errors; the
   dup/overlap check (D3); the `_` rule (D2); string/bytes/float subjects
   refused with the demand-gated reason (D1).
-- **Codegen** (`src/tychoc.c:2318@S_MATCH`) — the switch emission (D6). The
+- **Codegen** (`src/tychoc.c:2325@S_MATCH`) — the switch emission (D6). The
   `S_MATCH` statement and value forms both flow through it, so the value
   form (`x := match c: ...`) works without separate work.
 - **Spec** — §14.3 (`docs/spec/10-statements.md:33-61`), the statements

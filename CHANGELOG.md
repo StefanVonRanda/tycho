@@ -17,13 +17,12 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ### Compiler
 
-- **Fixed-size user enums with scalar payloads are inline in `tychoc1`.** They
-  are emitted as a packed tag plus variant union instead of a pointer to an
-  arena cell. Recursive, generic, fieldless, package-mangled and heap-payload
+- **Fixed-size user enums with scalar payloads are inline in both compilers.**
+  They are emitted as a packed tag plus variant union instead of a pointer to
+  an arena cell. Recursive, generic, fieldless, package-mangled and heap-payload
   enums keep the pointer representation. `TYCHOC_NO_INLINE_ENUM=1` restores
   the old layout for measurement. The benchmark is in
-  [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md). The reference compiler still
-  uses the old representation; porting it is a follow-up.
+  [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
 - **Counted fresh-array builders are presized from `for i := 0; i < n`**, not
   only from `i < len(src)`. This removes geometric closure-array growth in the
   dispatch workload (11 ms -> 6 ms, against C 5 ms). `TYCHOC_NO_PRESIZE=1` is

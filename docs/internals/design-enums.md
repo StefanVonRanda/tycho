@@ -30,12 +30,11 @@ copy behavior are covered by [the memory model](../memory-model.md).
 - `or_else x: h` binds the error to `x` and returns the one-expression `h`
   (to end of line or closing bracket) from the enclosing function.
 
-## Inline fixed-size enums (shipped `tychoc1`)
+## Inline fixed-size enums
 
 A user enum whose payloads are all scalar is stored as a packed `tag` plus a
 union of the variants, rather than as a pointer to an arena cell. It is still a
 value: assignment copies it, `==` compares the tag and active payload, and
 `match` reads the same fields. Recursive, generic, fieldless, package-mangled
-and heap-payload enums remain pointer cells. `TYCHOC_NO_INLINE_ENUM=1` keeps
-the old representation for benchmarking. The reference compiler still boxes;
-the shipped self-hosted compiler is the optimized path.
+and heap-payload enums remain pointer cells. Both compilers use this lowering;
+`TYCHOC_NO_INLINE_ENUM=1` keeps the old representation for benchmarking.

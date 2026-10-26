@@ -1212,7 +1212,7 @@ fn _scalar_arm_ahead(toks: [lex.Tok], i: int) -> bool:
         return true
     return k == lex.K_IDENT and (_isop(toks, i + 1, lex.OP_DOTDOT) or _isop(toks, i + 1, lex.OP_PIPE))
 
-# `miss` is the rule to name when no value follows: src/tychoc.c:2431@expected has a
+# `miss` is the rule to name when no value follows: src/tychoc.c:2438@expected has a
 # dedicated one for the HIGH end of a range, where src/tychoc.c:1397@variant names the arm forms.
 fn _pat_end(toks: [lex.Tok], i0: int, miss: string) -> (ast.Pat, int, bool):
     # one end of a scalar pattern: an int/char/bool literal or a const NAME

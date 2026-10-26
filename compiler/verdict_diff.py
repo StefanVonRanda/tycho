@@ -70,7 +70,7 @@ EXPECT = 1532          # +2 bench/opt pushfresh/enumlayout; +2 bench/opt experim
                        # 1336 -> 1338: the two struct/enum `$Name` typaram fixtures
 
 # NAME fixtures whose diagnostic carries no file:line in EITHER compiler, because
-# merge_pkg (src/tychoc.c:2346@declaration, src/tychoc.c:1175@declares) names the offending FILE and exits. Both
+# merge_pkg (src/tychoc.c:2353@declaration, src/tychoc.c:1175@declares) names the offending FILE and exits. Both
 # are scored as agreeing that there is no location; anything else unlocated is a
 # skip and reddens the lane.
 NO_LINE = {
@@ -94,7 +94,7 @@ KNOWN_TYPE_MISS = set()
 # GENERIC_RECUR_GROW left this list on 2026-09-05: `_inst_body`'s depth guard
 # bailed silently, so a recursion at a growing type was never reported.
 # THE PENDING-TYPE RULES left this list when src/tychoc.c's B-3 grounding
-# walk (src/tychoc.c:123@use, src/tychoc.c:2888@inferred, src/tychoc.c:986@grounding) was ported to compiler/types/tcheck.ty as a
+# walk (src/tychoc.c:123@use, src/tychoc.c:2895@inferred, src/tychoc.c:986@grounding) was ported to compiler/types/tcheck.ty as a
 # `pend` LIST with a line, a done flag and a per-block mark -- the `pendarr`
 # SET R21f-11 built could carry none of the three.
 # THE CONCURRENCY RULES left this list under R21c, which ported the five

@@ -1415,7 +1415,7 @@ static int g_nenums = 0, g_enums_cap = 0;
  * This predicate is the single switch the representation migration consults;
  * recursive, generic/mangled, fieldless and heap-payload enums stay cells. */
 static int is_sized_int(Type t);
-static int __attribute__((unused)) enum_inline(Type t) {
+static int enum_inline(Type t) {
     if (getenv("TYCHOC_NO_INLINE_ENUM") || !IS_ENUM(t)) return 0;
     EnumDef *ed = &g_enums[ENUM_ID(t)];
     if (ed->generic || ed->from_tmpl >= 0 || strstr(ed->name, "__")) return 0;
@@ -1423,7 +1423,8 @@ static int __attribute__((unused)) enum_inline(Type t) {
     for (int v = 0; v < ed->nvariants; v++) {
         for (int p = 0; p < ed->variants[v].npayload; p++) {
             Type pt = ed->variants[v].payload[p];
-            if (!(pt == T_INT || pt == T_FLOAT || pt == T_BOOL || pt == T_CHAR || is_sized_int(pt)))
+            if (!(pt == T_INT || pt == T_FLOAT || pt == T_BOOL || pt == T_CHAR ||
+                  pt == T_F32 || is_sized_int(pt)))
                 return 0;
             any = 1;
         }
@@ -1905,7 +1906,8 @@ static int type_is_heap(Type t) {
         for (int i = 0; i < tup_n(t); i++) if (type_is_heap(tup_elem(t, i))) return 1;
         return 0;
     }
-    if (IS_ENUM(t)) {   /* heap iff any variant carries a payload (an arena ptr) */
+    if (IS_ENUM(t)) {   /* inline enums are immutable values; a cell enum owns its pointer payload */
+        if (enum_inline(t)) return 0;
         EnumDef *ed = &g_enums[ENUM_ID(t)];
         for (int i = 0; i < ed->nvariants; i++)
             if (ed->variants[i].npayload > 0) return 1;
@@ -1966,7 +1968,7 @@ static const char *recycle_name(Type t) {
     if (IS_ARRC(t)) return sfmt("tycho_recycle_A%d", ARRC_ID(t));
     if (IS_MAPC(t)) return sfmt("tycho_recycle_M%d", MAPC_ID(t));
     if (IS_STRUCT(t)) return sfmt("tycho_recycle_S_%s", g_structs[STRUCT_ID(t)].name);
-    if (IS_ENUM(t)) return sfmt("tycho_recycle_E_%s", g_enums[ENUM_ID(t)].name);
+    if (IS_ENUM(t)) return enum_inline(t) ? "" : sfmt("tycho_recycle_E_%s", g_enums[ENUM_ID(t)].name);
     if (IS_OPT(t)) return sfmt("tycho_recycle_O%d", OPT_ID(t));
     if (IS_RES(t)) return sfmt("tycho_recycle_R%d", RES_ID(t));
     if (IS_TUP(t)) return sfmt("tycho_recycle_T%d", TUP_ID(t));
@@ -1977,6 +1979,7 @@ static const char *recycle_name(Type t) {
 
 static void recycle_emit_proto(FILE *o, Type t) {
     t = base_of(t);
+    if (IS_ENUM(t) && enum_inline(t)) return;
     fprintf(o, "static void %s(Arena *, %s);\n", recycle_name(t), c_type(t));
 }
 
@@ -2004,6 +2007,7 @@ static int recycle_is_runtime_type(Type t) {
 static void recycle_emit_body(FILE *o, Type t) {
     t = base_of(t);
     if (recycle_is_runtime_type(t)) return;
+    if (IS_ENUM(t) && enum_inline(t)) return;
     const char *nm = recycle_name(t), *ct = c_type(t);
     fprintf(o, "static void %s(Arena *a, %s v) {\n", nm, ct);
     if (IS_ARRC(t)) {
@@ -2096,7 +2100,10 @@ static const char *c_type(Type t) {
     if (IS_TASK(t))   return "HTask *";   /* opaque runtime task handle (spawn/wait) */
     if (IS_CHAN(t))   return "HChan *";   /* shared bounded-queue handle (channels) */
     if (IS_HANDLE(t)) return "void *";    /* typed C handle (FFI R2): opaque void*, freed by its destructor at scope exit */
-    if (IS_ENUM(t))   return sfmt("E_%s *", g_enums[ENUM_ID(t)].name);   /* a value is a pointer to a tagged cell */
+    if (IS_ENUM(t)) {   /* scalar-payload enums are a packed tag+union value; the rest are cell pointers */
+        const char *en = g_enums[ENUM_ID(t)].name;
+        return enum_inline(t) ? sfmt("E_%s ", en) : sfmt("E_%s *", en);
+    }
     if (IS_SOA(t))    return sfmt("Soa%d ", SOA_ID(t));
     switch (t) {
         case T_INT:          return "tycho_int ";
@@ -9112,10 +9119,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:9114@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:9121@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at src/tychoc.c:4966@is_sink which sets
+     * required value, and it matches the lambda-lift twin at src/tychoc.c:4973@is_sink which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };
@@ -12167,7 +12174,11 @@ static char *gen_hash(Type t, const char *v) {
     if (t == T_STRING || t == T_BYTES) return sfmt(g_hash_det ? "tycho_si_hash_det(%s)" : "tycho_si_hash(%s)", v);
     if (t == T_FLOAT)  return sfmt(g_hash_det ? "tycho_ik_hash_det(tycho_float_hashbits(%s))"
                                                        : "tycho_ik_hash(tycho_float_hashbits(%s))", v);
-    if (enum_fieldless(t)) return sfmt(g_hash_det ? "tycho_ik_hash_det((tycho_int)((%s)->tag))" : "tycho_ik_hash((tycho_int)((%s)->tag))", v);
+    if (IS_ENUM(t)) {
+        if (enum_inline(t))
+            return sfmt(g_hash_det ? "tycho_ik_hash_det((tycho_int)((%s).tag))" : "tycho_ik_hash((tycho_int)((%s).tag))", v);
+        return sfmt(g_hash_det ? "tycho_ik_hash_det((tycho_int)((%s)->tag))" : "tycho_ik_hash((tycho_int)((%s)->tag))", v);
+    }
     if (IS_STRUCT(t))  return sfmt(g_hash_det ? "tycho_dhash_S_%s(%s)" : "tycho_hash_S_%s(%s)", g_structs[STRUCT_ID(t)].name, v);
     if (IS_TUP(t))     return sfmt(g_hash_det ? "tycho_dhash_T%d(%s)" : "tycho_hash_T%d(%s)", TUP_ID(t), v);
     if (t == T_ARRAY_INT)    return sfmt(g_hash_det ? "tycho_arr_int_hash_det(%s)" : "tycho_arr_int_hash(%s)", v);
@@ -12421,16 +12432,27 @@ static char *gen_call(Expr *e, const char *arena) {
         int eid = ENUM_ID(e->type), vi = (int)e->ival;
         Variant *var = &g_enums[eid].variants[vi];
         const char *en = g_enums[eid].name;
+        int inl = enum_inline(e->type);
         if (var->npayload == 0)
-            return sfmt("(&_sing_%s_%d)", en, vi);   /* shared singleton: no allocation */
+            return inl ? sfmt("((E_%s){ .tag = %d })", en, vi)
+                       : sfmt("(&_sing_%s_%d)", en, vi);   /* shared singleton: no allocation */
+        char *payload = c_enum_payload(en, var->name);
+        char *field = c_enum_vfield(var->name);
+        char *out;
+        if (inl) {   /* fixed-size tag+union value, no arena cell */
+            char *v = sfmt("_p%d", g_blk++);
+            out = sfmt("({ E_%s %s = {0}; %s.tag = %d;", en, v, v, vi);
+            for (int i = 0; i < var->npayload; i++)
+                out = sfmt("%s %s.u.%s.f%d = %s;", out, v, field, i,
+                           alias_arg(var->payload[i], arena, e->args[i], e->args, e->nargs));
+            return sfmt("%s %s; })", out, v);
+        }
         /* arena-allocate one tagged cell sized to THIS variant (tag region + just
          * this variant's payload), not the union max -- a JNum node is 16B, not
          * sizeof(the widest variant). Reads dispatch on the tag, so the smaller
          * cell is never over-read; copies are field-wise (per variant). */
-        char *payload = c_enum_payload(en, var->name);
-        char *field = c_enum_vfield(var->name);
-        char *out = sfmt("({ E_%s *_p = (E_%s *)arena_alloc(%s, offsetof(E_%s, u) + sizeof(%s)); _p->tag = %d;",
-                         en, en, arena, en, payload, vi);
+        out = sfmt("({ E_%s *_p = (E_%s *)arena_alloc(%s, offsetof(E_%s, u) + sizeof(%s)); _p->tag = %d;",
+                   en, en, arena, en, payload, vi);
         for (int i = 0; i < var->npayload; i++)
             out = sfmt("%s _p->u.%s.f%d = %s;", out, field, i,
                        alias_arg(var->payload[i], arena, e->args[i], e->args, e->nargs));
@@ -13439,7 +13461,8 @@ static char *gen_expr(Expr *e, const char *arena) {
                 if (IS_OPT(lt) || IS_RES(lt))  /* by-value struct: the same field `match` branches on */
                     return sfmt("((%s).%s %s 0)", gen_expr(e->lhs, arena),
                                 IS_OPT(lt) ? "has" : "ok", e->ival ? "!=" : "==");
-                return sfmt("((%s)->tag == %d)", gen_expr(e->lhs, arena), (int)e->ival);
+                return sfmt(enum_inline(lt) ? "((%s).tag == %d)" : "((%s)->tag == %d)",
+                            gen_expr(e->lhs, arena), (int)e->ival);
             }
             if (e->op == TK_IN)                /* `k in m` membership -> map has-key */
                 return sfmt("%s(%s, %s)", map_rt(e->rhs->type, "has"),
@@ -13818,17 +13841,23 @@ static void gen_match_side(FILE *o, Stmt *s, const char *tag, Type pt, char *val
         if (a->sub_vi < 0) { plain = a; continue; }
         EnumDef *ed = &g_enums[ENUM_ID(pt)];
         Variant *var = &ed->variants[a->sub_vi];
+        int pinl = enum_inline(pt);
         indent(o, ind);
-        fprintf(o, "%sif (%s->tag == %d) {\n", nref ? "else " : "", val, a->sub_vi);
+        fprintf(o, "%sif ((%s)%s == %d) {\n", nref ? "else " : "", val,
+                pinl ? ".tag" : "->tag", a->sub_vi);
         nref++;
         int m = cv_mark();
         if (var->npayload > 0 && a->nsubbinds > 0) {
             int bid = g_blk++;
-            indent(o, ind + 1);
-            fprintf(o, "%s *_p%d = &%s->u.%s;\n", c_enum_payload(ed->name, var->name), bid, val, c_enum_vfield(var->name));
+            if (!pinl) {
+                indent(o, ind + 1);
+                fprintf(o, "%s *_p%d = &(%s)->u.%s;\n", c_enum_payload(ed->name, var->name), bid,
+                        val, c_enum_vfield(var->name));
+            }
             for (int b = 0; b < a->nsubbinds; b++) {
                 if (bind_is_discard(a->subbinds[b])) continue;   /* no binding, no local */
-                char *field = sfmt("_p%d->f%d", bid, b);
+                char *field = pinl ? sfmt("(%s).u.%s.f%d", val, c_enum_vfield(var->name), b)
+                                   : sfmt("_p%d->f%d", bid, b);
                 int borrow = type_is_heap(var->payload[b])
                     && !block_mutates(a->body, a->nbody, a->subbinds[b]);
                 indent(o, ind + 1);
@@ -14769,6 +14798,7 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
             } else {   /* IS_ENUM: a tag dispatch; each arm binds its payload */
                 EnumDef *ed = &g_enums[ENUM_ID(st)];
                 const char *en = ed->name;
+                int inl = enum_inline(st);
                 for (int i = 0; i < s->narms; i++) {
                     MatchArm *arm = &s->arms[i];
                     if (!strcmp(arm->variant, "_")) continue;   /* the catch-all is the trailing else, below */
@@ -14777,16 +14807,22 @@ static void gen_stmt(FILE *o, Stmt *s, int ind, const char *scope, Type ret) {
                         if (!strcmp(ed->variants[v].name, arm->variant)) { vi = v; break; }
                     Variant *var = &ed->variants[vi];
                     indent(o, ind + 1);
-                    fprintf(o, "%sif (_m%d->tag == %d) {\n", i ? "else " : "", mid, vi);
+                    fprintf(o, "%sif (_m%d%s == %d) {\n", i ? "else " : "", mid,
+                            inl ? ".tag" : "->tag", vi);
                     int bid = g_blk++;   /* names the payload pointer _p<bid> */
                     int m = cv_mark();
                     if (var->npayload > 0) {
-                        indent(o, ind + 2);
-                        fprintf(o, "%s *_p%d = &_m%d->u.%s;\n",
-                                c_enum_payload(en, var->name), bid, mid, c_enum_vfield(var->name));
+                        if (!inl) {
+                            indent(o, ind + 2);
+                            fprintf(o, "%s *_p%d = &_m%d->u.%s;\n",
+                                    c_enum_payload(en, var->name), bid, mid,
+                                    c_enum_vfield(var->name));
+                        }
                         for (int b = 0; b < arm->nbinds; b++) {
                             if (bind_is_discard(arm->binds[b])) continue;   /* no binding, no local */
-                            char *field = sfmt("_p%d->f%d", bid, b);
+                            char *field = inl
+                                ? sfmt("_m%d.u.%s.f%d", mid, c_enum_vfield(var->name), b)
+                                : sfmt("_p%d->f%d", bid, b);
                             /* borrow the scrutinee's payload instead of deep-
                              * copying it, unless this binding is mutated in
                              * place in the arm (which would reach through). */
@@ -15771,19 +15807,35 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_ntuptypes; i++)           /* tuple tags too */
         fprintf(o, "typedef struct TychoTup%d_ TychoTup%d;\n", i, i);
     fputs("\n", o);
-    /* (2) enum descriptors FIRST: a fixed { tag, ptr }, depends on nothing. They
-     * must precede the composite-array typedefs below, because a `[Enum]` array
-     * holds `E_Foo *data` and E_Foo is an anonymous-struct typedef that cannot
-     * be forward-declared (unlike the struct/Option/Result/tuple tags above) —
-     * so it has to be a complete type at the point the array typedef uses it.
-     * This is the recursive-enum-with-array-of-itself case (e.g. an AST node
-     * `enum Stmt: ... SIf(Expr, [Stmt], [Stmt])`). */
-    for (int i = 0; i < g_nenums; i++) {            /* forward-declare cells; a value is E_<name>* */
+    /* (2) enum representations FIRST. A cell enum is E_<name>*, so its tag is
+     * enough here; a scalar-payload enum is a complete tag+union value emitted
+     * just below, before any aggregate that embeds it by value. */
+    for (int i = 0; i < g_nenums; i++) {            /* forward-declare cells; a cell value is E_<name>* */
         /* Templates included (mirrors the struct tag loop above): a generic enum's own
          * tag can still be named by an emitted instance. The body/payload/copy/eq loops
          * below skip generics, so the template stays an incomplete type — never
          * completed, never instantiated (only its E_Tree__int instances are). */
         fprintf(o, "typedef struct E_%s E_%s;\n", g_enums[i].name, g_enums[i].name);
+    }
+    /* (2-inline) scalar-payload enums are complete BY VALUE, before any array or
+     * aggregate that embeds one. Payload fields are scalars by construction, so
+     * the variant structs depend on nothing. */
+    for (int i = 0; i < g_nenums; i++) {
+        if (g_enums[i].generic || !enum_inline(ENUM_TYPE(i))) continue;
+        EnumDef *ed = &g_enums[i];
+        char *un = "";
+        for (int v = 0; v < ed->nvariants; v++) {
+            Variant *var = &ed->variants[v];
+            if (var->npayload == 0) continue;
+            fprintf(o, "typedef struct {");
+            for (int f = 0; f < var->npayload; f++)
+                fprintf(o, " %sf%d;", c_type(var->payload[f]), f);
+            fprintf(o, " } %s;\n", c_enum_payload(ed->name, var->name));
+            un = sfmt("%s %s %s;", un, c_enum_payload(ed->name, var->name),
+                      c_enum_vfield(var->name));
+        }
+        fprintf(o, "struct E_%s { unsigned char tag; union {%s } u; } __attribute__((packed));\n",
+                ed->name, un);
     }
     for (int i = 0; i < g_narrtypes; i++)           /* forward-declare composite-array/map tags so a fn value */
         fprintf(o, "typedef struct TychoArrC%d_ TychoArrC%d;\n", i, i);   /* whose param/ret is one (fn([T])->R) can name it incomplete */
@@ -15848,10 +15900,10 @@ static void gen_program(FILE *o, ProcVec *prog) {
     fputs("\n", o);
     /* (3) struct bodies, Option typedefs AND the inline-storage array bodies
      * (`[N]T`, `bounded[N]T`) in containment order (infinite types are rejected
-     * here). Enum descriptors above are complete, so a struct/Option may embed an
-     * enum by value (it's only 2 words); the soa typedefs and map bodies just
-     * above are complete too, so `bounded[4]soa[Pt]` and `bounded[4][string:int]`
-     * resolve here. */
+     * here). Inline enum values are complete above, so a struct/Option may embed
+     * one by value (a cell enum is just a pointer); the soa typedefs and map
+     * bodies just above are complete too, so `bounded[4]soa[Pt]` and
+     * `bounded[4][string:int]` resolve here. */
     TBL_RESERVE(g_struct_color, g_nstructs,  g_struct_color_cap);
     TBL_RESERVE(g_opt_color,    g_nopttypes, g_opt_color_cap);
     TBL_RESERVE(g_res_color,    g_nrestypes, g_res_color_cap);
@@ -15872,7 +15924,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * fields by value (structs/options/arrays/enum-descriptors all emitted
      * above). The payload is heap-allocated, so recursive enums stay finite. */
     for (int i = 0; i < g_nenums; i++) {
-        if (g_enums[i].generic) continue;   /* generics: payload structs only for concrete instances */
+        if (g_enums[i].generic || enum_inline(ENUM_TYPE(i))) continue;   /* generics: payload structs only for concrete instances; inline payloads were emitted in (2-inline) */
         for (int v = 0; v < g_enums[i].nvariants; v++) {
             Variant *var = &g_enums[i].variants[v];
             if (var->npayload == 0) continue;
@@ -15888,7 +15940,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
      * carry no fields and share a static singleton cell — zero per-node alloc and
      * dispatch stays a uniform v->tag. */
     for (int i = 0; i < g_nenums; i++) {
-        if (g_enums[i].generic) continue;   /* generics: cell body only for concrete instances */
+        if (g_enums[i].generic || enum_inline(ENUM_TYPE(i))) continue;   /* generics: cell body only for concrete instances; inline enums are complete values from (2-inline) */
         EnumDef *ed = &g_enums[i];
         int has_payload = 0;
         for (int v = 0; v < ed->nvariants; v++) if (ed->variants[v].npayload) has_payload = 1;
@@ -15947,9 +15999,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nenums; i++) {            /* (4) enum copy/eq prototypes */
         if (g_enums[i].generic) continue;   /* generics: no helpers for a template */
         const char *en = g_enums[i].name;
-        if (type_is_heap(ENUM_TYPE(i)))
-            fprintf(o, "static E_%s *tycho_copy_E_%s(Arena *a, E_%s *v);\n", en, en, en);
-        fprintf(o, "static int tycho_eq_E_%s(E_%s *a, E_%s *b);\n", en, en, en);
+        if (enum_inline(ENUM_TYPE(i)))
+            fprintf(o, "static int tycho_eq_E_%s(E_%s a, E_%s b);\n", en, en, en);
+        else {
+            if (type_is_heap(ENUM_TYPE(i)))
+                fprintf(o, "static E_%s *tycho_copy_E_%s(Arena *a, E_%s *v);\n", en, en, en);
+            fprintf(o, "static int tycho_eq_E_%s(E_%s *a, E_%s *b);\n", en, en, en);
+        }
     }
     for (int i = 0; i < g_nsoatypes; i++) {         /* (4) soa op prototypes (bodies are late) */
         if (has_typaram(g_soatypes[i].st)) continue;   /* transient template soa; see the typedef loop above */
@@ -16023,8 +16079,13 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (!g_structs[i].generic)
             fprintf(o, "static char *tycho_str_S_%s(Arena*, S_%s);\n", g_structs[i].name, g_structs[i].name);
     for (int i = 0; i < g_nenums; i++)
-        if (!g_enums[i].generic)
-            fprintf(o, "static char *tycho_str_E_%s(Arena*, E_%s*);\n", g_enums[i].name, g_enums[i].name);
+        if (!g_enums[i].generic) {
+            const char *en = g_enums[i].name;
+            if (enum_inline(ENUM_TYPE(i)))
+                fprintf(o, "static char *tycho_str_E_%s(Arena*, E_%s);\n", en, en);
+            else
+                fprintf(o, "static char *tycho_str_E_%s(Arena*, E_%s*);\n", en, en);
+        }
     for (int i = 0; i < g_narrtypes; i++)
         if (!has_typaram(T_ARRC_BASE + i))
             fprintf(o, "static char *tycho_str_arr_C%d(Arena*, TychoArrC%d);\n", i, i);
@@ -16624,6 +16685,7 @@ static void gen_program(FILE *o, ProcVec *prog) {
         if (g_enums[i].generic) continue;   /* generics: copy/eq bodies only for concrete instances */
         EnumDef *ed = &g_enums[i];
         const char *en = ed->name;
+        int inl = enum_inline(ENUM_TYPE(i));
         if (type_is_heap(ENUM_TYPE(i))) {
             fprintf(o, "static E_%s *tycho_copy_E_%s(Arena *a, E_%s *v) {\n", en, en, en);
             for (int v2 = 0; v2 < ed->nvariants; v2++) {
@@ -16638,14 +16700,20 @@ static void gen_program(FILE *o, ProcVec *prog) {
             }
             fprintf(o, "    return v;\n}\n");   /* nullary variant: shared static singleton, immutable */
         }
-        fprintf(o, "static int tycho_eq_E_%s(E_%s *a, E_%s *b) {\n", en, en, en);
-        fprintf(o, "    if (a->tag != b->tag) return 0;\n");
+        const char *sep = inl ? "." : "->";
+        if (inl)
+            fprintf(o, "static int tycho_eq_E_%s(E_%s a, E_%s b) {\n", en, en, en);
+        else
+            fprintf(o, "static int tycho_eq_E_%s(E_%s *a, E_%s *b) {\n", en, en, en);
+        fprintf(o, "    if (a%stag != b%stag) return 0;\n", sep, sep);
         for (int v2 = 0; v2 < ed->nvariants; v2++) {
             Variant *var = &ed->variants[v2];
             if (var->npayload == 0) continue;
-            fprintf(o, "    if (a->tag == %d) { return ", v2);
+            fprintf(o, "    if (a%stag == %d) { return ", sep, v2);
             for (int f = 0; f < var->npayload; f++)
-                fprintf(o, "%s%s", gen_eq(var->payload[f], sfmt("a->u.%s.f%d", c_enum_vfield(var->name), f), sfmt("b->u.%s.f%d", c_enum_vfield(var->name), f)),
+                fprintf(o, "%s%s", gen_eq(var->payload[f],
+                            sfmt("a%su.%s.f%d", sep, c_enum_vfield(var->name), f),
+                            sfmt("b%su.%s.f%d", sep, c_enum_vfield(var->name), f)),
                         f + 1 < var->npayload ? " && " : "");
             fprintf(o, "; }\n");
         }
@@ -16670,18 +16738,23 @@ static void gen_program(FILE *o, ProcVec *prog) {
     for (int i = 0; i < g_nenums; i++) {
         if (g_enums[i].generic) continue;
         EnumDef *ed = &g_enums[i];
-        fprintf(o, "static char *tycho_str_E_%s(Arena *a, E_%s *v) {\n", ed->name, ed->name);
+        int inl = enum_inline(ENUM_TYPE(i));
+        const char *sep = inl ? "." : "->";
+        if (inl)
+            fprintf(o, "static char *tycho_str_E_%s(Arena *a, E_%s v) {\n", ed->name, ed->name);
+        else
+            fprintf(o, "static char *tycho_str_E_%s(Arena *a, E_%s *v) {\n", ed->name, ed->name);
         for (int v2 = 0; v2 < ed->nvariants; v2++) {
             Variant *var = &ed->variants[v2];
             if (var->npayload == 0) {
-                fprintf(o, "    if (v->tag == %d) return tycho_str_from_c(a, \"%s\");\n", v2, var->name);
+                fprintf(o, "    if (v%stag == %d) return tycho_str_from_c(a, \"%s\");\n", sep, v2, var->name);
             } else {
-                fprintf(o, "    if (v->tag == %d) {\n", v2);
+                fprintf(o, "    if (v%stag == %d) {\n", sep, v2);
                 fprintf(o, "        char *r = tycho_str_from_c(a, \"%s(\");\n", var->name);
                 for (int f = 0; f < var->npayload; f++) {
                     if (f) fprintf(o, "        r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n");
                     fprintf(o, "        r = tycho_str_concat(a, r, %s);\n",
-                            gen_str(var->payload[f], "a", sfmt("v->u.%s.f%d", c_enum_vfield(var->name), f)));
+                            gen_str(var->payload[f], "a", sfmt("v%su.%s.f%d", sep, c_enum_vfield(var->name), f)));
                 }
                 fprintf(o, "        return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n    }\n");
             }

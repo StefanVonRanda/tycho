@@ -34,9 +34,8 @@ What transfers is narrower:
    and copied afterwards.
 2. **A function should be able to state a bounds contract once**, and the
    compiler should report whether any check survives.
-3. **A fixed-size sum value can be stored inline**; Tycho boxes user-defined
-   enum payloads, while the reference compiler's `Option`/`Result` are already
-   inline.
+3. **A fixed-size sum value can be stored inline**; `Option`/`Result` already
+   are, and both compilers now store scalar-payload user enums that way.
 
 Everything else is either incompatible with the value model or belongs behind
 a concrete caller.
@@ -147,12 +146,10 @@ fixed-size and non-recursive would remove the per-value cell and pointer chase;
 recursive enums stay boxed. This is a layout optimization, not variable-size
 records and not variable-mode enums; the value model is unchanged.
 
-**Status 2026-10-21: kept in the shipped `tychoc1` for scalar payloads.** A
-fixed user enum with scalar payloads is now a packed tag+union value; recursive,
-generic, fieldless, package-mangled and heap-payload enums keep the pointer
-cell. The control `TYCHOC_NO_INLINE_ENUM=1` reproduces the old representation.
-The reference compiler still uses the old representation; porting it is a
-parity follow-up.
+**Status: adopted by both compilers for scalar payloads.** A fixed user enum
+with scalar payloads is now a packed tag+union value; recursive, generic,
+fieldless, package-mangled and heap-payload enums keep the pointer cell. The
+control `TYCHOC_NO_INLINE_ENUM=1` reproduces the old representation.
 
 ## 4. Static function values: measure first, do not restrict closures
 
@@ -214,6 +211,5 @@ These are real Goose conveniences, but none is a reason to change the model:
    ~35–43% less peak RSS and ~17–20% less wall time on the string case.
 2. Treat guard-derived bounds facts as a rejected experiment; a reporting mode
    may still be useful, but no speed claim is made.
-3. Keep inline fixed-size *scalar-payload* enums in `tychoc1`; port the
-   reference compiler as a parity follow-up.
+3. Keep inline fixed-size *scalar-payload* enums in both compilers.
 4. Leave static function specialization and the small ergonomics demand-gated.

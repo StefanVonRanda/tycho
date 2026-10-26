@@ -435,10 +435,10 @@ non-shrinking array/index design.
 
 ## Inline fixed-size enums (post-0.8.9, kept)
 
-`tychoc1` now represents a user enum inline when every payload is a scalar:
-a packed tag plus the variant union, instead of an eight-byte cell pointer.
-Recursive, generic, fieldless, package and heap-payload enums keep the pointer
-representation. `TYCHOC_NO_INLINE_ENUM=1` is the control.
+Both compilers now represent a user enum inline when every payload is a
+scalar: a packed tag plus the variant union, instead of an eight-byte cell
+pointer. Recursive, generic, fieldless, package and heap-payload enums keep the
+pointer representation. `TYCHOC_NO_INLINE_ENUM=1` is the control.
 
 Fixture: `bench/opt/enumlayout/main.ty` — 1,000,000 three-variant values with
 an `int` payload, built and summed. Medians of five:
@@ -453,9 +453,8 @@ That is **29% less peak RSS and ~29% less wall time**. The output is
 lane and the corelib golden lane. This is a representation change only: value
 semantics, copying, matching and equality are unchanged.
 
-The reference compiler (`src/tychoc.c`) still uses the old representation; the
-shipped `tychoc1` is the measured path. Porting it is a parity follow-up, not a
-semantic change.
+Both compilers now use this representation; the measurements above were taken
+with `tychoc1`. `TYCHOC_NO_INLINE_ENUM=1` remains the pointer-cell control.
 
 ## Counted fresh-array presizing (post-0.8.9, kept)
 
