@@ -11153,12 +11153,18 @@ static int can_move_into_push(Expr *arr, Expr *val, Type elem) {
     return count_reads_b(g_proc_body, g_proc_nbody, val->sval) == 1;
 }
 
+static int expr_mentions(Expr *e, const char *name) {
+    if (!e) return 0;
+    if (e->kind == E_IDENT && e->sval && !strcmp(e->sval, name)) return 1;
+    if (expr_mentions(e->lhs, name) || expr_mentions(e->rhs, name)) return 1;
+    for (int i = 0; i < e->nargs; i++) if (expr_mentions(e->args[i], name)) return 1;
+    return 0;
+}
 static void find_push_e(Expr *e, const char *name, Expr **arr, int *hits) {
     if (!e) return;
     if (e->kind == E_LAMBDA) return;   /* deferred: not this declaration's last use */
     if (e->kind == E_CALL && e->sval && !strcmp(e->sval, "push")
-        && e->nargs >= 2 && e->args[1]->kind == E_IDENT
-        && !strcmp(e->args[1]->sval, name)) {
+        && e->nargs >= 2 && expr_mentions(e->args[1], name)) {
         *arr = e->args[0]; (*hits)++;
     }
     find_push_e(e->lhs, name, arr, hits);
