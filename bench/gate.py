@@ -15,6 +15,10 @@ SERVICE = {"latency", "window_string", "window_int", "gcscan", "winagg",
 TOL_TIME = 1.15
 TOL_MEM = 1.12
 TOL_MANAGED = 1.10
+TOL_BASE_TIME = 1.10
+TOL_BASE_MEM = 1.12
+NOISE_MAX = 2.5
+BASELINE = Path("bench/gen/baseline.json")
 MANAGED = ("go", "java", "swift")
 COVERAGE_EXEMPT = {("binary", "arena"), ("dispatch", "expert"), ("maptree", "arena")}
 
@@ -48,6 +52,33 @@ def main():
             print("  checksum mismatch:", ", ".join(d["mismatch"])); failed = 1
         if d.get("failures"):
             print("  failures:", ", ".join(d["failures"])); failed = 1
+        base = {}
+        if BASELINE.exists():
+            base = json.loads(BASELINE.read_text()).get(d["cc"], {}).get("rows", {})
+        regress = []
+        noisy = []
+        for wn, w in d["workloads"].items():
+            for vn, v in w["variants"].items():
+                for sz, row in v["rows"].items():
+                    t = row.get("tycho")
+                    if not t or not t.get("ok"):
+                        continue
+                    key = f"{wn}/{vn}/{sz}"
+                    if key in base:
+                        b = base[key]
+                        if t["ms"] > b["ms"] * TOL_BASE_TIME or t["rss"] > b["rss"] * TOL_BASE_MEM:
+                            regress.append((key, t["ms"] / b["ms"], t["rss"] / b["rss"]))
+                    sp = t.get("spread")
+                    if sp is not None and t["ms"] >= 5 and sp > NOISE_MAX:
+                        noisy.append((key, sp))
+        if regress:
+            for key, tr, mr in regress:
+                print(f"  REGRESSION {key}: time {tr:.3f}x memory {mr:.3f}x")
+            failed = 1
+        if noisy:
+            for key, sp in noisy:
+                print(f"  NOISY {key}: spread {sp:.2f}x")
+            failed = 1
         # Latency: compare the idiomatic tier against C and Rust at large.
         for lang in ("c", "rust"):
             t = best(d, "latency", "tycho", "ms", "idiomatic")

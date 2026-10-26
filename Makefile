@@ -298,6 +298,9 @@ bench-suite-report:
 bench-suite-gate:
 	@python3 bench/gate.py
 
+bench-suite-baseline:
+	@python3 bench/make_baseline.py
+
 external-check:
 	@sh tools/tycho-hash/run.sh
 

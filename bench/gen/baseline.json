@@ -1,0 +1,636 @@
+{
+ "cc": {
+  "generated": "2026-10-26 07:22 UTC",
+  "rows": {
+   "arr/default/large": {
+    "ms": 65,
+    "rss": 7.9453125
+   },
+   "arr/default/medium": {
+    "ms": 16,
+    "rss": 3.4375
+   },
+   "arr/default/small": {
+    "ms": 4,
+    "rss": 2.44140625
+   },
+   "binary/arena/large": {
+    "ms": 419,
+    "rss": 49.94140625
+   },
+   "binary/arena/medium": {
+    "ms": 93,
+    "rss": 13.94140625
+   },
+   "binary/arena/small": {
+    "ms": 4,
+    "rss": 2.91796875
+   },
+   "binary/default/large": {
+    "ms": 441,
+    "rss": 49.6953125
+   },
+   "binary/default/medium": {
+    "ms": 93,
+    "rss": 13.828125
+   },
+   "binary/default/small": {
+    "ms": 5,
+    "rss": 2.8984375
+   },
+   "dbquery/default/large": {
+    "ms": 1086,
+    "rss": 8.296875
+   },
+   "dbquery/default/medium": {
+    "ms": 711,
+    "rss": 4.58203125
+   },
+   "dbquery/default/small": {
+    "ms": 80,
+    "rss": 3.796875
+   },
+   "dijkstra/default/large": {
+    "ms": 132,
+    "rss": 87.84765625
+   },
+   "dijkstra/default/medium": {
+    "ms": 33,
+    "rss": 30.89453125
+   },
+   "dijkstra/default/small": {
+    "ms": 8,
+    "rss": 11.59765625
+   },
+   "dispatch/default/large": {
+    "ms": 13,
+    "rss": 2.1640625
+   },
+   "dispatch/default/medium": {
+    "ms": 3,
+    "rss": 1.6953125
+   },
+   "dispatch/default/small": {
+    "ms": 1,
+    "rss": 1.9140625
+   },
+   "dispatch/expert/large": {
+    "ms": 22,
+    "rss": 2.1875
+   },
+   "dispatch/expert/medium": {
+    "ms": 5,
+    "rss": 1.9375
+   },
+   "dispatch/expert/small": {
+    "ms": 1,
+    "rss": 1.84765625
+   },
+   "gcscan/default/large": {
+    "ms": 61,
+    "rss": 127.1953125
+   },
+   "gcscan/default/medium": {
+    "ms": 34,
+    "rss": 33.6640625
+   },
+   "gcscan/default/small": {
+    "ms": 18,
+    "rss": 10.16796875
+   },
+   "interp/default/large": {
+    "ms": 821,
+    "rss": 908.39453125
+   },
+   "interp/default/medium": {
+    "ms": 206,
+    "rss": 228.14453125
+   },
+   "interp/default/small": {
+    "ms": 13,
+    "rss": 15.88671875
+   },
+   "invindex/map-count-fill/large": {
+    "ms": 983,
+    "rss": 87.4453125
+   },
+   "invindex/map-count-fill/medium": {
+    "ms": 331,
+    "rss": 79.38671875
+   },
+   "invindex/map-count-fill/small": {
+    "ms": 95,
+    "rss": 48.38671875
+   },
+   "invindex/map-growth/large": {
+    "ms": 583,
+    "rss": 149.56640625
+   },
+   "invindex/map-growth/medium": {
+    "ms": 202,
+    "rss": 51.94140625
+   },
+   "invindex/map-growth/small": {
+    "ms": 60,
+    "rss": 43.1875
+   },
+   "invindex/side-count-fill/large": {
+    "ms": 1087,
+    "rss": 172.59765625
+   },
+   "invindex/side-count-fill/medium": {
+    "ms": 358,
+    "rss": 59.4453125
+   },
+   "invindex/side-count-fill/small": {
+    "ms": 91,
+    "rss": 16.9453125
+   },
+   "invindex/side-growth/large": {
+    "ms": 828,
+    "rss": 194.59765625
+   },
+   "invindex/side-growth/medium": {
+    "ms": 249,
+    "rss": 74.59765625
+   },
+   "invindex/side-growth/small": {
+    "ms": 62,
+    "rss": 33.64453125
+   },
+   "iter/default/large": {
+    "ms": 827,
+    "rss": 8.14453125
+   },
+   "iter/default/medium": {
+    "ms": 154,
+    "rss": 3.44140625
+   },
+   "iter/default/small": {
+    "ms": 53,
+    "rss": 2.44140625
+   },
+   "json/default/large": {
+    "ms": 2402,
+    "rss": 264.44140625
+   },
+   "json/default/medium": {
+    "ms": 599,
+    "rss": 66.69140625
+   },
+   "json/default/small": {
+    "ms": 142,
+    "rss": 17.94140625
+   },
+   "json_tree/default/large": {
+    "ms": 87,
+    "rss": 81.14453125
+   },
+   "json_tree/default/medium": {
+    "ms": 30,
+    "rss": 29.09765625
+   },
+   "json_tree/default/small": {
+    "ms": 9,
+    "rss": 8.62109375
+   },
+   "latency/default/large": {
+    "ms": 541,
+    "rss": 2.6640625
+   },
+   "latency/default/medium": {
+    "ms": 117,
+    "rss": 2.69140625
+   },
+   "latency/default/small": {
+    "ms": 42,
+    "rss": 2.64453125
+   },
+   "lru/default/large": {
+    "ms": 258,
+    "rss": 19.94140625
+   },
+   "lru/default/medium": {
+    "ms": 124,
+    "rss": 20.328125
+   },
+   "lru/default/small": {
+    "ms": 24,
+    "rss": 16.39453125
+   },
+   "maptree/arena/large": {
+    "ms": 197,
+    "rss": 21.94140625
+   },
+   "maptree/arena/medium": {
+    "ms": 53,
+    "rss": 6.89453125
+   },
+   "maptree/arena/small": {
+    "ms": 11,
+    "rss": 3.19140625
+   },
+   "maptree/default/large": {
+    "ms": 182,
+    "rss": 21.9140625
+   },
+   "maptree/default/medium": {
+    "ms": 84,
+    "rss": 6.94140625
+   },
+   "maptree/default/small": {
+    "ms": 31,
+    "rss": 3.19140625
+   },
+   "string/default/large": {
+    "ms": 6,
+    "rss": 1.94140625
+   },
+   "string/default/medium": {
+    "ms": 1,
+    "rss": 1.890625
+   },
+   "string/default/small": {
+    "ms": 1,
+    "rss": 1.921875
+   },
+   "trie/default/large": {
+    "ms": 168,
+    "rss": 76.63671875
+   },
+   "trie/default/medium": {
+    "ms": 50,
+    "rss": 34.59765625
+   },
+   "trie/default/small": {
+    "ms": 12,
+    "rss": 15.63671875
+   },
+   "winagg/count-fill/large": {
+    "ms": 330,
+    "rss": 10.41015625
+   },
+   "winagg/count-fill/medium": {
+    "ms": 94,
+    "rss": 4.640625
+   },
+   "winagg/count-fill/small": {
+    "ms": 34,
+    "rss": 3.4375
+   },
+   "winagg/default/large": {
+    "ms": 409,
+    "rss": 23.19140625
+   },
+   "winagg/default/medium": {
+    "ms": 129,
+    "rss": 7.19140625
+   },
+   "winagg/default/small": {
+    "ms": 36,
+    "rss": 3.4140625
+   },
+   "window/int/large": {
+    "ms": 8,
+    "rss": 2.828125
+   },
+   "window/int/medium": {
+    "ms": 3,
+    "rss": 2.91796875
+   },
+   "window/int/small": {
+    "ms": 1,
+    "rss": 2.890625
+   },
+   "window/string/large": {
+    "ms": 184,
+    "rss": 3.89453125
+   },
+   "window/string/medium": {
+    "ms": 53,
+    "rss": 4.13671875
+   },
+   "window/string/small": {
+    "ms": 13,
+    "rss": 3.91796875
+   }
+  }
+ },
+ "clang": {
+  "generated": "2026-10-26 07:48 UTC",
+  "rows": {
+   "arr/default/large": {
+    "ms": 70,
+    "rss": 7.91015625
+   },
+   "arr/default/medium": {
+    "ms": 18,
+    "rss": 3.44140625
+   },
+   "arr/default/small": {
+    "ms": 5,
+    "rss": 2.38671875
+   },
+   "binary/arena/large": {
+    "ms": 621,
+    "rss": 49.9375
+   },
+   "binary/arena/medium": {
+    "ms": 140,
+    "rss": 13.94140625
+   },
+   "binary/arena/small": {
+    "ms": 7,
+    "rss": 2.6875
+   },
+   "binary/default/large": {
+    "ms": 538,
+    "rss": 49.64453125
+   },
+   "binary/default/medium": {
+    "ms": 234,
+    "rss": 13.63671875
+   },
+   "binary/default/small": {
+    "ms": 14,
+    "rss": 2.94140625
+   },
+   "dbquery/default/large": {
+    "ms": 954,
+    "rss": 8.546875
+   },
+   "dbquery/default/medium": {
+    "ms": 247,
+    "rss": 4.2265625
+   },
+   "dbquery/default/small": {
+    "ms": 57,
+    "rss": 3.83203125
+   },
+   "dijkstra/default/large": {
+    "ms": 146,
+    "rss": 87.6875
+   },
+   "dijkstra/default/medium": {
+    "ms": 39,
+    "rss": 30.640625
+   },
+   "dijkstra/default/small": {
+    "ms": 9,
+    "rss": 11.44140625
+   },
+   "dispatch/default/large": {
+    "ms": 32,
+    "rss": 2.19140625
+   },
+   "dispatch/default/medium": {
+    "ms": 8,
+    "rss": 1.828125
+   },
+   "dispatch/default/small": {
+    "ms": 3,
+    "rss": 1.94140625
+   },
+   "dispatch/expert/large": {
+    "ms": 29,
+    "rss": 2.13671875
+   },
+   "dispatch/expert/medium": {
+    "ms": 7,
+    "rss": 1.66015625
+   },
+   "dispatch/expert/small": {
+    "ms": 3,
+    "rss": 1.94140625
+   },
+   "gcscan/default/large": {
+    "ms": 53,
+    "rss": 126.859375
+   },
+   "gcscan/default/medium": {
+    "ms": 18,
+    "rss": 33.37109375
+   },
+   "gcscan/default/small": {
+    "ms": 12,
+    "rss": 10.19140625
+   },
+   "interp/default/large": {
+    "ms": 735,
+    "rss": 908.40625
+   },
+   "interp/default/medium": {
+    "ms": 181,
+    "rss": 228.14453125
+   },
+   "interp/default/small": {
+    "ms": 12,
+    "rss": 15.6953125
+   },
+   "invindex/map-count-fill/large": {
+    "ms": 944,
+    "rss": 87.578125
+   },
+   "invindex/map-count-fill/medium": {
+    "ms": 331,
+    "rss": 79.34765625
+   },
+   "invindex/map-count-fill/small": {
+    "ms": 136,
+    "rss": 48.4375
+   },
+   "invindex/map-growth/large": {
+    "ms": 577,
+    "rss": 150.16015625
+   },
+   "invindex/map-growth/medium": {
+    "ms": 381,
+    "rss": 52.44140625
+   },
+   "invindex/map-growth/small": {
+    "ms": 54,
+    "rss": 42.89453125
+   },
+   "invindex/side-count-fill/large": {
+    "ms": 1372,
+    "rss": 172.39453125
+   },
+   "invindex/side-count-fill/medium": {
+    "ms": 365,
+    "rss": 59.59765625
+   },
+   "invindex/side-count-fill/small": {
+    "ms": 81,
+    "rss": 16.88671875
+   },
+   "invindex/side-growth/large": {
+    "ms": 811,
+    "rss": 194.64453125
+   },
+   "invindex/side-growth/medium": {
+    "ms": 347,
+    "rss": 74.40625
+   },
+   "invindex/side-growth/small": {
+    "ms": 67,
+    "rss": 33.13671875
+   },
+   "iter/default/large": {
+    "ms": 656,
+    "rss": 7.89453125
+   },
+   "iter/default/medium": {
+    "ms": 163,
+    "rss": 3.1328125
+   },
+   "iter/default/small": {
+    "ms": 41,
+    "rss": 2.44140625
+   },
+   "json/default/large": {
+    "ms": 2294,
+    "rss": 264.64453125
+   },
+   "json/default/medium": {
+    "ms": 560,
+    "rss": 66.6328125
+   },
+   "json/default/small": {
+    "ms": 134,
+    "rss": 18.09765625
+   },
+   "json_tree/default/large": {
+    "ms": 149,
+    "rss": 81.13671875
+   },
+   "json_tree/default/medium": {
+    "ms": 18,
+    "rss": 29.69140625
+   },
+   "json_tree/default/small": {
+    "ms": 6,
+    "rss": 8.875
+   },
+   "latency/default/large": {
+    "ms": 403,
+    "rss": 2.578125
+   },
+   "latency/default/medium": {
+    "ms": 104,
+    "rss": 2.578125
+   },
+   "latency/default/small": {
+    "ms": 34,
+    "rss": 2.6875
+   },
+   "lru/default/large": {
+    "ms": 260,
+    "rss": 20.4375
+   },
+   "lru/default/medium": {
+    "ms": 129,
+    "rss": 20.15625
+   },
+   "lru/default/small": {
+    "ms": 32,
+    "rss": 16.39453125
+   },
+   "maptree/arena/large": {
+    "ms": 212,
+    "rss": 21.65625
+   },
+   "maptree/arena/medium": {
+    "ms": 52,
+    "rss": 6.6953125
+   },
+   "maptree/arena/small": {
+    "ms": 14,
+    "rss": 3.13671875
+   },
+   "maptree/default/large": {
+    "ms": 210,
+    "rss": 21.828125
+   },
+   "maptree/default/medium": {
+    "ms": 52,
+    "rss": 6.9375
+   },
+   "maptree/default/small": {
+    "ms": 13,
+    "rss": 3.13671875
+   },
+   "string/default/large": {
+    "ms": 5,
+    "rss": 1.94140625
+   },
+   "string/default/medium": {
+    "ms": 1,
+    "rss": 1.89453125
+   },
+   "string/default/small": {
+    "ms": 0,
+    "rss": 1.94140625
+   },
+   "trie/default/large": {
+    "ms": 118,
+    "rss": 76.40625
+   },
+   "trie/default/medium": {
+    "ms": 34,
+    "rss": 34.40625
+   },
+   "trie/default/small": {
+    "ms": 11,
+    "rss": 15.64453125
+   },
+   "winagg/count-fill/large": {
+    "ms": 1142,
+    "rss": 10.40625
+   },
+   "winagg/count-fill/medium": {
+    "ms": 100,
+    "rss": 4.94140625
+   },
+   "winagg/count-fill/small": {
+    "ms": 44,
+    "rss": 3.44140625
+   },
+   "winagg/default/large": {
+    "ms": 405,
+    "rss": 23.1875
+   },
+   "winagg/default/medium": {
+    "ms": 150,
+    "rss": 7.1875
+   },
+   "winagg/default/small": {
+    "ms": 28,
+    "rss": 3.38671875
+   },
+   "window/int/large": {
+    "ms": 3,
+    "rss": 2.88671875
+   },
+   "window/int/medium": {
+    "ms": 2,
+    "rss": 2.94140625
+   },
+   "window/int/small": {
+    "ms": 1,
+    "rss": 2.94140625
+   },
+   "window/string/large": {
+    "ms": 387,
+    "rss": 4.09765625
+   },
+   "window/string/medium": {
+    "ms": 43,
+    "rss": 4.14453125
+   },
+   "window/string/small": {
+    "ms": 10,
+    "rss": 4.13671875
+   }
+  }
+ }
+}

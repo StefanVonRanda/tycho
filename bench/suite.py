@@ -492,6 +492,8 @@ def measure(peakrss, command, warmups, reps, stdin_path=None):
             return None, p.stderr.strip() or "warm-up failed"
     best = None
     max_rss = 0
+    times = []
+    rsses = []
     out = ""
     for _ in range(reps):
         p = invoke()
@@ -510,8 +512,11 @@ def measure(peakrss, command, warmups, reps, stdin_path=None):
             rss_kb //= 1024
         best = ms if best is None else min(best, ms)
         max_rss = max(max_rss, rss_kb)
+        times.append(ms)
+        rsses.append(rss_kb)
         out = p.stdout.strip()
-    return {"ms": best, "rss": max_rss / 1024.0, "out": out}, None
+    return {"ms": best, "rss": max_rss / 1024.0, "out": out,
+            "spread": (max(times) / max(1, min(times))) if times else None}, None
 
 
 def geomean(values):
