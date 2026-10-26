@@ -10,15 +10,15 @@ struct Posting:
     docs: [int]
     freqs: [int]
 
-fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: int):
+fn add(postings: inout [Posting], tidx: inout [string: int], term: string, doc: int, rcap: int):
     pi := tidx.get(term, 0 - 1)
     if pi < 0:
         p := Posting(term, []int, []int)
         push(p.docs, doc)
         push(p.freqs, 1)
         push(postings, p)
-        reserve(postings[len(postings) - 1].docs, 768)
-        reserve(postings[len(postings) - 1].freqs, 768)
+        reserve(postings[len(postings) - 1].docs, rcap)
+        reserve(postings[len(postings) - 1].freqs, rcap)
         tidx[term] = len(postings) - 1
     else:
         n := len(postings[pi].docs)
@@ -64,7 +64,7 @@ fn main():
         for j := 0; j < w; j += 1:
             seed = (seed * 1103515245 + 12345) % 2147483647    # LCG, stays in [0, 2^31)
             tid := seed % v
-            add(&postings, &tidx, "t" + str(tid), d)
+            add(&postings, &tidx, "t" + str(tid), d, (n * w / v) + 128)
 
     sum := 0
     for pi := 0; pi < len(postings); pi += 1:
