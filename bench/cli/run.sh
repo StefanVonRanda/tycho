@@ -19,9 +19,15 @@ PY
 cmp -s "$T/tycho.out" "$T/go.out" || { echo "cli hash: OUTPUT MISMATCH"; exit 1; }
 run() {
     name=$1; bin=$2; arg=$3
-    /usr/bin/time -f '%e %M' -o "$T/time" "$bin" "$T/tree" "$arg" >/dev/null
-    set -- $(cat "$T/time")
-    printf '%-6s %ss %sKB\n' "$name" "$1" "$2"
+    bestt=999999; bestr=0; i=0
+    while [ $i -lt 3 ]; do
+        /usr/bin/time -f '%e %M' -o "$T/time" "$bin" "$T/tree" "$arg" >/dev/null
+        set -- $(cat "$T/time")
+        ok=$(awk -v a="$1" -v b="$bestt" 'BEGIN{print (a<b)?1:0}')
+        if [ "$ok" = 1 ]; then bestt=$1; bestr=$2; fi
+        i=$((i+1))
+    done
+    printf '%-6s %ss %sKB\n' "$name" "$bestt" "$bestr"
 }
 run tycho "$T/tycho-hash" "--workers=8"
 run go "$T/go-hash" "8"

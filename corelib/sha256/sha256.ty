@@ -92,15 +92,22 @@ fn init() -> State:
 # `bytes` value directly, no per-byte int expansion; the caller guarantees the
 # 64 bytes exist.
 # hv/kt/w are FIPS 180-4's H, K and W (a binding may not start uppercase, §3.7).
-fn block(hv: inout [u32], kt: [u32], src: bytes, base: int):
-    w := []u32
+fn block(hv: inout [u32], kt: [u32], src: bytes, base: int, w: inout [u32]):
     t := 0
     for t < 16:
         q := base + t * 4
-        push(w, (to_u32(src[q]) << 24) | (to_u32(src[q + 1]) << 16) | (to_u32(src[q + 2]) << 8) | to_u32(src[q + 3]))
+        v := (to_u32(src[q]) << 24) | (to_u32(src[q + 1]) << 16) | (to_u32(src[q + 2]) << 8) | to_u32(src[q + 3])
+        if t < len(w):
+            w[t] = v
+        else:
+            push(w, v)
         t = t + 1
     for t < 64:
-        push(w, _smallsig1(w[t - 2]) + w[t - 7] + _smallsig0(w[t - 15]) + w[t - 16])
+        v := _smallsig1(w[t - 2]) + w[t - 7] + _smallsig0(w[t - 15]) + w[t - 16]
+        if t < len(w):
+            w[t] = v
+        else:
+            push(w, v)
         t = t + 1
     a := hv[0]
     b := hv[1]
@@ -143,8 +150,10 @@ fn update(st: inout State, data: bytes):
     if len(st.pending) > 0:
         work = st.pending + data
     nb := len(work) / 64
+    w := []u32
+    reserve(w, 64)
     for k := 0; k < nb; k += 1:
-        block(&st.h, kt, work, k * 64)
+        block(&st.h, kt, work, k * 64, &w)
     st.pending = work[nb * 64:len(work)]
 
 # Pad per FIPS 180-4 (0x80, zeros to 56 mod 64, the 64-bit big-endian bit
@@ -165,8 +174,10 @@ fn final(st: inout State) -> [int]:
     tb := to_bytes(tail)
     kt := _k_table()
     nb := len(tb) / 64
+    w := []u32
+    reserve(w, 64)
     for k := 0; k < nb; k += 1:
-        block(&st.h, kt, tb, k * 64)
+        block(&st.h, kt, tb, k * 64, &w)
     out := []int
     vi := 0
     for vi < 8:
