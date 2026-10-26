@@ -32,7 +32,7 @@ func main() {
 			defer wg.Done()
 			var conn net.Conn
 			var err error
-			for i := 0; i < 50; i++ {
+			for i := 0; i < 100; i++ {
 				conn, err = net.Dial("tcp", os.Args[1])
 				if err == nil {
 					break

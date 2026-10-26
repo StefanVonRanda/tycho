@@ -69,26 +69,26 @@ The current real-program pass also ran:
 
 ## Server workloads
 
-`bench/server/run.sh` runs a minimal HTTP/1.1 keep-alive service with one and
-eight client connections. Best of three runs:
+Two server shapes are measured with eight keep-alive clients, best of three:
 
-| server | clients | RPS | RSS |
-|---|---:|---:|---:|
-| Tycho | 1 | 68.2k | 2.6 MB |
-| Tycho | 8 | 64.0k | 2.6 MB |
-| Go, `GOMAXPROCS=1` | 1 | 68.7k | 12.7 MB |
-| Go, `GOMAXPROCS=1` | 8 | 152.2k | 12.7 MB |
-| Go, all cores | 8 | 140.9k | 17.4 MB |
+| server | RPS | RSS |
+|---|---:|---:|
+| Tycho minimal single-loop service | 62.3k | 2.6 MB |
+| Go minimal server, `GOMAXPROCS=1` | 129.7k | 13.0 MB |
+| Go minimal server, all cores | 216.2k | 16.5 MB |
+| Tycho production `server/main.ty`, 8 workers, static files | **118.8k** | **3.5 MB** |
+| Go `http.FileServer`, static files | 84.9k | 17.7 MB |
 
-Tycho is at parity on one connection and uses ~4.8x less memory. It does not
-scale with concurrent connections: its accept loop is single-threaded, while
-Go services each connection independently. The 8-client gap is ~2.4x, a real
-server-side weakness rather than a microbenchmark artifact.
+The single-loop result exposed a real limitation: the minimal Tycho server does
+not scale with connections, while Go gives each connection its own goroutine.
+The production Tycho server uses `--workers` accept loops and reverses the
+result for static-file serving: it is **~1.4x faster than Go's FileServer** and
+uses **~5x less memory** in this test.
 
-The next server work is a multi-worker/poll accept model. Until that exists,
-the server result is explicitly a memory-efficient but single-loop service,
-not a throughput claim.
-
+The correct conclusion is not “Tycho servers are slower.” It is: a trivial
+single-threaded accept loop is not a suitable server shape; the production
+multi-worker server is competitive. Server claims should use `server/main.ty`,
+not the minimal fixture.
 ## Reading rule
 
 Real-program rows are kept separate from the generated suite. A win here does
