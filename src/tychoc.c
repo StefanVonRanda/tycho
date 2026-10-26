@@ -1411,6 +1411,25 @@ static int g_nenums = 0, g_enums_cap = 0;
 #define IS_ENUM(t)    ((t) >= T_ENUM_BASE && (t) < T_TUP_BASE)
 #define ENUM_ID(t)    ((int)((t) - T_ENUM_BASE))
 #define ENUM_TYPE(id) (T_ENUM_BASE + (id))
+/* Scalar-payload user enums are eligible for the inline tag+union lowering.
+ * This predicate is the single switch the representation migration consults;
+ * recursive, generic/mangled, fieldless and heap-payload enums stay cells. */
+static int is_sized_int(Type t);
+static int __attribute__((unused)) enum_inline(Type t) {
+    if (getenv("TYCHOC_NO_INLINE_ENUM") || !IS_ENUM(t)) return 0;
+    EnumDef *ed = &g_enums[ENUM_ID(t)];
+    if (ed->generic || ed->from_tmpl >= 0 || strstr(ed->name, "__")) return 0;
+    int any = 0;
+    for (int v = 0; v < ed->nvariants; v++) {
+        for (int p = 0; p < ed->variants[v].npayload; p++) {
+            Type pt = ed->variants[v].payload[p];
+            if (!(pt == T_INT || pt == T_FLOAT || pt == T_BOOL || pt == T_CHAR || is_sized_int(pt)))
+                return 0;
+            any = 1;
+        }
+    }
+    return any;
+}
 /* every variant nullary: usable as a map key (the tag IS the value; the cells
  * are per-variant immortal singletons). A payload enum is rejected as a key —
  * equal tags would not mean equal values. */
@@ -9093,10 +9112,10 @@ static void resolve_parfor(Stmt *s) {
      * here and forces a decision, instead of silently defaulting.
      * is_sink MUST be 0, and not merely by accident: `sink` means an OWNED
      * value the callee may consume once (is_sink_param -> can_move_from,
-     * src/tychoc.c:9095@can_move_from). Every chunk proc is handed the SAME capture values, and the
+     * src/tychoc.c:9114@can_move_from). Every chunk proc is handed the SAME capture values, and the
      * bounds/captures are borrows of the enclosing scope, so consuming one in
      * any chunk would hand off a buffer another chunk still reads. 0 is the
-     * required value, and it matches the lambda-lift twin at src/tychoc.c:4954@is_sink which sets
+     * required value, and it matches the lambda-lift twin at src/tychoc.c:4966@is_sink which sets
      * `caps[ncap].is_sink = 0` explicitly. is_variadic is 0 (a synthesized
      * chunk proc has a fixed arity) and ffi_ct is NULL (no FFI boundary). */
     pr->params[0] = (Param){ "__plo", T_INT, 0, 0, 0, NULL };

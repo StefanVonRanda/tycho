@@ -1,0 +1,22 @@
+enum Scalar:
+    Lit(int)
+    Flag(bool)
+
+struct Holder:
+    e: Scalar
+    n: int
+
+fn value(e: Scalar) -> int:
+    match e:
+        Lit(v): return v
+        Flag(b):
+            if b:
+                return 1
+            return 0
+
+fn main():
+    xs := []Scalar
+    push(xs, Lit(11))
+    push(xs, Flag(true))
+    h := Holder(Lit(7), 3)
+    println(str(value(xs[0])) + " " + str(value(xs[1])) + " " + str(value(h.e)))
