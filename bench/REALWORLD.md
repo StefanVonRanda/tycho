@@ -69,21 +69,25 @@ The current real-program pass also ran:
 
 ## Server workloads
 
-`bench/server/run.sh` runs a minimal HTTP/1.1 keep-alive service under one
-sequential client connection, so the comparison isolates per-core request
-handling rather than client concurrency:
+`bench/server/run.sh` runs a minimal HTTP/1.1 keep-alive service with one and
+eight client connections. Best of three runs:
 
-| server | requests | time | RPS | RSS |
-|---|---:|---:|---:|---:|
-| Tycho | 20,000 | 0.731 s | 27,373 | 2.6 MB |
-| Go (`GOMAXPROCS=1`) | 20,000 | 0.487 s | 41,092 | 12.5 MB |
+| server | clients | RPS | RSS |
+|---|---:|---:|---:|
+| Tycho | 1 | 68.2k | 2.6 MB |
+| Tycho | 8 | 64.0k | 2.6 MB |
+| Go, `GOMAXPROCS=1` | 1 | 68.7k | 12.7 MB |
+| Go, `GOMAXPROCS=1` | 8 | 152.2k | 12.7 MB |
+| Go, all cores | 8 | 140.9k | 17.4 MB |
 
-Tycho uses ~4.8x less memory but is ~1.5x slower on this single-connection
-request loop. This is a real server-side gap, not a microbenchmark: the current
-accept loop is single-threaded, while Go's HTTP server has a goroutine per
-connection even with one P. The next server step is a multi-worker/poll model
-before making a server performance claim; the functional server lanes remain
-separate and green.
+Tycho is at parity on one connection and uses ~4.8x less memory. It does not
+scale with concurrent connections: its accept loop is single-threaded, while
+Go services each connection independently. The 8-client gap is ~2.4x, a real
+server-side weakness rather than a microbenchmark artifact.
+
+The next server work is a multi-worker/poll accept model. Until that exists,
+the server result is explicitly a memory-efficient but single-loop service,
+not a throughput claim.
 
 ## Reading rule
 
