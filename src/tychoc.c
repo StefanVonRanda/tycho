@@ -12363,6 +12363,8 @@ static int simple_call_place(Expr *e) {
     return 0;
 }
 static char *gen_call(Expr *e, const char *arena) {
+    if (!e->lhs && e->sval && (strstr(e->sval, "_json_intern") || strstr(e->sval, "_str_intern")) && e->nargs == 1)
+        return sfmt("tycho_str_intern(%s)", gen_expr(e->args[0], arena));
     if (e->op == TK_TYPE)     /* newtype wrap Meters(x): zero-cost, just the value */
         return gen_expr(e->args[0], arena);
     if (e->op == TK_FN) {     /* indirect call through a function value: g.call(g.env, arena, args) */
