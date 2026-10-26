@@ -6377,13 +6377,34 @@ fn _canmove_sink(cs: inout C, e: ast.Expr) -> bool:
             return _creads_b(cs.pbody, n) == 1
     return false
 
+fn _borrows_heap_arg(cs: inout C, e: ast.Expr, dst: string) -> bool:
+    if _place(e):
+        if _heap(&cs, _expr_type(&cs, e)) and _ownerof(&cs, e) != dst:
+            return true
+        return false
+    match e:
+        ast.Call(l, q, n, ts, args):
+            for a in args:
+                if _borrows_heap_arg(&cs, a, dst):
+                    return true
+        ast.CallVal(l, k):
+            for a in k:
+                if _borrows_heap_arg(&cs, a, dst):
+                    return true
+        _: pass
+    return false
+
 fn _canmove_push(cs: inout C, arr: ast.Expr, val: ast.Expr, et: string) -> bool:
     if len(getenv("TYCHOC_NO_MOVE_PUSH")) > 0 or not _heap(&cs, et):
         return false
     # A fresh non-place is built in the array's arena by the push emitter
     # above. It cannot alias the array, and no later name observes it, so the
-    # receiver may adopt it. Places still take the copy path.
+    # receiver may adopt it. Places still take the copy path. A call can hand
+    # back a heap place from another arena (a newtype/identity wrapper), so it
+    # is only fresh when no argument borrows one.
     if not _place(val):
+        if _borrows_heap_arg(&cs, val, _ownerof(&cs, arr)):
+            return false
         return len(getenv("TYCHOC_NO_FRESH_PUSH")) == 0
     n := ""
     match val:

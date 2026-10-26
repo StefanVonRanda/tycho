@@ -11153,6 +11153,24 @@ static int can_move_into_sink(Expr *rhs) {
 
 static int is_place(Expr *e);
 
+/* A call can hand back one of its heap arguments (a newtype or identity
+ * wrapper). Adopting that result would retain a buffer from an arena that may
+ * reset before the destination array does. */
+static int expr_borrows_heap(Expr *e, const char *dst) {
+    if (!e) return 0;
+    if (is_place(e)) {
+        if (!type_is_heap(e->type)) return 0;
+        Expr *r = e;
+        while (r->kind == E_FIELD || r->kind == E_INDEX) r = r->lhs;
+        const char *a = (r->kind == E_IDENT) ? owner_arena_of(r->sval) : NULL;
+        return !dst || !a || strcmp(a, dst) != 0;
+    }
+    if (e->kind == E_CALL)
+        for (int i = 0; i < e->nargs; i++)
+            if (expr_borrows_heap(e->args[i], dst)) return 1;
+    return 0;
+}
+
 /* O3: `push(dst, src)` retains src, so unlike a sink argument it needs the
  * source buffer to live as long as the destination. That is the same-arena
  * case (or a loop-local created in the current iteration). A fresh non-place
@@ -11164,6 +11182,10 @@ static int can_move_into_push(Expr *arr, Expr *val, Type elem) {
     if (!type_is_heap(elem)) return 0;
     if (val->kind != E_IDENT) {
         if (getenv("TYCHOC_NO_FRESH_PUSH") || is_place(val)) return 0;
+        Expr *droot = arr;
+        while (droot->kind == E_FIELD || droot->kind == E_INDEX) droot = droot->lhs;
+        const char *dst = (droot->kind == E_IDENT) ? owner_arena_of(droot->sval) : NULL;
+        if (!dst || expr_borrows_heap(val, dst)) return 0;
         return 1;
     }
     if (is_param(val->sval)) return 0;
