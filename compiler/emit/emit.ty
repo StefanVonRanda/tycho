@@ -5646,7 +5646,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             mb9 := _vcname(&cs, _rootname(args[0]))
             cond9 := "(" + mb9 + ").len < 8192 && _mapv->len == 0"
             return ("({ " + apt9 + "_mapv = &(" + rc + "); if (" + cond9 + ") " +
-                _arrf(&cs, et, "_reserve") + "(" + ow + ", _mapv, 1024); " +
+                _arrf(&cs, et, "_reserve") + "(" + ow + ", _mapv, 768); " +
                 pfn + "(" + ow + ", _mapv, " + vc + "); })", "void")
         if cap9 > 0:
             # the capacity trap: a bounded array refuses the push that would
