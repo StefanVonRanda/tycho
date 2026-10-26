@@ -337,6 +337,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   For input too large to hold at once there is a **streaming** form: `init()` gives
   a `State`, `update(&st, data)` folds in each chunk, and `final_hex(&st)` closes
   it and returns the digest — the same answer `hex(s)` gives for the concatenation.
+  `hex_bytes(b)` hashes one complete `bytes` buffer through the runtime C fast path
+  (SHA-NI, OpenSSL, or scalar) and returns the same 64-char digest.
 - **`bignum`** — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array),
   value-semantic: `from_int`/`from_str`/`to_str`/`to_int`, `add`/`sub`/`mul`/`divmod`/`div`/
   `mod`/`pow`, `abs`/`neg`/`cmp`/`is_zero`.

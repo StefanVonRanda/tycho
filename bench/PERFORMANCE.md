@@ -76,8 +76,8 @@ use an FFI/native component for that kernel instead.
 ## Real programs
 
 Concurrency, SQLite, JSON and external-tool checks are tracked separately in
-[`REALWORLD.md`](REALWORLD.md). Server load comparison is still an explicit
-gap.
+[`REALWORLD.md`](REALWORLD.md). Server load comparison is tracked there too;
+the minimal single-loop server shape remains the scaling gap.
 
 These numbers measure selected idiomatic and expert implementations, not
 ecosystem size, compile time, tooling maturity, tail latency, or library

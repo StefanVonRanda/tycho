@@ -92,7 +92,7 @@ fn init() -> State:
 # `bytes` value directly, no per-byte int expansion; the caller guarantees the
 # 64 bytes exist.
 # hv/kt/w are FIPS 180-4's H, K and W (a binding may not start uppercase, §3.7).
-fn block(hv: inout [u32], kt: [u32], src: bytes, base: int, w: inout [u32]):
+fn _block(hv: inout [u32], kt: [u32], src: bytes, base: int, w: inout [u32]):
     t := 0
     for t < 16:
         q := base + t * 4
@@ -143,6 +143,12 @@ fn block(hv: inout [u32], kt: [u32], src: bytes, base: int, w: inout [u32]):
 # bytes). Only concatenates when there really is a carry: `bytes + bytes`
 # copies both sides, so with a chunk that is a multiple of 64 this branch is
 # not taken mid-file.
+# Public wrapper kept for the frozen surface; update() reuses its schedule via _block.
+fn block(hv: inout [u32], kt: [u32], src: bytes, base: int):
+    w := []u32
+    reserve(w, 64)
+    _block(&hv, kt, src, base, &w)
+
 fn update(st: inout State, data: bytes):
     st.total = st.total + len(data)
     kt := _k_table()
@@ -153,7 +159,7 @@ fn update(st: inout State, data: bytes):
     w := []u32
     reserve(w, 64)
     for k := 0; k < nb; k += 1:
-        block(&st.h, kt, work, k * 64, &w)
+        _block(&st.h, kt, work, k * 64, &w)
     st.pending = work[nb * 64:len(work)]
 
 # Pad per FIPS 180-4 (0x80, zeros to 56 mod 64, the 64-bit big-endian bit
@@ -177,7 +183,7 @@ fn final(st: inout State) -> [int]:
     w := []u32
     reserve(w, 64)
     for k := 0; k < nb; k += 1:
-        block(&st.h, kt, tb, k * 64, &w)
+        _block(&st.h, kt, tb, k * 64, &w)
     out := []int
     vi := 0
     for vi < 8:

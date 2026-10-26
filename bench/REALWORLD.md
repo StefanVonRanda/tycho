@@ -76,7 +76,7 @@ remaining work is reducing hash-process memory, not SHA throughput.
 The current real-program pass also ran:
 
 - `make fuzz-quick`: 60 seeds across native and ASan/UBSan builds, 0 failures;
-- `make asan-self`: 1170 corpus programs compiled with the sanitizer-built
+- `make asan-self`: 1171 corpus programs compiled with the sanitizer-built
   compiler, 0 failures;
 - `make parity-fuzz`: composite/newtype equality, unary operators and
   parallel-for gate cases all match the reference oracle.

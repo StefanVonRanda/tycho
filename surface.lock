@@ -440,6 +440,7 @@
   "sha256.final": "(st: inout State)-> [int]",
   "sha256.final_hex": "(st: inout State)-> string",
   "sha256.hex": "(msg: string)-> string",
+  "sha256.hex_bytes": "(data: bytes)-> string",
   "sha256.init": "()-> State",
   "sha256.update": "(st: inout State, data: bytes)",
   "signal.on_shutdown": "(fd: int)-> bool",

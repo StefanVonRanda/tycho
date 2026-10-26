@@ -13,7 +13,7 @@ gate (`make ci`); `FRICTION n` is entry n in the defect log
 (`docs/internals/FRICTION.md`); a *probe* is a small program written against the
 docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
-## [Unreleased]
+## [0.9.0] — 2026-10-26
 
 ### Compiler
 
@@ -22,33 +22,15 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   presizing, loop-scope elision, inline scalar-payload enums and nested push
   destination inference. The generated benchmark reports still measure
   `tychoc1` as the optimized path.
-- **Nested push destinations** are inferred for loop-local arrays used inside a
-  pushed enum value; reference `json_tree` drops from 107 ms to 80 ms with
-  identical output.
-- **Inline scalar-payload enums** are emitted as a packed tag plus union in
-  `tychoc1` and `./tychoc`;
-  `TYCHOC_NO_INLINE_ENUM=1` restores pointer cells.
-
-### Benchmarks
-
-- **Managed-language gate:** 18 workloads at three sizes, complete managed
-  coverage for specialized rows, 1.10x Go/Java/Swift time and memory limits,
-  repetition-noise checks and a reviewed self-regression baseline. C/Rust are
-  advisory diagnostics.
-- **Memory reductions:** `trie` 132.7 -> 76 MB, `json_tree` 107 -> 81 MB,
-  `gcscan` 372 -> 127 MB, `invindex` growth rows down to 150–194 MB.
-- **CLI hash scheduling and SHA:** a producer task feeds bounded channels,
-  removing the 96-file deadlock and cutting `tycho-hash` RSS from 74.7 MB to
-  10.8 MB on a 128 MB tree. Whole-file hashing uses SHA-NI when the CPU
-  exposes it, optional OpenSSL `SHA256` next, and scalar C otherwise;
-  streaming SHA remains pure Tycho. Time matches the Go stdlib peer.
-
-- **Fixed-size user enums with scalar payloads are inline in both compilers.**
-  They are emitted as a packed tag plus variant union instead of a pointer to
-  an arena cell. Recursive, generic, fieldless, package-mangled and heap-payload
-  enums keep the pointer representation. `TYCHOC_NO_INLINE_ENUM=1` restores
-  the old layout for measurement. The benchmark is in
-  [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
+- **Inline scalar-payload enums** are emitted as a packed tag plus variant
+  union in `tychoc1` and `./tychoc`, instead of a pointer to an arena cell.
+  Recursive, generic, fieldless, package-mangled and heap-payload enums keep
+  the pointer layout. `TYCHOC_NO_INLINE_ENUM=1` restores the old layout for
+  measurement. The benchmark is in [`bench/opt/RESULTS.md`](bench/opt/RESULTS.md).
+- **Small closure environments and call descriptors are inlined in place**;
+  loop-local arrays move into returned push destinations, including nested push
+  destinations. Reference `json_tree` drops from 107 ms to 80 ms with identical
+  output.
 - **Counted fresh-array builders are presized from `for i := 0; i < n`**, not
   only from `i < len(src)`. This removes geometric closure-array growth in the
   dispatch workload (11 ms -> 6 ms, against C 5 ms). `TYCHOC_NO_PRESIZE=1` is
@@ -62,6 +44,47 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   on an unshared map, integer `push` has an inline fast path, and integer map
   keys use a collision-free permutation hash. `winagg` went from ~165 ms to
   ~84 ms against C ~97 ms. Public `hash()` keeps SplitMix64.
+- **JSON and map layout became flatter.** Composite map headers are smaller and
+  backed by a nullable data block; string map keys and repeated JSON keys are
+  interned; the fast parser builds the object field spine directly; JSON
+  strings are sliced once instead of built byte by byte. `Json.JObj` now carries
+  a single `[JsonField]` array (see Compatibility).
+
+### Benchmarks
+
+- **Managed-language gate:** 18 workloads at three sizes, complete managed
+  coverage for specialized rows, 1.10x Go/Java/Swift time and memory limits,
+  repetition-noise checks and a reviewed self-regression baseline. C/Rust are
+  advisory diagnostics.
+- **Suite expansion:** specialized `trie`, `dijkstra`, `lru`, `interp` and
+  `json_tree` rows now have Java and Swift peers; service, SQLite, latency and
+  specialized rows are measured across GCC and clang.
+- **Memory reductions:** `trie` 132.7 -> 76 MB, `json_tree` 107 -> 81 MB,
+  `gcscan` 372 -> 127 MB, `invindex` growth rows down to 150–194 MB.
+- **CLI hash scheduling and SHA:** a producer task feeds bounded channels,
+  removing the 96-file deadlock and cutting `tycho-hash` RSS from 74.7 MB to
+  10.8 MB on a 128 MB tree. Whole-file hashing uses SHA-NI when the CPU
+  exposes it, optional OpenSSL `SHA256` next, and scalar C otherwise;
+  streaming SHA remains pure Tycho. Time matches the Go stdlib peer.
+
+### Compatibility
+
+- **`corelib/json` object representation changed.** `JObj([string], [Json])`
+  became `JObj([JsonField])`, where `JsonField` holds `k: string` and `v: Json`.
+  Code that constructs or pattern-matches `JObj` directly must be updated.
+  The language syntax and value model are unchanged. `surface.lock` gained
+  only the additive `sha256.hex_bytes`; the object representation change is the
+  one breaking corelib change.
+
+### Verification
+
+- `make test` — 1163 passed; `make corelib` — 49 ok;
+  `make fixpoint-check` — `gen2.c == gen3.c`.
+- `make bench-suite-gate` — every compared managed row within 1.10x.
+- `make external-check` — byte-identical reports and error paths;
+  `make docs-fences` — 245 snippets, 0 failures.
+- `make fuzz-quick` — 60 seeds, 0 failures;
+  `make asan-self` — 1171 programs, 0 failures.
 
 ## [0.8.9] — 2026-10-21
 
