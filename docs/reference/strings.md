@@ -18,8 +18,9 @@ fn main():
     println(s[1:3])             # el -- a slice IS a string
 ```
 
-`s[i]` is the byte at `i` as an `int`. `s[a:b]` is the half-open byte range as a
-new string. Both are O(1) and neither knows anything about characters.
+`s[i]` is the byte at `i` as an `int`; it is O(1). `s[a:b]` is the half-open
+byte range as a new string; it copies the selected bytes, so it is O(slice
+length). Neither knows anything about characters.
 
 ## The trap: `len` is not the character count
 
@@ -96,8 +97,10 @@ rather than decoding them leniently.
 
 ## Building strings
 
-`+` concatenates and produces a new string; there is no in-place append. Interpolation
-is `f"..."` with `{}` holes.
+`+` produces a new string value. When the receiver is a uniquely owned
+accumulator, `string + char` is lowered to an in-place append; that is an
+optimization, not observable sharing. There is no explicit append method.
+Interpolation is `f"..."` with `{}` holes.
 
 ```tycho
 fn main():

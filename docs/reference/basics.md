@@ -114,6 +114,8 @@ is (builtin names are not reserved). The full list of 43 is
   Precedence, tightest first: comparisons, then `not`, `and`, `or` — so `a < b and not done` is
   `(a < b) and (not done)`.
 - **Calls:** `f(a, b)`.
+- **Evaluation order:** argument and operand order is unspecified; bind
+  side-effecting calls to locals before combining them.
 
 ## Control flow
 

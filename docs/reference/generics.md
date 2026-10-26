@@ -66,6 +66,22 @@ The name may be package-qualified (`vp.pair$(int, string)(1, "a")`). `zero$(T)` 
 zero value of a `defaultable` type, which is what lets a fold seed an accumulator without the
 caller supplying one (`acc := zero$(T)`).
 
+A type parameter that appears only in the return type needs the same call-site
+form; there is no argument to infer it from:
+
+```tycho
+struct Bag($T):
+    items: [T]
+
+fn empty_bag(cap: int) -> Bag($T):
+    xs: [T] = []
+    return Bag$(T)(xs)
+
+fn main():
+    b := empty_bag$(int)(3)
+    println(str(len(b.items)))
+```
+
 ## Generic structs and enums
 
 ```tycho

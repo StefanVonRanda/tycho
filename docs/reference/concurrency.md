@@ -330,6 +330,10 @@ Three rules keep that shape correct under load:
   per-connection writer task, or bound it; otherwise one client that stops
   reading stalls every other connection and new accepts.
 
+Reuse each slot's buffers: root arenas live for the process, so a fresh
+per-connection ring on every accept grows RSS. `net.write` has no timeout in
+0.9.0; a connection-owning worker is the current bound on a slow peer.
+
 ### Measured
 
 `make bench-conc` runs the same
