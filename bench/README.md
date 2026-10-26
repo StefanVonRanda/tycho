@@ -10,7 +10,8 @@ with detail. The **generated multi-size scorecard** is
 [`RESULTS-clang.md`](RESULTS-clang.md), produced by `python3 bench/suite.py`
 (or `make bench-suite` / `make bench-suite-backends`). The reviewed claim,
 release criterion, gate policy and remaining edges are in
-[`PERFORMANCE.md`](PERFORMANCE.md). They own the three-size
+[`PERFORMANCE.md`](PERFORMANCE.md); longer-running program checks live in
+[`REALWORLD.md`](REALWORLD.md). They own the three-size
 data for the service rows, all seven `prongB` core rows, and the specialized
 `trie`, `dijkstra`, `lru`, `interp` and `json_tree` rows where a port exists.
 Concurrency and application rows still have their own runners.

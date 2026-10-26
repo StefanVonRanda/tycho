@@ -73,7 +73,11 @@ most visibly `json_tree`, `trie` and `dijkstra`. Tycho is not positioned as a
 replacement for C/Rust when a kernel has a hard native latency or RSS ceiling;
 use an FFI/native component for that kernel instead.
 
-## Scope
+## Real programs
+
+Concurrency, SQLite, JSON and external-tool checks are tracked separately in
+[`REALWORLD.md`](REALWORLD.md). Server load comparison is still an explicit
+gap.
 
 These numbers measure selected idiomatic and expert implementations, not
 ecosystem size, compile time, tooling maturity, tail latency, or library
