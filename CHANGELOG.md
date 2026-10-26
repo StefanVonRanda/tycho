@@ -39,9 +39,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `gcscan` 372 -> 127 MB, `invindex` growth rows down to 150–194 MB.
 - **CLI hash scheduling and SHA:** a producer task feeds bounded channels,
   removing the 96-file deadlock and cutting `tycho-hash` RSS from 74.7 MB to
-  11.2 MB on a 128 MB tree. Whole-file hashing uses a C SHA-256 fast path;
-  streaming SHA remains pure Tycho. Whole-file CLI hashing uses optional
-  OpenSSL SHA acceleration and now matches the Go stdlib peer on time.
+  10.8 MB on a 128 MB tree. Whole-file hashing uses SHA-NI when the CPU
+  exposes it, optional OpenSSL `SHA256` next, and scalar C otherwise;
+  streaming SHA remains pure Tycho. Time matches the Go stdlib peer.
 
 - **Fixed-size user enums with scalar payloads are inline in both compilers.**
   They are emitted as a packed tag plus variant union instead of a pointer to

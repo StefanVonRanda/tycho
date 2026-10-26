@@ -159,9 +159,10 @@ Follow-up work after the benchmark refresh:
 
 ## Known remaining performance gaps
 
-- **CLI SHA-256:** `tycho-hash` is ~6x slower and ~3x heavier than Go's stdlib
-  on a 64 MB tree. Channel memory is fixed; the remaining cost is pure-Tycho
-  SHA-256 compute. See [`bench/REALWORLD.md`](bench/REALWORLD.md).
+- **CLI hash process memory:** `tycho-hash` now matches Go's stdlib on time
+  through SHA-NI or optional OpenSSL, but is still ~1.5x heavier on a 128 MB
+  tree. Channel memory is fixed; the remaining cost is the per-worker file
+  buffer and runtime working set. See [`bench/REALWORLD.md`](bench/REALWORLD.md).
 - **Minimal single-loop server:** does not scale with connections; use the
   production multi-worker `server/main.ty`, which is competitive with Go.
 - **Native C/Rust:** still faster on some recursive/pointer-heavy rows,

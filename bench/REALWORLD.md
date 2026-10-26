@@ -55,22 +55,20 @@ is covered separately in the generated suite.
 
 `make external-check` runs `tools/tycho-hash` under varied worker counts and
 checks byte-identical SHA-256 results plus seven error paths. A CLI peer check
-also hashes a deterministic 256-file / 64 MB tree with eight workers:
+also hashes a deterministic 512-file / 128 MB tree with eight workers:
 
 | | Time | Peak RSS |
 |---|---:|---:|
-| Tycho `tycho-hash` | 0.01 s | 13.6 MB |
-| Go stdlib peer | 0.01 s | 7.3 MB |
+| Tycho `tycho-hash` | 0.01 s | 10.8 MB |
+| Go stdlib peer | 0.01 s | 7.1 MB |
 
-This is a 512-file / 128 MB tree. The earlier 74.7 MB result was mostly fixed
-N-slot queues; a producer task now feeds 32-slot queues while main drains
-results, preserving the 96-file stress fix without scaling memory with file
-count. Whole-file hashing uses a C SHA-256 fast path in the runtime; the pure
-Tycho streaming implementation remains available as the portable API. The
-runtime now uses optional OpenSSL `SHA256` acceleration when libcrypto is
-present, falling back to scalar C otherwise. Time is at parity with the Go
-stdlib peer; Tycho retains a ~1.8x memory edge for the process. The remaining
-work is reducing hash-process memory, not SHA throughput.
+The earlier 74.7 MB result was mostly fixed N-slot queues; a producer task now
+feeds 32-slot queues while main drains results, preserving the 96-file stress
+fix without scaling memory with file count. Whole-file hashing uses the CPU's
+SHA-NI instructions when present, optional OpenSSL `SHA256` next, and scalar C
+otherwise; the pure Tycho streaming implementation remains the portable API.
+Time is at parity with the Go stdlib peer and the process is ~1.5x heavier. The
+remaining work is reducing hash-process memory, not SHA throughput.
 
 
 ## Hardening run

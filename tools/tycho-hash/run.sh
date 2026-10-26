@@ -139,6 +139,41 @@ if command -v sha256sum >/dev/null 2>&1; then
     # compared nothing this line still fails.
     grep -q '^e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  0  c/empty$' "$T/w1.out" \
         || bad "[4] the empty file's digest is not the known SHA-256 of empty input"
+
+    # The 1 MiB sharing files cross many full blocks; the fixed tree above is
+    # all under 320 bytes, so without this the block loop has no external check.
+    ( cd "$T" && "$H" sharing --workers=1 ) > "$T/sharing.manifest" 2>/dev/null \
+        || bad "[4] the sharing-file manifest failed"
+    mism=0; checked=0
+    while read -r h sz rel; do
+        [ "$h" = "--" ] && continue
+        want=$(sha256sum "$T/sharing/$rel" 2>/dev/null | cut -d' ' -f1)
+        checked=$((checked+1))
+        [ "$h" = "$want" ] || { mism=$((mism+1)); echo "      MISMATCH sharing/$rel: got $h want $want"; }
+    done < "$T/sharing.manifest"
+    [ "$mism" -eq 0 ] || bad "[4] $mism sharing hash(es) disagree with sha256sum"
+    [ "$checked" -eq "$NFILES" ] || bad "[4] compared $checked sharing hashes, want $NFILES"
+
+    # 55/56 and 64 exercise the tails 1 MiB cannot.
+    mkdir "$T/tails"
+    python3 - "$T/tails" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for n in (55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129):
+    (root / str(n)).write_bytes(bytes([n]) * n)
+PY
+    ( cd "$T" && "$H" tails --workers=1 ) > "$T/tails.manifest" 2>/dev/null \
+        || bad "[4] the tail-boundary manifest failed"
+    mism=0; checked=0
+    while read -r h sz rel; do
+        [ "$h" = "--" ] && continue
+        want=$(sha256sum "$T/tails/$rel" 2>/dev/null | cut -d' ' -f1)
+        checked=$((checked+1))
+        [ "$h" = "$want" ] || { mism=$((mism+1)); echo "      MISMATCH tails/$rel: got $h want $want"; }
+    done < "$T/tails.manifest"
+    [ "$mism" -eq 0 ] || bad "[4] $mism tail-boundary hash(es) disagree with sha256sum"
+    [ "$checked" -eq 11 ] || bad "[4] compared $checked tail-boundary hashes, want 11"
 else
     echo "tycho-hash: SKIPPED [4] (no sha256sum)"
 fi
