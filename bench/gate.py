@@ -14,6 +14,9 @@ SERVICE = {"latency", "window_string", "window_int", "gcscan", "winagg",
            "invindex_side", "invindex_map", "dbquery"}
 TOL_TIME = 1.15
 TOL_MEM = 1.12
+TOL_MANAGED = 1.10
+MANAGED = ("go", "java", "swift")
+COVERAGE_EXEMPT = {("binary", "arena"), ("dispatch", "expert"), ("maptree", "arena")}
 
 
 def best(data, group, lang, key, tier=None):
@@ -71,6 +74,50 @@ def main():
         print("  dbquery missing:", missing or "none")
         if missing:
             failed = 1
+    # The release criterion: compare against the best managed implementation.
+    # A row passes when either backend is within tolerance; a single noisy
+    # backend run cannot manufacture a regression. Backend detail stays in the
+    # generated reports.
+    data = [json.loads(p.read_text()) for p in FILES]
+    losses = []
+    missing_managed = []
+    for w in data[0]["workloads"]:
+        for vn in data[0]["workloads"][w]["variants"]:
+            rows = [d["workloads"][w]["variants"][vn]["rows"].get("large", {}) for d in data]
+            tv = [r.get("tycho", {}).get("ms") for r in rows if r.get("tycho", {}).get("ok")]
+            trss = [r.get("tycho", {}).get("rss") for r in rows if r.get("tycho", {}).get("ok")]
+            if not tv:
+                continue
+            pass_backends = []
+            detail = []
+            for r in rows:
+                t = r.get("tycho", {})
+                if not t.get("ok"):
+                    continue
+                m = [r[l] for l in MANAGED if l in r and r[l].get("ok")]
+                if not m:
+                    continue
+                mt = min(x["ms"] for x in m)
+                mr = min(x["rss"] for x in m)
+                ok = t["ms"] <= mt * TOL_MANAGED and t["rss"] <= mr * TOL_MANAGED
+                pass_backends.append(ok)
+                detail.append((t["ms"] / mt, t["rss"] / mr))
+            if not pass_backends:
+                if (w, vn) not in COVERAGE_EXEMPT:
+                    missing_managed.append(f"{w}/{vn}")
+                continue
+            if not any(pass_backends):
+                losses.append((w, vn, detail))
+    print("== managed-language gate (per backend; one backend must win)")
+    if missing_managed:
+        print("  missing managed coverage:", ", ".join(missing_managed)); failed = 1
+    if losses:
+        for w, vn, detail in losses:
+            ds = " / ".join(f"{a:.2f}x time, {b:.2f}x mem" for a, b in detail)
+            print(f"  LOSS {w}/{vn}: {ds}")
+        failed = 1
+    else:
+        print("  every compared row is within %.2fx of Go/Java/Swift on one backend" % TOL_MANAGED)
     return 1 if failed else 0
 
 
