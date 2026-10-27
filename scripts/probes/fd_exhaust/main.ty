@@ -14,21 +14,24 @@ fn nwhy(r: Result(int, net.NetErr)) -> string:
         Err(_): return "Err"
 
 fn fdcount() -> int:
-    return len(io.list("/proc/self/fd"))
+    xs := io.list("/proc/self/fd")
+    if len(xs) > 0:
+        return len(xs)
+    return len(io.list("/dev/fd"))
 
 fn main():
     before := fdcount()
     readers := []io.LineReader
     for len(readers) < 4096:
-        match io.open_lines("/etc/hostname"):
+        match io.open_lines("/etc/hosts"):
             Ok(r): push(readers, r)
             Err(_): break
     held := len(readers)
-    exread := why(io.read_bytes("/etc/hostname"))
+    exread := why(io.read_bytes("/etc/hosts"))
     cap := os.exec_capture(["/bin/true"])
     listen := nwhy(net.listen("127.0.0.1", 0))
     for r in readers:
         io.close_lines(r)
     after := fdcount()
-    recovered := why(io.read_bytes("/etc/hostname"))
+    recovered := why(io.read_bytes("/etc/hosts"))
     println(f"ex={held},{exread},{cap.code},{listen},{recovered},{before},{after}")

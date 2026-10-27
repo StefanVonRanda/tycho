@@ -13,6 +13,7 @@
  *   FI_SOCKET_FAIL=N   FI_ACCEPT_FAIL=N   FI_CONNECT_FAIL=N
  *   FI_POLL_FAIL=N     FI_FSYNC_FAIL=N
  *   FI_RENAME_FAIL=N   FI_REMOVE_FAIL=N   FI_MKDIR_FAIL=N
+ *   FI_FOPEN_FAIL=N    FI_OPENDIR_FAIL=N
  *
  * N=0 means every matching call. Counters are per process.
  */
@@ -20,7 +21,9 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <poll.h>
+#include <stdio.h>
 #include <stdarg.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -46,6 +49,9 @@ static int (*real_fsync)(int);
 static int (*real_rename)(const char *, const char *);
 static int (*real_remove)(const char *);
 static int (*real_mkdir)(const char *, mode_t);
+static FILE *(*real_fopen)(const char *, const char *);
+static FILE *(*real_fopen64)(const char *, const char *);
+static DIR *(*real_opendir)(const char *);
 
 static long read_short = -1, read_eintr = -1, read_fail = -1;
 static long write_short = -1, write_eintr = -1, write_fail = -1;
@@ -56,6 +62,7 @@ static long pipe_fail = -1, pipe_every = -1;
 static long socket_fail = -1, accept_fail = -1, connect_fail = -1;
 static long poll_fail = -1, fsync_fail = -1, rename_fail = -1;
 static long remove_fail = -1, mkdir_fail = -1;
+static long fopen_fail = -1, opendir_fail = -1;
 static int active = 1;
 
 static atomic_long read_n;
@@ -64,7 +71,7 @@ static atomic_long pread_n;
 static atomic_long pwrite_n;
 static atomic_long open_n;
 static atomic_long pipe_n, socket_n, accept_n, connect_n, poll_n, fsync_n;
-static atomic_long rename_n, remove_n, mkdir_n;
+static atomic_long rename_n, remove_n, mkdir_n, fopen_n, opendir_n;
 
 static long env_num(const char *name) {
     const char *v = getenv(name);
@@ -97,6 +104,9 @@ static void fi_init(void) {
     real_rename = dlsym(RTLD_NEXT, "rename");
     real_remove = dlsym(RTLD_NEXT, "remove");
     real_mkdir = dlsym(RTLD_NEXT, "mkdir");
+    real_fopen = dlsym(RTLD_NEXT, "fopen");
+    real_fopen64 = dlsym(RTLD_NEXT, "fopen64");
+    real_opendir = dlsym(RTLD_NEXT, "opendir");
     read_short = env_num("FI_READ_SHORT");
     read_eintr = env_num("FI_READ_EINTR");
     read_fail = env_num("FI_READ_FAIL");
@@ -121,6 +131,8 @@ static void fi_init(void) {
     rename_fail = env_num("FI_RENAME_FAIL");
     remove_fail = env_num("FI_REMOVE_FAIL");
     mkdir_fail = env_num("FI_MKDIR_FAIL");
+    fopen_fail = env_num("FI_FOPEN_FAIL");
+    opendir_fail = env_num("FI_OPENDIR_FAIL");
     const char *only = getenv("FI_ONLY_PID");
     if (only && *only && (long)getpid() != strtol(only, NULL, 10)) active = 0;
 }
@@ -131,7 +143,8 @@ static void fi_init(void) {
     pwrite_short >= 0 || pwrite_eintr >= 0 || pwrite_fail >= 0 || \
     open_eintr >= 0 || open_fail >= 0 || pipe_fail >= 0 || pipe_every >= 0 || \
     socket_fail >= 0 || accept_fail >= 0 || connect_fail >= 0 || poll_fail >= 0 || \
-    fsync_fail >= 0 || rename_fail >= 0 || remove_fail >= 0 || mkdir_fail >= 0))
+    fsync_fail >= 0 || rename_fail >= 0 || remove_fail >= 0 || mkdir_fail >= 0 || \
+    fopen_fail >= 0 || opendir_fail >= 0))
 
 ssize_t read(int fd, void *buf, size_t count) {
     if (!FI_ACTIVE()) return real_read(fd, buf, count);
@@ -263,6 +276,24 @@ int mkdir(const char *p, mode_t m) {
     if (!FI_ACTIVE()) return real_mkdir(p, m);
     if (mkdir_fail >= 0 && at_call(&mkdir_n, mkdir_fail)) { errno = EACCES; return -1; }
     return real_mkdir(p, m);
+}
+
+FILE *fopen(const char *path, const char *mode) {
+    if (!FI_ACTIVE()) return real_fopen(path, mode);
+    if (fopen_fail >= 0 && at_call(&fopen_n, fopen_fail)) { errno = EACCES; return NULL; }
+    return real_fopen(path, mode);
+}
+
+FILE *fopen64(const char *path, const char *mode) {
+    if (!FI_ACTIVE()) return real_fopen64 ? real_fopen64(path, mode) : NULL;
+    if (fopen_fail >= 0 && at_call(&fopen_n, fopen_fail)) { errno = EACCES; return NULL; }
+    return real_fopen64 ? real_fopen64(path, mode) : NULL;
+}
+
+DIR *opendir(const char *path) {
+    if (!FI_ACTIVE()) return real_opendir(path);
+    if (opendir_fail >= 0 && at_call(&opendir_n, opendir_fail)) { errno = EACCES; return NULL; }
+    return real_opendir(path);
 }
 
 int open(const char *path, int flags, ...) {

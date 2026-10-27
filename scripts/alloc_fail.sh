@@ -1,5 +1,5 @@
 #!/bin/sh
-# Targeted allocation-failure lane. Linux/glibc only.
+# Targeted allocation-failure lane (Linux and macOS).
 #
 # FI_MALLOC_SIZE=1 fails every one-byte malloc in the target process. The http
 # shim used to do `r->body = malloc(1); r->body[0] = 0;` with no NULL check, so
@@ -8,15 +8,19 @@
 set -u
 cd "$(dirname "$0")/.."
 case "$(uname -s)" in
-    Linux) ;;
-    *) echo "alloc-fail: skip (LD_PRELOAD injector is Linux-only)"; exit 0 ;;
+    Linux)  PRELOAD=LD_PRELOAD; SOFLAGS="-shared -fPIC"; SOEXT=so; LDLIB=-ldl ;;
+    Darwin) PRELOAD=DYLD_INSERT_LIBRARIES; SOFLAGS="-dynamiclib"; SOEXT=dylib; LDLIB= ;;
+    *) echo "alloc-fail: skip (no malloc interposer for this platform)"; exit 0 ;;
 esac
 CC="${CC:-cc}"
 TYCHOC="${TYCHOC:-./tychoc1}"
+if command -v timeout >/dev/null 2>&1; then TO=timeout
+elif command -v gtimeout >/dev/null 2>&1; then TO=gtimeout
+else echo "alloc-fail: skip (no timeout/gtimeout)"; exit 0; fi
 [ -x "$TYCHOC" ] || { echo "alloc-fail: no $TYCHOC -- run make" >&2; exit 2; }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-SO="$T/alloc_inject.so"
-$CC -shared -fPIC -O2 -Wall -Wextra -Werror -o "$SO" scripts/alloc_inject.c -ldl || exit 2
+SO="$T/alloc_inject.$SOEXT"
+$CC $SOFLAGS -O2 -Wall -Wextra -Werror -o "$SO" scripts/alloc_inject.c $LDLIB || exit 2
 export TYCHO_CORELIB="$PWD/corelib"
 
 cat > "$T/control.c" <<'EOF'
@@ -24,7 +28,7 @@ cat > "$T/control.c" <<'EOF'
 int main(void) { char *p = malloc(1); return p ? 0 : 42; }
 EOF
 $CC -O0 -o "$T/control" "$T/control.c" || exit 2
-timeout 10 env FI_MALLOC_SIZE=1 LD_PRELOAD="$SO" "$T/control" >/dev/null 2>&1
+$TO 10 env FI_MALLOC_SIZE=1 "$PRELOAD=$SO" "$T/control" >/dev/null 2>&1
 rc=$?
 if [ "$rc" -ne 42 ]; then
     echo "FAIL control: FI_MALLOC_SIZE=1 did not fail malloc(1) (rc=$rc)"
@@ -36,7 +40,7 @@ if ! "$TYCHOC" corelib/test/http/main.ty -o "$T/http" >"$T/http.build" 2>&1; the
     echo "skip http (build: $(head -1 "$T/http.build"))"
     exit 0
 fi
-timeout 30 env FI_MALLOC_SIZE=1 LD_PRELOAD="$SO" "$T/http" >"$T/http.out" 2>"$T/http.err"
+$TO 30 env FI_MALLOC_SIZE=1 "$PRELOAD=$SO" "$T/http" >"$T/http.out" 2>"$T/http.err"
 rc=$?
 if [ "$rc" -eq 139 ] || [ "$rc" -ge 128 ] && [ "$rc" -ne 124 ]; then
     echo "FAIL http: FI_MALLOC_SIZE=1 killed it (rc=$rc)"
@@ -59,7 +63,7 @@ for t in http crypto compress os io sqlite; do
     }
     bad=0
     for n in 1 2 3 4 5; do
-        timeout 2 env FI_MALLOC_FAIL="$n" LD_PRELOAD="$SO" "$T/$t" >/dev/null 2>&1
+        $TO 2 env FI_MALLOC_FAIL="$n" "$PRELOAD=$SO" "$T/$t" >/dev/null 2>&1
         rc=$?
         case "$rc" in
             124|0|1|2) ;;

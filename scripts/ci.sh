@@ -130,6 +130,12 @@ make -s parity-fuzz
 step "[1d5b/13] make oracle-fuzz N=$N  (random int/float/string/array programs checked against a PYTHON oracle with Tycho's wrap, truncating-division and string rules, not against another build of the same compiler. fuzz/run.py compares native vs ASan and both compilers against each other, so a consistently wrong codegen passes both; this is the independent answer. 2000 seeds found 0)"
 make -s oracle-fuzz N="$N"
 
+step "[1d5c/13] make alloc-fail  (allocation-failure injection: FI_MALLOC_SIZE=1 and a short ordinal sweep over http/crypto/compress/os/io/sqlite. The one-byte case caught core:http doing r->body = malloc(1); r->body[0] = 0 with no NULL check; the C control proves the injector still fails a one-byte malloc. Run here, not in the parallel corelib lane: standalone 18s, 230s under contention)"
+make -s alloc-fail
+
+step "[1d5d/13] make descriptor-fail  (pipe, socket, connect, accept, poll, fsync, rename, remove, fopen and opendir failure injection, plus real fd exhaustion at ulimit -n 16. Each API must return Err/false and the descriptor count must not grow; run here for the same serial-cost reason as alloc-fail)"
+make -s descriptor-fail
+
 step "[1d6/13] make probe-selfcheck  (the probe runner's two controls: a WEDGED process must be detected as quiet and a WORKING one must be left alone. ROADMAP.md 1 -- a real program by someone who is not the author -- is served by scripts/probe_run.sh, and both of its quiescence signals were spelled for Linux only: /proc for CPU time and GNU find -printf for the last write. On macOS neither errors, both go CONSTANT, and a constant is a zero delta -- so the watchdog satisfied both halves on its first window, killed the agent after QUIET seconds and reported a clean exit. Every probe run on a Mac would have been truncated at five minutes (FRICTION 122). --selfcheck failed on the parent commit here and was attached to no verdict, which is the shape of 104 and 106 a third time. 9.2s, so the cost argument that kept it out does not survive being measured)"
 make -s probe-selfcheck
 
@@ -252,13 +258,6 @@ fi
 if [ "$LANE" = corelib ]; then
 step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot/fetch/weblog/webserver dogfoods vs goldens)"
 make -s corelib
-
-step "[3a/13] make alloc-fail  (allocation-failure injection: FI_MALLOC_SIZE=1 and a sweep of FI_MALLOC_FAIL ordinals over http/crypto/compress/os/net/io/sqlite. The one-byte case caught core:http doing r->body = malloc(1); r->body[0] = 0 with no NULL check; the C control proves the injector still fails a one-byte malloc)"
-make -s alloc-fail
-
-step "[3a2/13] make descriptor-fail  (pipe, socket, connect, accept, poll, fsync, rename, remove and mkdir failure injection, plus real fd exhaustion at ulimit -n 16. Each API must return Err/false and the descriptor count must not grow; the probe's fd-exhaust leg holds every available descriptor and recovers after closing)"
-make -s descriptor-fail
-
 make -s fault-inject
 make -s mutation-check
 make -s corelib-examples

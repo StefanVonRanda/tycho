@@ -1,17 +1,21 @@
 #!/bin/sh
-# Descriptor and syscall failure lane. Linux/glibc only.
+# Descriptor and syscall failure lane (Linux and macOS).
 set -u
 cd "$(dirname "$0")/.."
 case "$(uname -s)" in
-    Linux) ;;
-    *) echo "descriptor-fail: skip (LD_PRELOAD injector is Linux-only)"; exit 0 ;;
+    Linux)  PRELOAD=LD_PRELOAD; SOFLAGS="-shared -fPIC"; SOEXT=so; LDLIB=-ldl ;;
+    Darwin) PRELOAD=DYLD_INSERT_LIBRARIES; SOFLAGS="-dynamiclib"; SOEXT=dylib; LDLIB= ;;
+    *) echo "descriptor-fail: skip (no syscall interposer for this platform)"; exit 0 ;;
 esac
 CC="${CC:-cc}"
 TYCHOC="${TYCHOC:-./tychoc1}"
+if command -v timeout >/dev/null 2>&1; then TO=timeout
+elif command -v gtimeout >/dev/null 2>&1; then TO=gtimeout
+else echo "${0##*/}: skip (no timeout/gtimeout)"; exit 0; fi
 [ -x "$TYCHOC" ] || { echo "descriptor-fail: no $TYCHOC -- run make" >&2; exit 2; }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-SO="$T/fault_inject.so"
-$CC -shared -fPIC -O2 -Wall -Wextra -Werror -o "$SO" scripts/fault_inject.c -ldl || exit 2
+SO="$T/fault_inject.$SOEXT"
+$CC $SOFLAGS -O2 -Wall -Wextra -Werror -o "$SO" scripts/fault_inject.c $LDLIB || exit 2
 "$TYCHOC" scripts/probes/descriptor/main.ty -o "$T/probe" >"$T/build" 2>&1 || {
     echo "descriptor-fail: probe build failed"; head -3 "$T/build" | sed 's/^/      /'; exit 1
 }
@@ -29,7 +33,7 @@ prepare() {
 
 run() {
     mode=$1
-    timeout 30 sh -c "FI_ONLY_PID=\$\$ exec env $mode LD_PRELOAD=$SO $T/probe" \
+    $TO 30 sh -c "FI_ONLY_PID=\$\$ exec env $mode $PRELOAD=$SO $T/probe" \
         >"$T/out" 2>"$T/err"
     return $?
 }
@@ -55,8 +59,8 @@ fail=0
 prepare
 if ! run ""; then echo "FAIL baseline rc=$?"; fail=1; else
     for line in 'read=Ok' 'write=Ok' 'at=Ok' 'sync=Ok' 'rename=Ok' \
-                'mkdir=Ok' 'remove=Ok' 'cap=0,0,0' 'listen=Ok' \
-                'connect=Err' 'poll=Timeout' 'accept=Ok'; do
+                'mkdir=Ok' 'remove=Ok' 'list=Ok' 'lines=Ok' 'cap=0,0,0' \
+                'listen=Ok' 'connect=Err' 'poll=Timeout' 'accept=Ok'; do
         expect "$line" baseline || fail=1
     done
     check_fds baseline || fail=1
@@ -69,11 +73,15 @@ check_case() {
     if ! run "$mode"; then
         echo "FAIL $name rc=$?"; fail=1; return
     fi
-    expect "$line" "$name" || { fail=1; return; }
+    for want in $(printf '%s' "$line" | tr '|' ' '); do
+        expect "$want" "$name" || { fail=1; return; }
+    done
     if [ "$fds" = yes ]; then check_fds "$name" || fail=1; fi
     echo "ok   $name"
 }
 
+check_case fopen          FI_FOPEN_FAIL=0     'read=Err|write=Err|lines=Err' no
+check_case opendir        FI_OPENDIR_FAIL=0   'list=Err'        no
 check_case open           FI_OPEN_FAIL=0       'at=Err'          no
 check_case fsync          FI_FSYNC_FAIL=0      'sync=Err'        no
 check_case rename         FI_RENAME_FAIL=0     'rename=Err'      no
@@ -86,7 +94,7 @@ check_case connect        FI_CONNECT_FAIL=0    'connect=Err'     yes
 check_case accept         FI_ACCEPT_FAIL=0     'accept=Err'      yes
 check_case poll           FI_POLL_FAIL=0       'poll=Err'        yes
 
-( ulimit -n 16; timeout 30 "$T/fdex" ) >"$T/fdout" 2>"$T/fderr"
+( ulimit -n 16; $TO 30 "$T/fdex" ) >"$T/fdout" 2>"$T/fderr"
 rc=$?
 if [ "$rc" -ne 0 ]; then
     echo "FAIL fd-exhaust rc=$rc"; head -3 "$T/fderr" | sed 's/^/      /'; fail=1

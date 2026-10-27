@@ -2,25 +2,30 @@
 # Fault-injection lane: inject short I/O and EINTR into the process under test
 # and require the same golden output. A wrong result means a shim loop treated a
 # partial transfer as EOF or an interruption as a failure. Linux-only because the
-# injector uses LD_PRELOAD and glibc's open64.
+# injector uses LD_PRELOAD/DYLD_INSERT_LIBRARIES; glibc-specific symbols are
+# simply absent elsewhere and their wrappers are never called.
 set -u
 cd "$(dirname "$0")/.."
 case "$(uname -s)" in
-    Linux) ;;
-    *) echo "fault-inject: skip (LD_PRELOAD injector is Linux-only)"; exit 0 ;;
+    Linux)  PRELOAD=LD_PRELOAD; SOFLAGS="-shared -fPIC"; SOEXT=so; LDLIB=-ldl ;;
+    Darwin) PRELOAD=DYLD_INSERT_LIBRARIES; SOFLAGS="-dynamiclib"; SOEXT=dylib; LDLIB= ;;
+    *) echo "fault-inject: skip (no syscall interposer for this platform)"; exit 0 ;;
 esac
 TYCHOC="${TYCHOC:-./tychoc1}"
+if command -v timeout >/dev/null 2>&1; then TO=timeout
+elif command -v gtimeout >/dev/null 2>&1; then TO=gtimeout
+else echo "${0##*/}: skip (no timeout/gtimeout)"; exit 0; fi
 [ -x "$TYCHOC" ] || { echo "fault-inject: no $TYCHOC -- run make" >&2; exit 2; }
 CC="${CC:-cc}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-SO="$T/fault_inject.so"
-$CC -shared -fPIC -O2 -Wall -Wextra -Werror -o "$SO" scripts/fault_inject.c -ldl || exit 2
+SO="$T/fault_inject.$SOEXT"
+$CC $SOFLAGS -O2 -Wall -Wextra -Werror -o "$SO" scripts/fault_inject.c $LDLIB || exit 2
 export TYCHO_CORELIB="$PWD/corelib"
 
 fail=0
 run() {
     mode=$1; nth=$2; bin=$3; input=$4; out=$5; err=$6
-    timeout 60 sh -c "FI_ONLY_PID=\$\$ exec env $mode=$nth LD_PRELOAD=$SO $bin" \
+    $TO 60 sh -c "FI_ONLY_PID=\$\$ exec env $mode=$nth $PRELOAD=$SO $bin" \
         < "$input" > "$out" 2> "$err"
     return $?
 }
@@ -32,7 +37,7 @@ check() {
         echo "skip $name (build: $(head -1 "$T/$name.build"))"
         return 0
     fi
-    if ! timeout 60 "$bin" < "$input" >"$T/$name.base" 2>"$T/$name.base.err" ||
+    if ! $TO 60 "$bin" < "$input" >"$T/$name.base" 2>"$T/$name.base.err" ||
        ! cmp -s "$golden" "$T/$name.base"; then
         echo "skip $name (baseline does not match $golden)"
         return 0

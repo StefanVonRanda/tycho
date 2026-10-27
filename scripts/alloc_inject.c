@@ -10,9 +10,20 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <malloc/malloc.h>
+static malloc_zone_t *zone;
+static void *platform_malloc(size_t n) { return malloc_zone_malloc(zone, n); }
+static void *platform_calloc(size_t n, size_t m) { return malloc_zone_calloc(zone, n, m); }
+static void *platform_realloc(void *p, size_t n) { return malloc_zone_realloc(zone, p, n); }
+#else
 extern void *__libc_malloc(size_t);
 extern void *__libc_calloc(size_t, size_t);
 extern void *__libc_realloc(void *, size_t);
+#define platform_malloc __libc_malloc
+#define platform_calloc __libc_calloc
+#define platform_realloc __libc_realloc
+#endif
 
 static long malloc_fail = -1, calloc_fail = -1, realloc_fail = -1;
 static long malloc_size = -1;
@@ -32,6 +43,9 @@ static int at_call(atomic_long *counter, long n) {
 
 __attribute__((constructor))
 static void ai_init(void) {
+#ifdef __APPLE__
+    zone = malloc_default_zone();
+#endif
     malloc_fail = env_num("FI_MALLOC_FAIL");
     calloc_fail = env_num("FI_CALLOC_FAIL");
     realloc_fail = env_num("FI_REALLOC_FAIL");
@@ -43,15 +57,15 @@ static void ai_init(void) {
 void *malloc(size_t n) {
     if (active && malloc_size >= 0 && n == (size_t)malloc_size) return NULL;
     if (active && malloc_fail >= 0 && at_call(&malloc_n, malloc_fail)) return NULL;
-    return __libc_malloc(n);
+    return platform_malloc(n);
 }
 
 void *calloc(size_t n, size_t m) {
     if (active && calloc_fail >= 0 && at_call(&calloc_n, calloc_fail)) return NULL;
-    return __libc_calloc(n, m);
+    return platform_calloc(n, m);
 }
 
 void *realloc(void *p, size_t n) {
     if (active && realloc_fail >= 0 && at_call(&realloc_n, realloc_fail)) return NULL;
-    return __libc_realloc(p, n);
+    return platform_realloc(p, n);
 }
