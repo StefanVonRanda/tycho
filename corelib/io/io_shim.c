@@ -92,6 +92,11 @@ typedef struct { FILE *f; char *buf; size_t cap; } IoLines;
 void *iox_open_lines(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;                             /* fail closed: cannot open */
+    struct stat st;
+    if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {  /* glibc fopen opens directories */
+        fclose(f);
+        return NULL;
+    }
     IoLines *r = malloc(sizeof *r);
     if (!r) { fclose(f); return NULL; }
     r->f = f; r->buf = NULL; r->cap = 0;

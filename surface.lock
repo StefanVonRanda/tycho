@@ -473,6 +473,7 @@
   "strings.parse_float": "(s: string)-> Result(float, FloatErr)",
   "strings.parse_int": "(s: string)-> Result(int, IntErr)",
   "strings.parse_int_prefix": "(s: string)-> int",
+  "strings.parse_u64": "(s: string)-> Result(u64, IntErr)",
   "strings.repeat": "(s: string, n: int)-> string",
   "strings.replace": "(s: string, old: string, new: string)-> string",
   "strings.reverse": "(s: string)-> string",

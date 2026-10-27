@@ -37,6 +37,10 @@ fn main():
     cow := strings.parse_int("9223372036854775808")
     println(f"c0={c0} cm={cm} cb={cb} cmin={cmin}")
     println(f"ce={ce} cg={cg} cd={cd} cov={cov} cow={cow}")
+    u0 := strings.parse_u64("18446744073709551615")
+    uov := strings.parse_u64("18446744073709551616")
+    un := strings.parse_u64("-1")
+    println(f"u0={u0} uov={uov} un={un}")
     println(f"ovf={ovf} ovn={ovn} pe={pe} pd={pd} pg={pg}")   # ovf=0 ovn=0 pe=0 pd=0 pg=0
     # ---- parse_float: the strict opposite of parse_int_prefix, under a HOSTILE locale --
     # Everything below runs with LC_NUMERIC switched to a comma-decimal locale, so

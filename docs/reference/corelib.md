@@ -103,7 +103,7 @@ expression-bodied; pass a named function where you need a multi-line body.
   `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a
   digit), `hex_val` (0..15 or −1).
 - **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
-  `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `parse_int_prefix`,
+  `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `parse_u64`, `parse_int_prefix`,
   `is_space`, `lines` (splits on `\n`, drops one trailing `\r` per line, trailing
   newline adds no empty line), `replace`
   (non-overlapping, left to right; empty `old` returns the input unchanged), `count(s, sub)`,
@@ -111,9 +111,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   `reverse`, `capitalize`, `split_once(s, sep) -> (before, after)` (`(s, "")` if absent).
   (`split`/`find`/`substr`/`len`/`chr` are builtins.)
   **The integer parser is fail-closed by default:**
-  `parse_int(s) -> Result(int, IntErr)` and
-  `parse_float(s) -> Result(float, FloatErr)` refuse an empty string, trailing
-  garbage and out-of-range input. `parse_int_prefix(s) -> int` is the explicit
+  `parse_int(s) -> Result(int, IntErr)`,
+  `parse_u64(s) -> Result(u64, IntErr)` and
+  `parse_float(s) -> Result(float, FloatErr)` refuse an empty string, a sign
+  where unsigned, trailing garbage and out-of-range input (u64 above
+  `18446744073709551615`). `parse_int_prefix(s) -> int` is the explicit
   fail-open scanner (`"3x"` is `3`), for grammars that consume a numeric prefix;
   do not use it on a file, a socket or a user. `slice_str(s, start, stop) -> Result(string, SliceErr)`
   and `slice_bytes(b, start, stop)` — a plain slice **clamps** rather than

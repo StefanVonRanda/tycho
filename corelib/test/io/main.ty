@@ -240,6 +240,16 @@ fn main():
     tot := io.fold_lines(tmp, 0, addlen)
     missfold := io.fold_lines("/tmp/tycho_corelib_io_absent.xyz", 7, addlen)
     println(f"fold_sumlen={tot} fold_missing={missfold}")
+    dir_open := "other"
+    match io.open_lines("/tmp"):
+        Ok(r):
+            io.close_lines(r)
+            dir_open = "Ok"
+        Err(IsDir):
+            dir_open = "IsDir"
+        Err(_):
+            dir_open = "other"
+    println(f"open_dir={dir_open}")
 
     binf := "/tmp/tycho_corelib_io_bin.dat"
     io.write(binf, "AB" + chr(0) + "CD")

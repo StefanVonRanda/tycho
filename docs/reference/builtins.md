@@ -31,9 +31,9 @@ the reader must see a line while the program is still running.
 
 | Builtin | Type | Notes |
 | --- | --- | --- |
-| `str(x)` | `int`/`float`/`bool` `-> string` | A **finite** float prints as the shortest decimal (15, 16 or 17 significant digits) that reads back as the same `float`, always with a `.`; a bool prints `true`/`false`. NaN and the infinities are the exception — see below. |
-| `to_float(n)` | `int -> float` | Widen. |
-| `to_int(x)` | `float -> int` | Truncate toward zero. |
+| `str(x)` | `int`, sized ints, `f32`, `bool`, `float`, `string`, `char` `-> string` | A **finite** float prints as a decimal with at most 17 significant digits that reads back as the same `float` (the formatter tries 15, 16, then 17 and keeps the first that round-trips); fixed notation uses a `.`, exponent forms (`e±NN`) may omit it. A bool prints `true`/`false`. NaN and the infinities are the exception — see below. |
+| `to_float(n)` | numeric scalar `-> float` | Widen or reinterpret through the scalar base. |
+| `to_int(x)` | `float`, sized int, `f32`, `char`, or int-newtype `-> int` | Truncate a float toward zero; sized ints/char convert by value; int-newtype unwraps. |
 | `to_bytes(s)` / `to_str(b)` | `string <-> bytes` | Same byte buffer; `bytes` may carry interior NULs. |
 | `to_bytes(xs)` | `[int] -> bytes` | Each element `& 0xFF` into a fresh buffer — builds a binary `bytes` (interior NULs and all) that a `string` can't hold. |
 | `to_bytes(v)` | packed struct `-> bytes` | Exactly `size_of$(T)` bytes, little-endian, fields in declaration order. |

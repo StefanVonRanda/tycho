@@ -91,7 +91,7 @@ fn parse_int_prefix(s: string) -> int:        # decimal int, optional leading '-
 enum IntErr:
     EmptyInput         # "" (or a bare "-")
     Garbage            # a non-digit anywhere
-    OutOfRange         # outside [-9223372036854775808, 9223372036854775807]
+    OutOfRange         # outside the target type's range
 
 fn parse_int(s: string) -> Result(int, IntErr):
     if len(s) == 0:
@@ -120,6 +120,22 @@ fn parse_int(s: string) -> Result(int, IntErr):
         return Err(OutOfRange)
     return Ok(0 - v)
 
+
+fn parse_u64(s: string) -> Result(u64, IntErr):
+    if len(s) == 0:
+        return Err(EmptyInput)
+    v: u64 = 0
+    ten := to_u64(10)
+    max := to_u64(-1)
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c < 48 or c > 57:
+            return Err(Garbage)
+        d := to_u64(c - 48)
+        if v > (max - d) / ten:
+            return Err(OutOfRange)
+        v = v * ten + d
+    return Ok(v)
 
 # Why parse_float refused. Every variant is payload-free so `==` works on it.
 enum FloatErr:
