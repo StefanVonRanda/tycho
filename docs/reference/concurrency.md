@@ -331,8 +331,10 @@ Three rules keep that shape correct under load:
   reading stalls every other connection and new accepts.
 
 Reuse each slot's buffers: root arenas live for the process, so a fresh
-per-connection ring on every accept grows RSS. `net.write` has no timeout in
-0.9.0; a connection-owning worker is the current bound on a slow peer.
+per-connection ring on every accept grows RSS. The pool size is compile-time:
+task handles cannot be stored, so declare the maximum pool explicitly.
+`net.write` has no timeout in 0.9.0; a connection-owning worker is the current
+bound on a slow peer.
 
 ### Measured
 

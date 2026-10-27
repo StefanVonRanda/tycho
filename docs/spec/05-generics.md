@@ -35,7 +35,9 @@ the declaration, for the reason given in
 Explicit type arguments may be supplied with the `name$(T, …)` form (§7.5),
 which binds the parameters in declaration order; this is required when a
 parameter is not inferable from the arguments (for example a payload-less
-generic enum variant).
+generic enum variant). A bare `[]` argument is grounded only by a concrete
+expected parameter type; when `$T` is fixed by an earlier argument, write
+`[]T` rather than relying on the still-generic pattern.
 
 ## 7.2 Constraints (`where`)
 

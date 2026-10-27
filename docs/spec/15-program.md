@@ -300,7 +300,9 @@ is, so no runtime global is emitted and the reference costs nothing. A
 accepted wherever an expression is; it is **not** accepted as a fixed-array
 length (`[pkg.CAP]int`), because an array length is resolved while parsing and
 the imported package may not be parsed yet — an unqualified `const` still works
-there.
+there. A `const` initializer is also literal-only: it folds literals and
+backward **unqualified** constants, not `pkg.NAME`; use the qualified constant
+at the use site or a local literal.
 
 ### 28.4 Import resolution
 

@@ -145,6 +145,8 @@ pattern:  [$K: $V]        arg type: [string: [int]]  =>  K := string, V := [int]
 - Inference runs left to right, with no backtracking.
 - A parameter that never appears in an argument type cannot be inferred —
   supply it explicitly (`empty$(int)`).
+- A bare `[]` argument needs a concrete expected type. When the element type
+  is fixed by another argument, write `[]T` (`f(1, []int)`), not `[]`.
 - The body is substituted and checked as ordinary concrete code. A body
   error points at the instantiation that triggered it; a `where` clause
   turns it into a signature error instead.
