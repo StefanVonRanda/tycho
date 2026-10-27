@@ -221,11 +221,13 @@ accumulator (`acc := zero$(T)`) that must work on an empty input.
 | `size_of$(T)` | `-> int` | magic | The size of the packed or `align(N)` struct `T` in bytes (§17.1b). |
 | `from_bytes$(T)(b)` | `bytes -> T` | magic | Read a packed struct back out of exactly `size_of$(T)` bytes. |
 
-Both use the same explicit type-argument call form as `zero$(T)`, and both
-restrict `T` to a **packed struct** (or a newtype over one) — no other type has
-a stated layout to read or write. `from_bytes$(T)` requires the length to match
-**exactly**; any other length is a runtime error naming the type and both
-lengths. The byte order is little-endian on every host.
+Both use the same explicit type-argument call form as `zero$(T)`.
+`size_of$(T)` accepts a **packed struct** or an **`align(N)` struct** (or a
+newtype over either); `from_bytes$(T)` accepts a **packed struct** (or a
+newtype over one). No other type has a stated layout to read or write.
+`from_bytes$(T)` requires the length to match **exactly**; any other length is
+a runtime error naming the type and both lengths. The byte order is
+little-endian on every host.
 [§17.1b](12-aggregates.md#171b-the-bytes-bridge) is the normative description.
 
 There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinary
