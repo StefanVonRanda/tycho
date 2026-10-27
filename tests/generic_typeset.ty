@@ -10,8 +10,11 @@ fn pick(a: $T, b: $T, first: bool) -> $T where T: int | string:
 fn label(x: $T, y: $U) -> $T where numeric(T), U: int | string:
     return x
 
+type Cents = int
+
 fn main():
     println(str(pick(1, 2, true)))         # 1   (int in the set)
     println(pick("x", "y", false))         # y   (string in the set)
     println(str(label(3, "tag")))          # 3   (numeric(T) + U=string in set)
     println(str(label(7, 9)))              # 7   (U=int also in set)
+    println(str(pick(Cents(4), Cents(9), false)))   # 9   (newtype base is int)

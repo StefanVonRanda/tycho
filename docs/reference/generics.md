@@ -64,7 +64,8 @@ fn main():
 
 The name may be package-qualified (`vp.pair$(int, string)(1, "a")`). `zero$(T)` is the one builtin that consumes this form: it yields the
 zero value of a `defaultable` type, which is what lets a fold seed an accumulator without the
-caller supplying one (`acc := zero$(T)`).
+caller supplying one (`acc := zero$(T)`). `defaultable` does not see through a
+newtype; seed a newtype fold with its underlying zero, or a separate accumulator.
 
 A type parameter that appears only in the return type needs the same call-site
 form; there is no argument to infer it from:
@@ -115,7 +116,9 @@ Anything else must be entirely concrete — `Index(string, [float])`. A list tha
 mixes the two is refused even when each argument alone would be legal, so
 `Index($K, [float])` does not work in a parameter position and neither does
 `Index($K, [$V])`. Write the helper against the concrete instantiation, or make
-it generic over the whole struct (`ix: inout Index($K, $V)`).
+it generic over the whole struct (`ix: inout Index($K, $V)`). The all-parameters
+form matches by **name**: `Node($T)` inside `Node` is the recursive reference;
+an enclosing generic's differently named parameter (`Node($V)`) is not.
 
 
 ## Composition

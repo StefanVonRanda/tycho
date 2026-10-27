@@ -1,0 +1,12 @@
+# expect: declared type Box(int) but value is Box(Cents)
+type Cents = int
+
+struct Box($T):
+    v: T
+
+fn make(x: $T) -> Box($T):
+    return Box$(T)(x)
+
+fn main():
+    b: Box(int) = make$(Cents)(Cents(5))
+    println(str(b.v))

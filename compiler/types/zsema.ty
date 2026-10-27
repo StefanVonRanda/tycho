@@ -752,9 +752,10 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
             set := split(w[ci + 1:], "|")
             if tp2 in b:
                 got := _show(&cs, b[tp2])
+                gotb := _base(&cs, b[tp2])
                 inset := false
                 for e in set:
-                    if e == got:
+                    if e == got or e == gotb:
                         inset = true
                 if not inset:
                     txt := ""
@@ -1154,9 +1155,10 @@ fn _inst_named(cs: inout C, q: string, n: string, targs: [ast.Ty], enc: [string]
     selfref := len(targs) == len(cs.tds[ti].tps)
     concrete := true
     for i := 0; i < len(targs); i += 1:
-        if not _is_self_param(targs[i], cs.tds[ti].tps, i):
+        own := _is_self_param(targs[i], cs.tds[ti].tps, i)
+        if not own or (i < len(enc) and known(enc[i])):
             selfref = false
-        if _has_param(targs[i]):
+        if not (i < len(enc) and known(enc[i])):
             concrete = false
     if selfref:
         return "?"                     # a recursive reference to the template
