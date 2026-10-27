@@ -1504,6 +1504,10 @@ static const struct { tycho_int n; char z[8]; } ty_str_empty = { 0, { 0 } };
 #define TYCHO_INTERN_MAX 1024
 static char *tycho_intern_tab[TYCHO_INTERN_MAX];
 static int tycho_intern_n;
+/* The table is process-global, but string-map keys are inserted from spawned
+ * tasks. Serialize lookup+insert: the interned bytes are immortal, so the
+ * pointer remains valid after unlock. */
+static pthread_mutex_t tycho_intern_mu = PTHREAD_MUTEX_INITIALIZER;
 char *tycho_str_intern(char *s);
 char *tycho_str_intern_copy(Arena *a, char *s) {
     if (tycho_str_is_view(s)) s = tycho_str_copy(a, s);
@@ -1521,21 +1525,34 @@ char *tycho_str_intern(char *s) {
     uint64_t h = 1469598103934665603ULL;
     for (tycho_int i = 0; i < n; i++) { h ^= (unsigned char)s[i]; h *= 1099511628211ULL; }
     unsigned slot = (unsigned)(h & (TYCHO_INTERN_MAX - 1));
+    pthread_mutex_lock(&tycho_intern_mu);
     for (int probe = 0; probe < 16; probe++) {
         char *e = tycho_intern_tab[(slot + probe) & (TYCHO_INTERN_MAX - 1)];
         if (!e) break;
-        if (tycho_str_len(e) == n && memcmp(e, s, (size_t)n) == 0) return e;
+        if (tycho_str_len(e) == n && memcmp(e, s, (size_t)n) == 0) {
+            pthread_mutex_unlock(&tycho_intern_mu);
+            return e;
+        }
     }
-    if (tycho_intern_n >= TYCHO_INTERN_MAX) return s;
+    if (tycho_intern_n >= TYCHO_INTERN_MAX) {
+        pthread_mutex_unlock(&tycho_intern_mu);
+        return s;
+    }
     char *p = (char *)malloc((size_t)(8 + n + 1));
-    if (!p) return s;
+    if (!p) {
+        pthread_mutex_unlock(&tycho_intern_mu);
+        return s;
+    }
     *(tycho_int *)p = ~n;
     memcpy(p + 8, s, (size_t)n); p[8 + n] = 0;
     char *r = p + 8;
+    int inserted = 0;
     for (int probe = 0; probe < 16; probe++) {
         unsigned ix = (slot + probe) & (TYCHO_INTERN_MAX - 1);
-        if (!tycho_intern_tab[ix]) { tycho_intern_tab[ix] = r; tycho_intern_n++; break; }
+        if (!tycho_intern_tab[ix]) { tycho_intern_tab[ix] = r; tycho_intern_n++; inserted = 1; break; }
     }
+    if (!inserted) { free(p); r = s; }   /* collision window full: skip interning */
+    pthread_mutex_unlock(&tycho_intern_mu);
     return r;
 }
 

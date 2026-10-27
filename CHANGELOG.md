@@ -15,6 +15,13 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ## [Unreleased]
 
+### Runtime
+
+- **String-map insertion is race-free across tasks.** The process-global intern
+  table used by string-keyed map insertion is serialized, and an uninserted
+  intern is freed instead of leaked. `tests/conc/intern_map_race.ty` runs in
+  the TSan lane.
+
 ### Corelib
 
 - **`io.flush_stdout()`** flushes the runtime's buffered stdout, for a CLI whose

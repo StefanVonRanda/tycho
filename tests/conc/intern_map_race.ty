@@ -1,0 +1,12 @@
+# Two tasks insert string-keyed map entries. The runtime's intern table is
+# process-global; this must be race-free under TSan, not just lucky natively.
+fn fill(tag: string, n: int) -> int:
+    m := []string: int
+    for i := 0; i < n; i += 1:
+        m[tag + str(i)] = i
+    return len(m)
+
+fn main():
+    t1 := spawn fill("a", 2000)
+    t2 := spawn fill("b", 2000)
+    println(str(wait(t1) + wait(t2)))
