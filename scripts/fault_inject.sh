@@ -49,7 +49,17 @@ check() {
             fi
         done
     fi
-    for mode in FI_READ_EINTR FI_WRITE_EINTR; do
+    for mode in FI_PREAD_SHORT FI_PWRITE_SHORT; do
+        run "$mode" 0 "$bin" "$input" "$T/$name.out" "$T/$name.err" || {
+            echo "FAIL $name $mode rc=$?"; fail=$((fail + 1)); continue
+        }
+        if ! cmp -s "$golden" "$T/$name.out"; then
+            echo "FAIL $name $mode output moved"
+            diff "$golden" "$T/$name.out" | head -4 | sed 's/^/      /'
+            fail=$((fail + 1))
+        fi
+    done
+    for mode in FI_READ_EINTR FI_WRITE_EINTR FI_PREAD_EINTR FI_PWRITE_EINTR; do
         for nth in 1 2 3 4 5 6 7 8; do
             run "$mode" "$nth" "$bin" "$input" "$T/$name.out" "$T/$name.err" || {
                 echo "FAIL $name $mode n=$nth rc=$?"; fail=$((fail + 1)); continue

@@ -699,7 +699,9 @@ void iox_write_at(const char *path, tycho_int off,
     int fd = open(path, O_RDWR | O_CREAT | O_BINARY, 0644);   /* create if absent, like write_bytes */
     if (fd < 0) { *status = ty_rf_errno(path); return; }
     if (datalen > 0 && data) {
-        ssize_t w = pwrite(fd, data, (size_t)datalen, (off_t)off);
+        ssize_t w;
+        do { w = pwrite(fd, data, (size_t)datalen, (off_t)off); }
+        while (w < 0 && errno == EINTR);
         if (w != (ssize_t)datalen) { *status = ty_rf_errno(path); close(fd); return; }  /* partial: error, fail closed */
     }
     if (close(fd) != 0) { *status = ty_rf_errno(path); return; }

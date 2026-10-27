@@ -93,15 +93,18 @@ overflow given enough nesting); rather than guard it, `gen_malformed.py` caps it
 deep-nesting op at a realistic-but-stressful depth so the lane exercises nesting
 without depth-DoS.
 
-## Independent integer oracle — `oracle.py`
+## Independent oracle — `oracle.py`
 
 `run.py` compares a build against another build of the same compiler (native vs
-ASan), so a consistently wrong codegen passes. `oracle.py` generates int
-functions with arithmetic, comparisons, `if`/`else` and a bounded `for`, evaluates
-the same AST in Python with 64-bit wrap and Tycho's truncating `/` and `%`, then
+ASan), so a consistently wrong codegen passes. `oracle.py` generates four
+surfaces -- int arithmetic/control flow, float arithmetic, string builtins, and
+array push/index/slice/sum -- evaluates the same AST in Python with 64-bit wrap,
+Tycho's truncating `/` and `%`, and the documented string semantics, then
 compiles with **both** `tychoc` and `tychoc1` and compares every printed value.
-`make oracle-fuzz` (N seeds, default 200). Seeded and reproducible; `--selfcheck`
-proves a perturbed line is detected.
+Floats are compared as bits after parsing the printed decimal, so a different
+spelling is not a failure. `make oracle-fuzz` (N seeds, default 200). Seeded and
+reproducible; `--selfcheck` perturbs an int, float, string and array line and
+requires each to be detected.
 
 ## ThreadSanitizer lane — `run_tsan.py`
 
@@ -113,8 +116,10 @@ no TSan report. `make fuzz-tsan` (N seeds; only concurrent shapes are run).
 ## Beyond generated programs
 
 `make fault-inject` (`scripts/fault_inject.sh`) injects short reads/writes and
-`EINTR` into corelib tests through `LD_PRELOAD`; a golden that moves means a shim
-treated a partial transfer as EOF or an interruption as failure. `make
-mutation-check` applies a small set of semantic edits to a copy of `corelib` and
-requires the matching golden to move. `make json-conformance` runs a checkout of
+`EINTR` into corelib tests through `LD_PRELOAD`; it covers `read`/`write` and
+`pread`/`pwrite`. A golden that moves means a shim treated a partial transfer as
+EOF or an interruption as failure. `make
+mutation-check` applies a small set of semantic edits to a copy of `corelib`, a
+copy of the compiler and a copied runtime, and requires the matching golden to
+move. `make json-conformance` runs a checkout of
 `nst/JSONTestSuite` pointed at by `JSONTESTSUITE` (skipped when unset).

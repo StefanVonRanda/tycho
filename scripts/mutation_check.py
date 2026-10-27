@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Small mutation campaign over the corelib APIs added for the cold probes.
+"""Small mutation campaign over corelib, the compiler and the runtime.
 
-Each case copies corelib, applies one semantic edit, rebuilds the matching
-fixture against the copy and requires its golden to move. A surviving mutant is
-a test gap, not a compiler bug. The two controls prove the harness can both
-kill (RF_OK changed) and stay quiet (comment-only edit).
+Each case copies the subject, applies one semantic edit, rebuilds the matching
+fixture and requires its golden to move. A surviving mutant is a test gap, not a
+compiler bug. The two controls prove the harness can both kill (RF_OK changed)
+and stay quiet (comment-only edit).
 """
 import os
 import shutil
@@ -92,6 +92,41 @@ CASES = [
         'entry': 'corelib/test/strings/main.ty',
         'golden': 'corelib/test/strings.out',
     },
+    {
+        'name': 'json-empty-array-trailing',
+        'file': 'corelib/json/json.ty',
+        'old': '        if pos != n:\n            return Err(TrailingText(pos))\n        return Ok(JArr(xs))',
+        'new': '        return Ok(JArr(xs))',
+        'entry': 'corelib/test/json/main.ty',
+        'golden': 'corelib/test/json.out',
+    },
+    {
+        'name': 'compiler-plus-to-minus',
+        'kind': 'compiler',
+        'file': 'src/tychoc.c',
+        'old': 'case TK_PLUS:  return "+";',
+        'new': 'case TK_PLUS:  return "-";',
+        'entry': 'tests/boundary_arith.ty',
+        'golden': 'tests/boundary_arith.out',
+    },
+    {
+        'name': 'runtime-shl-wide-to-one',
+        'kind': 'runtime',
+        'file': 'runtime/tycho_rt.c',
+        'old': 'static tycho_int tycho_shl_i(tycho_int x, long long n) {\n    if (n < 0) { fprintf(stderr, "tycho: negative shift count\\n"); exit(1); }\n    if (n >= 64) return 0;',
+        'new': 'static tycho_int tycho_shl_i(tycho_int x, long long n) {\n    if (n < 0) { fprintf(stderr, "tycho: negative shift count\\n"); exit(1); }\n    if (n >= 64) return 1;',
+        'entry': 'tests/shift_edge.ty',
+        'golden': 'tests/shift_edge.out',
+    },
+    {
+        'name': 'runtime-idiv-to-mul',
+        'kind': 'runtime',
+        'file': 'runtime/tycho_rt.c',
+        'old': 'static tycho_int tycho_idiv(tycho_int a, tycho_int b) {\n    if (b == 0) { fprintf(stderr, "tycho: division by zero\\n"); exit(1); }\n    if (a == INT64_MIN && b == -1) { fprintf(stderr, "tycho: division overflow\\n"); exit(1); }\n    return a / b;\n}',
+        'new': 'static tycho_int tycho_idiv(tycho_int a, tycho_int b) {\n    if (b == 0) { fprintf(stderr, "tycho: division by zero\\n"); exit(1); }\n    if (a == INT64_MIN && b == -1) { fprintf(stderr, "tycho: division overflow\\n"); exit(1); }\n    return a * b;\n}',
+        'entry': 'tests/boundary_arith.ty',
+        'golden': 'tests/boundary_arith.out',
+    },
 ]
 
 
@@ -100,13 +135,30 @@ def run_case(case):
     try:
         dst = os.path.join(tmp, 'corelib')
         shutil.copytree(os.path.join(REPO, 'corelib'), dst)
-        path = os.path.join(tmp, case['file'])
+        kind = case.get('kind', 'corelib')
+        extra = []
+        compiler = TYCHOC
+        if kind == 'corelib':
+            path = os.path.join(tmp, case['file'])
+        else:
+            path = os.path.join(tmp, 'mut_' + os.path.basename(case['file']))
+            shutil.copy2(os.path.join(REPO, case['file']), path)
         with open(path) as f:
             text = f.read()
         if text.count(case['old']) != 1:
             return case['name'], 'BROKEN', 'pattern matched %d times' % text.count(case['old'])
         with open(path, 'w') as f:
             f.write(text.replace(case['old'], case['new'], 1))
+        if kind == 'compiler':
+            compiler = os.path.join(tmp, 'tychoc_mut')
+            r = subprocess.run(['cc', '-O2', '-fwrapv', '-std=c11',
+                                '-I', os.path.join(REPO, 'build'),
+                                path, '-o', compiler], capture_output=True,
+                               text=True, timeout=120)
+            if r.returncode != 0:
+                return case['name'], 'killed', 'mutant compiler failed to build'
+        elif kind == 'runtime':
+            extra = ['--runtime', path]
         entry = case['entry']
         if entry.startswith('corelib/'):
             entry = os.path.join(dst, entry[len('corelib/'):])
@@ -115,7 +167,7 @@ def run_case(case):
         golden = os.path.join(REPO, case['golden'])
         binary = os.path.join(tmp, 'test')
         env = dict(os.environ, TYCHO_CORELIB=dst)
-        r = subprocess.run([TYCHOC, entry, '-o', binary], capture_output=True,
+        r = subprocess.run([compiler] + extra + [entry, '-o', binary], capture_output=True,
                            text=True, timeout=120, env=env)
         if r.returncode != 0:
             return case['name'], 'killed', 'compile failed: ' + (r.stderr or r.stdout).strip().splitlines()[-1][:120]
