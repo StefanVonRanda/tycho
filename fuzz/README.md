@@ -120,7 +120,9 @@ no TSan report. `make fuzz-tsan` (N seeds; only concurrent shapes are run).
 `pread`/`pwrite`. A golden that moves means a shim treated a partial transfer as
 EOF or an interruption as failure. `make alloc-fail` fails a one-byte `malloc`
 and a sweep of allocation ordinals; it caught `core:http` dereferencing a NULL
-body buffer. `make mutation-check` applies a small set of semantic edits to a
+body buffer. `make descriptor-fail` injects pipe/socket/connect/accept/poll and
+file-operation failures plus real fd exhaustion, and checks that descriptors do
+not accumulate. `make mutation-check` applies a small set of semantic edits to a
 copy of `corelib`, a copy of the compiler and a copied runtime, and requires the
 matching golden to move. `make json-conformance` runs a checkout of
 `nst/JSONTestSuite` pointed at by `JSONTESTSUITE` (skipped when unset).

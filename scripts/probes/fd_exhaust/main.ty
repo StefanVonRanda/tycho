@@ -1,0 +1,34 @@
+package main
+import "core:io"
+import "core:net"
+import "core:os"
+
+fn why(r: Result(bytes, io.IoErr)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(_): return "Err"
+
+fn nwhy(r: Result(int, net.NetErr)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(_): return "Err"
+
+fn fdcount() -> int:
+    return len(io.list("/proc/self/fd"))
+
+fn main():
+    before := fdcount()
+    readers := []io.LineReader
+    for len(readers) < 4096:
+        match io.open_lines("/etc/hostname"):
+            Ok(r): push(readers, r)
+            Err(_): break
+    held := len(readers)
+    exread := why(io.read_bytes("/etc/hostname"))
+    cap := os.exec_capture(["/bin/true"])
+    listen := nwhy(net.listen("127.0.0.1", 0))
+    for r in readers:
+        io.close_lines(r)
+    after := fdcount()
+    recovered := why(io.read_bytes("/etc/hostname"))
+    println(f"ex={held},{exread},{cap.code},{listen},{recovered},{before},{after}")

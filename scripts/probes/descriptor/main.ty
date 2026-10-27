@@ -1,0 +1,70 @@
+package main
+import "core:io"
+import "core:net"
+import "core:os"
+
+fn why(r: Result(bytes, io.IoErr)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(_): return "Err"
+
+fn vwhy(r: Result(void, io.IoErr)) -> string:
+    match r:
+        Ok(): return "Ok"
+        Err(_): return "Err"
+
+fn fswhy(r: Result(bool, io.IoErr)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(_): return "Err"
+
+fn nwhy(r: Result(int, net.NetErr)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(_): return "Err"
+
+fn pwhy(r: Result(int, net.NetErr)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(net.Timeout): return "Timeout"
+        Err(_): return "Err"
+
+fn fd_of(r: Result(int, net.NetErr)) -> int:
+    match r:
+        Ok(fd): return fd
+        Err(_): return -1
+
+fn fdcount() -> int:
+    return len(io.list("/proc/self/fd"))
+
+fn main():
+    println("read=" + why(io.read_bytes("/etc/hostname")))
+    println("write=" + vwhy(io.write_bytes("/tmp/tycho_desc_write", to_bytes("x"))))
+    println("at=" + vwhy(io.write_at("/tmp/tycho_desc_at", 0, to_bytes("y"))))
+    println("sync=" + vwhy(io.sync("/etc/hostname")))
+    println("rename=" + vwhy(io.rename("/tmp/tycho_desc_src", "/tmp/tycho_desc_dst")))
+    println("mkdir=" + fswhy(io.make_dir("/tmp/tycho_desc_dir")))
+    println("remove=" + fswhy(io.remove("/tmp/tycho_desc_remove")))
+    c := os.exec_capture(["/bin/true"])
+    println("cap=" + str(c.code) + "," + str(len(c.out)) + "," + str(len(c.err)))
+
+    ls := fd_of(net.listen("127.0.0.1", 0))
+    lstr := "Err"
+    if ls >= 0:
+        lstr = "Ok"
+    println("listen=" + lstr)
+    println("connect=" + nwhy(net.connect("127.0.0.1", 1)))
+    println("poll=" + pwhy(net.accept_wait(ls, 10)))
+    cl := fd_of(net.connect("127.0.0.1", fd_of(net.port_of(ls))))
+    println("accept=" + nwhy(net.accept_wait(ls, 20)))
+    net.close_fd(cl)
+    net.close_fd(ls)
+
+    base := fdcount()
+    for i := 0; i < 20; i += 1:
+        os.exec_capture(["/bin/true"])
+    mid := fdcount()
+    for i := 0; i < 20; i += 1:
+        net.connect("127.0.0.1", 1)
+    end := fdcount()
+    println("fds=" + str(base) + "," + str(mid) + "," + str(end))

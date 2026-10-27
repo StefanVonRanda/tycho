@@ -11,7 +11,7 @@ TYCHOC  ?= ./tychoc
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: shadercross preflight prunner-check ci-linux fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check builtin-qualified parity-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+.PHONY: shadercross preflight prunner-check ci-linux fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check builtin-qualified parity-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
 
 # tychoc1, the self-hosted compiler, is what `make` produces and what ships.
 # It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
@@ -728,6 +728,9 @@ fault-inject: tychoc1
 
 alloc-fail: tychoc1
 	@sh scripts/alloc_fail.sh
+
+descriptor-fail: tychoc1
+	@sh scripts/descriptor_fail.sh
 
 mutation-check: tychoc1
 	@python3 scripts/mutation_check.py
