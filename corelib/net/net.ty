@@ -22,12 +22,15 @@ extern fn netx_accept(fd: int) -> int
 extern fn netx_connect(host: string, port: int) -> int
 extern fn netx_port_of(fd: int) -> int
 extern fn netx_peer_addr(fd: int) -> string
-extern fn netx_write(fd: int, data: bytes) -> int
+# `status` is the send classification: 1 whole buffer sent, 2 send timeout,
+# 3 other error. The status out-param follows the data pointer+length.
+extern fn netx_write(fd: int, data: bytes, status: inout int) -> int
 # `status` is the recv classification: 0 EOF, 1 data, 2 timeout, 3 error. It is an
 # `inout int`, which lowers to a tycho_int* out-param ahead of the two out-params
 # the `bytes` return uses -- see the block comment on netx_read in net_shim.c.
 extern fn netx_read(fd: int, max: int, status: inout int) -> bytes
 extern fn netx_set_read_timeout(fd: int, ms: int) -> int
+extern fn netx_set_write_timeout(fd: int, ms: int) -> int
 extern fn netx_close(fd: int)
 extern fn netx_udp_bind(host: string, port: int) -> int
 extern fn netx_udp_send(fd: int, host: string, port: int, data: bytes) -> int
@@ -37,6 +40,10 @@ extern fn netx_udp_read(fd: int, max: int) -> bytes
 const RD_EOF  = 0
 const RD_DATA = 1
 const RD_TMO  = 2
+
+# The shim's write-status codes, likewise.
+const WR_OK  = 1
+const WR_TMO = 2
 
 # ---- TCP ----
 fn listen(host: string, port: int) -> Result(int, NetErr):
@@ -80,10 +87,13 @@ fn peer_addr(fd: int) -> Result(string, NetErr):
 # Send the whole buffer. Ok(n) with n == len(data); the shim loops over short
 # writes, so a partial send is reported as a failure rather than a smaller n.
 fn write(fd: int, data: bytes) -> Result(int, NetErr):
-    n := netx_write(fd, data)
-    if n < 0:
-        return Err(Failed)
-    return Ok(n)
+    st := 0
+    n := netx_write(fd, data, &st)
+    if st == WR_OK:
+        return Ok(n)
+    if st == WR_TMO:
+        return Err(Timeout)
+    return Err(Failed)
 
 fn read(fd: int, max: int) -> Result(bytes, NetErr):
     st := 0
@@ -102,6 +112,13 @@ fn read(fd: int, max: int) -> Result(bytes, NetErr):
 # closed: the socket keeps blocking).
 fn set_read_timeout_ms(fd: int, ms: int) -> bool:
     return netx_set_read_timeout(fd, ms) == 1
+
+# Arm a send timeout on `fd`: a write that cannot make progress for `ms`
+# milliseconds yields Err(Timeout) instead of blocking forever. `ms <= 0`
+# restores the blocking default. Returns false if the socket option could not
+# be set (fail closed: the socket keeps blocking).
+fn set_write_timeout_ms(fd: int, ms: int) -> bool:
+    return netx_set_write_timeout(fd, ms) == 1
 
 fn close_fd(fd: int):
     netx_close(fd)

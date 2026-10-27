@@ -29,6 +29,12 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   cold binary-protocol probe found `print`/`println` block-buffered on a pipe;
   its record and the doc corrections are in
   [`docs/internals/cold-probe-binary-2026-10-26.md`](docs/internals/cold-probe-binary-2026-10-26.md).
+- **Probe-driven IO/CLI surface.** `io.read_link` reads a symlink's target,
+  `io.read_stdin_bytes` keeps EOF distinct from a read failure,
+  `net.set_write_timeout_ms` bounds a stalled send, and
+  `os.exec_capture(argv)` captures stdout and stderr separately.
+  `strings.parse_u64` adds strict unsigned parsing. `io.open_lines` now rejects
+  a directory with `Err(IsDir)` instead of returning an empty reader.
 
 ## [0.9.0] — 2026-10-26
 

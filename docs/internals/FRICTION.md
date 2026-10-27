@@ -6453,7 +6453,7 @@ The `<file>` was `corelib/os/os_shim.c` at the `osx_is_batch_ref` definition,
 which this entry's fix deleted — so it is named rather than cited, the citation
 gate quite correctly refusing a live reference to a symbol that no longer
 exists. The line carrying the replacement is
-`corelib/os/os_shim.c:133@unused`.
+`corelib/os/os_shim.c:161@unused`.
 
 **Measured, same tree, same command:** gcc 16.2.1 — *"14 shim(s) compiled with
 `-Wall -Wextra -Wdeprecated-declarations`, 0 skipped; 0 warning line(s),
@@ -6462,8 +6462,8 @@ matching `scripts/shim.warn`"*. clang 22.1.8 — the line above.
 which is a narrower claim than it looks.
 
 **The warning is aimed at a suppression, not at a defect.** `osx_is_batch`
-(`corelib/os/os_shim.c:134@osx_is_batch`) is called from exactly one place,
-`corelib/os/os_shim.c:363@osx_is_batch`, inside the `_WIN32` branch. On a POSIX build nothing calls it, so the
+(`corelib/os/os_shim.c:162@osx_is_batch`) is called from the `_WIN32` spawn
+paths (`corelib/os/os_shim.c:476@osx_is_batch` and `corelib/os/os_shim.c:594@osx_is_batch`). On a POSIX build nothing calls it, so the
 file takes its address at file scope to keep gcc's `-Wunused-function` quiet:
 
 ```c
@@ -6509,7 +6509,7 @@ have put that gate back to scoring a hand-copy — the precise defect the functi
 was moved out of the `#ifdef` to fix. **The recommendation was made without
 reading the eight lines above the function.**
 
-**What was done instead — option 1, the attribute** (`corelib/os/os_shim.c:133@unused`):
+**What was done instead — option 1, the attribute** (`corelib/os/os_shim.c:161@unused`):
 
 ```c
 __attribute__((unused))
@@ -6993,7 +6993,7 @@ Three errors in one sentence:
 | every call blocks | `accept_wait(fd, ms)` and `wait_readable(fds, ms)` take deadlines |
 | 12 exports | **15** |
 
-`corelib/net/net.ty:154@wait_readable` even carries the comment *"poll(2)
+`corelib/net/net.ty:171@wait_readable` even carries the comment *"poll(2)
 underneath, not select(2): select cannot represent a descriptor at or above
 1024"* — and `make net-poll-check` has been scoring exactly that behaviour on
 every sweep.

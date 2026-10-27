@@ -179,18 +179,41 @@ const char *netx_peer_addr(tycho_int fd) {
     return buf;
 }
 
-/* Send the whole buffer (looping over short writes); returns the byte count sent
- * (== len) or -1 on error. A 0-length payload is a valid no-op that returns 0.
- * MSG_NOSIGNAL: a peer that vanished mid-write must yield EPIPE here, never a
- * SIGPIPE that kills the process -- see the note at the top of this file. */
-tycho_int netx_write(tycho_int fd, const unsigned char *data, tycho_int len) {
+#define TY_WR_OK  1
+#define TY_WR_TMO 2
+#define TY_WR_ERR 3
+
+/* Did the last failed send expire a send timeout? POSIX SO_SNDTIMEO surfaces as
+ * EAGAIN/EWOULDBLOCK; Winsock reports WSAETIMEDOUT. */
+static int ty_send_timed_out(void) {
+#ifndef _WIN32
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+#else
+    int e = WSAGetLastError();
+    return e == WSAETIMEDOUT || e == WSAEWOULDBLOCK;
+#endif
+}
+
+/* Send the whole buffer, looping over short writes; returns len or -1.
+ * A 0-length payload is a valid no-op that returns 0. MSG_NOSIGNAL keeps a
+ * vanished peer from becoming SIGPIPE (see the top of this file). `status`
+ * separates an expired SO_SNDTIMEO from a real failure, so net.write can
+ * answer Err(Timeout) instead of flattening both into Failed. */
+tycho_int netx_write(tycho_int fd, const unsigned char *data, tycho_int len,
+                     tycho_int *status) {
+    *status = TY_WR_ERR;
     if (!netx_fd_ok(fd) || len < 0) return -1;
     tycho_int off = 0;
     while (off < len) {
+        errno = 0;
         tycho_int n = (tycho_int)send((int)fd, (const char *)data + off, (size_t)(len - off), MSG_NOSIGNAL);
-        if (n <= 0) return -1;   /* fail closed: report the partial-send as an error */
+        if (n <= 0) {
+            if (ty_send_timed_out()) *status = TY_WR_TMO;
+            return -1;   /* fail closed: report the partial-send as an error */
+        }
         off += n;
     }
+    *status = TY_WR_OK;
     return off;
 }
 
@@ -231,9 +254,8 @@ void netx_read(tycho_int fd, tycho_int max, tycho_int *status,
 }
 
 /* Arm a receive timeout on `fd` (SO_RCVTIMEO). After `ms` milliseconds with no
- * data, recv() fails with EAGAIN/EWOULDBLOCK and netx_read yields the empty
- * bytes -- indistinguishable from EOF on purpose, because a server's response to
- * both is the same: drop the connection. ms <= 0 clears the timeout (block
+ * data, recv() fails with EAGAIN/EWOULDBLOCK and netx_read reports TY_RD_TMO,
+ * which net.read turns into Err(Timeout). ms <= 0 clears the timeout (block
  * forever, the default). Returns 1 on success, 0 on failure -- fail closed, so a
  * caller that ignores the result still gets the blocking default, never a
  * silently-half-armed socket. This is what lets a keep-alive loop refuse to be
@@ -249,6 +271,25 @@ tycho_int netx_set_read_timeout(tycho_int fd, tycho_int ms) {
 #else
     DWORD tv = (DWORD)ms;   /* Winsock takes a DWORD of milliseconds, not a timeval */
     if (setsockopt((int)fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) != 0) return 0;
+#endif
+    return 1;
+}
+
+/* The send-side counterpart (SO_SNDTIMEO). A send that cannot make progress for
+ * `ms` milliseconds fails with EAGAIN/EWOULDBLOCK and netx_write reports
+ * TY_WR_TMO, which net.write turns into Err(Timeout). ms <= 0 clears it. Same
+ * fail-closed return as the receive form. */
+tycho_int netx_set_write_timeout(tycho_int fd, tycho_int ms) {
+    if (!netx_fd_ok(fd)) return 0;
+    if (ms < 0) ms = 0;
+#ifndef _WIN32
+    struct timeval tv;
+    tv.tv_sec = (time_t)(ms / 1000);
+    tv.tv_usec = (suseconds_t)((ms % 1000) * 1000);
+    if (setsockopt((int)fd, SOL_SOCKET, SO_SNDTIMEO, (const void *)&tv, sizeof tv) != 0) return 0;
+#else
+    DWORD tv = (DWORD)ms;
+    if (setsockopt((int)fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv, sizeof tv) != 0) return 0;
 #endif
     return 1;
 }

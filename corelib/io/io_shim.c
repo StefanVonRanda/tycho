@@ -205,6 +205,78 @@ static tycho_int ty_rf_errno(const char *path) {
     return TY_RF_ERR;
 }
 
+void iox_read_link(const char *path, tycho_int *status,
+                   unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = TY_RF_ERR;
+#ifndef _WIN32
+    struct stat st;
+    errno = 0;
+    if (lstat(path, &st) != 0) { *status = ty_rf_errno(path); return; }
+    if (!S_ISLNK(st.st_mode)) return;
+    size_t cap = st.st_size > 0 ? (size_t)st.st_size + 1 : 4096;
+    if (cap < 256) cap = 256;
+    for (int tries = 0; tries < 8; tries += 1) {
+        char *buf = malloc(cap);
+        if (!buf) return;
+        ssize_t n = readlink(path, buf, cap - 1);
+        if (n < 0) { free(buf); *status = ty_rf_errno(path); return; }
+        if ((size_t)n < cap - 1) {
+            buf[n] = 0;
+            *out = (unsigned char *)buf;
+            *outlen = (tycho_int)n;
+            *status = TY_RF_OK;
+            return;
+        }
+        free(buf);
+        if (cap > (1u << 20)) return;
+        cap *= 2;
+    }
+#else
+    DWORD attrs = GetFileAttributesA(path);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        DWORD e = GetLastError();
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) *status = TY_RF_MISS;
+        return;
+    }
+    /* An existing reparse point: its target is not exposed as a string. */
+    (void)attrs;
+#endif
+}
+
+void iox_read_stdin(tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = TY_RF_ERR;
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
+    size_t cap = 4096, len = 0;
+    unsigned char *buf = malloc(cap);
+    if (!buf) return;
+    for (;;) {
+        if (len == cap) {
+            size_t nc = cap * 2;
+            unsigned char *nb = realloc(buf, nc);
+            if (!nb) { free(buf); return; }
+            buf = nb; cap = nc;
+        }
+#ifdef _WIN32
+        int n = _read(0, buf + len, (unsigned int)(cap - len));
+#else
+        ssize_t n = read(0, buf + len, cap - len);
+#endif
+        if (n < 0) { free(buf); return; }
+        if (n == 0) break;
+        len += (size_t)n;
+    }
+    buf[len] = 0;
+    *out = buf;
+    *outlen = (tycho_int)len;
+    *status = TY_RF_OK;
+}
+
 void iox_read_file(const char *path, tycho_int *status,
                    unsigned char **out, tycho_int *outlen) {
     *out = NULL;

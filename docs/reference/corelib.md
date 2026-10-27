@@ -459,7 +459,13 @@ expression-bodied; pass a named function where you need a multi-line body.
   peak memory is O(longest line), not O(file). `read_bytes(p) -> Result(bytes, io.IoErr)`
   reads a whole file as raw `bytes` (binary-safe); an **empty file is `Ok`** with zero
   bytes, a missing path is `Err(NotFound)` and a directory is `Err(IsDir)` — three
-  outcomes a single empty `bytes` would collapse. The variants are payload-free, so `==`
+  outcomes a single empty `bytes` would collapse. `read_link(p) -> Result(string,
+  io.IoErr)` reads a symlink's target text — a dangling link is still `Ok`; on
+  Windows a reparse point exposes no target string, so a path that exists is
+  `Err(Failed)` and a missing one is `Err(NotFound)`. `read_stdin_bytes() ->
+  Result(bytes, io.IoErr)` reads all of stdin as raw bytes and keeps EOF (`Ok`,
+  possibly empty) distinct from a read failure (`Err(Failed)`); stdin is exhausted
+  afterwards and Windows switches the stream to binary mode. The variants are payload-free, so `==`
   and a nested `Err(io.IsDir)` arm both work. Three helpers resolve `list`'s
   empty-directory ambiguity: `is_dir(p) -> Result(bool, io.IoErr)`, and `make_dir(p)` /
   `remove(p)` — **one entry each, never recursive** — answering `Ok(true)` for "changed
@@ -502,7 +508,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   fallback to the shell. Implemented on both platforms — POSIX `posix_spawnp`, Windows
   `CreateProcess` (never `cmd.exe`) — but a program that parses its own command line by
   other rules (a `.bat`/`.cmd` file) can still read it differently, so don't hand a batch
-  file untrusted argv.
+  file untrusted argv. **`os.exec_capture(argv) -> Capture{code, out, err}`** is
+  `exec_out` with stderr kept separate; both pipes are drained concurrently, so a
+  child cannot deadlock by filling one stream before the other. Same no-shell,
+  fail-closed `-1` contract with both strings empty.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (POSIX sockets; no `deps`,
   nothing to install). **The transfer calls block; readiness does not.**
   `read`/`write`/`connect` block, so a worker-per-connection server still has its
@@ -516,7 +525,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   **`Result(T, net.NetErr)`**: `listen`/`accept`/`connect`/`port_of` give `Result(int, …)`,
   `peer_addr(fd)` gives `Result(string, …)` — the connected peer's address as text,
   the field a real access log leads with.
-  `write` gives `Result(int, …)` (bytes sent), `read` gives `Result(bytes, …)`. Payloads
+  `write` gives `Result(int, …)` (bytes sent; `Err(Timeout)` once a send deadline
+  expires), `read` gives `Result(bytes, …)`. Payloads
   are binary-safe `bytes`. `NetErr` is `Eof` / `Timeout` / `Failed`, all payload-free so
   a single cause can be tested with `==` without opening a `match` at all — or, inside
   one, with a nested `Err(net.Timeout)` arm (§14.3.1).
@@ -524,7 +534,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   (`Err(Timeout)`) from a hard error (`Err(Failed)`) — three answers a bare empty `bytes`
   would collapse into one. `set_read_timeout_ms(fd, ms)` arms a receive deadline and stays
   a plain `bool` — one failure, one cause; `ms <= 0` restores the blocking default and
-  `false` means the option could not be set (the socket keeps blocking). The **UDP** calls
+  `false` means the option could not be set (the socket keeps blocking). The send-side
+  `set_write_timeout_ms(fd, ms)` has the same contract and makes a stalled `write`
+  answer `Err(Timeout)`. The **UDP** calls
   (`udp_bind`/`udp_send`/`udp_read`) are still sentinel-based on purpose: a zero-length
   datagram is legal, so `udp_read`'s empty result is a real success value.
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external

@@ -20,6 +20,7 @@
 
 #ifdef _WIN32
 #include <windows.h>            /* CreateProcessA / CreatePipe -- the argv path */
+#include <process.h>            /* _beginthreadex -- concurrent stdout/stderr drains */
 #define TY_POPEN  _popen
 #define TY_PCLOSE _pclose
 static tycho_int ty_os_decode(int st) { return (tycho_int)st; }   /* Windows: system/_pclose return the code directly */
@@ -28,6 +29,7 @@ static tycho_int ty_os_decode(int st) { return (tycho_int)st; }   /* Windows: sy
 #include <spawn.h>              /* posix_spawnp + file actions -- the argv path */
 #include <unistd.h>             /* pipe, close, read */
 #include <fcntl.h>              /* O_CLOEXEC / F_SETFD -- the capture pipe */
+#include <poll.h>               /* drain stdout and stderr together */
 #include <errno.h>
 extern char **environ;          /* posix_spawnp inherits it, as execvp does */
 
@@ -61,7 +63,7 @@ tycho_int osx_system(const char *cmd) {
     return ty_os_decode(system(cmd));
 }
 
-typedef struct { tycho_int code; char *out; size_t out_len; } OsRun;
+typedef struct { tycho_int code; char *out; size_t out_len; char *err; size_t err_len; } OsRun;
 
 void *osx_run(const char *cmd) {
     FILE *f = TY_POPEN(cmd, "r");
@@ -87,6 +89,8 @@ void *osx_run(const char *cmd) {
     if (!r) { free(buf); TY_PCLOSE(f); return NULL; }
     r->out  = buf;
     r->out_len = len;
+    r->err = NULL;
+    r->err_len = 0;
     r->code = ty_os_decode(TY_PCLOSE(f));            /* pclose exactly once, on every path */
     return r;
 }
@@ -100,7 +104,31 @@ void osx_run_out(void *p, const unsigned char **out, tycho_int *outlen) {
     *outlen = (tycho_int)r->out_len;
     r->out = NULL; r->out_len = 0;
 }
-void osx_run_free(void *p) { if (p) { OsRun *r = p; free(r->out); free(r); } }
+void osx_run_err(void *p, const unsigned char **out, tycho_int *outlen) {
+    *out = NULL; *outlen = 0;
+    if (!p) return;
+    OsRun *r = p;
+    *out = (const unsigned char *)r->err;
+    *outlen = (tycho_int)r->err_len;
+    r->err = NULL; r->err_len = 0;
+}
+void osx_run_free(void *p) { if (p) { OsRun *r = p; free(r->out); free(r->err); free(r); } }
+
+/* Append n bytes and keep the buffer NUL-terminated. Grows by doubling; returns
+ * 0 only when the allocation fails, so every caller fails closed. */
+static int ty_buf_append(char **buf, size_t *cap, size_t *len, const char *src, size_t n) {
+    if (*len + n + 1 > *cap) {
+        size_t ncap = *cap ? *cap : 4096;
+        while (*len + n + 1 > ncap) ncap *= 2;
+        char *nb = realloc(*buf, ncap);
+        if (!nb) return 0;
+        *buf = nb; *cap = ncap;
+    }
+    memcpy(*buf + *len, src, n);
+    *len += n;
+    (*buf)[*len] = '\0';
+    return 1;
+}
 
 #define OSX_ARGV_MAX 4096       /* a bound, so a runaway loop fails instead of swapping */
 
@@ -253,7 +281,92 @@ void *osx_exec_out(const char *const *v, tycho_int n) {
     r->code = code;
     r->out  = out;
     r->out_len = out_len;
+    r->err = NULL;
+    r->err_len = 0;
     return r;                                          /* freed by osx_run_free, like osx_run's */
+}
+
+/* Capture stdout and stderr into separate buffers. Both pipes are drained in
+ * one poll loop: reading them one after the other deadlocks as soon as the child
+ * fills the pipe that is not being read. */
+void *osx_exec_capture(const char *const *v, tycho_int n) {
+    char **argv = osx_argv_dup(v, n);
+    if (!argv) return NULL;
+
+    int outp[2] = { -1, -1 }, errp[2] = { -1, -1 };
+    posix_spawn_file_actions_t fa;
+    if (ty_pipe_cloexec(outp) != 0) { free(argv); return NULL; }
+    if (ty_pipe_cloexec(errp) != 0) { close(outp[0]); close(outp[1]); free(argv); return NULL; }
+    if (posix_spawn_file_actions_init(&fa) != 0) {
+        close(outp[0]); close(outp[1]); close(errp[0]); close(errp[1]); free(argv); return NULL;
+    }
+    if (posix_spawn_file_actions_adddup2(&fa, outp[1], STDOUT_FILENO) != 0 ||
+        posix_spawn_file_actions_adddup2(&fa, errp[1], STDERR_FILENO) != 0 ||
+        posix_spawn_file_actions_addclose(&fa, outp[0]) != 0 ||
+        posix_spawn_file_actions_addclose(&fa, outp[1]) != 0 ||
+        posix_spawn_file_actions_addclose(&fa, errp[0]) != 0 ||
+        posix_spawn_file_actions_addclose(&fa, errp[1]) != 0) {
+        posix_spawn_file_actions_destroy(&fa);
+        close(outp[0]); close(outp[1]); close(errp[0]); close(errp[1]); free(argv); return NULL;
+    }
+
+    pid_t pid;
+    int rc = posix_spawnp(&pid, argv[0], &fa, NULL, argv, environ);
+    free(argv);
+    posix_spawn_file_actions_destroy(&fa);
+    if (rc != 0) {
+        close(outp[0]); close(outp[1]); close(errp[0]); close(errp[1]); return NULL;
+    }
+    close(outp[1]); close(errp[1]);                   /* parent keeps only read ends */
+
+    struct pollfd pf[2];
+    pf[0].fd = outp[0]; pf[0].events = POLLIN; pf[0].revents = 0;
+    pf[1].fd = errp[0]; pf[1].events = POLLIN; pf[1].revents = 0;
+    char *out = NULL, *err = NULL;
+    size_t ocap = 0, olen = 0, ecap = 0, elen = 0;
+    int open_fds = 2;
+    int ok = 1;
+    char tmp[4096];
+    while (open_fds > 0 && ok) {
+        pf[0].revents = 0; pf[1].revents = 0;
+        int pr = poll(pf, 2, -1);
+        if (pr < 0) {
+            if (errno == EINTR) continue;
+            ok = 0;
+            break;
+        }
+        for (int i = 0; i < 2 && ok; i++) {
+            if (pf[i].fd < 0 || pf[i].revents == 0) continue;
+            ssize_t got = read(pf[i].fd, tmp, sizeof tmp);
+            if (got > 0) {
+                ok = i == 0 ? ty_buf_append(&out, &ocap, &olen, tmp, (size_t)got)
+                            : ty_buf_append(&err, &ecap, &elen, tmp, (size_t)got);
+            } else if (got == 0) {
+                close(pf[i].fd);
+                pf[i].fd = -1;
+                open_fds -= 1;
+            } else if (errno != EINTR) {
+                ok = 0;
+            }
+        }
+    }
+    if (pf[0].fd >= 0) close(pf[0].fd);
+    if (pf[1].fd >= 0) close(pf[1].fd);
+    int st;
+    while (waitpid(pid, &st, 0) < 0) {
+        if (errno != EINTR) { ok = 0; break; }
+    }
+    if (!ok) { free(out); free(err); return NULL; }
+    if (!out) { out = calloc(1, 1); if (!out) { free(err); return NULL; } }
+    if (!err) { err = calloc(1, 1); if (!err) { free(out); return NULL; } }
+    OsRun *r = malloc(sizeof *r);
+    if (!r) { free(out); free(err); return NULL; }
+    r->code = ty_os_decode(st);
+    r->out = out;
+    r->out_len = olen;
+    r->err = err;
+    r->err_len = elen;
+    return r;
 }
 
 #else
@@ -455,6 +568,104 @@ void *osx_exec_out(const char *const *v, tycho_int n) {
     r->code = code;
     r->out  = out;
     r->out_len = out_len;
+    r->err = NULL;
+    r->err_len = 0;
+    return r;
+}
+
+typedef struct { HANDLE h; char *buf; size_t len, cap; int ok; } OsxDrain;
+
+static unsigned __stdcall osx_win_drain(void *arg) {
+    OsxDrain *d = arg;
+    char tmp[4096];
+    DWORD n;
+    d->ok = 1;
+    while (ReadFile(d->h, tmp, sizeof tmp, &n, NULL) && n > 0) {
+        if (!ty_buf_append(&d->buf, &d->cap, &d->len, tmp, (size_t)n)) { d->ok = 0; break; }
+    }
+    CloseHandle(d->h);
+    return 0;
+}
+
+/* Two reader threads, one per pipe: a single-threaded read would deadlock once
+ * the child fills the pipe that is not currently being drained. */
+void *osx_exec_capture(const char *const *v, tycho_int n) {
+    if (!osx_argv_ok(v, n)) return NULL;               /* fail closed */
+    if (osx_is_batch(v[0])) return NULL;
+    char *cmdline = osx_win_cmdline(v, n);
+    if (!cmdline) return NULL;
+
+    HANDLE ord = NULL, owr = NULL, erd = NULL, ewr = NULL;
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof sa;
+    sa.lpSecurityDescriptor = NULL;
+    sa.bInheritHandle = TRUE;
+    if (!CreatePipe(&ord, &owr, &sa, 0)) { free(cmdline); return NULL; }
+    if (!CreatePipe(&erd, &ewr, &sa, 0)) {
+        CloseHandle(ord); CloseHandle(owr); free(cmdline); return NULL;
+    }
+    if (!SetHandleInformation(ord, HANDLE_FLAG_INHERIT, 0) ||
+        !SetHandleInformation(erd, HANDLE_FLAG_INHERIT, 0)) {
+        CloseHandle(ord); CloseHandle(owr); CloseHandle(erd); CloseHandle(ewr);
+        free(cmdline); return NULL;
+    }
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    memset(&si, 0, sizeof si);
+    memset(&pi, 0, sizeof pi);
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = owr;
+    si.hStdError = ewr;
+    BOOL ok = CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+    free(cmdline);
+    if (!ok) {
+        CloseHandle(ord); CloseHandle(owr); CloseHandle(erd); CloseHandle(ewr);
+        return NULL;
+    }
+    CloseHandle(owr);
+    CloseHandle(ewr);
+
+    OsxDrain od = { ord, NULL, 0, 0, 1 };
+    OsxDrain ed = { erd, NULL, 0, 0, 1 };
+    uintptr_t t1 = _beginthreadex(NULL, 0, osx_win_drain, &od, 0, NULL);
+    if (!t1) {
+        CloseHandle(ord); CloseHandle(erd);
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+        return NULL;
+    }
+    uintptr_t t2 = _beginthreadex(NULL, 0, osx_win_drain, &ed, 0, NULL);
+    if (!t2) {
+        CloseHandle(erd);
+        WaitForSingleObject((HANDLE)t1, INFINITE);
+        CloseHandle((HANDLE)t1);
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+        free(od.buf); free(ed.buf);
+        return NULL;
+    }
+    WaitForSingleObject((HANDLE)t1, INFINITE);
+    WaitForSingleObject((HANDLE)t2, INFINITE);
+    CloseHandle((HANDLE)t1);
+    CloseHandle((HANDLE)t2);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD wcode = 1;
+    if (!GetExitCodeProcess(pi.hProcess, &wcode)) wcode = (DWORD)-1;
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    if (!od.ok || !ed.ok) { free(od.buf); free(ed.buf); return NULL; }
+    if (!od.buf) { od.buf = calloc(1, 1); if (!od.buf) { free(ed.buf); return NULL; } }
+    if (!ed.buf) { ed.buf = calloc(1, 1); if (!ed.buf) { free(od.buf); return NULL; } }
+    OsRun *r = malloc(sizeof *r);
+    if (!r) { free(od.buf); free(ed.buf); return NULL; }
+    r->code = (tycho_int)(int)wcode;
+    r->out = od.buf;
+    r->out_len = od.len;
+    r->err = ed.buf;
+    r->err_len = ed.len;
     return r;
 }
 

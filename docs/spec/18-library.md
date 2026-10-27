@@ -266,7 +266,7 @@ component was created, `Ok(false)` if every one already existed, `Err` at the
 first component that failed. A bare Windows drive letter (`C:`) is a root and is
 skipped rather than created; a UNC root (`//host/share`) is not handled. Core tier. Nothing aborts; a call returns
 `Result(T, IoErr)` wherever a sentinel would be ambiguous and mirrors the
-builtins' sentinels elsewhere. `docs/reference/corelib.md:407-458`; shim
+builtins' sentinels elsewhere. `docs/reference/corelib.md:439-494`; shim
 `corelib/io/io_shim.c`.
 
 `mtime(p) -> Result(int, IoErr)` is when `p` was last modified, in whole seconds
@@ -308,7 +308,13 @@ and, under `lstat` on POSIX, `size` is the target length. `inode`/`device` are 0
 where the platform does not expose them. `same_file(a, b) -> Result(bool,
 IoErr)` is true exactly when both names resolve to one file (device + inode on
 POSIX, volume + file index on Windows), which is the hard-link test.
-`docs/reference/corelib.md:424-443`; shim `corelib/io/io_shim.c`.
+`read_link(p) -> Result(string, IoErr)` is the target text `lstat` cannot give;
+a dangling link is still a link, so its text is `Ok`. POSIX `readlink(2)` only —
+Windows exposes no target string, so an existing reparse point is `Err(Failed)`
+and a missing path is `Err(NotFound)`. `read_stdin_bytes() -> Result(bytes,
+IoErr)` reads stdin to EOF as raw bytes; EOF is `Ok` (possibly empty) and only a
+read failure is `Err(Failed)`.
+`docs/reference/corelib.md:487-493`; shim `corelib/io/io_shim.c`.
 
 ### 32.22 `os`
 
@@ -320,7 +326,10 @@ Run external commands via a **libc-only shim** (`os_shim.c`, `popen`/`system`/
 (`posix_spawnp`; `CreateProcess` on Windows, where the vector is joined by the
 `CommandLineToArgvW` quoting rules), so arguments are never re-interpreted by a
 shell; they fail closed with `-1` on an empty argv, a build failure, or an
-unspawnable program. `docs/reference/corelib.md:462-486`.
+unspawnable program. `exec_capture(argv) -> Capture{code, out, err}` is
+`exec_out` with stderr captured separately; both pipes are drained concurrently
+and the same fail-closed contract applies, with both strings empty on failure.
+`docs/reference/corelib.md:495-514`.
 
 ### 32.23 `regex`
 
@@ -344,9 +353,11 @@ REMOTE address as text, the field an access log leads with), `write(fd, data) ->
 Result(int, NetErr)` (bytes sent), `read(fd, max) -> Result(bytes, NetErr)`,
 `close_fd(fd)`, `accept_wait(fd, ms) -> Result(int, NetErr)` and
 `wait_readable(fds, ms) -> Result([int], NetErr)` for bounded readiness.
-`set_read_timeout_ms(fd, ms) -> bool` arms a receive deadline. `NetErr` is
+`set_read_timeout_ms(fd, ms) -> bool` arms a receive deadline;
+`set_write_timeout_ms(fd, ms) -> bool` arms a send deadline. `NetErr` is
 `Eof` / `Timeout` / `Failed`; `read` distinguishes a clean hangup from a
-deadline and a hard error. UDP (`udp_bind`, `udp_send`, `udp_read`) is still
+deadline and a hard error, and `write` answers `Timeout` when its send deadline
+expires. UDP (`udp_bind`, `udp_send`, `udp_read`) is still
 sentinel-based on purpose: a zero-length datagram is a legal success value.
 Source `corelib/net/net.ty`, `corelib/net/net_shim.c`; the catalogue entry in
 [`docs/reference/corelib.md`](../reference/corelib.md) is the full API list.

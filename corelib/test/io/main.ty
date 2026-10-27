@@ -1,5 +1,6 @@
 package main
 import "core:io"
+import "core:os"
 import "core:result"
 
 fn b2i(b: bool) -> int:
@@ -465,6 +466,38 @@ fn main():
     sfdiff := io.same_file(rf, ef)
     sfmiss := io.same_file(rf, "/tmp/tycho_corelib_io_absent.xyz")
     println(f"same_self={sfwhy(sfsame)} same_other={sfwhy(sfdiff)} same_missing={sfwhy(sfmiss)}")
+
+    # ---- read_link: the target text lstat cannot give ------------------------
+    # Both branches print booleans, so this golden is platform-independent:
+    # Windows keeps a reparse point's target outside a plain string, so a path
+    # that exists there is Err(Failed). Neither io nor os creates a link; the
+    # shell does, and a failed `ln` simply fails the boolean above.
+    lf := "/tmp/tycho_corelib_io_link_file"
+    lk := "/tmp/tycho_corelib_io_link"
+    ld := "/tmp/tycho_corelib_io_dangling"
+    _ = io.remove(lk)
+    _ = io.remove(ld)
+    _ = io.remove(lf)
+    seeded_link := io.write(lf, "linked")
+    link_ok := false
+    dangling_ok := false
+    if os.is_windows():
+        link_ok = twhy(io.read_link(lk)) == "NotFound"
+        dangling_ok = twhy(io.read_link(ld)) == "NotFound"
+    else:
+        if os.system("ln -s " + lf + " " + lk) == 0:
+            match io.read_link(lk):
+                Ok(t): link_ok = t == lf
+                Err(_): link_ok = false
+        if os.system("ln -s /tmp/tycho_corelib_io_no_such_target " + ld) == 0:
+            match io.read_link(ld):
+                Ok(t): dangling_ok = t == "/tmp/tycho_corelib_io_no_such_target"
+                Err(_): dangling_ok = false
+    println(f"read_link_ok={b2i(link_ok)} dangling_ok={b2i(dangling_ok)} seeded={b2i(seeded_link)}")
+    println(f"read_link_file={twhy(io.read_link(lf))} missing={twhy(io.read_link("/tmp/tycho_corelib_io_absent.xyz"))} nul={twhy(io.read_link(lf + chr(0)))}")
+    _ = io.remove(lk)
+    _ = io.remove(ld)
+    _ = io.remove(lf)
 
     # read_text: read()'s content WITH the error channel read() lacks. read()
     # answers "" for a missing file, an unreadable one and a genuinely empty

@@ -4,6 +4,11 @@ struct Output:
     code: int
     out: string
 
+struct Capture:
+    code: int
+    out: string
+    err: string
+
 fn _has_nul(s: string) -> bool:
     for i := 0; i < len(s); i += 1:
         if s[i] == 0:
@@ -21,9 +26,11 @@ extern fn osx_system(cmd: string) -> int
 extern fn osx_run(cmd: string) -> ptr          # opaque result handle; null only on popen() failure
 extern fn osx_run_code(r: ptr) -> int
 extern fn osx_run_out(r: ptr) -> bytes
+extern fn osx_run_err(r: ptr) -> bytes
 extern fn osx_run_free(r: ptr)
 extern fn osx_exec(argv: [string]) -> int      # [string] crosses as (const char *const *, len), borrowed
 extern fn osx_exec_out(argv: [string]) -> ptr  # same OsRun handle shape osx_run returns
+extern fn osx_exec_capture(argv: [string]) -> ptr
 extern fn osx_is_windows() -> int              # the build's _WIN32, as a runtime answer
 
 # Run cmd, inheriting stdout/stderr; return its exit code.
@@ -68,6 +75,23 @@ fn exec_out(argv: [string]) -> Output:
     code := osx_run_code(r)
     out := to_str(osx_run_out(r))
     res := Output(code, out)
+    osx_run_free(r)
+    return res
+
+# Run argv with no shell, capturing stdout and stderr SEPARATELY. Same fail-closed
+# contract as exec_out: a refused argv or a program that cannot be spawned is
+# code -1 with both streams empty. The two pipes are drained concurrently, so a
+# child cannot deadlock by filling stderr while stdout is still being read.
+fn exec_capture(argv: [string]) -> Capture:
+    if _argv_has_nul(argv):
+        return Capture(-1, "", "")
+    r := osx_exec_capture(argv)
+    if is_null(r):
+        return Capture(-1, "", "")
+    code := osx_run_code(r)
+    out := to_str(osx_run_out(r))
+    err := to_str(osx_run_err(r))
+    res := Capture(code, out, err)
     osx_run_free(r)
     return res
 

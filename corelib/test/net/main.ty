@@ -2,6 +2,7 @@
 package main
 import "core:net"
 import "core:result"
+import "core:strings"
 import "core:time"
 
 # The fd, or -1. Every call below is on loopback and must succeed, so collapsing
@@ -136,6 +137,28 @@ fn main():
         Err(e): println("tmo=" + why(e))
     net.close_fd(cli2)
     net.close_fd(conn2)
+
+    # -- a write timeout is armed, classified, and fail-closed on a bad fd --
+    # The peer accepts but never reads, so the send buffer fills; 64 MB is more
+    # than any loopback window absorbs. One byte of a partial write is not a
+    # success, so the answer must be Timeout rather than a short Ok.
+    wsrv := fd_of(net.listen("127.0.0.1", 0))
+    wport := fd_of(net.port_of(wsrv))
+    wcli := fd_of(net.connect("127.0.0.1", wport))
+    wconn := fd_of(net.accept(wsrv))
+    println("warmed=" + str(net.set_write_timeout_ms(wcli, 100)))
+    println("warmed_bad=" + str(net.set_write_timeout_ms(-1, 100)))
+    chunk := to_bytes(strings.repeat("x", 1024 * 1024))
+    wres := "Ok"
+    for i := 0; i < 64; i += 1:
+        v := nerr(net.write(wcli, chunk))
+        if v != "Ok":
+            wres = v
+            break
+    println("wtimeout=" + wres)
+    net.close_fd(wcli)
+    net.close_fd(wconn)
+    net.close_fd(wsrv)
     net.close_fd(srv)
 
 

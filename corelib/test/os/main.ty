@@ -60,6 +60,17 @@ fn main():
         # other assertion here passed with that bug injected; this one did not.
         ec := os.exec_out(["/bin/sh", "-c", "printf %s $#", "sh", "a b c"])
         println("e_argc=[" + ec.out + "]")
+
+        # Capture keeps the streams apart. The second case writes 200 KB to
+        # stderr BEFORE stdout: a sequential reader deadlocks on it, so this is
+        # the test that the drain is concurrent.
+        cap := os.exec_capture(["/bin/sh", "-c", "printf out; printf err >&2; exit 3"])
+        println("cap=[" + cap.out + "][" + cap.err + "] code=" + str(cap.code))
+        big := os.exec_capture(["/bin/sh", "-c", "head -c 200000 /dev/zero | tr '\\0' e >&2; printf out"])
+        early := -1
+        if len(big.err) > 0:
+            early = big.err[0]
+        println("cap_big_out=[" + big.out + "] errlen=" + str(len(big.err)) + " err0=" + str(early) + " code=" + str(big.code))
     else:
         # Windows. cmd.exe is the CALLEE, never an interposed shell -- exec
         # spawns it directly with CreateProcess, so the argv below is what it
@@ -78,6 +89,10 @@ fn main():
     println("e_nosuch=" + str(os.exec(["/nonexistent/prog"])))
     en := os.exec_out(["/nonexistent/prog"])
     println("e_nosuch_out=[" + en.out + "] code=" + str(en.code))
+    ec0 := os.exec_capture([]string)
+    ecn := os.exec_capture(["/nonexistent/prog"])
+    println("e_cap_empty=[" + ec0.out + "][" + ec0.err + "] code=" + str(ec0.code))
+    println("e_cap_nosuch=[" + ecn.out + "][" + ecn.err + "] code=" + str(ecn.code))
 
     nc := "printf NULBAD" + chr(0) + "; printf TAIL"
     println("nul_system=" + str(os.system(nc)))

@@ -1,0 +1,23 @@
+package main
+import "core:io"
+
+fn hexbyte(v: int) -> string:
+    digits := "0123456789abcdef"
+    return chr(digits[(v >> 4) & 15]) + chr(digits[v & 15])
+
+fn main():
+    match io.read_stdin_bytes():
+        Ok(b):
+            hex := ""
+            for i := 0; i < len(b); i += 1:
+                if i > 0:
+                    hex = hex + " "
+                hex = hex + hexbyte(b[i])
+            println("first=" + str(len(b)) + " [" + hex + "]")
+        Err(_):
+            println("first=error")
+    match io.read_stdin_bytes():
+        Ok(b):
+            println("second=" + str(len(b)))
+        Err(_):
+            println("second=error")

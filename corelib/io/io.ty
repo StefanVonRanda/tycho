@@ -194,6 +194,14 @@ extern fn iox_close_lines(r: ptr)
 # in io_shim.c.
 extern fn iox_read_file(path: string, status: inout int) -> bytes
 extern fn iox_read_at(path: string, off: int, n: int, status: inout int) -> bytes
+# The lstat(2) complement: a link's target text. POSIX readlink(2) has no byte
+# limit, so the shim grows the buffer until the answer is short; a non-link and
+# every existing Windows path are TY_RF_ERR (Windows stores the target in a
+# reparse point, not as a string).
+extern fn iox_read_link(path: string, status: inout int) -> bytes
+# Raw stdin to EOF. The same status space; a read error is TY_RF_ERR, never a
+# short Ok. Windows switches stdin to binary mode for this call.
+extern fn iox_read_stdin(status: inout int) -> bytes
 # Write ALL of `b` to `path`, truncating it first -- the write side's mirror of
 # iox_read_file: the same status code space, so write_bytes' Err answers match
 # read_bytes' (NotFound/IsDir/Failed). All-or-nothing: a partial write is an
@@ -266,6 +274,33 @@ fn read_at(p: string, off: int, n: int) -> Result(bytes, IoErr):
         return Err(NotFound)
     if st == RF_DIR:
         return Err(IsDir)
+    return Err(Failed)
+
+# All of stdin as raw bytes. EOF is a successful, possibly zero-length read;
+# only an actual read failure is Err(Failed). Use this instead of the read_all()
+# builtin when the two must be told apart, or when stdin carries binary data --
+# Windows switches the stream to binary mode. Afterwards stdin is exhausted.
+fn read_stdin_bytes() -> Result(bytes, IoErr):
+    st := 0
+    b := iox_read_stdin(&st)
+    if st == RF_OK:
+        return Ok(b)
+    return Err(Failed)
+
+# The target text of the symlink at `p` -- lstat(2) tells you a path is a link,
+# not where it points. A dangling link is still a link, so its text is Ok even
+# when the target does not exist. POSIX only: Windows reports the reparse point
+# as KindSymlink but does not expose a target string, so an existing path there
+# is Err(Failed); a path that is not a symlink is Err(Failed) on both platforms.
+fn read_link(p: string) -> Result(string, IoErr):
+    if _has_nul(p):
+        return Err(BadPath)
+    st := 0
+    b := iox_read_link(p, &st)
+    if st == RF_OK:
+        return Ok(to_str(b))
+    if st == RF_MISS:
+        return Err(NotFound)
     return Err(Failed)
 
 fn is_dir(p: string) -> Result(bool, IoErr):
