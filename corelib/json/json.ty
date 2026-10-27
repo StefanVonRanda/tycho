@@ -664,6 +664,10 @@ fn _parse_flat_checked(s: string) -> Result(Json, JsonErr):
         pos = pos + 1
     if pos < n and s[pos] == 93:
         pos = pos + 1
+        for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):
+            pos = pos + 1
+        if pos != n:
+            return Err(TrailingText(pos))
         return Ok(JArr(xs))
     for pos < n:
         for pos < n and (s[pos] == 32 or s[pos] == 9 or s[pos] == 10 or s[pos] == 13):

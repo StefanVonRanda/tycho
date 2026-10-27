@@ -92,3 +92,29 @@ the threshold. This is the standard recursive-descent limit (gcc/clang/rustc all
 overflow given enough nesting); rather than guard it, `gen_malformed.py` caps its
 deep-nesting op at a realistic-but-stressful depth so the lane exercises nesting
 without depth-DoS.
+
+## Independent integer oracle — `oracle.py`
+
+`run.py` compares a build against another build of the same compiler (native vs
+ASan), so a consistently wrong codegen passes. `oracle.py` generates int
+functions with arithmetic, comparisons, `if`/`else` and a bounded `for`, evaluates
+the same AST in Python with 64-bit wrap and Tycho's truncating `/` and `%`, then
+compiles with **both** `tychoc` and `tychoc1` and compares every printed value.
+`make oracle-fuzz` (N seeds, default 200). Seeded and reproducible; `--selfcheck`
+proves a perturbed line is detected.
+
+## ThreadSanitizer lane — `run_tsan.py`
+
+The generator already emits `spawn`, `channel` and `parallel for`, but `run.py`
+only builds ASan. `run_tsan.py` filters those seeds, compiles each once with
+`-O2` and once with `-fsanitize=thread`, and requires the outputs to agree with
+no TSan report. `make fuzz-tsan` (N seeds; only concurrent shapes are run).
+
+## Beyond generated programs
+
+`make fault-inject` (`scripts/fault_inject.sh`) injects short reads/writes and
+`EINTR` into corelib tests through `LD_PRELOAD`; a golden that moves means a shim
+treated a partial transfer as EOF or an interruption as failure. `make
+mutation-check` applies a small set of semantic edits to a copy of `corelib` and
+requires the matching golden to move. `make json-conformance` runs a checkout of
+`nst/JSONTestSuite` pointed at by `JSONTESTSUITE` (skipped when unset).

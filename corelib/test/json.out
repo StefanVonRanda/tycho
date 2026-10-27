@@ -64,6 +64,7 @@ bad 1e-400  = err number outside the range a float can represent at byte 0
 bad [1e400] = 1
 ok doc      = ok  {"a":[1,-2,null]}
 bad byte    = err byte begins no JSON value at byte 1
+bad double  = err text after the end of the document at byte 2
 bad number  = err '-' with no digit after it at byte 1
 bad keyword = err not 'true', 'false' or 'null' at byte 1
 bad escape  = err unsupported string escape at byte 4

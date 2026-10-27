@@ -35,6 +35,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `os.exec_capture(argv)` captures stdout and stderr separately.
   `strings.parse_u64` adds strict unsigned parsing. `io.open_lines` now rejects
   a directory with `Err(IsDir)` instead of returning an empty reader.
+- **`core:json` rejects `[]` followed by trailing text.** The fast top-level
+  array path returned before the trailing-byte check; JSONTestSuite's
+  `n_structure_double_array.json` (`[][]`) exposed it. `io.read_stdin_bytes`
+  also retries `EINTR` instead of turning a signal into a read failure.
 
 ## [0.9.0] — 2026-10-26
 

@@ -220,7 +220,8 @@ void iox_read_link(const char *path, tycho_int *status,
     for (int tries = 0; tries < 8; tries += 1) {
         char *buf = malloc(cap);
         if (!buf) return;
-        ssize_t n = readlink(path, buf, cap - 1);
+        ssize_t n;
+        do { n = readlink(path, buf, cap - 1); } while (n < 0 && errno == EINTR);
         if (n < 0) { free(buf); *status = ty_rf_errno(path); return; }
         if ((size_t)n < cap - 1) {
             buf[n] = 0;
@@ -267,7 +268,11 @@ void iox_read_stdin(tycho_int *status, unsigned char **out, tycho_int *outlen) {
 #else
         ssize_t n = read(0, buf + len, cap - len);
 #endif
-        if (n < 0) { free(buf); return; }
+        if (n < 0) {
+            if (errno == EINTR) continue;              /* a signal, not a failure */
+            free(buf);
+            return;
+        }
         if (n == 0) break;
         len += (size_t)n;
     }

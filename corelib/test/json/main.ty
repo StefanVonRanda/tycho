@@ -200,6 +200,7 @@ fn main():
     # the rest of the error channel: one line per failure class
     println("ok doc      = " + show(json.parse_checked("{\"a\":[1,-2,null]}")))
     println("bad byte    = " + show(json.parse_checked("[+1]")))
+    println("bad double  = " + show(json.parse_checked("[][]")))
     println("bad number  = " + show(json.parse_checked("[-x]")))
     println("bad keyword = " + show(json.parse_checked("[tru]")))
     println("bad escape  = " + show(json.parse_checked("[\"a\\q\"]")))
