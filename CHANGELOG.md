@@ -40,6 +40,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `n_structure_double_array.json` (`[][]`) exposed it. `io.read_stdin_bytes` and
   `io.write_at` also retry `EINTR` instead of turning a signal into an I/O
   failure.
+- **`core:http` handles allocation failure in `perform`.** The one-byte body
+  buffer was allocated without a NULL check, so an allocation failpoint turned
+  `http.get` into a dereference of NULL. It now returns a null handle.
 
 ## [0.9.0] — 2026-10-26
 

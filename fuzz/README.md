@@ -118,8 +118,9 @@ no TSan report. `make fuzz-tsan` (N seeds; only concurrent shapes are run).
 `make fault-inject` (`scripts/fault_inject.sh`) injects short reads/writes and
 `EINTR` into corelib tests through `LD_PRELOAD`; it covers `read`/`write` and
 `pread`/`pwrite`. A golden that moves means a shim treated a partial transfer as
-EOF or an interruption as failure. `make
-mutation-check` applies a small set of semantic edits to a copy of `corelib`, a
-copy of the compiler and a copied runtime, and requires the matching golden to
-move. `make json-conformance` runs a checkout of
+EOF or an interruption as failure. `make alloc-fail` fails a one-byte `malloc`
+and a sweep of allocation ordinals; it caught `core:http` dereferencing a NULL
+body buffer. `make mutation-check` applies a small set of semantic edits to a
+copy of `corelib`, a copy of the compiler and a copied runtime, and requires the
+matching golden to move. `make json-conformance` runs a checkout of
 `nst/JSONTestSuite` pointed at by `JSONTESTSUITE` (skipped when unset).

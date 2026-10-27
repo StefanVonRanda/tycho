@@ -71,7 +71,9 @@ static Resp *perform(const char *url, const char *post_body, size_t post_len, co
     Resp *r = (Resp *)calloc(1, sizeof(Resp));
     if (!r) { curl_easy_cleanup(c); return NULL; }
     r->magic = RESPX_LIVE;
-    r->body = (char *)malloc(1); r->body[0] = 0; r->len = 0;
+    r->body = (char *)malloc(1);
+    if (!r->body) { free(r); curl_easy_cleanup(c); return NULL; }
+    r->body[0] = 0; r->len = 0;
 
     curl_easy_setopt(c, CURLOPT_URL, url);
     /* The FIRST hop needs the same fence as a redirect: this libcurl carries

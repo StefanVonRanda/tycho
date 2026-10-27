@@ -252,6 +252,10 @@ fi
 if [ "$LANE" = corelib ]; then
 step "[3/13] make corelib  (corelib packages + examples + the site/raytrace/mandelbrot/fetch/weblog/webserver dogfoods vs goldens)"
 make -s corelib
+
+step "[3a/13] make alloc-fail  (allocation-failure injection: FI_MALLOC_SIZE=1 and a sweep of FI_MALLOC_FAIL ordinals over http/crypto/compress/os/net/io/sqlite. The one-byte case caught core:http doing r->body = malloc(1); r->body[0] = 0 with no NULL check; the C control proves the injector still fails a one-byte malloc)"
+make -s alloc-fail
+
 make -s fault-inject
 make -s mutation-check
 make -s corelib-examples
