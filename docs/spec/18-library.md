@@ -281,8 +281,11 @@ which disturbs no file offset. Five semantics are normative for the three:
   Rationale: a directory has a modification time the kernel reports, while its `st_size` is filesystem-dependent entry metadata no read can produce.
 - **`size` succeeds on exactly the paths `read_at` can read.** Regular file →
   both `Ok`; directory → both `Err(IsDir)`; a fifo, socket, device or anything
-  else unseekable → both `Err(Failed)`. `size(p)` is the length `read_bytes(p)`
-  would return, on every path, or neither call answers.
+  else unseekable → both `Err(Failed)`. For an ordinary seekable file,
+  `size(p)` is the length `read_bytes(p)` would return. A pseudo-file whose
+  `st_size` is 0 but which yields bytes (procfs) is the one exception:
+  `read_bytes` reads to EOF while `size`/`read_at` report 0; use `read_bytes`
+  for those paths.
 - **`Ok(0)` from `size` is a success and is never the failure value.** An empty
   file has a length and that length is zero; the status does not travel in the
   payload, so a failure is an `Err` and cannot present as a small number.

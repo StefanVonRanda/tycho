@@ -472,7 +472,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   (whole seconds; a **directory is `Ok`**), `size(p) -> Result(int, io.IoErr)` (a length
   without reading; a **directory is `Err(IsDir)`**), and `read_at(p, off, n) ->
   Result(bytes, io.IoErr)` (allocates only what the file holds past `off`, so a length off
-  the wire cannot over-allocate; past EOF is `Ok` with zero bytes). The **writers that can
+  the wire cannot over-allocate; past EOF is `Ok` with zero bytes). A procfs-style
+  pseudo-file whose `st_size` is 0 but which yields bytes is the exception: use
+  `read_bytes`; `size`/`read_at` see 0. The **writers that can
   only succeed or fail** — `write_bytes(p, b)`, `write_at(p, off, b)`, `set_mtime(p, secs)`,
   `rename(src, dst)` and `sync(p)` — return `Result(void, io.IoErr)`, so
   `io.write_bytes(p, b) or_return` is a statement and a `match` arm is `Ok():`.
