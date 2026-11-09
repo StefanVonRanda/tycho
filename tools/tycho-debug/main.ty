@@ -223,8 +223,8 @@ fn strip_h(name: string) -> string:
         return substr(name, 2, len(name))
     return name
 
-# a `package` header means -g line info was skipped by the compiler (single-file
-# only) -- refuse up front rather than debugging with no source map
+# a `package` header needs more than one source view -- refuse up front rather
+# than showing one file's lines for another file's stop
 fn is_package_file(src: string) -> bool:
     lines := split(src, "\n")
     for ln in lines:
@@ -550,9 +550,9 @@ fn main():
             die("tycho-debug: no such file: " + prog)
     src_text := read_file(abs)
     if is_package_file(src_text):
-        die("tycho-debug: " + prog + " is a package build -- the -g line info is " +
-            "single-file only, so source breakpoints would not work. Reduce the " +
-            "failing path to a single file (see docs/debugging.md).")
+        die("tycho-debug: " + prog + " is a package build -- this tool drives " +
+            "one source file, so its source view cannot follow the other files. " +
+            "Use gdb/lldb directly for a package build (see docs/debugging.md).")
     src_lines := split(src_text, "\n")
     # compile with -g: #line directives + -O0 -g (stderr passes through so a
     # compile error is visible; the "built ..." line is suppressed)
@@ -587,6 +587,7 @@ fn main():
     s := Sess(g, 0, 0, abs, bin)
     mi(&s, "-gdb-set pagination off", false)
     mi(&s, "-gdb-set confirm off", false)
+    mi(&s, "-gdb-set style enabled off", false)
     # don't try to show the source line under a frame -- the generated .c is
     # deleted after the build, so a stop in runtime glue would print a
     # "No such file or directory" warning; the tool formats locations itself

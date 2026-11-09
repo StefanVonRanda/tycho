@@ -35,7 +35,6 @@ def compiler_files():
 def computed():
     files = compiler_files()
     return {
-        "c_lines": "{:,}".format(line_count(os.path.join(ROOT, "src/tychoc.c"))),
         "compiler_lines": "{:,}".format(sum(line_count(p) for p in files)),
         "compiler_files": str(len(files)),
         "packages": str(len([

@@ -145,6 +145,9 @@ make -s fixpoint-check
 step "[1e2/13] make bootstrap-check  (the checked-in generated C is the only cold-start path: it builds the self-hosted compiler and emits the same C it was generated from. This is the gate that replaces the C compiler as an independent implementation)"
 make -s bootstrap-check
 
+step "[1e3/13] make single-compiler-check  (no build lane compiles the archived src/tychoc.c)"
+make -s single-compiler-check
+
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
 

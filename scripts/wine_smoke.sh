@@ -10,14 +10,8 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 fail=0
 
 # the mingw cross-compiled compiler (build dir; the repo .gitignore covers it)
-mkdir -p build
-make -s build/tycho_rt_embed.h
-if [ ! -x build/tychoc-mingw.exe ] \
-   || [ src/tychoc.c -nt build/tychoc-mingw.exe ] \
-   || [ build/tycho_rt_embed.h -nt build/tychoc-mingw.exe ]; then
-    "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o build/tychoc-mingw.exe \
-        || { echo "FAIL: mingw compiler build"; exit 2; }
-fi
+. ./scripts/wine_compiler.sh
+build_mingw_tychoc
 WINEDLL='Z:\usr\x86_64-w64-mingw32\lib'   # libwinpthread-1.dll lives here on Debian
 W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=$WINEDLL $WINE"
 

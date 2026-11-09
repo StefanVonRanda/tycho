@@ -10,14 +10,8 @@ FILTER="${WINE_FFI_FILTER:-}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"; pkill -f "wine.*/tmp/tmp\." 2>/dev/null; pkill wineserver 2>/dev/null' EXIT
 fail=0; pass=0
 
-mkdir -p build
-make -s build/tycho_rt_embed.h
-if [ ! -x build/tychoc-mingw.exe ] \
-   || [ src/tychoc.c -nt build/tychoc-mingw.exe ] \
-   || [ build/tycho_rt_embed.h -nt build/tychoc-mingw.exe ]; then
-    "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o build/tychoc-mingw.exe \
-        || { echo "FAIL: mingw compiler build"; exit 2; }
-fi
+. ./scripts/wine_compiler.sh
+build_mingw_tychoc
 CORELIB="Z:\\$(pwd | sed 's|^/||; s|/|\\|g')\\corelib"
 E="env -u LD_PRELOAD WINEDEBUG=-all TYCHO_CORELIB=$CORELIB $WINE ./build/tychoc-mingw.exe"
 W="env -u LD_PRELOAD WINEDEBUG=-all WINEPATH=Z:\\\\usr\\\\x86_64-w64-mingw32\\\\lib $WINE"

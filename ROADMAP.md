@@ -21,7 +21,7 @@ another person.
 
 ## The self-hosted compiler
 
-`compiler/` is Tycho written in Tycho — 25,635 lines in six packages (`lex`,
+`compiler/` is Tycho written in Tycho — 25,643 lines in six packages (`lex`,
 `parse`, `ast`, `types`, `emit`, `driver`), built as `tychoc1` and installed as
 `tychoc`. The test, corelib, example and server runners default to it, so the
 gates run on the self-hosted compiler. `bootstrap/tycho_compiler.c` is the

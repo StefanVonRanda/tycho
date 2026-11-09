@@ -263,10 +263,10 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     _guard_c(c_path)
     p := types.Program([]types.File, "", "", "", "")
     check_into(src_path, argv0, &p, _vec_tgt(tgt, nat))
-    # -g: src/tychoc.c:16947 makes #line single-file only, and names the source
-    # in every directive. A multi-file build has no single g_line_file to name.
+    # -g: a non-empty marker turns on #line; the emitter names the file that
+    # owns each statement from cs.fpath[cs.cf].
     dbgf := ""
-    if dbg and len(p.files) == 1:
+    if dbg:
         dbgf = p.files[0].path
     emit_to(p, runtime_path, argv0, c_path, dbgf)
     # -O2 and -fno-semantic-interposition were measured here and neither pays:
@@ -302,7 +302,10 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     # "same checksum computed by every binary" cannot let the C compiler choose
     # how many times to round. The cost is giving up FMA in hot float loops;
     # the alternative is float results that depend on the host.
-    argv := [cc9, "-O3", "-fwrapv", "-ffp-contract=off", "-pthread"]
+    opt := "-O3"
+    if dbg:
+        opt = "-O0"
+    argv := [cc9, opt, "-fwrapv", "-ffp-contract=off", "-pthread"]
     if nat:
         push(argv, "-march=native")
     # A --target the host cc cannot honour must FAIL, not vanish: a silently
@@ -341,6 +344,8 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     # arguments.  _pkgflags keeps each package's output as one string; the
     # shell re-tokenises it here.
     cmd := ""
+    if len(getenv("TYCHO_CCACHE")) > 0:
+        cmd = "ccache "
     for ik := 0; ik < len(argv); ik += 1:
         if ik > 0:
             cmd = cmd + " "
@@ -426,7 +431,7 @@ fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string,
     p := types.Program([]types.File, "", "", "", "")
     check_into(src_path, argv0, &p, _vec_tgt(tgt, nat))
     dbgf := ""
-    if dbg and len(p.files) == 1:
+    if dbg:
         dbgf = p.files[0].path
     emit_to(p, runtime_path, argv0, out_c, dbgf)
 

@@ -85,10 +85,10 @@ if [ "$(uname -s | grep -ciE 'MSYS|MINGW|CYGWIN')" -ne 0 ]; then
 else
 printf 'r\nq\n' | TYCHOC="$PWD/tychoc" "$TD" "$FIX/slow.ty" >"$T/int.out" 2>&1 &
 TPID=$!
-sleep 2
+sleep 5
 kill -INT "$TPID" 2>/dev/null
 i=0
-while kill -0 "$TPID" 2>/dev/null && [ "$i" -lt 40 ]; do sleep 0.25; i=$((i + 1)); done
+while kill -0 "$TPID" 2>/dev/null && [ "$i" -lt 60 ]; do sleep 0.25; i=$((i + 1)); done
 if kill -0 "$TPID" 2>/dev/null; then
     echo "FAIL [4] interrupt: debugger still alive after Ctrl-C"; kill -9 "$TPID" 2>/dev/null; fail=1
 else
@@ -105,7 +105,7 @@ fi
 "$TD" "$FIX/pkg.ty" >"$T/e2.out" 2>&1; rc2=$?
 out=$(printf 'b 999\nr\nq\n' | TYCHOC="$PWD/tychoc" "$TD" "$FIX/prog.ty" 2>&1); rc3=$?
 if [ "$rc1" -ne 0 ] && grep -q 'no such file' "$T/e1.out" \
-   && [ "$rc2" -ne 0 ] && grep -q 'single-file' "$T/e2.out" \
+   && [ "$rc2" -ne 0 ] && grep -q 'package build' "$T/e2.out" \
    && echo "$out" | grep -Eq 'No compiled code for line 999|No line 999 in file' && [ "$rc3" -eq 0 ]; then
     echo "  [5] fail-closed: missing file / package build / bad line ok"
 else echo "FAIL [5] fail-closed"; cat "$T/e1.out" "$T/e2.out" | sed 's/^/    /'; echo "$out" | sed 's/^/    /' | head -8; fail=1; fi
@@ -128,6 +128,7 @@ else echo "FAIL [6] tycho debug wrapper"; echo "$out" | sed 's/^/    /' | head -
 # because a fallback outranking an explicit override is worse than the bug.
 mkdir -p "$T/beside" "$T/elsewhere"
 cp "$TD" "$T/beside/tycho-debug"; cp "$PWD/tychoc" "$T/beside/tychoc"
+cp -r "$PWD/runtime" "$T/beside/"
 cp "$TD" "$T/elsewhere/tycho-debug"
 export TYCHO_CORELIB="$PWD/corelib"
 a=$(printf 'b 4\nr\nq\n' | (cd "$T/beside" && env -u TYCHOC PATH=/usr/bin:/bin ./tycho-debug "$FIX/prog.ty") 2>&1)

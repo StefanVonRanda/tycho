@@ -17,7 +17,7 @@ RUNTIME := runtime/tycho_rt.c
 BOOTSTRAP_C     := bootstrap/tycho_compiler.c
 BOOTSTRAP_SHIMS := corelib/strings/strings_shim.c corelib/os/os_shim.c corelib/io/io_shim.c
 
-.PHONY: shadercross preflight prunner-check ci-linux bootstrap-check fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check fstr-hole-file-check script-check builtin-qualified parity-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check docs-counts-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+.PHONY: shadercross preflight prunner-check ci-linux bootstrap-check single-compiler-check fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check fstr-hole-file-check script-check builtin-qualified parity-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check docs-counts-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
 
 # The self-hosted compiler is the only maintained compiler. `tychoc` is a copy
 # of it so the CLI and tools keep one spelling.
@@ -38,8 +38,9 @@ build:
 # The bootstrap is a generated artifact, not a second compiler source. It needs
 # the same three corelib shims the compiler imports.
 bootstrap-tychoc: $(BOOTSTRAP_C) $(BOOTSTRAP_SHIMS)
-	$(CC) -O2 -fwrapv -std=c11 -pthread -Icorelib -o bootstrap-tychoc \
-		$(BOOTSTRAP_C) $(BOOTSTRAP_SHIMS) -lm
+	@t=bootstrap-tychoc.$$$$; trap 'rm -f "$$t"' EXIT; \
+	$(CC) -O2 -fwrapv -std=c11 -pthread -Icorelib -o "$$t" \
+		$(BOOTSTRAP_C) $(BOOTSTRAP_SHIMS) -lm && mv "$$t" bootstrap-tychoc
 
 # The self-hosted compiler reads runtime/tycho_rt.c at emit time rather than
 # embedding it, so it must be run from the repo root or given --runtime.
@@ -65,15 +66,24 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 #   making a PIE object; recompile with -fPIE
 TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto -fPIE
 tychoc1: bootstrap-tychoc $(TYCHOC1_SRC)
-	./bootstrap-tychoc compiler/main.ty -o tychoc1-stage1
-	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" ./tychoc1-stage1 compiler/main.ty -o tychoc1
-	@rm -f tychoc1-stage1
+	@set -e; s=tychoc1-stage1.$$$$; t=tychoc1.$$$$; \
+	trap 'rm -f "$$s" "$$t"' EXIT; \
+	./bootstrap-tychoc compiler/main.ty -o "$$s"; \
+	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" "./$$s" compiler/main.ty -o "$$t"; \
+	mv "$$t" tychoc1
 
 tychoc: tychoc1
-	cp tychoc1 tychoc
+	@t=tychoc.$$$$; trap 'rm -f "$$t"' EXIT; cp tychoc1 "$$t"; mv "$$t" tychoc
 
 bootstrap-check:
 	@sh scripts/bootstrap_check.sh
+
+# No lane may build the archived C compiler.
+single-compiler-check:
+	@if git grep -nE '(^|[^A-Za-z])(cc|gcc|clang|MINGWCC)[[:space:]].*src/tychoc\.c|src/tychoc\.c.*-o' -- Makefile scripts .githooks; then \
+		echo "single-compiler-check: a lane still builds src/tychoc.c" >&2; exit 1; \
+	fi
+	@echo "single-compiler-check: ok (no lane builds src/tychoc.c)"
 
 # The three tools SHIP in the release archive beside tychoc, and until 2026-09-06
 # they were the only shipped binaries linked dynamically -- so they carried this
@@ -802,7 +812,7 @@ site-code-check: tychoc1
 # `--emit-c -o <base>` writes and keeps `<base>.c`, so the intermediates below
 # are removed here rather than by the build.
 clean:
-	rm -f bootstrap-tychoc tychoc tychoc1 tychoc1-stage1 tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c tycho-debug tycho-debug.c build/tycho_rt_embed.h
+	rm -f bootstrap-tychoc bootstrap-tychoc.* tychoc tychoc.* tychoc1 tychoc1.* tychoc1-stage1* tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c tycho-debug tycho-debug.c build/tycho_rt_embed.h
 	rm -f tycho-httpd tycho-httpd.c
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c

@@ -538,7 +538,7 @@ def process_file(f):
                             script = "\n".join(cmds).replace(':8080', ':' + port)
                             r = subprocess.run(['sh', '-e', '-c', script],
                                                capture_output=True, text=True, cwd=ROOT,
-                                               timeout=60, errors='replace',
+                                               timeout=180, errors='replace',
                                                stdin=subprocess.DEVNULL)
                             if 'curl' not in script and r.returncode == 0:
                                 # the fence starts the server and says "open

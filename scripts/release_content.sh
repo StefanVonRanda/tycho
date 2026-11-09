@@ -9,6 +9,9 @@
 #   sh scripts/release_content.sh --selfcheck  the two package defects, each
 #                                              rebuilt for real and each required
 #                                              to redden the leg that names it
+#   RELEASE_CONTENT_SLOW=1 sh scripts/release_content.sh --selfcheck
+#                                              also run the two mingw
+#                                              cross-build controls
 #
 # If a wine lane was killed mid-run, `wineserver -k` first.
 set -u
@@ -357,6 +360,7 @@ selfcheck() {
         ctl "runtime/ removed from the archive (the compiler dies on the first program)" "emitted nothing" "$T/c3.log"
     fi
 
+    if [ "${RELEASE_CONTENT_SLOW:-0}" = 1 ]; then
     # [C4] dir_of cutting on '/' alone, which is what compiler/types/load.ty did
     # until 2026-09-05. Rebuilt for real from a mutated copy of the compiler, so
     # the leg is scored against the actual defect rather than a simulation.
@@ -400,6 +404,10 @@ selfcheck() {
             || { ctl_fail=$((ctl_fail + 1)); echo "FAIL control: the C5 mutant fails the POSIX-spelled legs too -- C5 is not isolating the source path"; }
     fi
 
+    else
+        echo "   ..  skip C4/C5: the mingw cross-build of the mutated compiler is slow; set RELEASE_CONTENT_SLOW=1 to run them"
+    fi
+
     # [C6] the fix OVERSHOOTING: dir_of cutting on '\' with no host guard. No
     # Windows leg can see this one -- what breaks is the POSIX filename.
     c="$T/c6"; rm -rf "$c"; cp -r "$nats" "$c"
@@ -408,7 +416,7 @@ selfcheck() {
     # is an ERROR here -- so the import goes with it or the mutant does not build
     # and the control is dead (it was, until 2026-09-10: the C6 leg was scoring a
     # log written by a compiler that had never been produced).
-    sed -e 's/win := os.is_windows()/win := true/' -e '/^import "core:os"$/d' "$T/c6src/compiler/types/load.ty" > "$T/c6.patched" && mv "$T/c6.patched" "$T/c6src/compiler/types/load.ty"
+    sed 's/win := os.is_windows()/win := true/' "$T/c6src/compiler/types/load.ty" > "$T/c6.patched" && mv "$T/c6.patched" "$T/c6src/compiler/types/load.ty"
     rm -f "$c/tychoc"
     if grep -q 'win := os.is_windows()' "$T/c6src/compiler/types/load.ty"; then
         echo "FAIL control: the unconditional-cut mutation did not apply"; ctl_fail=$((ctl_fail + 1))

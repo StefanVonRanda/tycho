@@ -36,4 +36,14 @@ for compiler in ./tychoc ./tychoc1; do
         check "$compiler" "$src_nl" newline clang
     fi
 done
-echo "debug-path: quoted, backslash and newline source paths passed for both compilers"
+
+pkg="$tmp/pkg"
+mkdir -p "$pkg/lib"
+printf 'package main\nimport "./lib"\nfn main():\n    println(lib.hi())\n' >"$pkg/main.ty"
+printf 'package lib\nfn hi() -> string:\n    return "pkg-dbg-ok"\n' >"$pkg/lib/lib.ty"
+./tychoc "$pkg/main.ty" -g -o "$pkg/out"
+[ "$("$pkg/out")" = pkg-dbg-ok ] || { echo "package -g build printed the wrong output"; exit 1; }
+./tychoc "$pkg/main.ty" -g --emit-c -o "$pkg/emit"
+grep -q '#line .*lib/lib.ty' "$pkg/emit.c" || { echo "package -g dropped lib/lib.ty line info"; exit 1; }
+grep -q '#line .*main.ty' "$pkg/emit.c" || { echo "package -g dropped main.ty line info"; exit 1; }
+echo "debug-path: quoted, backslash and newline source paths and package -g line info passed"

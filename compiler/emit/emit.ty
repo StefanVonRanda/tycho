@@ -7400,7 +7400,10 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
         # debugger steps the .ty source rather than the generated C. The path
         # is C string syntax: escape backslashes and quotes like tychoc does.
         if len(cs.dbgfile) > 0:
-            out = out + "#line " + str(ast.sline_of(s)) + " \"" + _c_escape_path(cs.dbgfile) + "\"\n"
+            dbgf := cs.dbgfile
+            if cs.cf >= 0 and cs.cf < len(cs.fpath):
+                dbgf = cs.fpath[cs.cf]
+            out = out + "#line " + str(ast.sline_of(s)) + " \"" + _c_escape_path(dbgf) + "\"\n"
         cs.ret_store = i == cs.ret_update
         # A canonical `i := 0; while ...` builder/reader gets the same
         # presizing and monotone-index proof as a three-clause for loop. The

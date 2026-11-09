@@ -1,4 +1,4 @@
-/* tychoc - the historical Tycho C compiler. ARCHIVED: not built, not tested, not updated; see bootstrap/README.md. */
+/* tychoc - the historical Tycho C compiler. ARCHIVED: not built, not tested, not updated; see bootstrap/README.md.
  *
  * Pipeline:  .ty source -> tokens (indentation-aware) -> AST -> type
  * resolution -> C source (with the Tycho runtime embedded verbatim) ->

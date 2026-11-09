@@ -9,7 +9,7 @@ It is not a second compiler source. Do not edit it by hand. Regenerate it only
 when the compiler source stops being expressible in the existing bootstrap
 dialect, then run `make bootstrap-check` and commit the new file:
 
-```sh
+```text
 ./tychoc1 --emit-c compiler/main.ty -o bootstrap/tycho_compiler
 ```
 

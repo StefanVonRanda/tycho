@@ -157,12 +157,10 @@ Reading it:
 
 ## Limits
 
-- **Single-file only.** `-g` emits line info for a single-file compile. A
-  package build merges several `.ty` files into one unit and drops per-file
-  identity, so `-g` is skipped there (with a note on stderr) rather than
-  emitting wrong file/line pairs. Debug a package by reducing the failing path
-  to a single file, or debug at the generated-C level without `-g`. `tycho
-  debug` refuses a `package` build up front with this same explanation.
+- **Package builds.** `-g` emits a `#line` before each statement naming the
+  file that owns it, so gdb/lldb stop in the right `.ty` file. `tycho debug`
+  still drives one source file and refuses a package build; use gdb/lldb
+  directly for those.
 - **Synthesized glue is unmapped.** The program entry point, arena bootstrap,
   and other compiler-generated scaffolding have no `.ty` line; a `#line`
   directive only anchors real statements, so stepping through the glue shows the

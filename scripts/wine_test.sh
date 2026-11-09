@@ -12,14 +12,8 @@ fail=0; pass=0
 park=""
 note() { echo "      $*"; }
 
-mkdir -p build
-make -s build/tycho_rt_embed.h
-if [ ! -x build/tychoc-mingw.exe ] \
-   || [ src/tychoc.c -nt build/tychoc-mingw.exe ] \
-   || [ build/tycho_rt_embed.h -nt build/tychoc-mingw.exe ]; then
-    "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o build/tychoc-mingw.exe \
-        || { echo "FAIL: mingw compiler build"; exit 2; }
-fi
+. ./scripts/wine_compiler.sh
+build_mingw_tychoc
 # the mingw compiler finds corelib next to its own exe via argv0; under wine
 # that is the repo build/ dir, so point it at the real corelib explicitly
 CORELIB="Z:\\$(pwd | sed 's|^/||; s|/|\\|g')\\corelib"
