@@ -47,18 +47,19 @@ build_gen2() {
 if [ "${1:-}" = "--selfcheck" ]; then
     sc=0
     # [1] the comparison must actually run cmp: two KNOWN-different emissions
-    #     must be reported as a difference. ./tychoc and ./tychoc1 are two
-    #     implementations; their emitted C for the same input is not identical.
-    if [ -x ./tychoc ] && [ -x "$TYCHOC1" ]; then
-        ./tychoc "$SRC" --emit-c -o "$T/a" >/dev/null 2>&1
-        "$TYCHOC1" "$SRC" --emit-c -o "$T/b" >/dev/null 2>&1
+    #     must be reported as a difference.
+    if [ -x "$TYCHOC1" ]; then
+        printf 'fn main():\n    println("a")\n' > "$T/a.ty"
+        printf 'fn main():\n    println("b")\n' > "$T/b.ty"
+        "$TYCHOC1" "$T/a.ty" --emit-c -o "$T/a" >/dev/null 2>&1
+        "$TYCHOC1" "$T/b.ty" --emit-c -o "$T/b" >/dev/null 2>&1
         if [ -f "$T/a.c" ] && [ -f "$T/b.c" ] && ! cmp -s "$T/a.c" "$T/b.c"; then
-            echo "  [1] two different compilers emit different C    ok (cmp can report a difference)"
+            echo "  [1] different programs emit different C          ok (cmp can report a difference)"
         else
-            echo "  [1] two different compilers emit different C    FAIL -- cmp reports no difference, so it cannot detect one"; sc=1
+            echo "  [1] different programs emit different C          FAIL -- cmp reports no difference, so it cannot detect one"; sc=1
         fi
     else
-        echo "  [1] needs ./tychoc and $TYCHOC1                     FAIL"; sc=1
+        echo "  [1] needs $TYCHOC1                                  FAIL"; sc=1
     fi
     # [2] a missing generation must fail rather than pass vacuously.
     if cmp -s "$T/nope-a.c" "$T/nope-b.c" 2>/dev/null; then

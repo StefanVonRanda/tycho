@@ -8797,7 +8797,6 @@ declaration. Pinned by `tests/reject/handle_close_param.ty`.
 
 ### 131. `tychoc` could not build an inline array reassigned from a call inside a loop — **FIXED 2026-09-24**
 
-> Pinned-by: ! ( ./tychoc --emit-c tests/inline_arr_reassign_loop.ty | grep -q 'arena_recycle(.*h_[hgb]\.data' )
 > Pinned-by: make -s grade-check
 
 Found by `tools/tycho-grade/` (#128, layout 4) on its first build: `gain =

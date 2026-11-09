@@ -76,6 +76,14 @@ fn exe_dir_of(p: string) -> string:
         if p[i] == 47 or p[i] == 92:
             cut = i
     if cut < 0:
+        # A bare argv[0] came through PATH; resolve it there so an installed
+        # compiler still finds runtime/tycho_rt.c and corelib beside itself.
+        sep := ":"
+        if os.is_windows():
+            sep = ";"
+        for d in split(getenv("PATH"), sep):
+            if len(d) > 0 and io.exists(d + "/" + p):
+                return d
         return "."
     if cut == 0:
         return "/"

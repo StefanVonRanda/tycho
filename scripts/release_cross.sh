@@ -23,8 +23,8 @@ make -s tychoc
 
 ver="$(./tychoc --version | awk '{print $2}')"
 [ "v$ver" = "$version" ] || {
-    echo "!! version mismatch: src/tychoc.c says $ver, asked for $version" >&2
-    echo "   bump TYCHO_VERSION in src/tychoc.c and README.md together" >&2
+    echo "!! version mismatch: compiler/main.ty says $ver, asked for $version" >&2
+    echo "   bump VERSION() in compiler/main.ty and README.md together" >&2
     exit 2; }
 
 built=0
@@ -38,9 +38,14 @@ for row in $TARGETS; do
     echo ">> $plat  ($triple)"
     rm -rf "$stage"; mkdir -p "$stage"
 
-    zig cc -target "$triple" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c \
-        -o "$stage/tychoc$exe" 2>"$root/dist-cross.log" || {
+    ./tychoc compiler/main.ty --emit-c -o "$stage/tychoc" >/dev/null || {
+        echo "!! could not emit C for the compiler"; exit 1; }
+    cshims="$(./tychoc compiler/main.ty --print-shims | tr '\n' ' ')"
+    zig cc -target "$triple" -O2 -fwrapv -std=c11 -pthread -Icorelib \
+        -o "$stage/tychoc$exe" "$stage/tychoc.c" $cshims -lm \
+        2>"$root/dist-cross.log" || {
         echo "!! tychoc failed for $triple"; tail -5 "$root/dist-cross.log"; exit 1; }
+    rm -f "$stage/tychoc.c"
 
     for spec in "tychofmt tools/tychofmt.ty -" \
                 "tycho-lsp tools/lsp.ty tools/lsp_shim.c" \

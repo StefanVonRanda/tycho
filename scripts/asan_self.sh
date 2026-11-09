@@ -19,7 +19,9 @@ export UBSAN_OPTIONS=print_stacktrace=1
 echo "asan-self: building $SAN  (ASan+UBSan, -fno-sanitize-recover=all)"
 mkdir -p build
 if ! $CC -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 -fwrapv \
-        -std=c11 -Ibuild src/tychoc.c -o "$SAN" 2>"$TMP/build.log"; then
+        -std=c11 -pthread -Icorelib -o "$SAN" bootstrap/tycho_compiler.c \
+        corelib/strings/strings_shim.c corelib/os/os_shim.c corelib/io/io_shim.c \
+        -lm 2>"$TMP/build.log"; then
     echo "asan-self: FATAL — could not build the sanitized compiler"
     sed 's/^/      /' "$TMP/build.log"
     exit 2
@@ -34,9 +36,8 @@ check_one() {
     hi="$1"; name="$2"
     "$SAN" "$hi" --emit-c -o "$TMP/out" >"$TMP/log" 2>&1
     rc=$?
-    # The sanitizer's own voice. tychoc's diagnostics are `file:LINE: error: MSG`
-    # (lowercase), so they cannot collide with `ERROR: ` here; the only
-    # "runtime error" string in src/tychoc.c is a comment (src/tychoc.c:1232@defined), never output.
+    # The sanitizer's own voice. The compiler's diagnostics are
+    # `file:LINE: error: MSG` (lowercase), so they cannot collide with `ERROR: `.
     if grep -qE 'AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:|ERROR: ' "$TMP/log"; then
         echo "FAIL  $name  (sanitizer report)"
         sed 's/^/      /' "$TMP/log"

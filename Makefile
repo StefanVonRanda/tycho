@@ -5,17 +5,23 @@ CC      ?= cc
 CFLAGS  ?= -O2 -fwrapv -Wall -Wextra -std=c11
 
 # Which compiler the bench lanes build and measure. Override to point the suite
-# at the second compiler: make bench-guard TYCHOC=./tychoc1
+# at a different build: make bench-guard TYCHOC=./tychoc1
 TYCHOC  ?= ./tychoc
 
 EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
-.PHONY: shadercross preflight prunner-check ci-linux fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check parse-check fstr-hole-file-check tychoc1-check script-check builtin-qualified parity-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check docs-counts-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+# The cold-start artifact: compiler/main.ty emitted as C by the last good
+# self-hosted compiler. It is generated, not maintained; src/tychoc.c is the
+# archived historical compiler and is not built.
+BOOTSTRAP_C     := bootstrap/tycho_compiler.c
+BOOTSTRAP_SHIMS := corelib/strings/strings_shim.c corelib/os/os_shim.c corelib/io/io_shim.c
 
-# tychoc1, the self-hosted compiler, is what `make` produces and what ships.
-# It still depends on tychoc: src/tychoc.c is the bootstrap stage that builds it.
-all: tychoc1
+.PHONY: shadercross preflight prunner-check ci-linux bootstrap-check fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check fstr-hole-file-check script-check builtin-qualified parity-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check docs-counts-check all tools tools-check demo test test-fast prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+
+# The self-hosted compiler is the only maintained compiler. `tychoc` is a copy
+# of it so the CLI and tools keep one spelling.
+all: tychoc
 
 # Turn the runtime C source into a single C string literal the compiler
 # embeds into every generated file. Each line is escaped and suffixed
@@ -29,21 +35,25 @@ $(EMBED): $(RUNTIME) | build
 build:
 	@mkdir -p build
 
-tychoc: src/tychoc.c $(EMBED)
-	$(CC) $(CFLAGS) -Ibuild src/tychoc.c -o tychoc
+# The bootstrap is a generated artifact, not a second compiler source. It needs
+# the same three corelib shims the compiler imports.
+bootstrap-tychoc: $(BOOTSTRAP_C) $(BOOTSTRAP_SHIMS)
+	$(CC) -O2 -fwrapv -std=c11 -pthread -Icorelib -o bootstrap-tychoc \
+		$(BOOTSTRAP_C) $(BOOTSTRAP_SHIMS) -lm
 
-# The second compiler, written in Tycho and built by the C bootstrap. It reads
-# runtime/tycho_rt.c at emit time rather than embedding it, so it must be run
-# from the repo root or given --runtime.
+# The self-hosted compiler reads runtime/tycho_rt.c at emit time rather than
+# embedding it, so it must be run from the repo root or given --runtime.
 TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 
-# TWO-STAGE. Stage 1 is built by ./tychoc; stage 2 is built by stage 1, so the
-# shipped compiler carries its OWN elisions. Stage 1 lives in the repo root, not
-# under build/, because the corelib is located relative to the binary.
-# TYCHOC1_CFLAGS picks the COMPILER BINARY's own cc flags, the way -O2 above
-# picks ./tychoc's. It is not the default for user programs: driver.ty stays
-# -O3, because inline-unit-growth costs bench/transient 3-5%. On this one
-# translation unit it is worth 1051.3e6 -> 864.2e6 Ir.
+# TWO-STAGE. Stage 1 is built by the checked-in bootstrap artifact; stage 2 is
+# built by stage 1, so the shipped compiler carries its OWN elisions. Stage 1
+# lives in the repo root, not under build/, because the corelib is located
+# relative to the binary.
+#
+# TYCHOC1_CFLAGS picks the COMPILER BINARY's own cc flags. It is not the default
+# for user programs: driver.ty stays -O3, because inline-unit-growth costs
+# bench/transient 3-5%. On this one translation unit it is worth
+# 1051.3e6 -> 864.2e6 Ir.
 # -static-pie, not -static: a plain static link leaves the .eh_frame table
 # unsorted, so the first unwind runs classify_object_over_fdes over the whole
 # thing -- 201,604 Ir on EVERY compile regardless of input size (48% of a
@@ -53,18 +63,17 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # string literal to relocate dies at the link:
 #   relocation R_X86_64_32 against `.rodata.str1.1' can not be used when
 #   making a PIE object; recompile with -fPIE
-# Measured 2026-09-11: WITHOUT it neither tychoc1 (here) nor the three shipped
-# tools (TOOL_CFLAGS below) can be built on that toolchain. It is NOT specific
-# to -flto -- tychofmt has no LTO and fails the same way -- and it is NOT
-# visible to a trivial probe, because a program with no .rodata relocation links
-# fine either way. Naming it costs nothing where the implication already worked.
 TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto -fPIE
-# `make clean && make` is the bootstrap check: clean removes tychoc1, so this
-# line runs for real. 8c156d38 swapped it to ./tychoc1 and only a fresh clone saw it.
-tychoc1: tychoc $(TYCHOC1_SRC)
-	./tychoc compiler/main.ty -o tychoc1-stage1
+tychoc1: bootstrap-tychoc $(TYCHOC1_SRC)
+	./bootstrap-tychoc compiler/main.ty -o tychoc1-stage1
 	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" ./tychoc1-stage1 compiler/main.ty -o tychoc1
 	@rm -f tychoc1-stage1
+
+tychoc: tychoc1
+	cp tychoc1 tychoc
+
+bootstrap-check:
+	@sh scripts/bootstrap_check.sh
 
 # The three tools SHIP in the release archive beside tychoc, and until 2026-09-06
 # they were the only shipped binaries linked dynamically -- so they carried this
@@ -191,7 +200,7 @@ wine-tools:
 wine-ffi:
 	@sh scripts/wine_ffi.sh
 
-test: tychoc tychoc1
+test: tychoc
 	@sh tests/compress_limits.sh
 	@sh tests/accumulator_scope.sh
 	@sh tests/inout_append.sh
@@ -241,7 +250,7 @@ prunner-check: build/prunner
 test-fast: build/prunner
 	@./build/prunner
 
-asan-self: $(EMBED)
+asan-self: $(BOOTSTRAP_C)
 	@sh scripts/asan_self.sh
 
 conc: tychoc1
@@ -339,10 +348,10 @@ shim-check:
 shim-warn:
 	@sh scripts/shim_warn.sh
 
-# The warnings EMITTED C raises in a user's build, both compilers, over every
-# corelib test and every positive fixture. shim-warn reads hand-written shim C;
-# nothing read cc's stderr on emitted C unless the build failed (FRICTION 128).
-emit-warn: tychoc tychoc1
+# The warnings EMITTED C raises in a user's build, over every corelib test and
+# every positive fixture. shim-warn reads hand-written shim C; nothing read cc's
+# stderr on emitted C unless the build failed (FRICTION 128).
+emit-warn: tychoc
 	@sh scripts/emit_warn.sh
 
 # The warnings the mingw64 CROSS build emits -- the four .exe files
@@ -364,20 +373,14 @@ goldens-check:
 embed-check:
 	@python3 scripts/embed_check.py
 
-# The sub-second predictor of parse-check's opening counts. No compiler, so a
-# commit that adds or deletes a .ty can afford it; parse-check runs it too.
+# The sub-second predictor of the fixture runners' opening counts. No compiler,
+# so a commit that adds or deletes a .ty can afford it.
 corpus-check:
 	@python3 scripts/check_corpus_counts.py
 	@python3 scripts/check_corpus_counts.py --selfcheck
 
-parse-check: tychoc1
-	@sh compiler/run.sh
-
 fstr-hole-file-check:
 	@sh scripts/fstr_hole_file_check.sh
-
-tychoc1-check: tychoc1
-	@sh scripts/tychoc1_check.sh $(ONLY)
 
 glibc-check: tychoc1
 	@sh scripts/glibc_floor.sh --selfcheck
@@ -799,7 +802,7 @@ site-code-check: tychoc1
 # `--emit-c -o <base>` writes and keeps `<base>.c`, so the intermediates below
 # are removed here rather than by the build.
 clean:
-	rm -f tychoc tychoc1 tychoc1-stage1 tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c tycho-debug tycho-debug.c build/tycho_rt_embed.h
+	rm -f bootstrap-tychoc tychoc tychoc1 tychoc1-stage1 tycho tycho.c tychofmt tychofmt.c tycho-lsp tycho-lsp.c tycho-debug tycho-debug.c build/tycho_rt_embed.h
 	rm -f tycho-httpd tycho-httpd.c
 	rm -f examples/hello examples/hello.c examples/demo examples/demo.c
 	rm -f examples/accumulate examples/accumulate.c

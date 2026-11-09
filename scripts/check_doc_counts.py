@@ -11,9 +11,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # (path, pattern with one group per count, computed keys in group order)
 CLAIMS = [
-    ("docs/architecture.md", r"`src/tychoc\.c` — ([\d,]+) lines of C", ("c_lines",)),
     ("docs/architecture.md",
-     r"`compiler/` — ([\d,]+) lines of Tycho across (\d+) files",
+     r"`compiler/` is ([\d,]+) lines of Tycho across (\d+) files",
      ("compiler_lines", "compiler_files")),
     ("STATUS.md", r"\| \*\*Corelib\*\* \| (\d+) packages shipped", ("packages",)),
     ("docs/internals/audit-brief.md", r"`corelib/`, (\d+) packages", ("packages",)),
@@ -65,15 +64,13 @@ def evaluate(docs, counts):
 
 def selfcheck():
     counts = {
-        "c_lines": "17,805",
-        "compiler_lines": "43,187",
+        "compiler_lines": "25,635",
         "compiler_files": "13",
         "packages": "48",
     }
     docs = {
         "docs/architecture.md": (
-            "`src/tychoc.c` — 17,805 lines of C, the reference implementation.\n"
-            "`compiler/` — 43,187 lines of Tycho across 13 files.\n"),
+            "`compiler/` is 25,635 lines of Tycho across 13 files.\n"),
         "STATUS.md": "| **Corelib** | 48 packages shipped |\n",
         "docs/internals/audit-brief.md": "(`corelib/`, 48 packages)\n",
     }
@@ -82,7 +79,7 @@ def selfcheck():
 
     stale = dict(docs)
     stale["docs/architecture.md"] = stale["docs/architecture.md"].replace(
-        "17,805", "14,529")
+        "25,635", "25,627")
     caught = bool(evaluate(stale, counts))
     print("  [2] stale count caught: {}".format("yes" if caught else "NO"))
     ok &= caught

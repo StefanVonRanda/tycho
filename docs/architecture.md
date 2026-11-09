@@ -11,70 +11,55 @@ for a full accounting of where the model wins and loses see
 
 ## The pieces
 
-**Two compilers ship, and only one is normative.**
+**One compiler ships.** `compiler/` is 25,635 lines of Tycho across 13 files,
+built as `tychoc1` and installed as `tychoc`. Six packages: `lex`, `parse`,
+`ast`, `types`, `emit`, `driver`. The [spec](spec/) is normative; the compiler
+is the reference implementation in practice, and every suite here defaults to
+it (`tests/run.sh:175@TYCHOC`).
 
-`src/tychoc.c` — 17,805 lines of C, the reference implementation. It and [the
-spec](spec/) define the language: where the two disagree, this one is right by
-definition.
+`bootstrap/tycho_compiler.c` is a generated cold-start artifact: the compiler
+source emitted as C by the last known-good compiler. It is not a second
+implementation and is not edited by hand. The historical C compiler,
+`src/tychoc.c`, is archived — not built, not tested, not updated — and remains
+only because earlier design and defect records cite it.
 
-`compiler/` — 25,627 lines of Tycho across 13 files, the same language written
-in itself, built as `tychoc1`.
-[ROADMAP](../ROADMAP.md#the-self-hosted-compiler) tracks its status and the one
-question about it that is not decided. Six packages: `lex`, `parse`, `ast`, `types`,
-`emit`, `driver`. It serves two purposes — to prove the language can carry a real
-program, and to be a second opinion on the first. `make parse-check` scores its
-front end against `./tychoc`'s own answers file by file; `make tychoc1-check`
-runs the whole fixture corpus and every tool lane with `TYCHOC=./tychoc1`.
+### Which compiler is right
+
+The self-hosted compiler is the reference implementation; the spec is
+normative. The archived C compiler is not a second opinion and is never used to
+resolve a disagreement.
 
 ### Bootstrapping
 
 `make tychoc1` builds in two stages (`Makefile@tychoc1`):
 
 ```
-./tychoc          compiler/main.ty -o tychoc1-stage1
-./tychoc1-stage1  compiler/main.ty -o tychoc1
+./bootstrap-tychoc  compiler/main.ty -o tychoc1-stage1
+./tychoc1-stage1    compiler/main.ty -o tychoc1
 ```
 
-The second stage is not ceremony. Stage 1 is emitted by the C compiler; the
-shipped `tychoc1` is emitted by a compiler that was itself written in Tycho, so
-a defect in tychoc1's own code generation reaches the binary you actually run
-instead of hiding one generation back.
+The first stage is built from the checked-in bootstrap C with `cc`; the shipped
+`tychoc1` is emitted by a compiler written in Tycho, so a defect in its own code
+generation reaches the binary you run instead of hiding one generation back.
+`make bootstrap-check` proves the checked-in C builds and emits itself
+byte-for-byte.
 
 The fixpoint holds. Generating three further compilers from `compiler/main.ty`
-gives byte-identical C at every hop — gen2 == gen3 == gen4. Note that the corelib is resolved relative to the running binary,
-so a generation built somewhere else must be run from the repo root or it
-cannot find `core:strings`.
+gives byte-identical C at every hop — gen2 == gen3 == gen4. The corelib is
+resolved relative to the running binary, so a generation built somewhere else
+must be run from the repo root or it cannot find `core:strings`.
 
-`TYCHOC1_CFLAGS` (`Makefile@TYCHOC1_CFLAGS`) links `-static-pie`, not
-`-static`: a plain static link leaves `.eh_frame` unsorted, so the first unwind
-runs `classify_object_over_fdes` over the whole table — 201,604 Ir on every
-compile regardless of input size.
+`TYCHOC1_CFLAGS` (`Makefile@TYCHOC1_CFLAGS`) links `-static-pie`, not `-static`:
+a plain static link leaves `.eh_frame` unsorted, so the first unwind runs
+`classify_object_over_fdes` over the whole table — 201,604 Ir on every compile
+regardless of input size.
 
 The fixpoint is gated rather than measured by hand: `make fixpoint-check`
 (`scripts/fixpoint_check.sh`) has `tychoc1` emit the compiler's C, builds that
 one generation `-O0` (it only has to run), has *it* emit the compiler again, and
 requires the two C files byte-identical — `f(f(x)) == f(x)`. It compares the
-emitted C rather than binaries, so it is free of link-time noise. It is `[1e/13]` in `make ci`.
-
-### Which compiler is right
-
-The two are **not** peers, and saying so turns "keep them agreeing forever" from
-a standing tax into a procedure with a known shape:
-
-- **`src/tychoc.c` is normative.** It defines what the language does. It is also
-  the bootstrap, and the README's "one dependency-free C file" is a promise
-  about it.
-- **`tychoc1` is the oracle.** Its value is being a second implementation that
-  can disagree. It is what every suite here defaults to
-  (`tests/run.sh:175@TYCHOC`), so it is exercised far harder than a spare would
-  be.
-
-**When they disagree the question is "which is right", not "make `tychoc1`
-match".** A divergence is a finding: one of the two is wrong, and which one is
-decided on the merits. FRICTION 87 is the worked example — the two worded a
-diagnostic differently, `tychoc1`'s answer was better, and **`src/tychoc.c` was
-changed to match it**. The oracle improving the reference is the mechanism
-working, not an inversion of it.
+emitted C rather than binaries, so it is free of link-time noise. It is
+`[1e/13]` in `make ci`.
 
 ## The verification surface
 
@@ -94,7 +79,7 @@ step proves:
 |---|---|
 | `make test` | golden-output tests pass under ASan/UBSan/LSan; `tests/reject/` must fail with a non-empty diagnostic; `tests/abort/` must die with a `tycho:` message; `tests/diag/` and `tests/warn/` match their recorded stderr. |
 | `make ilp32` | the same fixture suite rebuilt under `gcc -m32`, golden-compared: Tycho `int` stays 64-bit off LP64. |
-| `make asan-self` | `src/tychoc.c` itself built with ASan+UBSan, compiling the whole corpus (the compiler's *own* memory safety). |
+| `make asan-self` | the checked-in compiler bootstrap built with ASan+UBSan, compiling the whole corpus (the compiler's *own* memory safety). |
 | `make corelib` | every corelib package + examples + the `site` dogfood vs recorded goldens. |
 | `make raytrace` / `make mandelbrot` | float-heavy value-semantics dogfoods (a ray tracer, a 16-core `parallel for` reduction): tychoc == ASan (+ TSan), golden-locked. |
 | `make conc` | spawn / parallel-for / channels: native + ASan + TSan vs goldens; aborts fire, rejects are refused. |

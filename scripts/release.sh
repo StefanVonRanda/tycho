@@ -23,23 +23,15 @@ export PATH
 arch="$(uname -m)"
 
 # Build first: a clean checkout has no ./tychoc, and a previous build may carry
-# an older version than src/tychoc.c.
-echo ">> building native compiler (tychoc1, self-hosted; tychoc bootstraps it)"
-make -s tychoc1
+# an older version than compiler/main.ty.
+echo ">> building native compiler (self-hosted)"
+make -s tychoc
 
 # the version MUST match the compiler's constant (the changelog discipline)
-ver="$(./tychoc --version | awk '{print $2}')"
+ver="$(./tychoc1 --version | awk '{print $2}')"
 if [ "v$ver" != "$version" ]; then
-    echo "!! version mismatch: src/tychoc.c says $ver, release.sh was given $version" >&2
-    echo "   bump TYCHO_VERSION in src/tychoc.c and CHANGELOG.md together" >&2
-    exit 2
-fi
-# BOTH archives now ship tychoc1, whose version is its own constant, so the
-# check above no longer covers what is actually packaged.
-ver1="$(./tychoc1 --version | awk '{print $2}')"
-if [ "v$ver1" != "$version" ]; then
-    echo "!! version mismatch: compiler/main.ty says $ver1, release.sh was given $version" >&2
-    echo "   bump version() in compiler/main.ty alongside src/tychoc.c" >&2
+    echo "!! version mismatch: compiler/main.ty says $ver, release.sh was given $version" >&2
+    echo "   bump VERSION() in compiler/main.ty and CHANGELOG.md together" >&2
     exit 2
 fi
 

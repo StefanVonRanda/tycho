@@ -153,11 +153,12 @@ want a different tool, is
 - **Value semantics.** `b := a` copies; there is no shared mutable storage, so
   data races are inexpressible inside Tycho (copy-in/copy-out concurrency, no
   annotations) — concurrent FFI calls can still race ([SECURITY.md](SECURITY.md)).
-- **Compact fixed-size enums.** Both compilers store a user enum with scalar
+- **Compact fixed-size enums.** The compiler stores a user enum with scalar
   payloads as a packed tag-plus-union value; recursive and heap-bearing enums
   remain boxed. `TYCHOC_NO_INLINE_ENUM=1` is the layout control.
-- **One dependency-free C file.** The transpiler is `src/tychoc.c`; the only
-  toolchain is `cc` and `make`.
+- **One maintained compiler.** The compiler is written in Tycho and builds
+  itself. `bootstrap/tycho_compiler.c` is a generated cold-start artifact; the
+  only toolchain is `cc` and `make`.
 - **Concurrency, generics, closures, FFI.** `spawn`/`wait` tasks, bounded
   channels, `parallel for`, monomorphized generics, closures, UFCS, and a
   C-interop boundary — all shipping.
@@ -172,7 +173,8 @@ want a different tool, is
 removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails,
 for debugging); `-o name` names the output, `--emit-c` stops at the C (writing
 it to stdout unless `-o` names a file) — that is how you keep the C. The
-transpiler is one dependency-free C file. The only optional extras are
+production compiler is self-hosted; the bootstrap is one generated C file. The
+only optional extras are
 `pkg-config` plus a library for the FFI-backed corelib modules (like
 `core:http`) and a Go toolchain for the cross-language benchmarks — both skip
 cleanly when absent.

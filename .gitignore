@@ -21,6 +21,7 @@ gmon.out
 # The compiled Tycho compiler (built by `make`)
 /tychoc
 /tychoc1
+/bootstrap-tychoc
 
 
 # The five `.c` entries below are NOT produced by their `make` target any more.
