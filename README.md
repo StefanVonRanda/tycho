@@ -23,8 +23,8 @@ inserts every allocation and free itself. No garbage collector, no manual
 stability — see [what you give up](#what-you-give-up) below and the version
 policy in [SUPPORT.md](SUPPORT.md).
 
-[Docs](docs/README.md) · [Tutorial](docs/tutorial.md) ·
-[Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
+[Docs](docs/README.md) · [Quickstart](docs/quickstart.md) ·
+[Tutorial](docs/tutorial.md) · [Reference](docs/reference/index.md) · [Thesis](docs/thesis.md) ·
 [Spec](docs/spec/) · [Performance](docs/performance.md) ·
 [How it is tested](docs/controls.md) · [Status](STATUS.md)
 
@@ -80,7 +80,8 @@ what is your name: Ada
 hello Ada
 ```
 
-New here? The **[tutorial](docs/tutorial.md)** goes from this to a real program
+New here? The **[quickstart](docs/quickstart.md)** gets you running in ten
+minutes; the **[tutorial](docs/tutorial.md)** goes from this to a real program
 in about an hour, and **[from `malloc` to arenas](docs/from-c-to-arenas.md)**
 explains the memory model from C you already know. Full build details are under
 [Trying it](#trying-it). The syntax is Python/Nim-flavored and the semantics
@@ -261,10 +262,12 @@ supported C target. Release tarballs are built per platform by
 
 ## Documentation
 
-New to Tycho? **Start with the [tutorial](docs/tutorial.md)** — a guided first
-hour that ends with a small real program and the one idea that makes the
-language tick. [`docs/`](docs/README.md) is the full index; the map:
+New to Tycho? **Start with the [quickstart](docs/quickstart.md)** — ten minutes
+to a running program; the [tutorial](docs/tutorial.md) is the guided first hour
+that ends with a small real program and the one idea that makes the language
+tick. [`docs/`](docs/README.md) is the full index; the map:
 
+- **[Quickstart](docs/quickstart.md)** — clone, build, run, ten minutes.
 - **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
 - **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
   model in five steps. The gentlest way in, with or without C.

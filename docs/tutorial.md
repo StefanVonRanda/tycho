@@ -2,7 +2,7 @@
 
 A guided first hour with Tycho. By the end you'll have written a small real program and
 will understand the one idea that makes the language different — where the memory
-management went.
+management went. In a hurry? The [quickstart](quickstart.md) is the ten-minute version.
 
 This assumes you can already build the compiler; if not, see
 [Trying it](../README.md#trying-it) in the README (it's `git clone` + `make`). Every

@@ -13,11 +13,11 @@ for a full accounting of where the model wins and loses see
 
 **Two compilers ship, and only one is normative.**
 
-`src/tychoc.c` — 14,529 lines of C, the reference implementation. It and [the
+`src/tychoc.c` — 17,805 lines of C, the reference implementation. It and [the
 spec](spec/) define the language: where the two disagree, this one is right by
 definition.
 
-`compiler/` — 21,498 lines of Tycho across 13 files, the same language written
+`compiler/` — 25,627 lines of Tycho across 13 files, the same language written
 in itself, built as `tychoc1`.
 [ROADMAP](../ROADMAP.md#the-self-hosted-compiler) tracks its status and the one
 question about it that is not decided. Six packages: `lex`, `parse`, `ast`, `types`,

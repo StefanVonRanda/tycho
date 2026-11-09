@@ -3,18 +3,19 @@
 ## Learn
 
 1. **[The README](../README.md)** — what Tycho is, and whether it's for you.
-2. **[Tutorial](tutorial.md)** — write and run your first programs in about an hour.
-3. **[From `malloc` to implicit arenas](from-c-to-arenas.md)** — the memory model
+2. **[Quickstart](quickstart.md)** — clone, build, and run a program in ten minutes.
+3. **[Tutorial](tutorial.md)** — write and run your first programs in about an hour.
+4. **[From `malloc` to implicit arenas](from-c-to-arenas.md)** — the memory model
    in five steps from familiar C. Read this right after the tutorial.
-4. **[Thinking in Tycho](idioms.md)** — the six idioms: what to reach for
+5. **[Thinking in Tycho](idioms.md)** — the six idioms: what to reach for
    instead of references, observers, and interface values. Read this before
    the reference.
 
 ## Use
 
-4. **[Language reference](reference/index.md)** — how each feature behaves, one
+6. **[Language reference](reference/index.md)** — how each feature behaves, one
    page per topic, every example runnable.
-5. **[Quiet results](quiet-results.md)** — the seven places the language answers
+7. **[Quiet results](quiet-results.md)** — the seven places the language answers
    instead of refusing. Short; read it before the first real program.
 
 | You want | Go to |
