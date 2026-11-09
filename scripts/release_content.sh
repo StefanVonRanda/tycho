@@ -6,7 +6,7 @@
 #
 # Usage:
 #   sh scripts/release_content.sh              build both archives, then check them
-#   sh scripts/release_content.sh --selfcheck  the three historical defects, each
+#   sh scripts/release_content.sh --selfcheck  the two package defects, each
 #                                              rebuilt for real and each required
 #                                              to redden the leg that names it
 #
@@ -194,19 +194,13 @@ check_native() {
     [ "$v" = "$ver" ] && ok "native: the packaged tychoc reports $ver" \
                       || bad "native: the packaged tychoc reports '$v', expected '$ver'"
 
-    # Which compiler is in the box. The two disagree on this program, so the
-    # comparison is not decoration -- assert the disagreement before using it.
+    # Which compiler is in the box: the packaged binary must emit the same C as
+    # the local self-hosted compiler.
     ( cd "$st" && ./tychoc "$root/bench/treewalk.ty" --emit-c -o "$T/nat_pkg" ) >/dev/null 2>&1
     ./tychoc1 "$root/bench/treewalk.ty" --emit-c -o "$T/nat_c1" >/dev/null 2>&1
-    ./tychoc  "$root/bench/treewalk.ty" --emit-c -o "$T/nat_c0" >/dev/null 2>&1
-    if cmp -s "$T/nat_c1.c" "$T/nat_c0.c"; then
-        bad "native: tychoc1 and tychoc emit the SAME C for bench/treewalk.ty -- the identity leg below proves nothing"
-    else
-        ok "native: tychoc1 and tychoc emit different C, so the identity leg discriminates"
-        cmp -s "$T/nat_pkg.c" "$T/nat_c1.c" \
-            && ok "native: the packaged tychoc IS tychoc1 (emit byte-identical)" \
-            || bad "native: the packaged tychoc is NOT tychoc1 (emit differs from ./tychoc1's)"
-    fi
+    cmp -s "$T/nat_pkg.c" "$T/nat_c1.c" \
+        && ok "native: the packaged tychoc IS the local self-hosted compiler (emit byte-identical)" \
+        || bad "native: the packaged tychoc is NOT the local self-hosted compiler (emit differs)"
 
     # corelib found beside the binary, from a cwd that is not the repo.
     ( cd "$st" && env -u TYCHO_CORELIB ./tychoc "$T/src/t.ty" -o "$T/nat_t" ) >/dev/null 2>&1
@@ -248,9 +242,8 @@ check_mingw() {
     [ "$v" = "$ver" ] && ok "mingw: the packaged tychoc.exe reports $ver" \
                       || bad "mingw: the packaged tychoc.exe reports '$v', expected '$ver'"
 
-    # Same identity question as the native leg. The emitted C carries no path, so
-    # the two runs are comparable despite different cwds -- and the disagreement
-    # between tychoc1 and tychoc is asserted in check_native before this is used.
+    # Same identity question as the native leg: the packaged binary must emit the
+    # same C as the local self-hosted compiler.
     rm -f "$T/win_pkg.c"
     ( cd "$st" && $W ./tychoc.exe "$root/bench/treewalk.ty" --emit-c -o "$T/win_pkg" ) >/dev/null 2>&1
     ./tychoc1 "$root/bench/treewalk.ty" --emit-c -o "$T/win_c1" >/dev/null 2>&1
@@ -258,8 +251,8 @@ check_mingw() {
         bad "mingw: the packaged tychoc.exe emitted nothing for bench/treewalk.ty (a missing runtime/ dies here)"
     else
         cmp -s "$T/win_pkg.c" "$T/win_c1.c" \
-            && ok "mingw: the packaged tychoc.exe IS tychoc1 (emit byte-identical to the native tychoc1's)" \
-            || bad "mingw: the packaged tychoc.exe is NOT tychoc1 (emit differs from ./tychoc1's)"
+            && ok "mingw: the packaged tychoc.exe IS the local self-hosted compiler (emit byte-identical)" \
+            || bad "mingw: the packaged tychoc.exe is NOT the local self-hosted compiler (emit differs)"
     fi
 
     # The whole route: emit under wine with corelib beside the binary, link with
@@ -337,19 +330,7 @@ ctl() {
 
 selfcheck() {
     ver="$1"; base="$2"
-    echo ">> selfcheck: the three defects commit 7534812f found by hand, plus the argv0 one"
-
-    # [C1] the archive ships the BOOTSTRAP compiler, which is what it did until
-    # 7534812f. Built from src/tychoc.c, exactly as the old release.sh did.
-    c="$T/c1"; rm -rf "$c"; cp -r "$base" "$c"
-    make -s build/tycho_rt_embed.h >/dev/null 2>&1
-    "$MINGWCC" -O2 -fwrapv -std=c11 -Ibuild src/tychoc.c -o "$c/tychoc.exe" 2>/dev/null \
-        || { echo "FAIL control: could not cross-build src/tychoc.c"; ctl_fail=$((ctl_fail+1)); }
-    if $W "$c/tychoc.exe" --version 2>/dev/null | grep -q "^tychoc "; then
-        echo "   substitution applied: $c/tychoc.exe is src/tychoc.c ($($W "$c/tychoc.exe" --version 2>/dev/null | tr -d '\r'))"
-        ( fail=0; legs=0; check_mingw "$c" "$ver" ) > "$T/c1.log" 2>&1
-        ctl "the bootstrap compiler in place of tychoc1" "is NOT tychoc1" "$T/c1.log"
-    fi
+    echo ">> selfcheck: the two package defects commit 7534812f found by hand, plus the argv0 one"
 
     # [C2] -pthread with no -static. The link line is release.sh's own, minus the
     # one flag; the .exe then imports libwinpthread-1.dll, which nothing carries.

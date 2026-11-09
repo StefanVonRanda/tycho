@@ -20,35 +20,31 @@
 set -eu
 cd "$(dirname "$0")/.."
 TYCHOC="${TYCHOC:-./tychoc}"
-TYCHOC1="${TYCHOC1:-./tychoc1}"
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT INT TERM
 
 probe() {   # $1 = name -> writes a program qualifying it through core:strings
     printf 'package main\nimport "core:strings"\nfn main():\n    println(str(strings.%s("hi")))\n' "$1" > "$T/main.ty"
 }
-msg_ref() { "$TYCHOC" "$T/main.ty" -o "$T/out" 2>&1 | grep -oE 'error:.*' | head -1; }
-msg_sh()  { "$TYCHOC1" "$T/main.ty" --typecheck 2>&1 | grep -oE 'error:.*' | head -1; }
+msg() { "$TYCHOC" "$T/main.ty" -o "$T/out" 2>&1 | grep -oE 'error:.*' | head -1; }
 
 names="$(python3 -c "import json;print(' '.join(sorted(json.load(open('surface.lock'))['builtins'])))")"
 n=0; bad=0
 for b in $names; do
     n=$((n + 1))
     probe "$b"
-    a="$(msg_ref)"; c="$(msg_sh)"
+    a="$(msg)"
     case "$a" in
         *"is a builtin, not a member of package"*) ;;
-        *) echo "  FAIL $b: tychoc did not name it a builtin"; echo "    got: $a"; bad=$((bad + 1)); continue ;;
+        *) echo "  FAIL $b: did not name it a builtin"; echo "    got: $a"; bad=$((bad + 1)); continue ;;
     esac
-    [ "$a" = "$c" ] || { echo "  FAIL $b: the two compilers disagree"; echo "    tychoc : $a"; echo "    tychoc1: $c"; bad=$((bad + 1)); }
 done
 
 probe "definitely_not_a_builtin"
-ctl_a="$(msg_ref)"; ctl_c="$(msg_sh)"
-case "$ctl_a" in
+ctl="$(msg)"
+case "$ctl" in
     *"has no symbol"*) echo "  [C] control: a non-builtin still gets 'has no symbol'" ;;
-    *) echo "  [C] FAIL control: a non-builtin did NOT get 'has no symbol' -- this script answers everything the same way"; echo "    got: $ctl_a"; bad=$((bad + 1)) ;;
+    *) echo "  [C] FAIL control: a non-builtin did NOT get 'has no symbol' -- this script answers everything the same way"; echo "    got: $ctl"; bad=$((bad + 1)) ;;
 esac
-[ "$ctl_a" = "$ctl_c" ] || { echo "  [C] FAIL control: the two compilers disagree on the non-builtin"; echo "    tychoc : $ctl_a"; echo "    tychoc1: $ctl_c"; bad=$((bad + 1)); }
 
 [ "$bad" -eq 0 ] || { echo "builtin-qualified: FAILED ($bad)"; exit 1; }
-echo "builtin-qualified: ok ($n builtins from surface.lock, both compilers name each one and agree word for word; a non-builtin still gets 'has no symbol')"
+echo "builtin-qualified: ok ($n builtins from surface.lock, the compiler names each one; a non-builtin still gets 'has no symbol')"

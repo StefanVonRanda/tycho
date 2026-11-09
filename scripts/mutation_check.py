@@ -101,15 +101,6 @@ CASES = [
         'golden': 'corelib/test/json.out',
     },
     {
-        'name': 'compiler-plus-to-minus',
-        'kind': 'compiler',
-        'file': 'src/tychoc.c',
-        'old': 'case TK_PLUS:  return "+";',
-        'new': 'case TK_PLUS:  return "-";',
-        'entry': 'tests/boundary_arith.ty',
-        'golden': 'tests/boundary_arith.out',
-    },
-    {
         'name': 'runtime-shl-wide-to-one',
         'kind': 'runtime',
         'file': 'runtime/tycho_rt.c',

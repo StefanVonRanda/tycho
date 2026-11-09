@@ -91,8 +91,8 @@ printf ' tycho local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
 bar
 
-step "[1/13] build (make tychoc tychoc1 -- the friction pins at [1d2] run tests under ./tychoc1, and on a fresh clone nothing before them had built it: the first make ci-linux, 2026-10-16, scored 28 closed entries STALE with './tychoc1: not found' while the same tree was green on a host that had it from yesterday)"
-make -s tychoc tychoc1
+step "[1/13] build (make tychoc -- the checked-in bootstrap emits the self-hosted compiler, and the friction pins at [1d2] run tests under ./tychoc1)"
+make -s tychoc
 
 step "[1a/13] make check-links  (relative links + every path:line citation resolves)"
 make -s check-links
@@ -103,14 +103,14 @@ make -s goldens-check
 step "[1b3/27] make fstr-hole-file-check  (a lex error INSIDE an f-string hole names its file and the f-string's own line. A hole is re-tokenized as a FRAGMENT, which carries no name and numbers its lines from 0, so \`f\"{1 @ 2}\"\` died as \`tychoc1: line 1:\` -- no path, wrong line. Three sites re-tokenize hole text and the grep-based gate this replaces watched only two of them, missing the one that actually raised it)"
 make -s fstr-hole-file-check
 
-step "[1b4/27] sh scripts/spelling_gate_corelib.sh  (src_in_corelib answers about LOCATION, not spelling. The discriminating input is a path CONTAINING 'corelib/' that sits outside every corelib root -- the old gate compiled in a bare mktemp -d, where a strstr regression and the filesystem test give the same answer, so it passed under the bug it named. Leg [2] patches the regression into a copy of src/tychoc.c and requires leg [1] to redden under it)"
-sh scripts/spelling_gate_corelib.sh
-
 step "[1b2/13] make embed-check  (the runtime embed is awk-independent and lossless. Debian and Ubuntu ship mawk 1.3.4 20200120, which halves a backslash in a gsub replacement, so the old rule under-escaped all 89 backslashes in the runtime and every fresh clone on those two distros died at cc. Nothing here could see it: every lane runs against a header this host awk had already written correctly)"
 make -s embed-check
 
-step "[1c/13] make version-check  (every STATUS claim in a tracked doc names the version src/tychoc.c ships. The 0.6->0.7 bump grepped for \"Tycho 0.6\", missed \"Tycho is 0.6\", and left five files announcing the old release -- no lane here could see it, because the doc gates read links and citations and never a claim in a sentence. Scoped to status claims, not to the ~1080 version tokens in tracked Markdown, most of which are legitimate history)"
+step "[1c/13] make version-check  (every STATUS claim in a tracked doc names the version compiler/main.ty ships. The 0.6->0.7 bump grepped for \"Tycho 0.6\", missed \"Tycho is 0.6\", and left five files announcing the old release -- no lane here could see it, because the doc gates read links and citations and never a claim in a sentence. Scoped to status claims, not to the ~1080 version tokens in tracked Markdown, most of which are legitimate history)"
 make -s version-check
+
+step "[1c2/13] make docs-counts-check  (the line, file and package counts in the status docs are computed from the tree)"
+make -s docs-counts-check
 
 step "[1d/13] make surface-check  (the language surface is frozen: keywords and builtins hard, corelib additive. It was enforced only when somebody typed it -- the freeze that exists because 91 commits touched docs/spec/ and 69 touched src/tychoc.c in ten days had no lane in the sweep. Adding a keyword or a builtin is meant to be a two-part act, the code plus a visible surface.lock diff a reviewer can refuse; without this step the second part was optional)"
 make -s surface-check
@@ -121,7 +121,7 @@ make -s friction-check-light
 step "[1d3/13] make corpus-check  (the corpus COUNTS the suites assert -- compiler/run.sh n_acc and leg1/leg1c, verdict_diff EXPECT, the leg15 refused and accepted totals, the SYNTAX/NAME/TYPE/SEMANTIC split and the classified reject rows. Every one is a hand-written literal, and adding a fixture moves the tree out from under all of them at once. This is the sub-second predictor of make parse-check opening counts, by its own Makefile comment -- and parse-check is in NEITHER this sweep nor the pre-push hook, so on 2026-09-19 a single fixture added to close FRICTION 94 left it RED for a day while five commits each recorded a green sweep, truthfully (FRICTION 106). 0.04s. It cannot see what parse-check sees; it sees the one thing that broke it, for nothing)"
 make -s corpus-check
 
-step "[1d4/13] make builtin-qualified  (a QUALIFIED builtin -- strings.len(...) -- must name the builtin and the cure, in BOTH compilers, for every builtin the freeze records. src/tychoc.c decided this with sig_find(), which has no entry for a generic builtin, so strings.len died as \"package strings has no symbol len\", pointing the reader at a symbol that was never going to be there while tychoc1 said the useful thing. The two disagreed for a day and nothing noticed, because the gate that scores them is make parse-check and nothing runs it (FRICTION 106, 107). The fix put a fourth builtin list in src/tychoc.c and a list nothing checks is the same defect waiting, so this reads the set out of surface.lock and requires both compilers to name every one -- a builtin added without being listed reddens here. The control requires a NON-builtin to still get has-no-symbol, without which the script would pass by answering every input the same way)"
+step "[1d4/13] make builtin-qualified  (a QUALIFIED builtin -- strings.len(...) -- must name the builtin and the cure for every builtin the freeze records. The set is read out of surface.lock, so a builtin added without being listed reddens here. The control requires a NON-builtin to still get has-no-symbol, without which the script would pass by answering every input the same way)"
 make -s builtin-qualified
 
 step "[1d5/13] make parity-fuzz  (three DIFFERENTIAL fuzzers that generate cases, compile them with both compilers and compare accept/reject plus the emitted C against an oracle: eq-parity over composite and newtype equality, unary-parity over the unary operators, parfor-parity over the parallel-for gate. docs/spec/appendix-e-conformance.md cites all three as LANES -- they are the spec's stated evidence for sections 5.5, 9.3, 13.3 and 22 -- and until 2026-09-19 nothing ran them, so the normative conformance table pointed at files no gate executed (FRICTION 119). They pass: 512, 30 and 25 cases. Total 6s, which is why there was never a cost argument for their absence; there was simply never a target. typeparity (65s) and run_pkg.py (143s) stay out as a budget decision, recorded rather than taken)"
@@ -141,6 +141,9 @@ make -s probe-selfcheck
 
 step "[1e/13] make fixpoint-check  (the self-hosted compiler reproduces its own output: gen2.c == gen3.c. tychoc1 is built in two stages and is the compiler EVERY suite below defaults to, so the property that makes it trustworthy is that one more generation changes nothing. It was measured by hand twice, a month apart, and asserted by nothing -- the worst shape for an invariant, because a bootstrap that stopped converging would leave every other lane green and show no symptom anyone was looking for. Compares the emitted C, not binaries, so it is free of link-time noise and costs ~2.3s)"
 make -s fixpoint-check
+
+step "[1e2/13] make bootstrap-check  (the checked-in generated C is the only cold-start path: it builds the self-hosted compiler and emits the same C it was generated from. This is the gate that replaces the C compiler as an independent implementation)"
+make -s bootstrap-check
 
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test

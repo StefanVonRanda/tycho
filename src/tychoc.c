@@ -1,4 +1,4 @@
-/* tychoc - the Tycho compiler.
+/* tychoc - the historical Tycho C compiler. ARCHIVED: not built, not tested, not updated; see bootstrap/README.md. */
  *
  * Pipeline:  .ty source -> tokens (indentation-aware) -> AST -> type
  * resolution -> C source (with the Tycho runtime embedded verbatim) ->
@@ -17803,3 +17803,5 @@ static void gen_vlane(FILE *o, Proc *pr, char k) {
     }
     fprintf(o, "    return _r;\n}\n\n");
 }
+
+/* ARCHIVED: not built, not tested, not updated. See bootstrap/README.md. */

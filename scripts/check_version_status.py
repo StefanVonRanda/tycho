@@ -41,8 +41,8 @@ STATUS = re.compile(
     re.IGNORECASE,
 )
 # Read the shipped version out of the compiler, not out of another doc.
-SRC = "src/tycho" + "c.c"  # never a literal path -- check_citations scans this file
-VERDEF = re.compile(r'#define\s+TYCHO_VERSION\s+"([^"]+)"')
+SRC = "compiler/main.ty"
+VERDEF = re.compile(r'^fn VERSION\(\) -> string:\s*\n\s*return "([^"]+)"', re.M)
 
 
 def tracked_markdown():
@@ -56,7 +56,7 @@ def shipped_version():
     with open(SRC, encoding="utf-8") as fh:
         m = VERDEF.search(fh.read())
     if not m:
-        sys.exit("version check: FAILED (no TYCHO_VERSION in " + SRC + ")")
+        sys.exit("version check: FAILED (no VERSION() in " + SRC + ")")
     return m.group(1)
 
 

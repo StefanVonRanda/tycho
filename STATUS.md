@@ -4,7 +4,7 @@
 
 Where a number comes from a gate, the gate is named, so any line here can be checked by running one command.
 
-Terms used below, on first use: `surface.lock` records the frozen language surface (keywords, builtins, corelib signatures) and is gated by `make surface-check`. `tychoc` is the reference compiler (a single C file, `src/tychoc.c`); `tychoc1` is the self-hosted compiler (Tycho written in Tycho, in `compiler/`). A *lane* is one step of the local gate (`scripts/ci.sh`, run by `make ci`). `FRICTION n` is entry n in the defect log (`docs/internals/FRICTION.md`), which is executable: each closed entry names the command that checks it (`make friction-check`). A *probe* is a small program written against the docs alone to test them.
+Terms used below, on first use: `surface.lock` records the frozen language surface (keywords, builtins, corelib signatures) and is gated by `make surface-check`. `tychoc` is the self-hosted compiler (Tycho written in Tycho, in `compiler/`); `tychoc1` is its development name. `bootstrap/tycho_compiler.c` is the generated cold-start artifact. A *lane* is one step of the local gate (`scripts/ci.sh`, run by `make ci`). `FRICTION n` is entry n in the defect log (`docs/internals/FRICTION.md`), which is executable: each closed entry names the command that checks it (`make friction-check`). A *probe* is a small program written against the docs alone to test them.
 
 ---
 
@@ -52,7 +52,7 @@ about whether this is a language someone would choose to use.
 |---|---|---|
 | **Self-hosting** | the compiler compiles itself and reaches a fixpoint | `make fixpoint-check` |
 | **Fixture corpus** | over 1,100 fixtures (see `sh tests/run.sh --count`), more than half of them refusals — what must *not* compile | `make test` |
-| **Corelib** | 45 packages shipped, each golden-locked (`corelib/test/` is the test tree, not a package) | `make corelib` |
+| **Corelib** | 48 packages shipped, each golden-locked (`corelib/test/` is the test tree, not a package) | `make corelib` |
 | **Real programs** | dozens of real programs in Tycho (~20,000 lines under `tools/`), 6 over 1,000 lines; `tycho-db` asserts crash recovery from a real `kill -9`, torn-record discard and a TCP server | `find tools -name '*.ty' \| xargs wc -l` |
 | **Normative spec** | 28 files, and the implementation is gated against them | `make spec-check` |
 | **The whole gate** | recorded passes under **gcc and clang** on x86-64 Linux and **clang on darwin-arm64**; rerun for the current tree/platform | `make ci` |
@@ -63,7 +63,7 @@ about whether this is a language someone would choose to use.
 | **Docs** | all reachable pages link-checked, every `path:line` citation resolves, every public corelib function is in the catalogue | `make check-links` |
 | **Surface freeze** | keywords, builtins and corelib functions locked in `surface.lock`; deliberate exceptions are recorded in the same commit | `make surface-check` |
 
-`make parse-check` and `make tychoc1-check` pass. Both run outside `make ci` for cost reasons; see FRICTION 106-108. The defect log is executable: a closed entry that stops being true fails `make friction-check`, and fact pins also fail `make ci`.
+`make bootstrap-check` and `make fixpoint-check` pass. The defect log is executable: a closed entry that stops being true fails `make friction-check`, and fact pins also fail `make ci`.
 
 ---
 

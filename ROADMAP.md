@@ -4,8 +4,8 @@ Tycho is **0.9.0 — pre-1.0**, and this file is a direction, not a promise of
 dates. Day-to-day work is tracked in [GitHub
 issues](https://github.com/StefanVonRanda/tycho/issues); this file is the
 high-level shape. What 1.0 now requires is [below](#what-10-requires).
-Terms (`surface.lock`, `tychoc`/`tychoc1`, lanes, FRICTION) are defined in
-[STATUS](STATUS.md).
+Terms (`surface.lock`, `tychoc`, `bootstrap/tycho_compiler.c`, lanes, FRICTION)
+are defined in [STATUS](STATUS.md).
 
 ## Where it is
 
@@ -21,21 +21,18 @@ another person.
 
 ## The self-hosted compiler
 
-`compiler/` is Tycho written in Tycho — about 21,000 lines in six
-packages (`lex`, `parse`, `ast`, `types`, `emit`, `driver`), built as `tychoc1`.
-The test, corelib, example and server runners default to it, so the gates run
-on the self-hosted compiler; `src/tychoc.c` bootstraps it and scores it.
+`compiler/` is Tycho written in Tycho — 25,635 lines in six packages (`lex`,
+`parse`, `ast`, `types`, `emit`, `driver`), built as `tychoc1` and installed as
+`tychoc`. The test, corelib, example and server runners default to it, so the
+gates run on the self-hosted compiler. `bootstrap/tycho_compiler.c` is the
+generated cold-start artifact, not a second implementation.
 
 - **The bootstrap is two-stage and the fixpoint holds**, gated as
-  `make fixpoint-check`.
-- **Two gates carry it.** `make parse-check` scores its front end against
-  `tychoc` verdicts with AST/resolution/type censuses; `make tychoc1-check`
-  runs the real suites under it.
-- **Decided 2026-09-11: `tychoc1` stays the second opinion.** Where the two
-  compilers diverge it is a defect in one of them (FRICTION 87 found a worse
-  diagnostic in the reference this way). `src/tychoc.c` is normative,
-  `tychoc1` is the oracle; see
-  [architecture](docs/architecture.md#which-compiler-is-right).
+  `make bootstrap-check` and `make fixpoint-check`.
+- **Decided 2026-11-09: one maintained compiler.** The self-hosted compiler is
+  the reference implementation; the spec is normative. `src/tychoc.c` is
+  archived: not built, not tested, not updated. Historical defect records still
+  cite it.
 
 ## The language surface moved once, deliberately
 
@@ -551,7 +548,6 @@ Why no porting was needed:
 
 - `runtime/tycho_rt.c` already carries macOS support (stack bounds,
   per-architecture stack-pointer extraction, `__aarch64__` branch).
-- `src/tychoc.c` has zero platform conditionals.
 - With `zig cc` as cross driver, the compiler and the emitted C build for
   `aarch64-macos`, `x86_64-macos` and `aarch64-linux` with no source change.
 

@@ -86,11 +86,6 @@ file_mtime() {
     printf '?\n'
 }
 
-# Same whitespace class as scripts/check_version_status.py's VERDEF, which is
-# the reader that gates this constant; a single literal space is not the rule.
-read_cver() {
-    sed -n 's/^#define[[:space:]][[:space:]]*TYCHO_VERSION[[:space:]][[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -1
-}
 # Anchored to the VERSION() body. "the first digit-led string return in the
 # file" is not a version reader, it is a coincidence that has held so far.
 read_tver() {
@@ -246,9 +241,7 @@ if [ "$mode" = selfcheck ]; then
     printf -- '- [ ] a\n- [x] b\n- [ ] c\n' > p.md
     cke 'open items counted' '2' "$(plan_open p.md)"
 
-    # [10] defect 6: a tab after #define, and a decoy return before VERSION()
-    printf '#define\tTYCHO_VERSION\t"9.9.9"\n' > v.c
-    cke 'cver reads a tab' '9.9.9' "$(read_cver v.c)"
+    # [10] defect 6: a decoy return before VERSION()
     printf 'fn other() -> string:\n    return "0.0.1"\n\nfn VERSION() -> string:\n    return "9.9.9"\n' > v.ty
     cke 'tver ignores a decoy return' '9.9.9' "$(read_tver v.ty)"
 
@@ -295,17 +288,11 @@ printf '\nTYCHO -- measured %s\n' "$(date '+%Y-%m-%d %H:%M')"
 hr
 
 # ---- version -------------------------------------------------------------
-# Read from the two constants themselves, because they are kept in step BY HAND
-# and release.sh validates only the first. A disagreement here is a real defect
-# and is printed as one.
-cver="$(read_cver src/tychoc.c)"
-tver="$(read_tver compiler/main.ty)"
-if [ -z "$cver" ] || [ -z "$tver" ]; then
-    row "version" "UNREADABLE  src/tychoc.c='$cver'  compiler/main.ty='$tver'"
-elif [ "$cver" = "$tver" ]; then
-    row "version" "$cver"
+ver="$(read_tver compiler/main.ty)"
+if [ -z "$ver" ]; then
+    row "version" "UNREADABLE  compiler/main.ty"
 else
-    row "version" "MISMATCH  src/tychoc.c=$cver  compiler/main.ty=$tver"
+    row "version" "$ver"
 fi
 
 tag_row
@@ -344,17 +331,15 @@ fi
 row "tools" "$(ls -d tools/tycho-*/ 2>/dev/null | wc -l | tr -d ' ') programs"
 row "docs" "$(git ls-files '*.md' | wc -l | tr -d ' ') markdown files"
 
-# ---- compilers -----------------------------------------------------------
+# ---- compiler ------------------------------------------------------------
 hr
-# Both binaries answer for themselves. A stale ./tychoc1 on disk reporting an old
-# version is exactly the kind of thing this whole file exists to surface.
-for c in ./tychoc ./tychoc1; do
-    if [ -x "$c" ]; then
-        row "$c" "$("$c" --version 2>&1 | head -1) (built $(file_mtime "$c"))"
-    else
-        row "$c" "not built -- run: make ${c#./}"
-    fi
-done
+# The binary answers for itself: a stale ./tychoc reporting an old version is
+# exactly the kind of thing this whole file exists to surface.
+if [ -x ./tychoc ]; then
+    row "./tychoc" "$(./tychoc --version 2>&1 | head -1) (built $(file_mtime ./tychoc))"
+else
+    row "./tychoc" "not built -- run: make"
+fi
 
 # ---- open work -----------------------------------------------------------
 hr
