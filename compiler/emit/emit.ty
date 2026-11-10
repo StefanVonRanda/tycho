@@ -9822,6 +9822,10 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
         ks := _kslot(&cs, kt)
         vc := _ctyz(&cs, vt) + ""
         kp := ks + "k"
+        smallk := ""
+        if kt == "int" or kt == "char" or _is_sint(kt) or _is_uint(kt):
+            smallk = "    if (m.len <= 8) { for (int e = 0; e < m.m_ecount; e++) if (m.m_elive[e] && " +
+                _kmatch(&cs, kt, "m.m_ekeys[e]", "k") + ") return e; return -1; }\n"
         kcp := _kcopy(&cs, kt)
         vcp := _copy(&cs, "v", vt, "a")
         _recycle_mark(&cs, kt)
@@ -9897,6 +9901,7 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
             "    m->idx = ni; m->icap = ic;\n" +
             "    for (tycho_int e = 0; e < m->ecount; e++) if (m->elive[e]) " + p + "_idxput(m, e);\n}\n" +
             "static tycho_int " + p + "_find(" + ct + " m, " + kp + ") {\n" +
+            smallk +
             "    if (m.m_icap == 0) return -1; uint64_t mask = (uint64_t)m.m_icap - 1; tycho_int i = (tycho_int)(" +
             _khash(&cs, kt, "k") + " & mask); int e;\n" +
             "    while ((e = m.m_idx[i]) != 0) { if (" + _kmatch(&cs, kt, "m.m_ekeys[e - 1]", "k") +

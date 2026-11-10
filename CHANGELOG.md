@@ -49,7 +49,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   map keys. Both now have an inline fast path with the slow/long path out of
   line: `json_tree` at the large size drops 84 -> 51 ms against C's 49 ms with
   memory still below C (81.7 vs 103.6 MB), and `trie` drops toward C's range
-  (~1.2-1.3x).
+  (116 -> 89 ms GCC, 165 -> 90 ms clang) by scanning dense entries for int-key
+  maps of eight or fewer instead of hashing an index.
 - **`binary/arena` is a representation limit, not an allocator regression.**
   Profiled at maxd=20: 2.16e9 vs C's 1.40e9 cycles, but 9.15e9 vs C's 6.44e9
   instructions and 2.13e9 vs 1.06e9 branches. The node is a 24-byte tagged enum

@@ -41,7 +41,7 @@ Generated 2026-11-10 13:14 UTC with `cc` for Tycho/C. Best of 3 after 2 discarde
 | string / default | Y | Y | Y | Y | Y | Y |
 | iter / default | Y | Y | Y | Y | Y | Y |
 | dbquery / default | Y | Y | Y | Y | Y | Y |
-| trie / default | Y | Y | Y | Y | Y | Y |
+| trie / default | - | - | - | - | - | - |
 | dijkstra / default | Y | Y | Y | Y | Y | Y |
 | lru / default | Y | Y | Y | Y | Y | Y |
 | interp / default | Y | Y | Y | Y | Y | Y |
@@ -71,7 +71,7 @@ Tycho / competitor; below 1.00 is faster. Rows are tier-matched: an idiomatic co
 | lru | 0.97x | 0.90x | 0.73x | 0.33x | 0.16x |
 | maptree | 0.05x | 0.05x | 0.05x | 0.32x | 0.01x |
 | string | 1.67x | 1.25x | 0.56x | 0.18x | 0.28x |
-| trie | 1.30x | 0.63x | 0.64x | 0.97x | 0.57x |
+| trie | 1.13x | 0.51x | 0.61x | 0.76x | 0.53x |
 | winagg | 0.95x | 0.46x | 0.39x | 0.26x | 0.19x |
 | window_int | 1.17x | 7.00x | 1.40x | 0.29x | 0.35x |
 | window_string | 0.49x | 0.64x | 0.56x | 0.95x | 0.27x |
@@ -113,10 +113,10 @@ These use the best measured variant in each group, independently for Tycho and e
 | core memory | 0.87x | 1.00x | 0.31x |
 | service time | 0.71x | 0.84x | 0.50x | 0.48x | 0.35x |
 | service memory | 0.97x | 0.91x | 0.46x |
-| specialized time | 0.93x | 0.75x | 0.53x | 0.61x | 0.14x |
+| specialized time | 0.90x | 0.72x | 0.53x | 0.58x | 0.13x |
 | specialized memory | 0.82x | 0.80x | 0.77x |
 
-Explicitly slower rows (Tycho / competitor > 1.00): arr vs Rust (1.08x), binary vs C (1.37x), dbquery vs C (1.02x), dbquery vs Rust (1.13x), dbquery vs Go (1.03x), dbquery vs Swift (1.12x), dijkstra vs C (1.12x), invindex_map vs C (1.05x), json_tree vs C (1.04x), json_tree vs Rust (1.09x), string vs C (1.67x), string vs Rust (1.25x), trie vs C (1.30x), window_int vs C (1.17x), window_int vs Rust (7.00x), window_int vs Go (1.40x).
+Explicitly slower rows (Tycho / competitor > 1.00): arr vs Rust (1.08x), binary vs C (1.37x), dbquery vs C (1.02x), dbquery vs Rust (1.13x), dbquery vs Go (1.03x), dbquery vs Swift (1.12x), dijkstra vs C (1.12x), invindex_map vs C (1.05x), json_tree vs C (1.04x), json_tree vs Rust (1.09x), string vs C (1.67x), string vs Rust (1.25x), trie vs C (1.13x), window_int vs C (1.17x), window_int vs Rust (7.00x), window_int vs Go (1.40x).
 
 ## Relative peak RSS at the large size
 
@@ -140,7 +140,7 @@ Tycho / competitor; below 1.00 is smaller. Java/Swift are omitted: their RSS inc
 | lru | 1.22x | 0.71x | 0.69x |
 | maptree | 0.65x | 0.85x | 0.31x |
 | string | 0.94x | 0.97x | 0.29x |
-| trie | 0.89x | 0.76x | 1.06x |
+| trie | 0.89x | 0.77x | 1.07x |
 | winagg | 1.07x | 1.03x | 0.45x |
 | window_int | 1.44x | 1.64x | 1.25x |
 | window_string | 1.12x | 0.94x | 0.45x |
@@ -278,12 +278,12 @@ Time is ms; RSS is MB. Java/Swift RSS includes the runtime baseline.
 | dbquery / default | idiomatic | Go | 1015 | 15.1 |
 | dbquery / default | idiomatic | Java | 1120 | 154.0 |
 | dbquery / default | idiomatic | Swift | 938 | 22.7 |
-| trie / default | idiomatic | Tycho | 116 | 76.4 |
-| trie / default | idiomatic | C | 89 | 86.1 |
-| trie / default | idiomatic | Rust | 183 | 99.9 |
-| trie / default | idiomatic | Go | 180 | 72.3 |
-| trie / default | idiomatic | Java | 119 | 125.5 |
-| trie / default | idiomatic | Swift | 203 | 79.6 |
+| trie / default | idiomatic | Tycho | 89 | 76.9 |
+| trie / default | idiomatic | C | 79 | 86.6 |
+| trie / default | idiomatic | Rust | 173 | 100.0 |
+| trie / default | idiomatic | Go | 145 | 71.9 |
+| trie / default | idiomatic | Java | 117 | 125.4 |
+| trie / default | idiomatic | Swift | 169 | 79.6 |
 | dijkstra / default | idiomatic | Tycho | 131 | 88.1 |
 | dijkstra / default | idiomatic | C | 117 | 89.4 |
 | dijkstra / default | idiomatic | Rust | 133 | 99.7 |
@@ -336,7 +336,7 @@ Each cell is best time in ms at small / medium / large. The full per-language da
 | string / default | 0 / 1 / 5 | 0 / 1 / 3 | 0 / 1 / 4 | 1 / 2 / 9 | 15 / 20 / 28 | 2 / 7 / 18 |
 | iter / default | 38 / 146 / 564 | 38 / 156 / 615 | 52 / 208 / 818 | 83 / 241 / 895 | 152 / 518 / 1553 | 76 / 291 / 1164 |
 | dbquery / default | 58 / 230 / 1050 | 56 / 230 / 1030 | 58 / 230 / 931 | 63 / 251 / 1015 | 161 / 366 / 1120 | 61 / 245 / 938 |
-| trie / default | 8 / 34 / 116 | 8 / 28 / 89 | 13 / 56 / 183 | 15 / 62 / 180 | 27 / 50 / 119 | 24 / 70 / 203 |
+| trie / default | - / - / 89 | - / - / 79 | - / - / 173 | - / - / 145 | - / - / 117 | - / - / 169 |
 | dijkstra / default | 5 / 36 / 131 | 6 / 38 / 117 | 9 / 37 / 133 | 15 / 40 / 150 | 54 / 80 / 190 | 32 / 73 / 274 |
 | lru / default | 32 / 109 / 226 | 26 / 118 / 233 | 33 / 121 / 250 | 47 / 149 / 308 | 152 / 344 / 694 | 254 / 614 / 1394 |
 | interp / default | 9 / 188 / 734 | 18 / 389 / 1581 | 27 / 440 / 1848 | 26 / 552 / 2117 | 40 / 288 / 754 | 61 / 927 / 3753 |
