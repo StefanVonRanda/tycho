@@ -38,9 +38,6 @@ After changing `compiler/`, regenerate the bootstrap and prove it still works:
 make bootstrap-check
 ```
 
-Set `TYCHO_CCACHE=1` to prepend `ccache` to the C compiler invocation; the
-generated C is deterministic, so unchanged builds hit the cache.
-
 If `make` fails immediately, the toolchain is missing, not broken: install
 `cc` and `make` (Linux: your distro's build tools; macOS: `xcode-select
 --install`; Windows: MSYS2 + mingw-w64 — see [platforms](docs/platforms.md)).

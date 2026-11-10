@@ -36,11 +36,19 @@ fn main():
     for true:
         i = i + 1
 EOF
-# a package build: -g line info is single-file only, so it must be refused
-cat > "$FIX/pkg.ty" <<'EOF'
+# a package build: the breakpoint and the listing must follow the owning file
+mkdir -p "$FIX/pkg/lib"
+cat > "$FIX/pkg/main.ty" <<'EOF'
 package main
+import "./lib"
 fn main():
-    println("x")
+    println(lib.hi(1))
+EOF
+cat > "$FIX/pkg/lib/lib.ty" <<'EOF'
+package lib
+fn hi(x: int) -> string:
+    y := x + 1
+    return "v" + str(y)
 EOF
 
 # [1] the core loop: breakpoint set + hit on the right source line, locals
@@ -99,16 +107,14 @@ else
 fi
 fi
 
-# [5] fail-closed refusals: missing file, a package build (no -g line info),
-# and a breakpoint on a non-code line (error, session continues)
+# [5] fail-closed refusals: missing file and a breakpoint on a non-code line
+# (error, session continues)
 "$TD" "$FIX/nope.ty" >"$T/e1.out" 2>&1; rc1=$?
-"$TD" "$FIX/pkg.ty" >"$T/e2.out" 2>&1; rc2=$?
 out=$(printf 'b 999\nr\nq\n' | TYCHOC="$PWD/tychoc" "$TD" "$FIX/prog.ty" 2>&1); rc3=$?
 if [ "$rc1" -ne 0 ] && grep -q 'no such file' "$T/e1.out" \
-   && [ "$rc2" -ne 0 ] && grep -q 'package build' "$T/e2.out" \
    && echo "$out" | grep -Eq 'No compiled code for line 999|No line 999 in file' && [ "$rc3" -eq 0 ]; then
-    echo "  [5] fail-closed: missing file / package build / bad line ok"
-else echo "FAIL [5] fail-closed"; cat "$T/e1.out" "$T/e2.out" | sed 's/^/    /'; echo "$out" | sed 's/^/    /' | head -8; fail=1; fi
+    echo "  [5] fail-closed: missing file / bad line ok"
+else echo "FAIL [5] fail-closed"; cat "$T/e1.out" | sed 's/^/    /'; echo "$out" | sed 's/^/    /' | head -8; fail=1; fi
 
 # [6] the `tycho debug` dispatcher command: build the driver, hand a session
 # through it (TYCHODEBUG points at the lane's own tool binary)
@@ -145,7 +151,18 @@ else
 fi
 unset TYCHO_CORELIB
 
+# [8] a package build: break in the library, list the library, and display the
+# function as package.name rather than the mangled C spelling.
+out=$(printf 'b %s:4\nr\nl\nq\n' "$FIX/pkg/lib/lib.ty" | TYCHOC="$PWD/tychoc" "$TD" "$FIX/pkg/main.ty" 2>&1); rc=$?
+if echo "$out" | grep -q 'breakpoint 1 at lib.ty:4' \
+   && echo "$out" | grep -q '\[breakpoint 1 hit\]' \
+   && echo "$out" | grep -q 'at lib.ty:4  (lib.hi)' \
+   && echo "$out" | grep -q -- '-> 4' \
+   && [ "$rc" -eq 0 ]; then
+    echo "  [8] package build: break/list/function name ok"
+else echo "FAIL [8] package build"; echo "$out" | sed 's/^/    /' | head -20; fail=1; fi
+
 [ "$fail" -ne 0 ] && { echo "tycho-debug: FAIL"; exit 1; }
-[ "$skipped" -eq 0 ] && echo "tycho-debug: all green (7 legs)" \
-                     || echo "tycho-debug: green ($((7 - skipped)) legs, $skipped skipped -- see the SKIP line above)"
+[ "$skipped" -eq 0 ] && echo "tycho-debug: all green (8 legs)" \
+                     || echo "tycho-debug: green ($((8 - skipped)) legs, $skipped skipped -- see the SKIP line above)"
 exit 0

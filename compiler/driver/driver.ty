@@ -344,8 +344,6 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     # arguments.  _pkgflags keeps each package's output as one string; the
     # shell re-tokenises it here.
     cmd := ""
-    if len(getenv("TYCHO_CCACHE")) > 0:
-        cmd = "ccache "
     for ik := 0; ik < len(argv); ik += 1:
         if ik > 0:
             cmd = cmd + " "

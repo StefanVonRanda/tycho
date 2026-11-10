@@ -35,11 +35,13 @@ $(EMBED): $(RUNTIME) | build
 build:
 	@mkdir -p build
 
+# The bootstrap and stage 1 only have to RUN; -O0 keeps a clean self-build
+# fast. Stage 2 is the compiler that ships and keeps the optimized flags below.
 # The bootstrap is a generated artifact, not a second compiler source. It needs
 # the same three corelib shims the compiler imports.
 bootstrap-tychoc: $(BOOTSTRAP_C) $(BOOTSTRAP_SHIMS)
 	@t=bootstrap-tychoc.$$$$; trap 'rm -f "$$t"' EXIT; \
-	$(CC) -O2 -fwrapv -std=c11 -pthread -Icorelib -o "$$t" \
+	$(CC) -O0 -fwrapv -std=c11 -pthread -Icorelib -o "$$t" \
 		$(BOOTSTRAP_C) $(BOOTSTRAP_SHIMS) -lm && mv "$$t" bootstrap-tychoc
 
 # The self-hosted compiler reads runtime/tycho_rt.c at emit time rather than
@@ -64,11 +66,13 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # string literal to relocate dies at the link:
 #   relocation R_X86_64_32 against `.rodata.str1.1' can not be used when
 #   making a PIE object; recompile with -fPIE
-TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto -fPIE
+# -flto=auto, not bare -flto: the 36-48 LTRANS jobs are independent, and bare
+# -flto runs them serially (70s versus ~6s on the compiler translation unit).
+TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto=auto -fPIE
 tychoc1: bootstrap-tychoc $(TYCHOC1_SRC)
 	@set -e; s=tychoc1-stage1.$$$$; t=tychoc1.$$$$; \
 	trap 'rm -f "$$s" "$$t"' EXIT; \
-	./bootstrap-tychoc compiler/main.ty -o "$$s"; \
+	TYCHO_CFLAGS="-O0" ./bootstrap-tychoc compiler/main.ty -o "$$s"; \
 	TYCHO_CFLAGS="$(TYCHOC1_CFLAGS)" "./$$s" compiler/main.ty -o "$$t"; \
 	mv "$$t" tychoc1
 
@@ -80,7 +84,7 @@ bootstrap-check:
 
 # No lane may build the archived C compiler.
 single-compiler-check:
-	@if git grep -nE '(^|[^A-Za-z])(cc|gcc|clang|MINGWCC)[[:space:]].*src/tychoc\.c|src/tychoc\.c.*-o' -- Makefile scripts .githooks; then \
+	@if git grep -nE '(^|[^A-Za-z])(cc|gcc|clang|MINGWCC)[[:space:]].*src/tychoc\.c|src/tychoc\.c.*-o' -- Makefile scripts .githooks fuzz; then \
 		echo "single-compiler-check: a lane still builds src/tychoc.c" >&2; exit 1; \
 	fi
 	@echo "single-compiler-check: ok (no lane builds src/tychoc.c)"

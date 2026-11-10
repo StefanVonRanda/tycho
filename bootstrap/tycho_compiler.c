@@ -58477,9 +58477,7 @@ void h_driver__build(Arena *_parent, char *h_src_path, char *h_runtime_path, cha
     }
     tycho_arr_str_push_move(&_scope, &(h_argv), TYCHO_LIT("-lm"));
     char *h_cmd = TYCHO_LIT("");
-    if (tycho_str_len(tycho_getenv(&_scope, TYCHO_LIT("TYCHO_CCACHE"))) > 0LL) {
-        h_cmd = TYCHO_LIT("ccache ");
-    }
+    TychoStrAppend _append_h_cmd = {0};
     {
         tycho_int h_ik = 0LL;
         #if defined(__clang__)
@@ -58490,9 +58488,9 @@ void h_driver__build(Arena *_parent, char *h_src_path, char *h_runtime_path, cha
         while (h_ik < ((h_argv).len)) {
             {
                 if (h_ik > 0LL) {
-                    h_cmd = tycho_str_concat(&_scope, h_cmd, TYCHO_LIT(" "));
+                    tycho_str_append(&_scope, &h_cmd, &_append_h_cmd, TYCHO_LIT(" "));
                 }
-                h_cmd = tycho_str_concat(&_scope, h_cmd, h_driver___shq(&_scope, (h_argv).data[h_ik]));
+                tycho_str_append(&_scope, &h_cmd, &_append_h_cmd, h_driver___shq(&_scope, (h_argv).data[h_ik]));
             }
             h_ik = (h_ik + 1LL);
         }
@@ -58501,7 +58499,10 @@ void h_driver__build(Arena *_parent, char *h_src_path, char *h_runtime_path, cha
         TychoArrStr _fc7820 = h_driver___pkgflags(&_scope, h_p);
         for (tycho_int _fi7821 = 0; _fi7821 < _fc7820.len; _fi7821 += 1) {
             char *h_fl2 = _fc7820.data[_fi7821];
-            h_cmd = tycho_str_concat3(&_scope, h_cmd, TYCHO_LIT(" "), h_fl2);
+            char* _ap7823 = TYCHO_LIT(" ");
+            char* _ap7824 = h_fl2;
+            tycho_str_append(&_scope, &h_cmd, &_append_h_cmd, _ap7823);
+            tycho_str_append(&_scope, &h_cmd, &_append_h_cmd, _ap7824);
         }
     }
     S_os__Output h_r9 = h_os__run(&_scope, h_cmd);
@@ -58510,12 +58511,12 @@ void h_driver__build(Arena *_parent, char *h_src_path, char *h_runtime_path, cha
         exit((int)(1LL));
     }
     {
-        E__G8 *_m7823 = h_io__remove(&_scope, h_c_path);
-        if (_m7823->tag == 0) {
-            int h_b = _m7823->u.V_Ok.f0;
+        E__G8 *_m7825 = h_io__remove(&_scope, h_c_path);
+        if (_m7825->tag == 0) {
+            int h_b = _m7825->u.V_Ok.f0;
         }
-        else if (_m7823->tag == 1) {
-            E_io__IoErr *h_e = _m7823->u.V_Err.f0;
+        else if (_m7825->tag == 1) {
+            E_io__IoErr *h_e = _m7825->u.V_Err.f0;
         }
         else { fprintf(stderr, "tycho: non-exhaustive match\n"); TYCHO_EXIT(); }
     }
@@ -58527,9 +58528,9 @@ char *h_driver___as_main(Arena *_parent, char *h_src) {
     Arena _scope = arena_child(_parent); _scope.name = "driver___as_main";
     tycho_int h_i = 0LL;
     {
-        Arena _scr7824 = arena_child(&_scope); _scr7824.name = "driver___as_main:0";
+        Arena _scr7826 = arena_child(&_scope); _scr7826.name = "driver___as_main:0";
         while (h_i < tycho_str_len(h_src)) {
-            arena_reset(&_scr7824);
+            arena_reset(&_scr7826);
             tycho_int h_e = h_i;
             {
                 #if defined(__clang__)
@@ -58541,39 +58542,39 @@ char *h_driver___as_main(Arena *_parent, char *h_src) {
                     h_e = (h_e + 1LL);
                 }
             }
-            if (h_strings__starts_with(&_scr7824, ({ const char *_ss7826 = h_src; tycho_str_view_alloc(&_scr7824, _ss7826, h_i, h_e); }), TYCHO_LIT("package "))) {
-                { char *_ret = tycho_str_concat3(_parent, ({ const char *_ss7827 = h_src; tycho_str_substr(_parent, _ss7827, 0LL, h_i); }), TYCHO_LIT("package main"), ({ const char *_ss7828 = h_src; tycho_str_substr(_parent, _ss7828, h_e, tycho_str_len(_ss7828)); })); arena_free(&_scr7824); arena_free(&_scope); return _ret; }
+            if (h_strings__starts_with(&_scr7826, ({ const char *_ss7828 = h_src; tycho_str_view_alloc(&_scr7826, _ss7828, h_i, h_e); }), TYCHO_LIT("package "))) {
+                { char *_ret = tycho_str_concat3(_parent, ({ const char *_ss7829 = h_src; tycho_str_substr(_parent, _ss7829, 0LL, h_i); }), TYCHO_LIT("package main"), ({ const char *_ss7830 = h_src; tycho_str_substr(_parent, _ss7830, h_e, tycho_str_len(_ss7830)); })); arena_free(&_scr7826); arena_free(&_scope); return _ret; }
             }
             if (h_e >= tycho_str_len(h_src)) {
                 { break; }
             }
             h_i = (h_e + 1LL);
         }
-        arena_free(&_scr7824);
+        arena_free(&_scr7826);
     }
     { char *_ret = tycho_str_copy(_parent, h_src); arena_free(&_scope); return _ret; }
 }
 
 void h_driver__bundle(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__bundle";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7829 = tycho_arr_K19_with_cap(&_scope, 0); _l7829.len = 0; _l7829; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7831 = tycho_arr_K19_with_cap(&_scope, 0); _l7831.len = 0; _l7831; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
-        TychoArrK19 _fc7830 = ((h_p).f_files);
-        for (tycho_int _fi7831 = 0; _fi7831 < _fc7830.len; _fi7831 += 1) {
-            S_types__File h_f = _fc7830.data[_fi7831];
+        TychoArrK19 _fc7832 = ((h_p).f_files);
+        for (tycho_int _fi7833 = 0; _fi7833 < _fc7832.len; _fi7833 += 1) {
+            S_types__File h_f = _fc7832.data[_fi7833];
             if (tycho_str_eq(((h_f).f_dir), ((h_p).f_entry_dir))) {
-                char* _ap7833 = h_driver___as_main(&_scope, ((h_f).f_src));
-                char* _ap7834 = TYCHO_LIT("\n");
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7833);
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7834);
-            } else {
-                char* _ap7835 = ((h_f).f_src);
+                char* _ap7835 = h_driver___as_main(&_scope, ((h_f).f_src));
                 char* _ap7836 = TYCHO_LIT("\n");
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7835);
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7836);
+            } else {
+                char* _ap7837 = ((h_f).f_src);
+                char* _ap7838 = TYCHO_LIT("\n");
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7837);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7838);
             }
         }
     }
@@ -58583,18 +58584,18 @@ void h_driver__bundle(Arena *_parent, char *h_src_path, char *h_argv0) {
 
 void h_driver__print_shims(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__print_shims";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7837 = tycho_arr_K19_with_cap(&_scope, 0); _l7837.len = 0; _l7837; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7839 = tycho_arr_K19_with_cap(&_scope, 0); _l7839.len = 0; _l7839; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
-        TychoArrStr _fc7838 = h_driver___shims(&_scope, h_p);
-        for (tycho_int _fi7839 = 0; _fi7839 < _fc7838.len; _fi7839 += 1) {
-            char *h_c = _fc7838.data[_fi7839];
-            char* _ap7841 = h_c;
-            char* _ap7842 = TYCHO_LIT("\n");
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7841);
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7842);
+        TychoArrStr _fc7840 = h_driver___shims(&_scope, h_p);
+        for (tycho_int _fi7841 = 0; _fi7841 < _fc7840.len; _fi7841 += 1) {
+            char *h_c = _fc7840.data[_fi7841];
+            char* _ap7843 = h_c;
+            char* _ap7844 = TYCHO_LIT("\n");
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7843);
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7844);
         }
     }
     tycho_print_s(h_out);
@@ -58603,60 +58604,60 @@ void h_driver__print_shims(Arena *_parent, char *h_src_path, char *h_argv0) {
 
 void h_driver__print_deps(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__print_deps";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7843 = tycho_arr_K19_with_cap(&_scope, 0); _l7843.len = 0; _l7843; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7845 = tycho_arr_K19_with_cap(&_scope, 0); _l7845.len = 0; _l7845; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
-    TychoMapM0 h_seen = ({ TychoMapM0 _mp7844 = tycho_mapM0_with_cap(&_scope, 0); _mp7844; });
+    TychoMapM0 h_seen = ({ TychoMapM0 _mp7846 = tycho_mapM0_with_cap(&_scope, 0); _mp7846; });
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
-        TychoArrK19 _fc7845 = ((h_p).f_files);
-        Arena _scr7847 = arena_child(&_scope);
-        for (tycho_int _fi7846 = 0; _fi7846 < _fc7845.len; _fi7846 += 1) {
-            arena_reset(&_scr7847);
-            S_types__File h_f = _fc7845.data[_fi7846];
+        TychoArrK19 _fc7847 = ((h_p).f_files);
+        Arena _scr7849 = arena_child(&_scope);
+        for (tycho_int _fi7848 = 0; _fi7848 < _fc7847.len; _fi7848 += 1) {
+            arena_reset(&_scr7849);
+            S_types__File h_f = _fc7847.data[_fi7848];
             if (tycho_mapM0_has(h_seen, ((h_f).f_dir))) {
                 continue;
             }
-            char *h__mk7849 = ((h_f).f_dir);
-            char * _mk7849 = h__mk7849;
-            int _mv7850 = 1;
-            tycho_mapM0_put_fresh(&_scope, &(h_seen), _mk7849, _mv7850);
+            char *h__mk7851 = ((h_f).f_dir);
+            char * _mk7851 = h__mk7851;
+            int _mv7852 = 1;
+            tycho_mapM0_put_fresh(&_scope, &(h_seen), _mk7851, _mv7852);
             {
-                E__G6 *_m7851 = h_io__read_text(&_scr7847, tycho_str_concat(&_scr7847, ((h_f).f_dir), TYCHO_LIT("/deps")));
-                if (_m7851->tag == 0) {
-                    char *h_txt = _m7851->u.V_Ok.f0;
+                E__G6 *_m7853 = h_io__read_text(&_scr7849, tycho_str_concat(&_scr7849, ((h_f).f_dir), TYCHO_LIT("/deps")));
+                if (_m7853->tag == 0) {
+                    char *h_txt = _m7853->u.V_Ok.f0;
                     int h_win2 = 0;
                     {
-                        TychoArrStr _fc7852 = tycho_str_split(&_scr7847, h_txt, TYCHO_LIT("\n"));
-                        Arena _scr7854 = arena_child(&_scr7847);
-                        for (tycho_int _fi7853 = 0; _fi7853 < _fc7852.len; _fi7853 += 1) {
-                            arena_reset(&_scr7854);
-                            char *h_ln = _fc7852.data[_fi7853];
-                            char *h_t = h_strings__trim(&_scr7854, h_ln);
+                        TychoArrStr _fc7854 = tycho_str_split(&_scr7849, h_txt, TYCHO_LIT("\n"));
+                        Arena _scr7856 = arena_child(&_scr7849);
+                        for (tycho_int _fi7855 = 0; _fi7855 < _fc7854.len; _fi7855 += 1) {
+                            arena_reset(&_scr7856);
+                            char *h_ln = _fc7854.data[_fi7855];
+                            char *h_t = h_strings__trim(&_scr7856, h_ln);
                             if (tycho_str_eq(h_t, TYCHO_LIT("_WIN32:"))) {
                                 h_win2 = 1;
                             }
                             if ((((!h_win2) && (tycho_str_len(h_t) > 0LL)) && (!(tycho_str_get(h_t, 0LL) == 35LL))) && (!tycho_mapM0_has(h_seen, h_t))) {
-                                char *h__mk7856 = h_t;
-                                char * _mk7856 = h__mk7856;
-                                int _mv7857 = 1;
-                                tycho_mapM0_put_fresh(&_scope, &(h_seen), _mk7856, _mv7857);
-                                char* _ap7858 = h_t;
-                                char* _ap7859 = TYCHO_LIT("\n");
-                                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7858);
-                                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7859);
+                                char *h__mk7858 = h_t;
+                                char * _mk7858 = h__mk7858;
+                                int _mv7859 = 1;
+                                tycho_mapM0_put_fresh(&_scope, &(h_seen), _mk7858, _mv7859);
+                                char* _ap7860 = h_t;
+                                char* _ap7861 = TYCHO_LIT("\n");
+                                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7860);
+                                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7861);
                             }
                         }
-                        arena_free(&_scr7854);
+                        arena_free(&_scr7856);
                     }
                 }
-                else if (_m7851->tag == 1) {
-                    E_io__IoErr *h_e = _m7851->u.V_Err.f0;
+                else if (_m7853->tag == 1) {
+                    E_io__IoErr *h_e = _m7853->u.V_Err.f0;
                 }
                 else { fprintf(stderr, "tycho: non-exhaustive match\n"); TYCHO_EXIT(); }
             }
         }
-        arena_free(&_scr7847);
+        arena_free(&_scr7849);
     }
     tycho_print_s(h_out);
     if (_scope.head) arena_free(&_scope);
@@ -58664,7 +58665,7 @@ void h_driver__print_deps(Arena *_parent, char *h_src_path, char *h_argv0) {
 
 void h_driver__compile(Arena *_parent, char *h_src_path, char *h_runtime_path, char *h_out_c, char *h_argv0, int h_dbg, char *h_tgt, int h_nat) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__compile";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7860 = tycho_arr_K19_with_cap(&_scope, 0); _l7860.len = 0; _l7860; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7862 = tycho_arr_K19_with_cap(&_scope, 0); _l7862.len = 0; _l7862; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     { Arena _t = arena_new(0); h_driver__check_into(_parent, h_src_path, h_argv0, &(h_p), &_scope, h_driver___vec_tgt(&_t, h_tgt, h_nat)); arena_free(&_t); }
     char *h_dbgf = TYCHO_LIT("");
     if (h_dbg) {
@@ -58678,54 +58679,54 @@ void h_driver__dump_tokens(Arena *_parent, char *h_src_path) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__dump_tokens";
     char *h_src = TYCHO_LIT("");
     {
-        E__G6 *_m7861 = h_io__read_text(&_scope, h_src_path);
-        if (_m7861->tag == 0) {
-            char *h_s = _m7861->u.V_Ok.f0;
+        E__G6 *_m7863 = h_io__read_text(&_scope, h_src_path);
+        if (_m7863->tag == 0) {
+            char *h_s = _m7863->u.V_Ok.f0;
             h_src = h_s;
         }
-        else if (_m7861->tag == 1) {
-            E_io__IoErr *h_e = _m7861->u.V_Err.f0;
+        else if (_m7863->tag == 1) {
+            E_io__IoErr *h_e = _m7863->u.V_Err.f0;
             { Arena _t = arena_new(0); tycho_die(tycho_str_concat3(&_t, TYCHO_LIT("tychoc: cannot read '"), h_src_path, TYCHO_LIT("'"))); arena_free(&_t); }
         }
         else { fprintf(stderr, "tycho: non-exhaustive match\n"); TYCHO_EXIT(); }
     }
-    TychoTup3 _ds7862 = h_lex__tokenize_file(&_scope, h_src, 0, h_src_path);
-    TychoArrK17 h_toks = (_ds7862.f0);
-    TychoArrK18 h__ = (_ds7862.f1);
+    TychoTup3 _ds7864 = h_lex__tokenize_file(&_scope, h_src, 0, h_src_path);
+    TychoArrK17 h_toks = (_ds7864.f0);
+    TychoArrK18 h__ = (_ds7864.f1);
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
         tycho_int h_k = 0LL;
-        Arena _scr7863 = arena_child(&_scope); _scr7863.name = "driver__dump_tokens:0";
+        Arena _scr7865 = arena_child(&_scope); _scr7865.name = "driver__dump_tokens:0";
         #if defined(__clang__)
         #pragma clang loop unroll_count(4)
         #elif defined(__GNUC__)
         #pragma GCC unroll 4
         #endif
         while (h_k < ((h_toks).len)) {
-            arena_reset(&_scr7863);
+            arena_reset(&_scr7865);
             {
-                S_lex__Tok h_t = tycho_copy_S_lex__Tok(&_scr7863, (h_toks).data[h_k]);
-                char* _ap7864 = tycho_int_to_str(&_scope, ((h_t).f_line));
-                char* _ap7865 = TYCHO_LIT(":");
-                char* _ap7866 = tycho_int_to_str(&_scope, ((h_t).f_col));
-                char* _ap7867 = TYCHO_LIT(" ");
-                char* _ap7868 = h_lex__kname(&_scope, ((h_t).f_k));
+                S_lex__Tok h_t = tycho_copy_S_lex__Tok(&_scr7865, (h_toks).data[h_k]);
+                char* _ap7866 = tycho_int_to_str(&_scope, ((h_t).f_line));
+                char* _ap7867 = TYCHO_LIT(":");
+                char* _ap7868 = tycho_int_to_str(&_scope, ((h_t).f_col));
                 char* _ap7869 = TYCHO_LIT(" ");
-                char* _ap7870 = h_lex__spell(&_scope, h_t);
-                char* _ap7871 = TYCHO_LIT("\n");
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7864);
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7865);
+                char* _ap7870 = h_lex__kname(&_scope, ((h_t).f_k));
+                char* _ap7871 = TYCHO_LIT(" ");
+                char* _ap7872 = h_lex__spell(&_scope, h_t);
+                char* _ap7873 = TYCHO_LIT("\n");
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7866);
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7867);
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7868);
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7869);
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7870);
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7871);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7872);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7873);
             }
             h_k = (h_k + 1LL);
         }
-        arena_free(&_scr7863);
+        arena_free(&_scr7865);
     }
     tycho_print_s(h_out);
     if (_scope.head) arena_free(&_scope);
@@ -58735,21 +58736,21 @@ void h_driver__dump_dnotes(Arena *_parent, char *h_src_path) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__dump_dnotes";
     char *h_src = TYCHO_LIT("");
     {
-        E__G6 *_m7872 = h_io__read_text(&_scope, h_src_path);
-        if (_m7872->tag == 0) {
-            char *h_s = _m7872->u.V_Ok.f0;
+        E__G6 *_m7874 = h_io__read_text(&_scope, h_src_path);
+        if (_m7874->tag == 0) {
+            char *h_s = _m7874->u.V_Ok.f0;
             h_src = h_s;
         }
-        else if (_m7872->tag == 1) {
-            E_io__IoErr *h_e = _m7872->u.V_Err.f0;
+        else if (_m7874->tag == 1) {
+            E_io__IoErr *h_e = _m7874->u.V_Err.f0;
             { Arena _t = arena_new(0); tycho_die(tycho_str_concat3(&_t, TYCHO_LIT("tychoc: cannot read '"), h_src_path, TYCHO_LIT("'"))); arena_free(&_t); }
         }
         else { fprintf(stderr, "tycho: non-exhaustive match\n"); TYCHO_EXIT(); }
     }
     TychoArrK18 h_notes = h_lex__dnotes(&_scope, h_src);
-    TychoTup3 _ds7873 = h_lex__tokenize_file(&_scope, h_src, 0, h_src_path);
-    TychoArrK17 h_toks = (_ds7873.f0);
-    TychoArrK18 h__ = (_ds7873.f1);
+    TychoTup3 _ds7875 = h_lex__tokenize_file(&_scope, h_src, 0, h_src_path);
+    TychoArrK17 h_toks = (_ds7875.f0);
+    TychoArrK18 h__ = (_ds7875.f1);
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
@@ -58761,48 +58762,48 @@ void h_driver__dump_dnotes(Arena *_parent, char *h_src_path) {
         #endif
         while (h_k < ((h_notes).len)) {
             {
-                char* _ap7875 = tycho_int_to_str(&_scope, (((h_notes).data[h_k]).f_line));
-                char* _ap7876 = TYCHO_LIT(" deprecated: ");
-                char* _ap7877 = (((h_notes).data[h_k]).f_msg);
-                char* _ap7878 = TYCHO_LIT("\n");
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7875);
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7876);
+                char* _ap7877 = tycho_int_to_str(&_scope, (((h_notes).data[h_k]).f_line));
+                char* _ap7878 = TYCHO_LIT(" deprecated: ");
+                char* _ap7879 = (((h_notes).data[h_k]).f_msg);
+                char* _ap7880 = TYCHO_LIT("\n");
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7877);
                 tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7878);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7879);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7880);
             }
             h_k = (h_k + 1LL);
         }
     }
     {
         tycho_int h_k = 0LL;
-        Arena _scr7879 = arena_child(&_scope); _scr7879.name = "driver__dump_dnotes:1";
+        Arena _scr7881 = arena_child(&_scope); _scr7881.name = "driver__dump_dnotes:1";
         #if defined(__clang__)
         #pragma clang loop unroll_count(4)
         #elif defined(__GNUC__)
         #pragma GCC unroll 4
         #endif
         while ((h_k + 1LL) < ((h_toks).len)) {
-            arena_reset(&_scr7879);
+            arena_reset(&_scr7881);
             {
                 if (((((tycho_arr_K17_get(h_toks, h_k)).f_k) == 1LL) && tycho_str_eq(((tycho_arr_K17_get(h_toks, h_k)).f_text), TYCHO_LIT("fn"))) && (((tycho_arr_K17_get(h_toks, (h_k + 1LL))).f_k) == 2LL)) {
-                    char *h_d = h_lex__dnote_above(&_scr7879, h_notes, ((tycho_arr_K17_get(h_toks, h_k)).f_line));
+                    char *h_d = h_lex__dnote_above(&_scr7881, h_notes, ((tycho_arr_K17_get(h_toks, h_k)).f_line));
                     if (tycho_str_len(h_d) > 0LL) {
-                        char* _ap7880 = TYCHO_LIT("attached fn ");
-                        char* _ap7881 = ((tycho_arr_K17_get(h_toks, (h_k + 1LL))).f_text);
-                        char* _ap7882 = TYCHO_LIT(": ");
-                        char* _ap7883 = h_d;
-                        char* _ap7884 = TYCHO_LIT("\n");
-                        tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7880);
-                        tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7881);
+                        char* _ap7882 = TYCHO_LIT("attached fn ");
+                        char* _ap7883 = ((tycho_arr_K17_get(h_toks, (h_k + 1LL))).f_text);
+                        char* _ap7884 = TYCHO_LIT(": ");
+                        char* _ap7885 = h_d;
+                        char* _ap7886 = TYCHO_LIT("\n");
                         tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7882);
                         tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7883);
                         tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7884);
+                        tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7885);
+                        tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7886);
                     }
                 }
             }
             h_k = (h_k + 1LL);
         }
-        arena_free(&_scr7879);
+        arena_free(&_scr7881);
     }
     tycho_print_s(h_out);
     if (_scope.head) arena_free(&_scope);
@@ -58824,34 +58825,34 @@ char *h_driver__strip_ws(Arena *_parent, char *h_s) {
             {
                 tycho_int h_c = tycho_str_get(h_s, h_k);
                 if ((((h_c == 32LL) || (h_c == 9LL)) || (h_c == 13LL)) || (h_c == 10LL)) {
-                    tycho_str_append(&_scope, &h_out, &_append_h_out, ({ const char *_ss7886 = h_s; tycho_str_substr(&_scope, _ss7886, h_seg, h_k); }));
+                    tycho_str_append(&_scope, &h_out, &_append_h_out, ({ const char *_ss7888 = h_s; tycho_str_substr(&_scope, _ss7888, h_seg, h_k); }));
                     h_seg = (h_k + 1LL);
                 }
             }
             h_k = (h_k + 1LL);
         }
     }
-    { char *_ret = tycho_str_concat(_parent, h_out, ({ const char *_ss7887 = h_s; tycho_str_substr(_parent, _ss7887, h_seg, tycho_str_len(_ss7887)); })); arena_free(&_scope); return _ret; }
+    { char *_ret = tycho_str_concat(_parent, h_out, ({ const char *_ss7889 = h_s; tycho_str_substr(_parent, _ss7889, h_seg, tycho_str_len(_ss7889)); })); arena_free(&_scope); return _ret; }
 }
 
 void h_driver__roundtrip(Arena *_parent, char *h_src_path) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__roundtrip";
     char *h_src = TYCHO_LIT("");
     {
-        E__G6 *_m7888 = h_io__read_text(&_scope, h_src_path);
-        if (_m7888->tag == 0) {
-            char *h_s = _m7888->u.V_Ok.f0;
+        E__G6 *_m7890 = h_io__read_text(&_scope, h_src_path);
+        if (_m7890->tag == 0) {
+            char *h_s = _m7890->u.V_Ok.f0;
             h_src = h_s;
         }
-        else if (_m7888->tag == 1) {
-            E_io__IoErr *h_e = _m7888->u.V_Err.f0;
+        else if (_m7890->tag == 1) {
+            E_io__IoErr *h_e = _m7890->u.V_Err.f0;
             { Arena _t = arena_new(0); tycho_die(tycho_str_concat3(&_t, TYCHO_LIT("tychoc: cannot read '"), h_src_path, TYCHO_LIT("'"))); arena_free(&_t); }
         }
         else { fprintf(stderr, "tycho: non-exhaustive match\n"); TYCHO_EXIT(); }
     }
-    TychoTup3 _ds7889 = h_lex__tokenize_file(&_scope, h_src, 1, h_src_path);
-    TychoArrK17 h_toks = (_ds7889.f0);
-    TychoArrK18 h__ = (_ds7889.f1);
+    TychoTup3 _ds7891 = h_lex__tokenize_file(&_scope, h_src, 1, h_src_path);
+    TychoArrK17 h_toks = (_ds7891.f0);
+    TychoArrK18 h__ = (_ds7891.f1);
     char *h_joined = TYCHO_LIT("");
     TychoStrAppend _append_h_joined = {0};
     {
@@ -58885,7 +58886,7 @@ void h_driver__roundtrip(Arena *_parent, char *h_src_path) {
             h_d = (h_d + 1LL);
         }
     }
-    { Arena _t = arena_new(0); tycho_print_s(tycho_str_concat3(&_t, tycho_str_concat6(&_t, tycho_str_concat6(&_t, TYCHO_LIT("RT-FAIL "), h_src_path, TYCHO_LIT(" src="), tycho_int_to_str(&_t, tycho_str_len(h_a)), TYCHO_LIT(" toks="), tycho_int_to_str(&_t, tycho_str_len(h_b))), TYCHO_LIT(" first-diff-at="), tycho_int_to_str(&_t, h_d), TYCHO_LIT(" src<<"), ({ const char *_ss7892 = h_a; tycho_str_view_alloc(&_t, _ss7892, h_d, (h_d + 30LL)); }), TYCHO_LIT(">> toks<<")), ({ const char *_ss7893 = h_b; tycho_str_view_alloc(&_t, _ss7893, h_d, (h_d + 30LL)); }), TYCHO_LIT(">>\n"))); arena_free(&_t); }
+    { Arena _t = arena_new(0); tycho_print_s(tycho_str_concat3(&_t, tycho_str_concat6(&_t, tycho_str_concat6(&_t, TYCHO_LIT("RT-FAIL "), h_src_path, TYCHO_LIT(" src="), tycho_int_to_str(&_t, tycho_str_len(h_a)), TYCHO_LIT(" toks="), tycho_int_to_str(&_t, tycho_str_len(h_b))), TYCHO_LIT(" first-diff-at="), tycho_int_to_str(&_t, h_d), TYCHO_LIT(" src<<"), ({ const char *_ss7894 = h_a; tycho_str_view_alloc(&_t, _ss7894, h_d, (h_d + 30LL)); }), TYCHO_LIT(">> toks<<")), ({ const char *_ss7895 = h_b; tycho_str_view_alloc(&_t, _ss7895, h_d, (h_d + 30LL)); }), TYCHO_LIT(">>\n"))); arena_free(&_t); }
     tycho_die(TYCHO_LIT("round trip failed"));
     if (_scope.head) arena_free(&_scope);
 }
@@ -58893,13 +58894,13 @@ void h_driver__roundtrip(Arena *_parent, char *h_src_path) {
 char *h_driver___read(Arena *_parent, char *h_src_path) {
     Arena _scope = arena_child(_parent); _scope.name = "driver___read";
     {
-        E__G6 *_m7894 = h_io__read_text(&_scope, h_src_path);
-        if (_m7894->tag == 0) {
-            char *h_s = _m7894->u.V_Ok.f0;
+        E__G6 *_m7896 = h_io__read_text(&_scope, h_src_path);
+        if (_m7896->tag == 0) {
+            char *h_s = _m7896->u.V_Ok.f0;
             { char *_ret = tycho_str_copy(_parent, h_s); arena_free(&_scope); return _ret; }
         }
-        else if (_m7894->tag == 1) {
-            E_io__IoErr *h_e = _m7894->u.V_Err.f0;
+        else if (_m7896->tag == 1) {
+            E_io__IoErr *h_e = _m7896->u.V_Err.f0;
             { Arena _t = arena_new(0); tycho_die(tycho_str_concat3(&_t, TYCHO_LIT("tychoc: cannot read '"), h_src_path, TYCHO_LIT("'"))); arena_free(&_t); }
         }
         else { fprintf(stderr, "tycho: non-exhaustive match\n"); TYCHO_EXIT(); }
@@ -58909,9 +58910,9 @@ char *h_driver___read(Arena *_parent, char *h_src_path) {
 
 void h_driver__parse_only(Arena *_parent, char *h_src_path) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__parse_only";
-    TychoTup3 _ds7895 = h_lex__tokenize_file(&_scope, h_driver___read(&_scope, h_src_path), 0, h_src_path);
-    TychoArrK17 h_toks = (_ds7895.f0);
-    TychoArrK18 h_notes = (_ds7895.f1);
+    TychoTup3 _ds7897 = h_lex__tokenize_file(&_scope, h_driver___read(&_scope, h_src_path), 0, h_src_path);
+    TychoArrK17 h_toks = (_ds7897.f0);
+    TychoArrK18 h_notes = (_ds7897.f1);
     S_ast__Unit h_u = h_parse__unit(&_scope, h_toks, h_notes);
     { Arena _t = arena_new(0); tycho_print_s(tycho_str_concat3(&_t, TYCHO_LIT("PARSE-OK "), tycho_int_to_str(&_t, ((((h_u).f_fns)).len)), TYCHO_LIT("\n"))); arena_free(&_t); }
     if (_scope.head) arena_free(&_scope);
@@ -58919,20 +58920,20 @@ void h_driver__parse_only(Arena *_parent, char *h_src_path) {
 
 void h_driver__parse_census(Arena *_parent, char *h_src_path) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__parse_census";
-    TychoTup3 _ds7896 = h_lex__tokenize_file(&_scope, h_driver___read(&_scope, h_src_path), 0, h_src_path);
-    TychoArrK17 h_toks = (_ds7896.f0);
-    TychoArrK18 h_notes = (_ds7896.f1);
+    TychoTup3 _ds7898 = h_lex__tokenize_file(&_scope, h_driver___read(&_scope, h_src_path), 0, h_src_path);
+    TychoArrK17 h_toks = (_ds7898.f0);
+    TychoArrK18 h_notes = (_ds7898.f1);
     S_ast__Unit h_u = h_parse__unit(&_scope, h_toks, h_notes);
     TychoArrStr h_ks = h_ast__census(&_scope, h_u);
-    TychoMapM1 h_counts = ({ TychoMapM1 _mp7897 = tycho_mapM1_with_cap(&_scope, 0); _mp7897; });
+    TychoMapM1 h_counts = ({ TychoMapM1 _mp7899 = tycho_mapM1_with_cap(&_scope, 0); _mp7899; });
     {
-        TychoArrStr _fc7898 = h_ks;
-        for (tycho_int _fi7899 = 0; _fi7899 < _fc7898.len; _fi7899 += 1) {
-            char *h_k = _fc7898.data[_fi7899];
-            char *h__mk7902 = h_k;
-            char * _mk7902 = h__mk7902;
-            tycho_int _mv7903 = (tycho_mapM1_get(h_counts, h_k, 0LL) + 1LL);
-            tycho_mapM1_put_fresh(&_scope, &(h_counts), _mk7902, _mv7903);
+        TychoArrStr _fc7900 = h_ks;
+        for (tycho_int _fi7901 = 0; _fi7901 < _fc7900.len; _fi7901 += 1) {
+            char *h_k = _fc7900.data[_fi7901];
+            char *h__mk7904 = h_k;
+            char * _mk7904 = h__mk7904;
+            tycho_int _mv7905 = (tycho_mapM1_get(h_counts, h_k, 0LL) + 1LL);
+            tycho_mapM1_put_fresh(&_scope, &(h_counts), _mk7904, _mv7905);
         }
     }
     TychoArrStr h_names = tycho_mapM1_keys(&_scope, h_counts);
@@ -58940,17 +58941,17 @@ void h_driver__parse_census(Arena *_parent, char *h_src_path) {
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
-        TychoArrStr _fc7904 = h_names;
-        for (tycho_int _fi7905 = 0; _fi7905 < _fc7904.len; _fi7905 += 1) {
-            char *h_n = _fc7904.data[_fi7905];
-            char* _ap7907 = h_n;
-            char* _ap7908 = TYCHO_LIT(" ");
-            char* _ap7909 = tycho_int_to_str(&_scope, tycho_mapM1_get(h_counts, h_n, 0LL));
-            char* _ap7910 = TYCHO_LIT("\n");
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7907);
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7908);
+        TychoArrStr _fc7906 = h_names;
+        for (tycho_int _fi7907 = 0; _fi7907 < _fc7906.len; _fi7907 += 1) {
+            char *h_n = _fc7906.data[_fi7907];
+            char* _ap7909 = h_n;
+            char* _ap7910 = TYCHO_LIT(" ");
+            char* _ap7911 = tycho_int_to_str(&_scope, tycho_mapM1_get(h_counts, h_n, 0LL));
+            char* _ap7912 = TYCHO_LIT("\n");
             tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7909);
             tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7910);
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7911);
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7912);
         }
     }
     tycho_print_s(h_out);
@@ -58959,20 +58960,20 @@ void h_driver__parse_census(Arena *_parent, char *h_src_path) {
 
 void h_driver__resolve_only(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__resolve_only";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7911 = tycho_arr_K19_with_cap(&_scope, 0); _l7911.len = 0; _l7911; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7913 = tycho_arr_K19_with_cap(&_scope, 0); _l7913.len = 0; _l7913; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
     S_types__R h_rs = h_types__resolve(&_scope, h_p);
     if (((((h_rs).f_errs)).len) > 0LL) {
         char *h_out = TYCHO_LIT("");
         TychoStrAppend _append_h_out = {0};
         {
-            TychoArrStr _fc7912 = ((h_rs).f_errs);
-            for (tycho_int _fi7913 = 0; _fi7913 < _fc7912.len; _fi7913 += 1) {
-                char *h_e = _fc7912.data[_fi7913];
-                char* _ap7915 = h_e;
-                char* _ap7916 = TYCHO_LIT("\n");
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7915);
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7916);
+            TychoArrStr _fc7914 = ((h_rs).f_errs);
+            for (tycho_int _fi7915 = 0; _fi7915 < _fc7914.len; _fi7915 += 1) {
+                char *h_e = _fc7914.data[_fi7915];
+                char* _ap7917 = h_e;
+                char* _ap7918 = TYCHO_LIT("\n");
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7917);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7918);
             }
         }
         tycho_eprint(h_out);
@@ -58981,15 +58982,15 @@ void h_driver__resolve_only(Arena *_parent, char *h_src_path, char *h_argv0) {
     char *h_out2 = TYCHO_LIT("");
     TychoStrAppend _append_h_out2 = {0};
     {
-        TychoArrStr _fc7917 = h_types__late_lines(&_scope, h_rs);
-        for (tycho_int _fi7918 = 0; _fi7918 < _fc7917.len; _fi7918 += 1) {
-            char *h_l = _fc7917.data[_fi7918];
-            char* _ap7920 = TYCHO_LIT("late: ");
-            char* _ap7921 = h_l;
-            char* _ap7922 = TYCHO_LIT("\n");
-            tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7920);
-            tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7921);
+        TychoArrStr _fc7919 = h_types__late_lines(&_scope, h_rs);
+        for (tycho_int _fi7920 = 0; _fi7920 < _fc7919.len; _fi7920 += 1) {
+            char *h_l = _fc7919.data[_fi7920];
+            char* _ap7922 = TYCHO_LIT("late: ");
+            char* _ap7923 = h_l;
+            char* _ap7924 = TYCHO_LIT("\n");
             tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7922);
+            tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7923);
+            tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7924);
         }
     }
     tycho_eprint(h_out2);
@@ -58999,19 +59000,19 @@ void h_driver__resolve_only(Arena *_parent, char *h_src_path, char *h_argv0) {
 
 void h_driver__resolve_census(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__resolve_census";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7923 = tycho_arr_K19_with_cap(&_scope, 0); _l7923.len = 0; _l7923; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7925 = tycho_arr_K19_with_cap(&_scope, 0); _l7925.len = 0; _l7925; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
     S_types__R h_rs = h_types__resolve(&_scope, h_p);
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
-        TychoArrStr _fc7924 = h_types__census_lines(&_scope, h_rs);
-        for (tycho_int _fi7925 = 0; _fi7925 < _fc7924.len; _fi7925 += 1) {
-            char *h_l = _fc7924.data[_fi7925];
-            char* _ap7927 = h_l;
-            char* _ap7928 = TYCHO_LIT("\n");
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7927);
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7928);
+        TychoArrStr _fc7926 = h_types__census_lines(&_scope, h_rs);
+        for (tycho_int _fi7927 = 0; _fi7927 < _fc7926.len; _fi7927 += 1) {
+            char *h_l = _fc7926.data[_fi7927];
+            char* _ap7929 = h_l;
+            char* _ap7930 = TYCHO_LIT("\n");
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7929);
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7930);
         }
     }
     tycho_print_s(h_out);
@@ -59020,19 +59021,19 @@ void h_driver__resolve_census(Arena *_parent, char *h_src_path, char *h_argv0) {
 
 void h_driver__dump_symbols(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__dump_symbols";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7929 = tycho_arr_K19_with_cap(&_scope, 0); _l7929.len = 0; _l7929; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7931 = tycho_arr_K19_with_cap(&_scope, 0); _l7931.len = 0; _l7931; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
     S_types__R h_rs = h_types__resolve(&_scope, h_p);
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
-        TychoArrStr _fc7930 = h_types__symbol_lines(&_scope, h_rs);
-        for (tycho_int _fi7931 = 0; _fi7931 < _fc7930.len; _fi7931 += 1) {
-            char *h_l = _fc7930.data[_fi7931];
-            char* _ap7933 = h_l;
-            char* _ap7934 = TYCHO_LIT("\n");
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7933);
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7934);
+        TychoArrStr _fc7932 = h_types__symbol_lines(&_scope, h_rs);
+        for (tycho_int _fi7933 = 0; _fi7933 < _fc7932.len; _fi7933 += 1) {
+            char *h_l = _fc7932.data[_fi7933];
+            char* _ap7935 = h_l;
+            char* _ap7936 = TYCHO_LIT("\n");
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7935);
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7936);
         }
     }
     tycho_print_s(h_out);
@@ -59041,20 +59042,20 @@ void h_driver__dump_symbols(Arena *_parent, char *h_src_path, char *h_argv0) {
 
 void h_driver__typecheck_only(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__typecheck_only";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7935 = tycho_arr_K19_with_cap(&_scope, 0); _l7935.len = 0; _l7935; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7937 = tycho_arr_K19_with_cap(&_scope, 0); _l7937.len = 0; _l7937; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
     S_types__R h_rs = h_types__resolve(&_scope, h_p);
     if (((((h_rs).f_errs)).len) > 0LL) {
         char *h_out = TYCHO_LIT("");
         TychoStrAppend _append_h_out = {0};
         {
-            TychoArrStr _fc7936 = ((h_rs).f_errs);
-            for (tycho_int _fi7937 = 0; _fi7937 < _fc7936.len; _fi7937 += 1) {
-                char *h_e = _fc7936.data[_fi7937];
-                char* _ap7939 = h_e;
-                char* _ap7940 = TYCHO_LIT("\n");
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7939);
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7940);
+            TychoArrStr _fc7938 = ((h_rs).f_errs);
+            for (tycho_int _fi7939 = 0; _fi7939 < _fc7938.len; _fi7939 += 1) {
+                char *h_e = _fc7938.data[_fi7939];
+                char* _ap7941 = h_e;
+                char* _ap7942 = TYCHO_LIT("\n");
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7941);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7942);
             }
         }
         tycho_eprint(h_out);
@@ -59066,13 +59067,13 @@ void h_driver__typecheck_only(Arena *_parent, char *h_src_path, char *h_argv0) {
         char *h_out2 = TYCHO_LIT("");
         TychoStrAppend _append_h_out2 = {0};
         {
-            TychoArrStr _fc7941 = h_errs;
-            for (tycho_int _fi7942 = 0; _fi7942 < _fc7941.len; _fi7942 += 1) {
-                char *h_e = _fc7941.data[_fi7942];
-                char* _ap7944 = h_e;
-                char* _ap7945 = TYCHO_LIT("\n");
-                tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7944);
-                tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7945);
+            TychoArrStr _fc7943 = h_errs;
+            for (tycho_int _fi7944 = 0; _fi7944 < _fc7943.len; _fi7944 += 1) {
+                char *h_e = _fc7943.data[_fi7944];
+                char* _ap7946 = h_e;
+                char* _ap7947 = TYCHO_LIT("\n");
+                tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7946);
+                tycho_str_append(&_scope, &h_out2, &_append_h_out2, _ap7947);
             }
         }
         tycho_eprint(h_out2);
@@ -59089,7 +59090,7 @@ void h_driver__typecheck_only(Arena *_parent, char *h_src_path, char *h_argv0) {
 
 void h_driver__type_census(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__type_census";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7946 = tycho_arr_K19_with_cap(&_scope, 0); _l7946.len = 0; _l7946; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7948 = tycho_arr_K19_with_cap(&_scope, 0); _l7948.len = 0; _l7948; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
     S_types__R h_rs = h_types__resolve(&_scope, h_p);
     if (((((h_rs).f_errs)).len) > 0LL) {
@@ -59099,13 +59100,13 @@ void h_driver__type_census(Arena *_parent, char *h_src_path, char *h_argv0) {
     char *h_out = TYCHO_LIT("");
     TychoStrAppend _append_h_out = {0};
     {
-        TychoArrStr _fc7947 = h_types__check_census(&_scope, h_cs);
-        for (tycho_int _fi7948 = 0; _fi7948 < _fc7947.len; _fi7948 += 1) {
-            char *h_l = _fc7947.data[_fi7948];
-            char* _ap7950 = h_l;
-            char* _ap7951 = TYCHO_LIT("\n");
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7950);
-            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7951);
+        TychoArrStr _fc7949 = h_types__check_census(&_scope, h_cs);
+        for (tycho_int _fi7950 = 0; _fi7950 < _fc7949.len; _fi7950 += 1) {
+            char *h_l = _fc7949.data[_fi7950];
+            char* _ap7952 = h_l;
+            char* _ap7953 = TYCHO_LIT("\n");
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7952);
+            tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7953);
         }
     }
     tycho_print_s(h_out);
@@ -59115,19 +59116,19 @@ void h_driver__type_census(Arena *_parent, char *h_src_path, char *h_argv0) {
 char *h_driver___ty_src(Arena *_parent, E_ast__Ty *h_t, char *h_pk, TychoMapM0 h_own, TychoMapM3 h_imp) {
     Arena _scope = arena_child(_parent); _scope.name = "driver___ty_src";
     {
-        E_ast__Ty *_m7952 = h_t;
-        if (_m7952->tag == 0) {
-            char *h_n = _m7952->u.V_TPrim.f0;
+        E_ast__Ty *_m7954 = h_t;
+        if (_m7954->tag == 0) {
+            char *h_n = _m7954->u.V_TPrim.f0;
             { char *_ret = tycho_str_copy(_parent, h_n); arena_free(&_scope); return _ret; }
         }
-        else if (_m7952->tag == 1) {
-            char *h_n = _m7952->u.V_TParam.f0;
+        else if (_m7954->tag == 1) {
+            char *h_n = _m7954->u.V_TParam.f0;
             { char *_ret = tycho_str_concat(_parent, TYCHO_LIT("$"), h_n); arena_free(&_scope); return _ret; }
         }
-        else if (_m7952->tag == 2) {
-            char *h_q = _m7952->u.V_TName.f0;
-            char *h_n = _m7952->u.V_TName.f1;
-            TychoArrK1 h_a = _m7952->u.V_TName.f2;
+        else if (_m7954->tag == 2) {
+            char *h_q = _m7954->u.V_TName.f0;
+            char *h_n = _m7954->u.V_TName.f1;
+            TychoArrK1 h_a = _m7954->u.V_TName.f2;
             char *h_base = h_n;
             if (tycho_str_len(h_q) > 0LL) {
                 h_base = tycho_str_concat3(&_scope, h_q, TYCHO_LIT("."), h_n);
@@ -59158,27 +59159,27 @@ char *h_driver___ty_src(Arena *_parent, E_ast__Ty *h_t, char *h_pk, TychoMapM0 h
             }
             { char *_ret = tycho_str_concat(_parent, h_out, TYCHO_LIT(")")); arena_free(&_scope); return _ret; }
         }
-        else if (_m7952->tag == 3) {
-            TychoArrK1 h_e = _m7952->u.V_TArr.f0;
+        else if (_m7954->tag == 3) {
+            TychoArrK1 h_e = _m7954->u.V_TArr.f0;
             if (((h_e).len) == 1LL) {
                 { char *_ret = tycho_str_concat3(_parent, TYCHO_LIT("["), h_driver___ty_src(_parent, tycho_arr_K1_get(h_e, 0LL), h_pk, h_own, h_imp), TYCHO_LIT("]")); arena_free(&_scope); return _ret; }
             }
         }
-        else if (_m7952->tag == 4) {
-            char *h_n = _m7952->u.V_TFix.f0;
-            TychoArrK1 h_e = _m7952->u.V_TFix.f1;
+        else if (_m7954->tag == 4) {
+            char *h_n = _m7954->u.V_TFix.f0;
+            TychoArrK1 h_e = _m7954->u.V_TFix.f1;
             if (((h_e).len) == 1LL) {
                 { char *_ret = tycho_str_concat4(_parent, TYCHO_LIT("["), h_n, TYCHO_LIT("]"), h_driver___ty_src(_parent, tycho_arr_K1_get(h_e, 0LL), h_pk, h_own, h_imp)); arena_free(&_scope); return _ret; }
             }
         }
-        else if (_m7952->tag == 5) {
-            TychoArrK1 h_e = _m7952->u.V_TMap.f0;
+        else if (_m7954->tag == 5) {
+            TychoArrK1 h_e = _m7954->u.V_TMap.f0;
             if (((h_e).len) == 2LL) {
                 { char *_ret = tycho_str_concat5(_parent, TYCHO_LIT("["), h_driver___ty_src(_parent, tycho_arr_K1_get(h_e, 0LL), h_pk, h_own, h_imp), TYCHO_LIT(": "), h_driver___ty_src(_parent, tycho_arr_K1_get(h_e, 1LL), h_pk, h_own, h_imp), TYCHO_LIT("]")); arena_free(&_scope); return _ret; }
             }
         }
-        else if (_m7952->tag == 6) {
-            TychoArrK1 h_e = _m7952->u.V_TTup.f0;
+        else if (_m7954->tag == 6) {
+            TychoArrK1 h_e = _m7954->u.V_TTup.f0;
             char *h_out2 = TYCHO_LIT("(");
             TychoStrAppend _append_h_out2 = {0};
             {
@@ -59200,29 +59201,29 @@ char *h_driver___ty_src(Arena *_parent, E_ast__Ty *h_t, char *h_pk, TychoMapM0 h
             }
             { char *_ret = tycho_str_concat(_parent, h_out2, TYCHO_LIT(")")); arena_free(&_scope); return _ret; }
         }
-        else if (_m7952->tag == 8) {
-            TychoArrK1 h_e = _m7952->u.V_TSoa.f0;
+        else if (_m7954->tag == 8) {
+            TychoArrK1 h_e = _m7954->u.V_TSoa.f0;
             if (((h_e).len) == 1LL) {
                 { char *_ret = tycho_str_concat3(_parent, TYCHO_LIT("soa ["), h_driver___ty_src(_parent, tycho_arr_K1_get(h_e, 0LL), h_pk, h_own, h_imp), TYCHO_LIT("]")); arena_free(&_scope); return _ret; }
             }
         }
-        else if (_m7952->tag == 9) {
-            char *h_n = _m7952->u.V_TBnd.f0;
-            TychoArrK1 h_e = _m7952->u.V_TBnd.f1;
+        else if (_m7954->tag == 9) {
+            char *h_n = _m7954->u.V_TBnd.f0;
+            TychoArrK1 h_e = _m7954->u.V_TBnd.f1;
             if (((h_e).len) == 1LL) {
                 { char *_ret = tycho_str_concat4(_parent, TYCHO_LIT("bounded["), h_n, TYCHO_LIT("]"), h_driver___ty_src(_parent, tycho_arr_K1_get(h_e, 0LL), h_pk, h_own, h_imp)); arena_free(&_scope); return _ret; }
             }
         }
-        else if (_m7952->tag == 10) {
-            char *h_n = _m7952->u.V_TVec.f0;
-            TychoArrK1 h_e = _m7952->u.V_TVec.f1;
+        else if (_m7954->tag == 10) {
+            char *h_n = _m7954->u.V_TVec.f0;
+            TychoArrK1 h_e = _m7954->u.V_TVec.f1;
             if (((h_e).len) == 1LL) {
                 { char *_ret = tycho_str_concat4(_parent, TYCHO_LIT("vector["), h_n, TYCHO_LIT("]"), h_driver___ty_src(_parent, tycho_arr_K1_get(h_e, 0LL), h_pk, h_own, h_imp)); arena_free(&_scope); return _ret; }
             }
         }
-        else if (_m7952->tag == 7) {
-            int h_hr = _m7952->u.V_TFn.f0;
-            TychoArrK1 h_e = _m7952->u.V_TFn.f1;
+        else if (_m7954->tag == 7) {
+            int h_hr = _m7954->u.V_TFn.f0;
+            TychoArrK1 h_e = _m7954->u.V_TFn.f1;
             char *h_out3 = TYCHO_LIT("fn(");
             TychoStrAppend _append_h_out3 = {0};
             tycho_int h_np = ((h_e).len);
@@ -59248,10 +59249,10 @@ char *h_driver___ty_src(Arena *_parent, E_ast__Ty *h_t, char *h_pk, TychoMapM0 h
             }
             tycho_str_append(&_scope, &h_out3, &_append_h_out3, TYCHO_LIT(")"));
             if (h_hr && (((h_e).len) > 0LL)) {
-                char* _ap7956 = TYCHO_LIT(" -> ");
-                char* _ap7957 = h_driver___ty_src(&_scope, tycho_arr_K1_get(h_e, (((h_e).len) - 1LL)), h_pk, h_own, h_imp);
-                tycho_str_append(&_scope, &h_out3, &_append_h_out3, _ap7956);
-                tycho_str_append(&_scope, &h_out3, &_append_h_out3, _ap7957);
+                char* _ap7958 = TYCHO_LIT(" -> ");
+                char* _ap7959 = h_driver___ty_src(&_scope, tycho_arr_K1_get(h_e, (((h_e).len) - 1LL)), h_pk, h_own, h_imp);
+                tycho_str_append(&_scope, &h_out3, &_append_h_out3, _ap7958);
+                tycho_str_append(&_scope, &h_out3, &_append_h_out3, _ap7959);
             }
             { char *_ret = tycho_str_copy(_parent, h_out3); arena_free(&_scope); return _ret; }
         }
@@ -59264,139 +59265,139 @@ char *h_driver___ty_src(Arena *_parent, E_ast__Ty *h_t, char *h_pk, TychoMapM0 h
 void h_driver___sym_locals(Arena *_parent, TychoArrK3 h_b, tycho_int h_fnline, char *h_pk, TychoMapM0 h_own, TychoMapM3 h_imp) {
     Arena _scope = arena_child(_parent); _scope.name = "driver___sym_locals";
     {
-        TychoArrK3 _fc7958 = h_b;
-        Arena _scr7960 = arena_child(&_scope);
-        for (tycho_int _fi7959 = 0; _fi7959 < _fc7958.len; _fi7959 += 1) {
-            arena_reset(&_scr7960);
-            E_ast__Stmt *h_s = _fc7958.data[_fi7959];
+        TychoArrK3 _fc7960 = h_b;
+        Arena _scr7962 = arena_child(&_scope);
+        for (tycho_int _fi7961 = 0; _fi7961 < _fc7960.len; _fi7961 += 1) {
+            arena_reset(&_scr7962);
+            E_ast__Stmt *h_s = _fc7960.data[_fi7961];
             {
-                E_ast__Stmt *_m7961 = h_s;
-                if (_m7961->tag == 1) {
-                    tycho_int h_l = _m7961->u.V_Decl.f0;
-                    char *h_n = _m7961->u.V_Decl.f1;
-                    TychoArrK1 h_t = _m7961->u.V_Decl.f2;
-                    TychoArrK0 h_r = _m7961->u.V_Decl.f3;
-                    TychoArrK3 h_v = _m7961->u.V_Decl.f4;
+                E_ast__Stmt *_m7963 = h_s;
+                if (_m7963->tag == 1) {
+                    tycho_int h_l = _m7963->u.V_Decl.f0;
+                    char *h_n = _m7963->u.V_Decl.f1;
+                    TychoArrK1 h_t = _m7963->u.V_Decl.f2;
+                    TychoArrK0 h_r = _m7963->u.V_Decl.f3;
+                    TychoArrK3 h_v = _m7963->u.V_Decl.f4;
                     char *h_ty9 = TYCHO_LIT("?");
                     if (((h_t).len) == 1LL) {
-                        h_ty9 = h_driver___ty_src(&_scr7960, tycho_arr_K1_get(h_t, 0LL), h_pk, h_own, h_imp);
+                        h_ty9 = h_driver___ty_src(&_scr7962, tycho_arr_K1_get(h_t, 0LL), h_pk, h_own, h_imp);
                     }
-                    tycho_print_s(tycho_str_concat4(&_scr7960, tycho_str_concat6(&_scr7960, TYCHO_LIT("local\t"), h_n, TYCHO_LIT("\t"), h_ty9, TYCHO_LIT("\t"), tycho_int_to_str(&_scr7960, h_fnline)), TYCHO_LIT("\t"), tycho_int_to_str(&_scr7960, h_l), TYCHO_LIT("\n")));
+                    tycho_print_s(tycho_str_concat4(&_scr7962, tycho_str_concat6(&_scr7962, TYCHO_LIT("local\t"), h_n, TYCHO_LIT("\t"), h_ty9, TYCHO_LIT("\t"), tycho_int_to_str(&_scr7962, h_fnline)), TYCHO_LIT("\t"), tycho_int_to_str(&_scr7962, h_l), TYCHO_LIT("\n")));
                 }
-                else if (_m7961->tag == 2) {
-                    tycho_int h_l = _m7961->u.V_MDecl.f0;
-                    int h_d = _m7961->u.V_MDecl.f1;
-                    TychoArrStr h_ns = _m7961->u.V_MDecl.f2;
-                    TychoArrK0 h_r = _m7961->u.V_MDecl.f3;
+                else if (_m7963->tag == 2) {
+                    tycho_int h_l = _m7963->u.V_MDecl.f0;
+                    int h_d = _m7963->u.V_MDecl.f1;
+                    TychoArrStr h_ns = _m7963->u.V_MDecl.f2;
+                    TychoArrK0 h_r = _m7963->u.V_MDecl.f3;
                     {
-                        TychoArrStr _fc7962 = h_ns;
-                        Arena _scr7964 = arena_child(&_scr7960);
-                        for (tycho_int _fi7963 = 0; _fi7963 < _fc7962.len; _fi7963 += 1) {
-                            arena_reset(&_scr7964);
-                            char *h_n2 = _fc7962.data[_fi7963];
-                            tycho_print_s(tycho_str_concat(&_scr7964, tycho_str_concat6(&_scr7964, TYCHO_LIT("local\t"), h_n2, TYCHO_LIT("\t?\t"), tycho_int_to_str(&_scr7964, h_fnline), TYCHO_LIT("\t"), tycho_int_to_str(&_scr7964, h_l)), TYCHO_LIT("\n")));
+                        TychoArrStr _fc7964 = h_ns;
+                        Arena _scr7966 = arena_child(&_scr7962);
+                        for (tycho_int _fi7965 = 0; _fi7965 < _fc7964.len; _fi7965 += 1) {
+                            arena_reset(&_scr7966);
+                            char *h_n2 = _fc7964.data[_fi7965];
+                            tycho_print_s(tycho_str_concat(&_scr7966, tycho_str_concat6(&_scr7966, TYCHO_LIT("local\t"), h_n2, TYCHO_LIT("\t?\t"), tycho_int_to_str(&_scr7966, h_fnline), TYCHO_LIT("\t"), tycho_int_to_str(&_scr7966, h_l)), TYCHO_LIT("\n")));
                         }
-                        arena_free(&_scr7964);
-                    }
-                }
-                else if (_m7961->tag == 10) {
-                    tycho_int h_l = _m7961->u.V_IfS.f0;
-                    TychoArrK4 h_arms = _m7961->u.V_IfS.f1;
-                    TychoArrK3 h_e = _m7961->u.V_IfS.f2;
-                    {
-                        TychoArrK4 _fc7965 = h_arms;
-                        Arena _scr7967 = arena_child(&_scr7960);
-                        for (tycho_int _fi7966 = 0; _fi7966 < _fc7965.len; _fi7966 += 1) {
-                            arena_reset(&_scr7967);
-                            S_ast__IfArm h_arm = _fc7965.data[_fi7966];
-                            h_driver___sym_locals(&_scr7967, ((h_arm).f_body), h_fnline, h_pk, h_own, h_imp);
-                        }
-                        arena_free(&_scr7967);
-                    }
-                    h_driver___sym_locals(&_scr7960, h_e, h_fnline, h_pk, h_own, h_imp);
-                }
-                else if (_m7961->tag == 11) {
-                    tycho_int h_l = _m7961->u.V_WhileS.f0;
-                    TychoArrK0 h_c = _m7961->u.V_WhileS.f1;
-                    TychoArrK3 h_bb = _m7961->u.V_WhileS.f2;
-                    h_driver___sym_locals(&_scr7960, h_bb, h_fnline, h_pk, h_own, h_imp);
-                }
-                else if (_m7961->tag == 12) {
-                    tycho_int h_l = _m7961->u.V_For3.f0;
-                    TychoArrK3 h_ip = _m7961->u.V_For3.f1;
-                    TychoArrK0 h_c = _m7961->u.V_For3.f2;
-                    TychoArrK3 h_bb = _m7961->u.V_For3.f3;
-                    h_driver___sym_locals(&_scr7960, h_ip, h_fnline, h_pk, h_own, h_imp);
-                    h_driver___sym_locals(&_scr7960, h_bb, h_fnline, h_pk, h_own, h_imp);
-                }
-                else if (_m7961->tag == 13) {
-                    tycho_int h_l = _m7961->u.V_ForIn.f0;
-                    char *h_n = _m7961->u.V_ForIn.f1;
-                    TychoArrK0 h_c = _m7961->u.V_ForIn.f2;
-                    TychoArrK3 h_bb = _m7961->u.V_ForIn.f3;
-                    int h_zpf = _m7961->u.V_ForIn.f4;
-                    h_driver___sym_locals(&_scr7960, h_bb, h_fnline, h_pk, h_own, h_imp);
-                }
-                else if (_m7961->tag == 14) {
-                    tycho_int h_l = _m7961->u.V_ForRange.f0;
-                    char *h_n = _m7961->u.V_ForRange.f1;
-                    TychoArrK0 h_c = _m7961->u.V_ForRange.f2;
-                    TychoArrK3 h_bb = _m7961->u.V_ForRange.f3;
-                    h_driver___sym_locals(&_scr7960, h_bb, h_fnline, h_pk, h_own, h_imp);
-                }
-                else if (_m7961->tag == 16) {
-                    tycho_int h_l = _m7961->u.V_MatchS.f0;
-                    TychoArrK0 h_sj = _m7961->u.V_MatchS.f1;
-                    TychoArrK5 h_arms = _m7961->u.V_MatchS.f2;
-                    {
-                        TychoArrK5 _fc7968 = h_arms;
-                        Arena _scr7970 = arena_child(&_scr7960);
-                        for (tycho_int _fi7969 = 0; _fi7969 < _fc7968.len; _fi7969 += 1) {
-                            arena_reset(&_scr7970);
-                            S_ast__Arm h_a = _fc7968.data[_fi7969];
-                            h_driver___sym_locals(&_scr7970, ((h_a).f_body), h_fnline, h_pk, h_own, h_imp);
-                        }
-                        arena_free(&_scr7970);
+                        arena_free(&_scr7966);
                     }
                 }
-                else if (_m7961->tag == 17) {
-                    tycho_int h_l = _m7961->u.V_SelectS.f0;
-                    TychoArrK5 h_arms = _m7961->u.V_SelectS.f1;
+                else if (_m7963->tag == 10) {
+                    tycho_int h_l = _m7963->u.V_IfS.f0;
+                    TychoArrK4 h_arms = _m7963->u.V_IfS.f1;
+                    TychoArrK3 h_e = _m7963->u.V_IfS.f2;
                     {
-                        TychoArrK5 _fc7971 = h_arms;
-                        Arena _scr7973 = arena_child(&_scr7960);
-                        for (tycho_int _fi7972 = 0; _fi7972 < _fc7971.len; _fi7972 += 1) {
-                            arena_reset(&_scr7973);
-                            S_ast__Arm h_a = _fc7971.data[_fi7972];
-                            h_driver___sym_locals(&_scr7973, ((h_a).f_body), h_fnline, h_pk, h_own, h_imp);
+                        TychoArrK4 _fc7967 = h_arms;
+                        Arena _scr7969 = arena_child(&_scr7962);
+                        for (tycho_int _fi7968 = 0; _fi7968 < _fc7967.len; _fi7968 += 1) {
+                            arena_reset(&_scr7969);
+                            S_ast__IfArm h_arm = _fc7967.data[_fi7968];
+                            h_driver___sym_locals(&_scr7969, ((h_arm).f_body), h_fnline, h_pk, h_own, h_imp);
                         }
-                        arena_free(&_scr7973);
+                        arena_free(&_scr7969);
+                    }
+                    h_driver___sym_locals(&_scr7962, h_e, h_fnline, h_pk, h_own, h_imp);
+                }
+                else if (_m7963->tag == 11) {
+                    tycho_int h_l = _m7963->u.V_WhileS.f0;
+                    TychoArrK0 h_c = _m7963->u.V_WhileS.f1;
+                    TychoArrK3 h_bb = _m7963->u.V_WhileS.f2;
+                    h_driver___sym_locals(&_scr7962, h_bb, h_fnline, h_pk, h_own, h_imp);
+                }
+                else if (_m7963->tag == 12) {
+                    tycho_int h_l = _m7963->u.V_For3.f0;
+                    TychoArrK3 h_ip = _m7963->u.V_For3.f1;
+                    TychoArrK0 h_c = _m7963->u.V_For3.f2;
+                    TychoArrK3 h_bb = _m7963->u.V_For3.f3;
+                    h_driver___sym_locals(&_scr7962, h_ip, h_fnline, h_pk, h_own, h_imp);
+                    h_driver___sym_locals(&_scr7962, h_bb, h_fnline, h_pk, h_own, h_imp);
+                }
+                else if (_m7963->tag == 13) {
+                    tycho_int h_l = _m7963->u.V_ForIn.f0;
+                    char *h_n = _m7963->u.V_ForIn.f1;
+                    TychoArrK0 h_c = _m7963->u.V_ForIn.f2;
+                    TychoArrK3 h_bb = _m7963->u.V_ForIn.f3;
+                    int h_zpf = _m7963->u.V_ForIn.f4;
+                    h_driver___sym_locals(&_scr7962, h_bb, h_fnline, h_pk, h_own, h_imp);
+                }
+                else if (_m7963->tag == 14) {
+                    tycho_int h_l = _m7963->u.V_ForRange.f0;
+                    char *h_n = _m7963->u.V_ForRange.f1;
+                    TychoArrK0 h_c = _m7963->u.V_ForRange.f2;
+                    TychoArrK3 h_bb = _m7963->u.V_ForRange.f3;
+                    h_driver___sym_locals(&_scr7962, h_bb, h_fnline, h_pk, h_own, h_imp);
+                }
+                else if (_m7963->tag == 16) {
+                    tycho_int h_l = _m7963->u.V_MatchS.f0;
+                    TychoArrK0 h_sj = _m7963->u.V_MatchS.f1;
+                    TychoArrK5 h_arms = _m7963->u.V_MatchS.f2;
+                    {
+                        TychoArrK5 _fc7970 = h_arms;
+                        Arena _scr7972 = arena_child(&_scr7962);
+                        for (tycho_int _fi7971 = 0; _fi7971 < _fc7970.len; _fi7971 += 1) {
+                            arena_reset(&_scr7972);
+                            S_ast__Arm h_a = _fc7970.data[_fi7971];
+                            h_driver___sym_locals(&_scr7972, ((h_a).f_body), h_fnline, h_pk, h_own, h_imp);
+                        }
+                        arena_free(&_scr7972);
+                    }
+                }
+                else if (_m7963->tag == 17) {
+                    tycho_int h_l = _m7963->u.V_SelectS.f0;
+                    TychoArrK5 h_arms = _m7963->u.V_SelectS.f1;
+                    {
+                        TychoArrK5 _fc7973 = h_arms;
+                        Arena _scr7975 = arena_child(&_scr7962);
+                        for (tycho_int _fi7974 = 0; _fi7974 < _fc7973.len; _fi7974 += 1) {
+                            arena_reset(&_scr7975);
+                            S_ast__Arm h_a = _fc7973.data[_fi7974];
+                            h_driver___sym_locals(&_scr7975, ((h_a).f_body), h_fnline, h_pk, h_own, h_imp);
+                        }
+                        arena_free(&_scr7975);
                     }
                 }
                 else {
                 }
             }
         }
-        arena_free(&_scr7960);
+        arena_free(&_scr7962);
     }
     { if (_scope.head) arena_free(&_scope); return; }
 }
 
 void h_driver__emit_symbols(Arena *_parent, char *h_src_path, char *h_argv0) {
     Arena _scope = arena_child(_parent); _scope.name = "driver__emit_symbols";
-    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7974 = tycho_arr_K19_with_cap(&_scope, 0); _l7974.len = 0; _l7974; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
+    S_types__Program h_p = ((S_types__Program){ ({ TychoArrK19 _l7976 = tycho_arr_K19_with_cap(&_scope, 0); _l7976.len = 0; _l7976; }), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT(""), TYCHO_LIT("") });
     h_types__load_into(_parent, h_src_path, h_argv0, &(h_p), &_scope);
     S_types__R h_rs = h_types__resolve(&_scope, h_p);
     char *h_wl = TYCHO_LIT("");
     TychoStrAppend _append_h_wl = {0};
     {
-        TychoArrStr _fc7975 = h_types__warn_lines(&_scope, h_rs);
-        for (tycho_int _fi7976 = 0; _fi7976 < _fc7975.len; _fi7976 += 1) {
-            char *h_w = _fc7975.data[_fi7976];
-            char* _ap7978 = h_w;
-            char* _ap7979 = TYCHO_LIT("\n");
-            tycho_str_append(&_scope, &h_wl, &_append_h_wl, _ap7978);
-            tycho_str_append(&_scope, &h_wl, &_append_h_wl, _ap7979);
+        TychoArrStr _fc7977 = h_types__warn_lines(&_scope, h_rs);
+        for (tycho_int _fi7978 = 0; _fi7978 < _fc7977.len; _fi7978 += 1) {
+            char *h_w = _fc7977.data[_fi7978];
+            char* _ap7980 = h_w;
+            char* _ap7981 = TYCHO_LIT("\n");
+            tycho_str_append(&_scope, &h_wl, &_append_h_wl, _ap7980);
+            tycho_str_append(&_scope, &h_wl, &_append_h_wl, _ap7981);
         }
     }
     tycho_eprint(h_wl);
@@ -59404,13 +59405,13 @@ void h_driver__emit_symbols(Arena *_parent, char *h_src_path, char *h_argv0) {
         char *h_out = TYCHO_LIT("");
         TychoStrAppend _append_h_out = {0};
         {
-            TychoArrStr _fc7980 = ((h_rs).f_errs);
-            for (tycho_int _fi7981 = 0; _fi7981 < _fc7980.len; _fi7981 += 1) {
-                char *h_e = _fc7980.data[_fi7981];
-                char* _ap7983 = h_e;
-                char* _ap7984 = TYCHO_LIT("\n");
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7983);
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7984);
+            TychoArrStr _fc7982 = ((h_rs).f_errs);
+            for (tycho_int _fi7983 = 0; _fi7983 < _fc7982.len; _fi7983 += 1) {
+                char *h_e = _fc7982.data[_fi7983];
+                char* _ap7985 = h_e;
+                char* _ap7986 = TYCHO_LIT("\n");
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7985);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7986);
             }
         }
         tycho_eprint(h_out);
@@ -59422,25 +59423,25 @@ void h_driver__emit_symbols(Arena *_parent, char *h_src_path, char *h_argv0) {
         char *h_out = TYCHO_LIT("");
         TychoStrAppend _append_h_out = {0};
         {
-            TychoArrStr _fc7985 = ((h_checked).f_errs);
-            for (tycho_int _fi7986 = 0; _fi7986 < _fc7985.len; _fi7986 += 1) {
-                char *h_e = _fc7985.data[_fi7986];
-                char* _ap7988 = h_e;
-                char* _ap7989 = TYCHO_LIT("\n");
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7988);
-                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7989);
+            TychoArrStr _fc7987 = ((h_checked).f_errs);
+            for (tycho_int _fi7988 = 0; _fi7988 < _fc7987.len; _fi7988 += 1) {
+                char *h_e = _fc7987.data[_fi7988];
+                char* _ap7990 = h_e;
+                char* _ap7991 = TYCHO_LIT("\n");
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7990);
+                tycho_str_append(&_scope, &h_out, &_append_h_out, _ap7991);
             }
         }
         tycho_eprint(h_out);
         exit((int)(1LL));
     }
-    TychoMapM2 h_lrows = ({ TychoMapM2 _mp7990 = tycho_mapM2_with_cap(&_scope, 0); _mp7990; });
+    TychoMapM2 h_lrows = ({ TychoMapM2 _mp7992 = tycho_mapM2_with_cap(&_scope, 0); _mp7992; });
     {
-        TychoArrStr _fc7991 = ((h_checked).f_symrows);
-        Arena _scr7993 = arena_child(&_scope);
-        for (tycho_int _fi7992 = 0; _fi7992 < _fc7991.len; _fi7992 += 1) {
-            arena_reset(&_scr7993);
-            char *h_r9 = _fc7991.data[_fi7992];
+        TychoArrStr _fc7993 = ((h_checked).f_symrows);
+        Arena _scr7995 = arena_child(&_scope);
+        for (tycho_int _fi7994 = 0; _fi7994 < _fc7993.len; _fi7994 += 1) {
+            arena_reset(&_scr7995);
+            char *h_r9 = _fc7993.data[_fi7994];
             tycho_int h_k9 = 0LL;
             {
                 #if defined(__clang__)
@@ -59452,281 +59453,281 @@ void h_driver__emit_symbols(Arena *_parent, char *h_src_path, char *h_argv0) {
                     h_k9 = (h_k9 + 1LL);
                 }
             }
-            char *h_key9 = tycho_str_copy(&_scr7993, ({ const char *_ss7995 = h_r9; tycho_str_substr(&_scr7993, _ss7995, 0LL, h_k9); }));
-            TychoArrStr h_cur9 = ({ TychoArrStr _l7996 = tycho_arr_str_with_cap(&_scr7993, 0); _l7996.len = 0; _l7996; });
+            char *h_key9 = tycho_str_copy(&_scr7995, ({ const char *_ss7997 = h_r9; tycho_str_substr(&_scr7995, _ss7997, 0LL, h_k9); }));
+            TychoArrStr h_cur9 = ({ TychoArrStr _l7998 = tycho_arr_str_with_cap(&_scr7995, 0); _l7998.len = 0; _l7998; });
             if (tycho_mapM2_has(h_lrows, h_key9)) {
-                TychoArrStr _rec7997 = tycho_arr_str_copy(&_scr7993, tycho_arr_str_copy(&_scr7993, tycho_mapM2_get(h_lrows, h_key9, (TychoArrStr ){0})));
-                if (h_cur9.data && h_cur9.data != _rec7997.data) arena_recycle(&_scr7993, h_cur9.data, (size_t)h_cur9.cap * sizeof(*h_cur9.data));
-                h_cur9 = _rec7997;
+                TychoArrStr _rec7999 = tycho_arr_str_copy(&_scr7995, tycho_arr_str_copy(&_scr7995, tycho_mapM2_get(h_lrows, h_key9, (TychoArrStr ){0})));
+                if (h_cur9.data && h_cur9.data != _rec7999.data) arena_recycle(&_scr7995, h_cur9.data, (size_t)h_cur9.cap * sizeof(*h_cur9.data));
+                h_cur9 = _rec7999;
             }
-            tycho_arr_str_push(&_scr7993, &(h_cur9), ({ const char *_ss7998 = h_r9; tycho_str_substr(&_scr7993, _ss7998, (h_k9 + 1LL), tycho_str_len(_ss7998)); }));
-            char *h__mk8000 = h_key9;
-            char * _mk8000 = h__mk8000;
-            TychoArrStr _mv8001 = tycho_arr_str_copy(&_scr7993, h_cur9);
-            tycho_mapM2_put(&_scope, &(h_lrows), _mk8000, _mv8001);
+            tycho_arr_str_push(&_scr7995, &(h_cur9), ({ const char *_ss8000 = h_r9; tycho_str_substr(&_scr7995, _ss8000, (h_k9 + 1LL), tycho_str_len(_ss8000)); }));
+            char *h__mk8002 = h_key9;
+            char * _mk8002 = h__mk8002;
+            TychoArrStr _mv8003 = tycho_arr_str_copy(&_scr7995, h_cur9);
+            tycho_mapM2_put(&_scope, &(h_lrows), _mk8002, _mv8003);
         }
-        arena_free(&_scr7993);
+        arena_free(&_scr7995);
     }
-    TychoMapM3 h_imp = ({ TychoMapM3 _mp8002 = tycho_mapM3_with_cap(&_scope, 0); _mp8002; });
+    TychoMapM3 h_imp = ({ TychoMapM3 _mp8004 = tycho_mapM3_with_cap(&_scope, 0); _mp8004; });
     {
-        TychoArrK19 _fc8003 = ((h_p).f_files);
-        Arena _scr8005 = arena_child(&_scope);
-        for (tycho_int _fi8004 = 0; _fi8004 < _fc8003.len; _fi8004 += 1) {
-            arena_reset(&_scr8005);
-            S_types__File h_f0 = _fc8003.data[_fi8004];
+        TychoArrK19 _fc8005 = ((h_p).f_files);
+        Arena _scr8007 = arena_child(&_scope);
+        for (tycho_int _fi8006 = 0; _fi8006 < _fc8005.len; _fi8006 += 1) {
+            arena_reset(&_scr8007);
+            S_types__File h_f0 = _fc8005.data[_fi8006];
             if ((!tycho_str_eq(((h_f0).f_pkg), ((h_p).f_entry_pkg))) || (!tycho_str_eq(((h_f0).f_dir), ((h_p).f_entry_dir)))) {
                 continue;
             }
             {
-                TychoArrK7 _fc8006 = ((((h_f0).f_unit)).f_imports);
-                Arena _scr8008 = arena_child(&_scr8005);
-                for (tycho_int _fi8007 = 0; _fi8007 < _fc8006.len; _fi8007 += 1) {
-                    arena_reset(&_scr8008);
-                    S_ast__ImportD h_im = _fc8006.data[_fi8007];
-                    char *h_b9 = h_types__pkg_basename(&_scr8008, ((h_im).f_path));
+                TychoArrK7 _fc8008 = ((((h_f0).f_unit)).f_imports);
+                Arena _scr8010 = arena_child(&_scr8007);
+                for (tycho_int _fi8009 = 0; _fi8009 < _fc8008.len; _fi8009 += 1) {
+                    arena_reset(&_scr8010);
+                    S_ast__ImportD h_im = _fc8008.data[_fi8009];
+                    char *h_b9 = h_types__pkg_basename(&_scr8010, ((h_im).f_path));
                     if (tycho_str_len(((h_im).f_alias)) > 0LL) {
-                        char *h__mk8010 = h_b9;
-                        char * _mk8010 = h__mk8010;
-                        char * _mv8011 = tycho_str_copy(&_scr8008, ((h_im).f_alias));
-                        tycho_mapM3_put(&_scope, &(h_imp), _mk8010, _mv8011);
+                        char *h__mk8012 = h_b9;
+                        char * _mk8012 = h__mk8012;
+                        char * _mv8013 = tycho_str_copy(&_scr8010, ((h_im).f_alias));
+                        tycho_mapM3_put(&_scope, &(h_imp), _mk8012, _mv8013);
                     } else {
-                        char *h__mk8013 = h_b9;
-                        char * _mk8013 = h__mk8013;
-                        char * _mv8014 = h_b9;
-                        tycho_mapM3_put(&_scope, &(h_imp), _mk8013, _mv8014);
+                        char *h__mk8015 = h_b9;
+                        char * _mk8015 = h__mk8015;
+                        char * _mv8016 = h_b9;
+                        tycho_mapM3_put(&_scope, &(h_imp), _mk8015, _mv8016);
                     }
                 }
-                arena_free(&_scr8008);
+                arena_free(&_scr8010);
             }
         }
-        arena_free(&_scr8005);
+        arena_free(&_scr8007);
     }
     {
-        TychoArrK19 _fc8015 = ((h_p).f_files);
-        Arena _scr8017 = arena_child(&_scope);
-        for (tycho_int _fi8016 = 0; _fi8016 < _fc8015.len; _fi8016 += 1) {
-            arena_reset(&_scr8017);
-            S_types__File h_f = _fc8015.data[_fi8016];
-            char *h_pk = tycho_str_copy(&_scr8017, ((h_f).f_pkg));
-            TychoMapM0 h_own = ({ TychoMapM0 _mp8018 = tycho_mapM0_with_cap(&_scope, 0); _mp8018; });
+        TychoArrK19 _fc8017 = ((h_p).f_files);
+        Arena _scr8019 = arena_child(&_scope);
+        for (tycho_int _fi8018 = 0; _fi8018 < _fc8017.len; _fi8018 += 1) {
+            arena_reset(&_scr8019);
+            S_types__File h_f = _fc8017.data[_fi8018];
+            char *h_pk = tycho_str_copy(&_scr8019, ((h_f).f_pkg));
+            TychoMapM0 h_own = ({ TychoMapM0 _mp8020 = tycho_mapM0_with_cap(&_scope, 0); _mp8020; });
             {
-                TychoArrK10 _fc8019 = ((((h_f).f_unit)).f_structs);
-                for (tycho_int _fi8020 = 0; _fi8020 < _fc8019.len; _fi8020 += 1) {
-                    S_ast__StructD h_sd0 = _fc8019.data[_fi8020];
-                    char *h__mk8023 = ((h_sd0).f_name);
-                    char * _mk8023 = h__mk8023;
-                    int _mv8024 = 1;
-                    tycho_mapM0_put_fresh(&_scr8017, &(h_own), _mk8023, _mv8024);
+                TychoArrK10 _fc8021 = ((((h_f).f_unit)).f_structs);
+                for (tycho_int _fi8022 = 0; _fi8022 < _fc8021.len; _fi8022 += 1) {
+                    S_ast__StructD h_sd0 = _fc8021.data[_fi8022];
+                    char *h__mk8025 = ((h_sd0).f_name);
+                    char * _mk8025 = h__mk8025;
+                    int _mv8026 = 1;
+                    tycho_mapM0_put_fresh(&_scr8019, &(h_own), _mk8025, _mv8026);
                 }
             }
             {
-                TychoArrK12 _fc8025 = ((((h_f).f_unit)).f_enums);
-                for (tycho_int _fi8026 = 0; _fi8026 < _fc8025.len; _fi8026 += 1) {
-                    S_ast__EnumD h_ed0 = _fc8025.data[_fi8026];
-                    char *h__mk8029 = ((h_ed0).f_name);
-                    char * _mk8029 = h__mk8029;
-                    int _mv8030 = 1;
-                    tycho_mapM0_put_fresh(&_scr8017, &(h_own), _mk8029, _mv8030);
+                TychoArrK12 _fc8027 = ((((h_f).f_unit)).f_enums);
+                for (tycho_int _fi8028 = 0; _fi8028 < _fc8027.len; _fi8028 += 1) {
+                    S_ast__EnumD h_ed0 = _fc8027.data[_fi8028];
+                    char *h__mk8031 = ((h_ed0).f_name);
+                    char * _mk8031 = h__mk8031;
+                    int _mv8032 = 1;
+                    tycho_mapM0_put_fresh(&_scr8019, &(h_own), _mk8031, _mv8032);
                 }
             }
             {
-                TychoArrK13 _fc8031 = ((((h_f).f_unit)).f_newtypes);
-                for (tycho_int _fi8032 = 0; _fi8032 < _fc8031.len; _fi8032 += 1) {
-                    S_ast__NewtypeD h_nd0 = _fc8031.data[_fi8032];
-                    char *h__mk8035 = ((h_nd0).f_name);
-                    char * _mk8035 = h__mk8035;
-                    int _mv8036 = 1;
-                    tycho_mapM0_put_fresh(&_scr8017, &(h_own), _mk8035, _mv8036);
+                TychoArrK13 _fc8033 = ((((h_f).f_unit)).f_newtypes);
+                for (tycho_int _fi8034 = 0; _fi8034 < _fc8033.len; _fi8034 += 1) {
+                    S_ast__NewtypeD h_nd0 = _fc8033.data[_fi8034];
+                    char *h__mk8037 = ((h_nd0).f_name);
+                    char * _mk8037 = h__mk8037;
+                    int _mv8038 = 1;
+                    tycho_mapM0_put_fresh(&_scr8019, &(h_own), _mk8037, _mv8038);
                 }
             }
             {
-                TychoArrK14 _fc8037 = ((((h_f).f_unit)).f_handles);
-                for (tycho_int _fi8038 = 0; _fi8038 < _fc8037.len; _fi8038 += 1) {
-                    S_ast__HandleD h_hd0 = _fc8037.data[_fi8038];
-                    char *h__mk8041 = ((h_hd0).f_name);
-                    char * _mk8041 = h__mk8041;
-                    int _mv8042 = 1;
-                    tycho_mapM0_put_fresh(&_scr8017, &(h_own), _mk8041, _mv8042);
+                TychoArrK14 _fc8039 = ((((h_f).f_unit)).f_handles);
+                for (tycho_int _fi8040 = 0; _fi8040 < _fc8039.len; _fi8040 += 1) {
+                    S_ast__HandleD h_hd0 = _fc8039.data[_fi8040];
+                    char *h__mk8043 = ((h_hd0).f_name);
+                    char * _mk8043 = h__mk8043;
+                    int _mv8044 = 1;
+                    tycho_mapM0_put_fresh(&_scr8019, &(h_own), _mk8043, _mv8044);
                 }
             }
             {
-                TychoArrK8 _fc8043 = ((((h_f).f_unit)).f_fns);
-                Arena _scr8045 = arena_child(&_scr8017);
-                for (tycho_int _fi8044 = 0; _fi8044 < _fc8043.len; _fi8044 += 1) {
-                    arena_reset(&_scr8045);
-                    S_ast__Fn h_fd = _fc8043.data[_fi8044];
-                    char *h_nm9 = tycho_str_concat(&_scr8045, ((h_f).f_prefix), ((h_fd).f_name));
+                TychoArrK8 _fc8045 = ((((h_f).f_unit)).f_fns);
+                Arena _scr8047 = arena_child(&_scr8019);
+                for (tycho_int _fi8046 = 0; _fi8046 < _fc8045.len; _fi8046 += 1) {
+                    arena_reset(&_scr8047);
+                    S_ast__Fn h_fd = _fc8045.data[_fi8046];
+                    char *h_nm9 = tycho_str_concat(&_scr8047, ((h_f).f_prefix), ((h_fd).f_name));
                     if ((h_fd).f_is_extern) {
-                        h_nm9 = tycho_str_copy(&_scr8045, ((h_fd).f_name));
+                        h_nm9 = tycho_str_copy(&_scr8047, ((h_fd).f_name));
                     }
-                    char *h_sig = tycho_str_concat3(&_scr8045, TYCHO_LIT("fn "), h_nm9, TYCHO_LIT("("));
+                    char *h_sig = tycho_str_concat3(&_scr8047, TYCHO_LIT("fn "), h_nm9, TYCHO_LIT("("));
                     TychoStrAppend _append_h_sig = {0};
                     {
                         tycho_int h_j = 0LL;
-                        Arena _scr8046 = arena_child(&_scr8045); _scr8046.name = "driver__emit_symbols:1";
+                        Arena _scr8048 = arena_child(&_scr8047); _scr8048.name = "driver__emit_symbols:1";
                         #if defined(__clang__)
                         #pragma clang loop unroll_count(4)
                         #elif defined(__GNUC__)
                         #pragma GCC unroll 4
                         #endif
                         while (h_j < ((((h_fd).f_params)).len)) {
-                            arena_reset(&_scr8046);
+                            arena_reset(&_scr8048);
                             {
                                 if (h_j > 0LL) {
-                                    tycho_str_append(&_scr8045, &h_sig, &_append_h_sig, TYCHO_LIT(", "));
+                                    tycho_str_append(&_scr8047, &h_sig, &_append_h_sig, TYCHO_LIT(", "));
                                 }
                                 char *h_pt = TYCHO_LIT("?");
                                 if (((((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_ty)).len) == 1LL) {
-                                    h_pt = h_driver___ty_src(&_scr8046, tycho_arr_K1_get(((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_ty), 0LL), h_pk, h_own, h_imp);
+                                    h_pt = h_driver___ty_src(&_scr8048, tycho_arr_K1_get(((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_ty), 0LL), h_pk, h_own, h_imp);
                                     if ((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_is_variadic) {
-                                        h_pt = tycho_str_concat3(&_scr8046, TYCHO_LIT("["), h_pt, TYCHO_LIT("]"));
+                                        h_pt = tycho_str_concat3(&_scr8048, TYCHO_LIT("["), h_pt, TYCHO_LIT("]"));
                                     }
                                 }
-                                char* _ap8047 = ((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_name);
-                                char* _ap8048 = TYCHO_LIT(": ");
-                                char* _ap8049 = h_pt;
-                                tycho_str_append(&_scr8045, &h_sig, &_append_h_sig, _ap8047);
-                                tycho_str_append(&_scr8045, &h_sig, &_append_h_sig, _ap8048);
-                                tycho_str_append(&_scr8045, &h_sig, &_append_h_sig, _ap8049);
+                                char* _ap8049 = ((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_name);
+                                char* _ap8050 = TYCHO_LIT(": ");
+                                char* _ap8051 = h_pt;
+                                tycho_str_append(&_scr8047, &h_sig, &_append_h_sig, _ap8049);
+                                tycho_str_append(&_scr8047, &h_sig, &_append_h_sig, _ap8050);
+                                tycho_str_append(&_scr8047, &h_sig, &_append_h_sig, _ap8051);
                             }
                             h_j = (h_j + 1LL);
                         }
-                        arena_free(&_scr8046);
+                        arena_free(&_scr8048);
                     }
-                    tycho_str_append(&_scr8045, &h_sig, &_append_h_sig, TYCHO_LIT(")"));
+                    tycho_str_append(&_scr8047, &h_sig, &_append_h_sig, TYCHO_LIT(")"));
                     if (((((h_fd).f_ret)).len) == 1LL) {
-                        char* _ap8050 = TYCHO_LIT(" -> ");
-                        char* _ap8051 = h_driver___ty_src(&_scr8045, tycho_arr_K1_get(((h_fd).f_ret), 0LL), h_pk, h_own, h_imp);
-                        tycho_str_append(&_scr8045, &h_sig, &_append_h_sig, _ap8050);
-                        tycho_str_append(&_scr8045, &h_sig, &_append_h_sig, _ap8051);
+                        char* _ap8052 = TYCHO_LIT(" -> ");
+                        char* _ap8053 = h_driver___ty_src(&_scr8047, tycho_arr_K1_get(((h_fd).f_ret), 0LL), h_pk, h_own, h_imp);
+                        tycho_str_append(&_scr8047, &h_sig, &_append_h_sig, _ap8052);
+                        tycho_str_append(&_scr8047, &h_sig, &_append_h_sig, _ap8053);
                     }
-                    tycho_print_s(tycho_str_concat(&_scr8045, tycho_str_concat6(&_scr8045, TYCHO_LIT("fn\t"), h_nm9, TYCHO_LIT("\t"), tycho_int_to_str(&_scr8045, ((h_fd).f_line)), TYCHO_LIT("\t"), h_sig), TYCHO_LIT("\n")));
+                    tycho_print_s(tycho_str_concat(&_scr8047, tycho_str_concat6(&_scr8047, TYCHO_LIT("fn\t"), h_nm9, TYCHO_LIT("\t"), tycho_int_to_str(&_scr8047, ((h_fd).f_line)), TYCHO_LIT("\t"), h_sig), TYCHO_LIT("\n")));
                     {
                         tycho_int h_j = 0LL;
-                        Arena _scr8052 = arena_child(&_scr8045); _scr8052.name = "driver__emit_symbols:2";
+                        Arena _scr8054 = arena_child(&_scr8047); _scr8054.name = "driver__emit_symbols:2";
                         #if defined(__clang__)
                         #pragma clang loop unroll_count(4)
                         #elif defined(__GNUC__)
                         #pragma GCC unroll 4
                         #endif
                         while (h_j < ((((h_fd).f_params)).len)) {
-                            arena_reset(&_scr8052);
+                            arena_reset(&_scr8054);
                             {
                                 char *h_pt2 = TYCHO_LIT("?");
                                 if (((((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_ty)).len) == 1LL) {
-                                    h_pt2 = h_driver___ty_src(&_scr8052, tycho_arr_K1_get(((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_ty), 0LL), h_pk, h_own, h_imp);
+                                    h_pt2 = h_driver___ty_src(&_scr8054, tycho_arr_K1_get(((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_ty), 0LL), h_pk, h_own, h_imp);
                                     if ((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_is_variadic) {
-                                        h_pt2 = tycho_str_concat3(&_scr8052, TYCHO_LIT("["), h_pt2, TYCHO_LIT("]"));
+                                        h_pt2 = tycho_str_concat3(&_scr8054, TYCHO_LIT("["), h_pt2, TYCHO_LIT("]"));
                                     }
                                 }
-                                tycho_print_s(tycho_str_concat(&_scr8052, tycho_str_concat6(&_scr8052, TYCHO_LIT("param\t"), ((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_name), TYCHO_LIT("\t"), h_pt2, TYCHO_LIT("\t"), tycho_int_to_str(&_scr8052, ((h_fd).f_line))), TYCHO_LIT("\n")));
+                                tycho_print_s(tycho_str_concat(&_scr8054, tycho_str_concat6(&_scr8054, TYCHO_LIT("param\t"), ((tycho_arr_K2_get(((h_fd).f_params), h_j)).f_name), TYCHO_LIT("\t"), h_pt2, TYCHO_LIT("\t"), tycho_int_to_str(&_scr8054, ((h_fd).f_line))), TYCHO_LIT("\n")));
                             }
                             h_j = (h_j + 1LL);
                         }
-                        arena_free(&_scr8052);
+                        arena_free(&_scr8054);
                     }
                     if (tycho_mapM2_has(h_lrows, h_nm9)) {
                         {
-                            TychoArrStr _fc8053 = tycho_arr_str_copy(&_scr8045, tycho_mapM2_get(h_lrows, h_nm9, (TychoArrStr ){0}));
-                            Arena _scr8055 = arena_child(&_scr8045);
-                            for (tycho_int _fi8054 = 0; _fi8054 < _fc8053.len; _fi8054 += 1) {
-                                arena_reset(&_scr8055);
-                                char *h_lr = _fc8053.data[_fi8054];
-                                tycho_print_s(tycho_str_concat(&_scr8055, h_lr, TYCHO_LIT("\n")));
+                            TychoArrStr _fc8055 = tycho_arr_str_copy(&_scr8047, tycho_mapM2_get(h_lrows, h_nm9, (TychoArrStr ){0}));
+                            Arena _scr8057 = arena_child(&_scr8047);
+                            for (tycho_int _fi8056 = 0; _fi8056 < _fc8055.len; _fi8056 += 1) {
+                                arena_reset(&_scr8057);
+                                char *h_lr = _fc8055.data[_fi8056];
+                                tycho_print_s(tycho_str_concat(&_scr8057, h_lr, TYCHO_LIT("\n")));
                             }
-                            arena_free(&_scr8055);
+                            arena_free(&_scr8057);
                         }
                     }
                 }
-                arena_free(&_scr8045);
+                arena_free(&_scr8047);
             }
         }
-        arena_free(&_scr8017);
+        arena_free(&_scr8019);
     }
     {
-        TychoArrK19 _fc8056 = ((h_p).f_files);
-        Arena _scr8058 = arena_child(&_scope);
-        for (tycho_int _fi8057 = 0; _fi8057 < _fc8056.len; _fi8057 += 1) {
-            arena_reset(&_scr8058);
-            S_types__File h_f = _fc8056.data[_fi8057];
-            char *h_pk = tycho_str_copy(&_scr8058, ((h_f).f_pkg));
-            TychoMapM0 h_own = ({ TychoMapM0 _mp8059 = tycho_mapM0_with_cap(&_scope, 0); _mp8059; });
+        TychoArrK19 _fc8058 = ((h_p).f_files);
+        Arena _scr8060 = arena_child(&_scope);
+        for (tycho_int _fi8059 = 0; _fi8059 < _fc8058.len; _fi8059 += 1) {
+            arena_reset(&_scr8060);
+            S_types__File h_f = _fc8058.data[_fi8059];
+            char *h_pk = tycho_str_copy(&_scr8060, ((h_f).f_pkg));
+            TychoMapM0 h_own = ({ TychoMapM0 _mp8061 = tycho_mapM0_with_cap(&_scope, 0); _mp8061; });
             {
-                TychoArrK10 _fc8060 = ((((h_f).f_unit)).f_structs);
-                for (tycho_int _fi8061 = 0; _fi8061 < _fc8060.len; _fi8061 += 1) {
-                    S_ast__StructD h_sd0 = _fc8060.data[_fi8061];
-                    char *h__mk8064 = ((h_sd0).f_name);
-                    char * _mk8064 = h__mk8064;
-                    int _mv8065 = 1;
-                    tycho_mapM0_put_fresh(&_scr8058, &(h_own), _mk8064, _mv8065);
+                TychoArrK10 _fc8062 = ((((h_f).f_unit)).f_structs);
+                for (tycho_int _fi8063 = 0; _fi8063 < _fc8062.len; _fi8063 += 1) {
+                    S_ast__StructD h_sd0 = _fc8062.data[_fi8063];
+                    char *h__mk8066 = ((h_sd0).f_name);
+                    char * _mk8066 = h__mk8066;
+                    int _mv8067 = 1;
+                    tycho_mapM0_put_fresh(&_scr8060, &(h_own), _mk8066, _mv8067);
                 }
             }
             {
-                TychoArrK12 _fc8066 = ((((h_f).f_unit)).f_enums);
-                for (tycho_int _fi8067 = 0; _fi8067 < _fc8066.len; _fi8067 += 1) {
-                    S_ast__EnumD h_ed0 = _fc8066.data[_fi8067];
-                    char *h__mk8070 = ((h_ed0).f_name);
-                    char * _mk8070 = h__mk8070;
-                    int _mv8071 = 1;
-                    tycho_mapM0_put_fresh(&_scr8058, &(h_own), _mk8070, _mv8071);
+                TychoArrK12 _fc8068 = ((((h_f).f_unit)).f_enums);
+                for (tycho_int _fi8069 = 0; _fi8069 < _fc8068.len; _fi8069 += 1) {
+                    S_ast__EnumD h_ed0 = _fc8068.data[_fi8069];
+                    char *h__mk8072 = ((h_ed0).f_name);
+                    char * _mk8072 = h__mk8072;
+                    int _mv8073 = 1;
+                    tycho_mapM0_put_fresh(&_scr8060, &(h_own), _mk8072, _mv8073);
                 }
             }
             {
-                TychoArrK10 _fc8072 = ((((h_f).f_unit)).f_structs);
-                Arena _scr8074 = arena_child(&_scr8058);
-                for (tycho_int _fi8073 = 0; _fi8073 < _fc8072.len; _fi8073 += 1) {
-                    arena_reset(&_scr8074);
-                    S_ast__StructD h_sd = _fc8072.data[_fi8073];
-                    tycho_print_s(tycho_str_concat6(&_scr8074, TYCHO_LIT("struct\t"), ((h_f).f_prefix), ((h_sd).f_name), TYCHO_LIT("\t"), tycho_int_to_str(&_scr8074, ((h_sd).f_line)), TYCHO_LIT("\n")));
+                TychoArrK10 _fc8074 = ((((h_f).f_unit)).f_structs);
+                Arena _scr8076 = arena_child(&_scr8060);
+                for (tycho_int _fi8075 = 0; _fi8075 < _fc8074.len; _fi8075 += 1) {
+                    arena_reset(&_scr8076);
+                    S_ast__StructD h_sd = _fc8074.data[_fi8075];
+                    tycho_print_s(tycho_str_concat6(&_scr8076, TYCHO_LIT("struct\t"), ((h_f).f_prefix), ((h_sd).f_name), TYCHO_LIT("\t"), tycho_int_to_str(&_scr8076, ((h_sd).f_line)), TYCHO_LIT("\n")));
                     {
                         tycho_int h_j = 0LL;
-                        Arena _scr8075 = arena_child(&_scr8074); _scr8075.name = "driver__emit_symbols:3";
+                        Arena _scr8077 = arena_child(&_scr8076); _scr8077.name = "driver__emit_symbols:3";
                         #if defined(__clang__)
                         #pragma clang loop unroll_count(4)
                         #elif defined(__GNUC__)
                         #pragma GCC unroll 4
                         #endif
                         while (h_j < ((((h_sd).f_fields)).len)) {
-                            arena_reset(&_scr8075);
+                            arena_reset(&_scr8077);
                             {
-                                tycho_print_s(tycho_str_concat3(&_scr8075, tycho_str_concat6(&_scr8075, TYCHO_LIT("field\t"), ((h_f).f_prefix), ((h_sd).f_name), TYCHO_LIT("\t"), ((tycho_arr_K9_get(((h_sd).f_fields), h_j)).f_name), TYCHO_LIT("\t")), h_driver___ty_src(&_scr8075, ((tycho_arr_K9_get(((h_sd).f_fields), h_j)).f_ty), h_pk, h_own, h_imp), TYCHO_LIT("\n")));
+                                tycho_print_s(tycho_str_concat3(&_scr8077, tycho_str_concat6(&_scr8077, TYCHO_LIT("field\t"), ((h_f).f_prefix), ((h_sd).f_name), TYCHO_LIT("\t"), ((tycho_arr_K9_get(((h_sd).f_fields), h_j)).f_name), TYCHO_LIT("\t")), h_driver___ty_src(&_scr8077, ((tycho_arr_K9_get(((h_sd).f_fields), h_j)).f_ty), h_pk, h_own, h_imp), TYCHO_LIT("\n")));
                             }
                             h_j = (h_j + 1LL);
                         }
-                        arena_free(&_scr8075);
+                        arena_free(&_scr8077);
                     }
                 }
-                arena_free(&_scr8074);
+                arena_free(&_scr8076);
             }
             {
-                TychoArrK12 _fc8076 = ((((h_f).f_unit)).f_enums);
-                Arena _scr8078 = arena_child(&_scr8058);
-                for (tycho_int _fi8077 = 0; _fi8077 < _fc8076.len; _fi8077 += 1) {
-                    arena_reset(&_scr8078);
-                    S_ast__EnumD h_ed = _fc8076.data[_fi8077];
-                    tycho_print_s(tycho_str_concat6(&_scr8078, TYCHO_LIT("enum\t"), ((h_f).f_prefix), ((h_ed).f_name), TYCHO_LIT("\t"), tycho_int_to_str(&_scr8078, ((h_ed).f_line)), TYCHO_LIT("\n")));
+                TychoArrK12 _fc8078 = ((((h_f).f_unit)).f_enums);
+                Arena _scr8080 = arena_child(&_scr8060);
+                for (tycho_int _fi8079 = 0; _fi8079 < _fc8078.len; _fi8079 += 1) {
+                    arena_reset(&_scr8080);
+                    S_ast__EnumD h_ed = _fc8078.data[_fi8079];
+                    tycho_print_s(tycho_str_concat6(&_scr8080, TYCHO_LIT("enum\t"), ((h_f).f_prefix), ((h_ed).f_name), TYCHO_LIT("\t"), tycho_int_to_str(&_scr8080, ((h_ed).f_line)), TYCHO_LIT("\n")));
                     {
                         tycho_int h_j = 0LL;
-                        Arena _scr8079 = arena_child(&_scr8078); _scr8079.name = "driver__emit_symbols:4";
+                        Arena _scr8081 = arena_child(&_scr8080); _scr8081.name = "driver__emit_symbols:4";
                         #if defined(__clang__)
                         #pragma clang loop unroll_count(4)
                         #elif defined(__GNUC__)
                         #pragma GCC unroll 4
                         #endif
                         while (h_j < ((((h_ed).f_variants)).len)) {
-                            arena_reset(&_scr8079);
+                            arena_reset(&_scr8081);
                             {
-                                tycho_print_s(tycho_str_concat(&_scr8079, tycho_str_concat6(&_scr8079, TYCHO_LIT("variant\t"), ((h_f).f_prefix), ((h_ed).f_name), TYCHO_LIT("\t"), ((h_f).f_prefix), ((tycho_arr_K11_get(((h_ed).f_variants), h_j)).f_name)), TYCHO_LIT("\n")));
+                                tycho_print_s(tycho_str_concat(&_scr8081, tycho_str_concat6(&_scr8081, TYCHO_LIT("variant\t"), ((h_f).f_prefix), ((h_ed).f_name), TYCHO_LIT("\t"), ((h_f).f_prefix), ((tycho_arr_K11_get(((h_ed).f_variants), h_j)).f_name)), TYCHO_LIT("\n")));
                             }
                             h_j = (h_j + 1LL);
                         }
-                        arena_free(&_scr8079);
+                        arena_free(&_scr8081);
                     }
                 }
-                arena_free(&_scr8078);
+                arena_free(&_scr8080);
             }
         }
-        arena_free(&_scr8058);
+        arena_free(&_scr8060);
     }
     if (_scope.head) arena_free(&_scope);
 }
@@ -59739,23 +59740,23 @@ char *h__strip_ext(Arena *_parent, char *h_p) {
     Arena _scope = arena_child(_parent); _scope.name = "_strip_ext";
     tycho_int h_i = tycho_str_len(h_p);
     {
-        Arena _scr8080 = arena_child(&_scope); _scr8080.name = "_strip_ext:0";
+        Arena _scr8082 = arena_child(&_scope); _scr8082.name = "_strip_ext:0";
         #if defined(__clang__)
         #pragma clang loop unroll_count(4)
         #elif defined(__GNUC__)
         #pragma GCC unroll 4
         #endif
         while (h_i > 0LL) {
-            arena_reset(&_scr8080);
+            arena_reset(&_scr8082);
             h_i = (h_i - 1LL);
             if (tycho_str_get(h_p, h_i) == 46LL) {
-                { char *_ret = tycho_str_copy(_parent, ({ const char *_ss8081 = h_p; tycho_str_substr(&_scr8080, _ss8081, 0LL, h_i); })); arena_free(&_scr8080); arena_free(&_scope); return _ret; }
+                { char *_ret = tycho_str_copy(_parent, ({ const char *_ss8083 = h_p; tycho_str_substr(&_scr8082, _ss8083, 0LL, h_i); })); arena_free(&_scr8082); arena_free(&_scope); return _ret; }
             }
             if (tycho_str_get(h_p, h_i) == 47LL) {
                 { break; }
             }
         }
-        arena_free(&_scr8080);
+        arena_free(&_scr8082);
     }
     { char *_ret = tycho_str_copy(_parent, h_p); arena_free(&_scope); return _ret; }
 }
@@ -59778,8 +59779,8 @@ void h_main(Arena *_parent) {
     char *h_rt = TYCHO_LIT("runtime/tycho_rt.c");
     int h_emit_c = 0;
     char *h_cc9 = TYCHO_LIT("cc");
-    TychoArrStr h_xtra = ({ TychoArrStr _l8082 = tycho_arr_str_with_cap(&_scope, 0); _l8082.len = 0; _l8082; });
-    TychoArrStr h_shim9 = ({ TychoArrStr _l8083 = tycho_arr_str_with_cap(&_scope, 0); _l8083.len = 0; _l8083; });
+    TychoArrStr h_xtra = ({ TychoArrStr _l8084 = tycho_arr_str_with_cap(&_scope, 0); _l8084.len = 0; _l8084; });
+    TychoArrStr h_shim9 = ({ TychoArrStr _l8085 = tycho_arr_str_with_cap(&_scope, 0); _l8085.len = 0; _l8085; });
     int h_nat = 0;
     char *h_tgt = TYCHO_LIT("");
     int h_dbg = 0;
@@ -59787,12 +59788,12 @@ void h_main(Arena *_parent) {
     int h_eof = 0;
     tycho_int h_i = 1LL;
     {
-        Arena _scr8084 = arena_child(&_scope); _scr8084.name = "main:0";
-        char * *_fd8085 = h_xtra.data; tycho_int _fd8085l = h_xtra.len, _fd8085c = h_xtra.cap;
-        char * *_fd8086 = h_shim9.data; tycho_int _fd8086l = h_shim9.len, _fd8086c = h_shim9.cap;
+        Arena _scr8086 = arena_child(&_scope); _scr8086.name = "main:0";
+        char * *_fd8087 = h_xtra.data; tycho_int _fd8087l = h_xtra.len, _fd8087c = h_xtra.cap;
+        char * *_fd8088 = h_shim9.data; tycho_int _fd8088l = h_shim9.len, _fd8088c = h_shim9.cap;
         while (h_i < ((h_av).len)) {
-            arena_reset(&_scr8084);
-            char *h_a = tycho_str_copy(&_scr8084, tycho_arr_str_get(h_av, h_i));
+            arena_reset(&_scr8086);
+            char *h_a = tycho_str_copy(&_scr8086, tycho_arr_str_get(h_av, h_i));
             if ((!h_eof) && tycho_str_eq(h_a, TYCHO_LIT("--"))) {
                 h_eof = 1;
             } else if (h_eof) {
@@ -59828,7 +59829,7 @@ void h_main(Arena *_parent) {
             } else if (tycho_str_eq(h_a, TYCHO_LIT("-o"))) {
                 h_i = (h_i + 1LL);
                 if (h_i >= ((h_av).len)) {
-                    h_usage(&_scr8084);
+                    h_usage(&_scr8086);
                 }
                 h_out = tycho_str_copy(&_scope, tycho_arr_str_get(h_av, h_i));
                 h_out_set = 1;
@@ -59840,84 +59841,84 @@ void h_main(Arena *_parent) {
                     tycho_die(TYCHO_LIT("tychoc: --target: missing level (want one of: baseline x86-64-v2 x86-64-v3 x86-64-v4)"));
                 }
                 h_tgt = tycho_str_copy(&_scope, tycho_arr_str_get(h_av, h_i));
-                if (!h_driver__target_known(&_scr8084, h_tgt)) {
-                    tycho_die(tycho_str_concat3(&_scr8084, TYCHO_LIT("tychoc: --target: unknown level '"), h_tgt, TYCHO_LIT("' (want one of: baseline x86-64-v2 x86-64-v3 x86-64-v4)")));
+                if (!h_driver__target_known(&_scr8086, h_tgt)) {
+                    tycho_die(tycho_str_concat3(&_scr8086, TYCHO_LIT("tychoc: --target: unknown level '"), h_tgt, TYCHO_LIT("' (want one of: baseline x86-64-v2 x86-64-v3 x86-64-v4)")));
                 }
             } else if (tycho_str_eq(h_a, TYCHO_LIT("-g"))) {
                 h_dbg = 1;
             } else if (tycho_str_eq(h_a, TYCHO_LIT("--version"))) {
-                tycho_print_s(tycho_str_concat3(&_scr8084, TYCHO_LIT("tychoc "), h_VERSION(&_scr8084), TYCHO_LIT("\n")));
-                { arena_free(&_scr8084); if (_scope.head) arena_free(&_scope); return; }
+                tycho_print_s(tycho_str_concat3(&_scr8086, TYCHO_LIT("tychoc "), h_VERSION(&_scr8086), TYCHO_LIT("\n")));
+                { arena_free(&_scr8086); if (_scope.head) arena_free(&_scope); return; }
             } else if (tycho_str_eq(h_a, TYCHO_LIT("--help")) || tycho_str_eq(h_a, TYCHO_LIT("-h"))) {
-                tycho_print_s(h__help(&_scr8084));
-                { arena_free(&_scr8084); if (_scope.head) arena_free(&_scope); return; }
+                tycho_print_s(h__help(&_scr8086));
+                { arena_free(&_scr8086); if (_scope.head) arena_free(&_scope); return; }
             } else if (tycho_str_eq(h_a, TYCHO_LIT("--symbols"))) {
                 h_mode = TYCHO_LIT("lspsym");
             } else if (tycho_str_eq(h_a, TYCHO_LIT("--cc"))) {
                 h_i = (h_i + 1LL);
                 if (h_i >= ((h_av).len)) {
-                    h_usage(&_scr8084);
+                    h_usage(&_scr8086);
                 }
                 h_cc9 = tycho_str_copy(&_scope, tycho_arr_str_get(h_av, h_i));
             } else if (tycho_str_eq(h_a, TYCHO_LIT("--link"))) {
                 h_i = (h_i + 1LL);
                 if (h_i >= ((h_av).len)) {
-                    h_usage(&_scr8084);
+                    h_usage(&_scr8086);
                 }
-                ({ if (_fd8085l == _fd8085c) tycho_arr_str_grow(&_scope, &_fd8085, &_fd8085c, _fd8085l); _fd8085[_fd8085l++] = tycho_str_concat(&_scope, TYCHO_LIT("-l"), h_driver__cc_safe(&_scope, tycho_arr_str_get(h_av, h_i), TYCHO_LIT("--link"))); });
+                ({ if (_fd8087l == _fd8087c) tycho_arr_str_grow(&_scope, &_fd8087, &_fd8087c, _fd8087l); _fd8087[_fd8087l++] = tycho_str_concat(&_scope, TYCHO_LIT("-l"), h_driver__cc_safe(&_scope, tycho_arr_str_get(h_av, h_i), TYCHO_LIT("--link"))); });
             } else if (tycho_str_eq(h_a, TYCHO_LIT("--shim"))) {
                 h_i = (h_i + 1LL);
                 if (h_i >= ((h_av).len)) {
-                    h_usage(&_scr8084);
+                    h_usage(&_scr8086);
                 }
-                ({ if (_fd8086l == _fd8086c) tycho_arr_str_grow(&_scope, &_fd8086, &_fd8086c, _fd8086l); _fd8086[_fd8086l++] = tycho_str_copy(&_scope, tycho_arr_str_get(h_av, h_i)); });
+                ({ if (_fd8088l == _fd8088c) tycho_arr_str_grow(&_scope, &_fd8088, &_fd8088c, _fd8088l); _fd8088[_fd8088l++] = tycho_str_copy(&_scope, tycho_arr_str_get(h_av, h_i)); });
             } else if (tycho_str_eq(h_a, TYCHO_LIT("--pkg"))) {
                 h_i = (h_i + 1LL);
                 if (h_i >= ((h_av).len)) {
-                    h_usage(&_scr8084);
+                    h_usage(&_scr8086);
                 }
-                S_os__Output h_r9 = h_os__run(&_scr8084, tycho_str_concat(&_scr8084, TYCHO_LIT("pkg-config --cflags --libs "), h_driver__cc_safe(&_scr8084, tycho_arr_str_get(h_av, h_i), TYCHO_LIT("--pkg"))));
+                S_os__Output h_r9 = h_os__run(&_scr8086, tycho_str_concat(&_scr8086, TYCHO_LIT("pkg-config --cflags --libs "), h_driver__cc_safe(&_scr8086, tycho_arr_str_get(h_av, h_i), TYCHO_LIT("--pkg"))));
                 if (!(((h_r9).f_code) == 0LL)) {
-                    tycho_die(tycho_str_concat3(&_scr8084, TYCHO_LIT("tychoc: pkg-config failed for '"), tycho_arr_str_get(h_av, h_i), TYCHO_LIT("'")));
+                    tycho_die(tycho_str_concat3(&_scr8086, TYCHO_LIT("tychoc: pkg-config failed for '"), tycho_arr_str_get(h_av, h_i), TYCHO_LIT("'")));
                 }
                 {
-                    TychoArrStr _fc8087 = tycho_str_split(&_scr8084, h_strings__trim(&_scr8084, ((h_r9).f_out)), TYCHO_LIT(" "));
-                    Arena _scr8089 = arena_child(&_scr8084);
-                    for (tycho_int _fi8088 = 0; _fi8088 < _fc8087.len; _fi8088 += 1) {
-                        arena_reset(&_scr8089);
-                        char *h_w9 = _fc8087.data[_fi8088];
-                        if (tycho_str_len(h_strings__trim(&_scr8089, h_w9)) > 0LL) {
-                            ({ if (_fd8085l == _fd8085c) tycho_arr_str_grow(&_scope, &_fd8085, &_fd8085c, _fd8085l); _fd8085[_fd8085l++] = tycho_str_copy(&_scope, h_strings__trim(&_scope, h_w9)); });
+                    TychoArrStr _fc8089 = tycho_str_split(&_scr8086, h_strings__trim(&_scr8086, ((h_r9).f_out)), TYCHO_LIT(" "));
+                    Arena _scr8091 = arena_child(&_scr8086);
+                    for (tycho_int _fi8090 = 0; _fi8090 < _fc8089.len; _fi8090 += 1) {
+                        arena_reset(&_scr8091);
+                        char *h_w9 = _fc8089.data[_fi8090];
+                        if (tycho_str_len(h_strings__trim(&_scr8091, h_w9)) > 0LL) {
+                            ({ if (_fd8087l == _fd8087c) tycho_arr_str_grow(&_scope, &_fd8087, &_fd8087c, _fd8087l); _fd8087[_fd8087l++] = tycho_str_copy(&_scope, h_strings__trim(&_scope, h_w9)); });
                         }
                     }
-                    arena_free(&_scr8089);
+                    arena_free(&_scr8091);
                 }
-            } else if (h_strings__starts_with(&_scr8084, h_a, TYCHO_LIT("-L")) || h_strings__starts_with(&_scr8084, h_a, TYCHO_LIT("-I"))) {
+            } else if (h_strings__starts_with(&_scr8086, h_a, TYCHO_LIT("-L")) || h_strings__starts_with(&_scr8086, h_a, TYCHO_LIT("-I"))) {
                 if (tycho_str_len(h_a) == 2LL) {
-                    if (((h_i + 1LL) >= ((h_av).len)) || h_strings__starts_with(&_scr8084, tycho_arr_str_get(h_av, (h_i + 1LL)), TYCHO_LIT("-"))) {
-                        tycho_die(tycho_str_concat3(&_scr8084, TYCHO_LIT("tychoc: "), h_a, TYCHO_LIT(" needs a directory argument")));
+                    if (((h_i + 1LL) >= ((h_av).len)) || h_strings__starts_with(&_scr8086, tycho_arr_str_get(h_av, (h_i + 1LL)), TYCHO_LIT("-"))) {
+                        tycho_die(tycho_str_concat3(&_scr8086, TYCHO_LIT("tychoc: "), h_a, TYCHO_LIT(" needs a directory argument")));
                     }
                     h_i = (h_i + 1LL);
-                    ({ if (_fd8085l == _fd8085c) tycho_arr_str_grow(&_scope, &_fd8085, &_fd8085c, _fd8085l); _fd8085[_fd8085l++] = tycho_str_concat(&_scope, h_a, tycho_arr_str_get(h_av, h_i)); });
+                    ({ if (_fd8087l == _fd8087c) tycho_arr_str_grow(&_scope, &_fd8087, &_fd8087c, _fd8087l); _fd8087[_fd8087l++] = tycho_str_concat(&_scope, h_a, tycho_arr_str_get(h_av, h_i)); });
                 } else {
-                    ({ if (_fd8085l == _fd8085c) tycho_arr_str_grow(&_scope, &_fd8085, &_fd8085c, _fd8085l); _fd8085[_fd8085l++] = tycho_str_copy(&_scope, h_a); });
+                    ({ if (_fd8087l == _fd8087c) tycho_arr_str_grow(&_scope, &_fd8087, &_fd8087c, _fd8087l); _fd8087[_fd8087l++] = tycho_str_copy(&_scope, h_a); });
                 }
             } else if (tycho_str_eq(h_a, TYCHO_LIT("--runtime"))) {
                 h_i = (h_i + 1LL);
                 if (h_i >= ((h_av).len)) {
-                    h_usage(&_scr8084);
+                    h_usage(&_scr8086);
                 }
                 h_rt = tycho_str_copy(&_scope, tycho_arr_str_get(h_av, h_i));
-            } else if (h_strings__starts_with(&_scr8084, h_a, TYCHO_LIT("-"))) {
-                tycho_die(tycho_str_concat3(&_scr8084, TYCHO_LIT("tychoc: unknown option '"), h_a, TYCHO_LIT("'")));
+            } else if (h_strings__starts_with(&_scr8086, h_a, TYCHO_LIT("-"))) {
+                tycho_die(tycho_str_concat3(&_scr8086, TYCHO_LIT("tychoc: unknown option '"), h_a, TYCHO_LIT("'")));
             } else {
                 h_src = tycho_str_copy(&_scope, h_a);
             }
             h_i = (h_i + 1LL);
         }
-        h_shim9.data = _fd8086; h_shim9.len = _fd8086l; h_shim9.cap = _fd8086c;
-        h_xtra.data = _fd8085; h_xtra.len = _fd8085l; h_xtra.cap = _fd8085c;
-        arena_free(&_scr8084);
+        h_shim9.data = _fd8088; h_shim9.len = _fd8088l; h_shim9.cap = _fd8088c;
+        h_xtra.data = _fd8087; h_xtra.len = _fd8087l; h_xtra.cap = _fd8087c;
+        arena_free(&_scr8086);
     }
     if (tycho_str_len(h_src) == 0LL) {
         h_usage(_parent);
@@ -60001,95 +60002,95 @@ void h_main(Arena *_parent) {
 TychoArrStr h_ast___ct__own1(Arena *_parent, E_ast__Ty *h_t, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        E_ast__Ty *_m8090 = h_t;
-        if (_m8090->tag == 0) {
-            char *h_n = _m8090->u.V_TPrim.f0;
+        E_ast__Ty *_m8092 = h_t;
+        if (_m8092->tag == 0) {
+            char *h_n = _m8092->u.V_TPrim.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TPrim"));
         }
-        else if (_m8090->tag == 1) {
-            char *h_n = _m8090->u.V_TParam.f0;
+        else if (_m8092->tag == 1) {
+            char *h_n = _m8092->u.V_TParam.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TParam"));
         }
-        else if (_m8090->tag == 2) {
-            char *h_q = _m8090->u.V_TName.f0;
-            char *h_n = _m8090->u.V_TName.f1;
-            TychoArrK1 h_args = _m8090->u.V_TName.f2;
+        else if (_m8092->tag == 2) {
+            char *h_q = _m8092->u.V_TName.f0;
+            char *h_n = _m8092->u.V_TName.f1;
+            TychoArrK1 h_args = _m8092->u.V_TName.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TName"));
             {
-                TychoArrK1 _fc8091 = h_args;
-                for (tycho_int _fi8092 = 0; _fi8092 < _fc8091.len; _fi8092 += 1) {
-                    E_ast__Ty *h_a = _fc8091.data[_fi8092];
-                    TychoArrStr _rec8094 = h_ast___ct__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8094.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8094;
+                TychoArrK1 _fc8093 = h_args;
+                for (tycho_int _fi8094 = 0; _fi8094 < _fc8093.len; _fi8094 += 1) {
+                    E_ast__Ty *h_a = _fc8093.data[_fi8094];
+                    TychoArrStr _rec8096 = h_ast___ct__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8096.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8096;
                 }
             }
         }
-        else if (_m8090->tag == 3) {
-            TychoArrK1 h_k = _m8090->u.V_TArr.f0;
+        else if (_m8092->tag == 3) {
+            TychoArrK1 h_k = _m8092->u.V_TArr.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TArr"));
             h_out = h_ast___ct__own1(_parent, tycho_arr_K1_get(h_k, 0LL), h_out);
         }
-        else if (_m8090->tag == 4) {
-            char *h_sz = _m8090->u.V_TFix.f0;
-            TychoArrK1 h_k = _m8090->u.V_TFix.f1;
+        else if (_m8092->tag == 4) {
+            char *h_sz = _m8092->u.V_TFix.f0;
+            TychoArrK1 h_k = _m8092->u.V_TFix.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TFix"));
             h_out = h_ast___ct__own1(_parent, tycho_arr_K1_get(h_k, 0LL), h_out);
         }
-        else if (_m8090->tag == 5) {
-            TychoArrK1 h_ks = _m8090->u.V_TMap.f0;
+        else if (_m8092->tag == 5) {
+            TychoArrK1 h_ks = _m8092->u.V_TMap.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TMap"));
             {
-                TychoArrK1 _fc8095 = h_ks;
-                for (tycho_int _fi8096 = 0; _fi8096 < _fc8095.len; _fi8096 += 1) {
-                    E_ast__Ty *h_a = _fc8095.data[_fi8096];
-                    TychoArrStr _rec8098 = h_ast___ct__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8098.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8098;
+                TychoArrK1 _fc8097 = h_ks;
+                for (tycho_int _fi8098 = 0; _fi8098 < _fc8097.len; _fi8098 += 1) {
+                    E_ast__Ty *h_a = _fc8097.data[_fi8098];
+                    TychoArrStr _rec8100 = h_ast___ct__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8100.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8100;
                 }
             }
         }
-        else if (_m8090->tag == 6) {
-            TychoArrK1 h_ks = _m8090->u.V_TTup.f0;
+        else if (_m8092->tag == 6) {
+            TychoArrK1 h_ks = _m8092->u.V_TTup.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TTup"));
             {
-                TychoArrK1 _fc8099 = h_ks;
-                for (tycho_int _fi8100 = 0; _fi8100 < _fc8099.len; _fi8100 += 1) {
-                    E_ast__Ty *h_a = _fc8099.data[_fi8100];
-                    TychoArrStr _rec8102 = h_ast___ct__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8102.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8102;
+                TychoArrK1 _fc8101 = h_ks;
+                for (tycho_int _fi8102 = 0; _fi8102 < _fc8101.len; _fi8102 += 1) {
+                    E_ast__Ty *h_a = _fc8101.data[_fi8102];
+                    TychoArrStr _rec8104 = h_ast___ct__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8104.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8104;
                 }
             }
         }
-        else if (_m8090->tag == 7) {
-            int h_hr = _m8090->u.V_TFn.f0;
-            TychoArrK1 h_ks = _m8090->u.V_TFn.f1;
+        else if (_m8092->tag == 7) {
+            int h_hr = _m8092->u.V_TFn.f0;
+            TychoArrK1 h_ks = _m8092->u.V_TFn.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TFn"));
             {
-                TychoArrK1 _fc8103 = h_ks;
-                for (tycho_int _fi8104 = 0; _fi8104 < _fc8103.len; _fi8104 += 1) {
-                    E_ast__Ty *h_a = _fc8103.data[_fi8104];
-                    TychoArrStr _rec8106 = h_ast___ct__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8106.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8106;
+                TychoArrK1 _fc8105 = h_ks;
+                for (tycho_int _fi8106 = 0; _fi8106 < _fc8105.len; _fi8106 += 1) {
+                    E_ast__Ty *h_a = _fc8105.data[_fi8106];
+                    TychoArrStr _rec8108 = h_ast___ct__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8108.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8108;
                 }
             }
         }
-        else if (_m8090->tag == 8) {
-            TychoArrK1 h_k = _m8090->u.V_TSoa.f0;
+        else if (_m8092->tag == 8) {
+            TychoArrK1 h_k = _m8092->u.V_TSoa.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TSoa"));
             h_out = h_ast___ct__own1(_parent, tycho_arr_K1_get(h_k, 0LL), h_out);
         }
-        else if (_m8090->tag == 9) {
-            char *h_sz = _m8090->u.V_TBnd.f0;
-            TychoArrK1 h_k = _m8090->u.V_TBnd.f1;
+        else if (_m8092->tag == 9) {
+            char *h_sz = _m8092->u.V_TBnd.f0;
+            TychoArrK1 h_k = _m8092->u.V_TBnd.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TBnd"));
             h_out = h_ast___ct__own1(_parent, tycho_arr_K1_get(h_k, 0LL), h_out);
         }
-        else if (_m8090->tag == 10) {
-            char *h_sz = _m8090->u.V_TVec.f0;
-            TychoArrK1 h_k = _m8090->u.V_TVec.f1;
+        else if (_m8092->tag == 10) {
+            char *h_sz = _m8092->u.V_TVec.f0;
+            TychoArrK1 h_k = _m8092->u.V_TVec.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("t.TVec"));
             h_out = h_ast___ct__own1(_parent, tycho_arr_K1_get(h_k, 0LL), h_out);
         }
@@ -60101,12 +60102,12 @@ TychoArrStr h_ast___ct__own1(Arena *_parent, E_ast__Ty *h_t, TychoArrStr h_acc) 
 TychoArrStr h_ast___cts__own1(Arena *_parent, TychoArrK1 h_ts, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        TychoArrK1 _fc8107 = h_ts;
-        for (tycho_int _fi8108 = 0; _fi8108 < _fc8107.len; _fi8108 += 1) {
-            E_ast__Ty *h_a = _fc8107.data[_fi8108];
-            TychoArrStr _rec8110 = h_ast___ct__own1(_parent, h_a, h_out);
-            if (h_out.data && h_out.data != _rec8110.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-            h_out = _rec8110;
+        TychoArrK1 _fc8109 = h_ts;
+        for (tycho_int _fi8110 = 0; _fi8110 < _fc8109.len; _fi8110 += 1) {
+            E_ast__Ty *h_a = _fc8109.data[_fi8110];
+            TychoArrStr _rec8112 = h_ast___ct__own1(_parent, h_a, h_out);
+            if (h_out.data && h_out.data != _rec8112.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+            h_out = _rec8112;
         }
     }
     { TychoArrStr _ret = h_out; return _ret; }
@@ -60115,82 +60116,82 @@ TychoArrStr h_ast___cts__own1(Arena *_parent, TychoArrK1 h_ts, TychoArrStr h_acc
 TychoArrStr h_ast___ce__own1(Arena *_parent, E_ast__Expr *h_e, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        E_ast__Expr *_m8111 = h_e;
-        if (_m8111->tag == 0) {
-            tycho_int h_l = _m8111->u.V_IntLit.f0;
-            tycho_int h_v = _m8111->u.V_IntLit.f1;
+        E_ast__Expr *_m8113 = h_e;
+        if (_m8113->tag == 0) {
+            tycho_int h_l = _m8113->u.V_IntLit.f0;
+            tycho_int h_v = _m8113->u.V_IntLit.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.IntLit"));
         }
-        else if (_m8111->tag == 1) {
-            tycho_int h_l = _m8111->u.V_FloatLit.f0;
-            double h_v = _m8111->u.V_FloatLit.f1;
+        else if (_m8113->tag == 1) {
+            tycho_int h_l = _m8113->u.V_FloatLit.f0;
+            double h_v = _m8113->u.V_FloatLit.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.FloatLit"));
         }
-        else if (_m8111->tag == 2) {
-            tycho_int h_l = _m8111->u.V_StrLit.f0;
-            char *h_v = _m8111->u.V_StrLit.f1;
+        else if (_m8113->tag == 2) {
+            tycho_int h_l = _m8113->u.V_StrLit.f0;
+            char *h_v = _m8113->u.V_StrLit.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.StrLit"));
         }
-        else if (_m8111->tag == 3) {
-            tycho_int h_l = _m8111->u.V_FStrLit.f0;
-            char *h_v = _m8111->u.V_FStrLit.f1;
-            TychoArrK0 h_hs = _m8111->u.V_FStrLit.f2;
+        else if (_m8113->tag == 3) {
+            tycho_int h_l = _m8113->u.V_FStrLit.f0;
+            char *h_v = _m8113->u.V_FStrLit.f1;
+            TychoArrK0 h_hs = _m8113->u.V_FStrLit.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.FStrLit"));
             h_out = h_ast___ces__own1(_parent, h_hs, h_out);
         }
-        else if (_m8111->tag == 4) {
-            tycho_int h_l = _m8111->u.V_CharLit.f0;
-            tycho_int h_v = _m8111->u.V_CharLit.f1;
+        else if (_m8113->tag == 4) {
+            tycho_int h_l = _m8113->u.V_CharLit.f0;
+            tycho_int h_v = _m8113->u.V_CharLit.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.CharLit"));
         }
-        else if (_m8111->tag == 5) {
-            tycho_int h_l = _m8111->u.V_BoolLit.f0;
-            int h_v = _m8111->u.V_BoolLit.f1;
+        else if (_m8113->tag == 5) {
+            tycho_int h_l = _m8113->u.V_BoolLit.f0;
+            int h_v = _m8113->u.V_BoolLit.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.BoolLit"));
         }
-        else if (_m8111->tag == 6) {
-            tycho_int h_l = _m8111->u.V_NullLit.f0;
+        else if (_m8113->tag == 6) {
+            tycho_int h_l = _m8113->u.V_NullLit.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.NullLit"));
         }
-        else if (_m8111->tag == 7) {
-            tycho_int h_l = _m8111->u.V_Name.f0;
-            char *h_v = _m8111->u.V_Name.f1;
+        else if (_m8113->tag == 7) {
+            tycho_int h_l = _m8113->u.V_Name.f0;
+            char *h_v = _m8113->u.V_Name.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Name"));
         }
-        else if (_m8111->tag == 8) {
-            tycho_int h_l = _m8111->u.V_Field.f0;
-            TychoArrK0 h_k = _m8111->u.V_Field.f1;
-            char *h_f = _m8111->u.V_Field.f2;
+        else if (_m8113->tag == 8) {
+            tycho_int h_l = _m8113->u.V_Field.f0;
+            TychoArrK0 h_k = _m8113->u.V_Field.f1;
+            char *h_f = _m8113->u.V_Field.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Field"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 9) {
-            tycho_int h_l = _m8111->u.V_TupIdx.f0;
-            TychoArrK0 h_k = _m8111->u.V_TupIdx.f1;
-            tycho_int h_n = _m8111->u.V_TupIdx.f2;
+        else if (_m8113->tag == 9) {
+            tycho_int h_l = _m8113->u.V_TupIdx.f0;
+            TychoArrK0 h_k = _m8113->u.V_TupIdx.f1;
+            tycho_int h_n = _m8113->u.V_TupIdx.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.TupIdx"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 10) {
-            tycho_int h_l = _m8111->u.V_Index.f0;
-            TychoArrK0 h_k = _m8111->u.V_Index.f1;
+        else if (_m8113->tag == 10) {
+            tycho_int h_l = _m8113->u.V_Index.f0;
+            TychoArrK0 h_k = _m8113->u.V_Index.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Index"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 11) {
-            tycho_int h_l = _m8111->u.V_Slice.f0;
-            int h_hl = _m8111->u.V_Slice.f1;
-            int h_hh = _m8111->u.V_Slice.f2;
-            TychoArrK0 h_k = _m8111->u.V_Slice.f3;
+        else if (_m8113->tag == 11) {
+            tycho_int h_l = _m8113->u.V_Slice.f0;
+            int h_hl = _m8113->u.V_Slice.f1;
+            int h_hh = _m8113->u.V_Slice.f2;
+            TychoArrK0 h_k = _m8113->u.V_Slice.f3;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Slice"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 12) {
-            tycho_int h_l = _m8111->u.V_Call.f0;
-            char *h_q = _m8111->u.V_Call.f1;
-            char *h_n = _m8111->u.V_Call.f2;
-            TychoArrK1 h_tas = _m8111->u.V_Call.f3;
-            TychoArrK0 h_args = _m8111->u.V_Call.f4;
+        else if (_m8113->tag == 12) {
+            tycho_int h_l = _m8113->u.V_Call.f0;
+            char *h_q = _m8113->u.V_Call.f1;
+            char *h_n = _m8113->u.V_Call.f2;
+            TychoArrK1 h_tas = _m8113->u.V_Call.f3;
+            TychoArrK0 h_args = _m8113->u.V_Call.f4;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Call"));
             if (tycho_str_len(h_q) > 0LL) {
                 tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.CallQual"));
@@ -60201,137 +60202,137 @@ TychoArrStr h_ast___ce__own1(Arena *_parent, E_ast__Expr *h_e, TychoArrStr h_acc
             h_out = h_ast___cts__own1(_parent, h_tas, h_out);
             h_out = h_ast___ces__own1(_parent, h_args, h_out);
         }
-        else if (_m8111->tag == 13) {
-            tycho_int h_l = _m8111->u.V_CallVal.f0;
-            TychoArrK0 h_k = _m8111->u.V_CallVal.f1;
+        else if (_m8113->tag == 13) {
+            tycho_int h_l = _m8113->u.V_CallVal.f0;
+            TychoArrK0 h_k = _m8113->u.V_CallVal.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.CallVal"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 14) {
-            tycho_int h_l = _m8111->u.V_Named.f0;
-            char *h_n = _m8111->u.V_Named.f1;
-            TychoArrK0 h_k = _m8111->u.V_Named.f2;
+        else if (_m8113->tag == 14) {
+            tycho_int h_l = _m8113->u.V_Named.f0;
+            char *h_n = _m8113->u.V_Named.f1;
+            TychoArrK0 h_k = _m8113->u.V_Named.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Named"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 15) {
-            tycho_int h_l = _m8111->u.V_Binop.f0;
-            char *h_o = _m8111->u.V_Binop.f1;
-            TychoArrK0 h_k = _m8111->u.V_Binop.f2;
+        else if (_m8113->tag == 15) {
+            tycho_int h_l = _m8113->u.V_Binop.f0;
+            char *h_o = _m8113->u.V_Binop.f1;
+            TychoArrK0 h_k = _m8113->u.V_Binop.f2;
             tycho_arr_str_push_move(_parent, &(h_out), tycho_str_concat(_parent, TYCHO_LIT("e.Binop:"), h_o));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 16) {
-            tycho_int h_l = _m8111->u.V_Unop.f0;
-            char *h_o = _m8111->u.V_Unop.f1;
-            TychoArrK0 h_k = _m8111->u.V_Unop.f2;
+        else if (_m8113->tag == 16) {
+            tycho_int h_l = _m8113->u.V_Unop.f0;
+            char *h_o = _m8113->u.V_Unop.f1;
+            TychoArrK0 h_k = _m8113->u.V_Unop.f2;
             tycho_arr_str_push_move(_parent, &(h_out), tycho_str_concat(_parent, TYCHO_LIT("e.Unop:"), h_o));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 17) {
-            tycho_int h_l = _m8111->u.V_IsVar.f0;
-            TychoArrK0 h_k = _m8111->u.V_IsVar.f1;
-            char *h_q = _m8111->u.V_IsVar.f2;
-            char *h_n = _m8111->u.V_IsVar.f3;
+        else if (_m8113->tag == 17) {
+            tycho_int h_l = _m8113->u.V_IsVar.f0;
+            TychoArrK0 h_k = _m8113->u.V_IsVar.f1;
+            char *h_q = _m8113->u.V_IsVar.f2;
+            char *h_n = _m8113->u.V_IsVar.f3;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.IsVar"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 18) {
-            tycho_int h_l = _m8111->u.V_ArrLit.f0;
-            TychoArrK0 h_k = _m8111->u.V_ArrLit.f1;
+        else if (_m8113->tag == 18) {
+            tycho_int h_l = _m8113->u.V_ArrLit.f0;
+            TychoArrK0 h_k = _m8113->u.V_ArrLit.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.ArrLit"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 19) {
-            tycho_int h_l = _m8111->u.V_MapLit.f0;
-            TychoArrK0 h_k = _m8111->u.V_MapLit.f1;
+        else if (_m8113->tag == 19) {
+            tycho_int h_l = _m8113->u.V_MapLit.f0;
+            TychoArrK0 h_k = _m8113->u.V_MapLit.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.MapLit"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 20) {
-            tycho_int h_l = _m8111->u.V_EmptyArr.f0;
-            TychoArrK1 h_ts = _m8111->u.V_EmptyArr.f1;
+        else if (_m8113->tag == 20) {
+            tycho_int h_l = _m8113->u.V_EmptyArr.f0;
+            TychoArrK1 h_ts = _m8113->u.V_EmptyArr.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.EmptyArr"));
             h_out = h_ast___cts__own1(_parent, h_ts, h_out);
         }
-        else if (_m8111->tag == 21) {
-            tycho_int h_l = _m8111->u.V_EmptyMap.f0;
-            TychoArrK1 h_ts = _m8111->u.V_EmptyMap.f1;
+        else if (_m8113->tag == 21) {
+            tycho_int h_l = _m8113->u.V_EmptyMap.f0;
+            TychoArrK1 h_ts = _m8113->u.V_EmptyMap.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.EmptyMap"));
             h_out = h_ast___cts__own1(_parent, h_ts, h_out);
         }
-        else if (_m8111->tag == 22) {
-            tycho_int h_l = _m8111->u.V_SoaLit.f0;
-            TychoArrK1 h_ts = _m8111->u.V_SoaLit.f1;
+        else if (_m8113->tag == 22) {
+            tycho_int h_l = _m8113->u.V_SoaLit.f0;
+            TychoArrK1 h_ts = _m8113->u.V_SoaLit.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.SoaLit"));
             h_out = h_ast___cts__own1(_parent, h_ts, h_out);
         }
-        else if (_m8111->tag == 23) {
-            tycho_int h_l = _m8111->u.V_Tuple.f0;
-            TychoArrK0 h_k = _m8111->u.V_Tuple.f1;
+        else if (_m8113->tag == 23) {
+            tycho_int h_l = _m8113->u.V_Tuple.f0;
+            TychoArrK0 h_k = _m8113->u.V_Tuple.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Tuple"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 24) {
-            tycho_int h_l = _m8111->u.V_SomeE.f0;
-            TychoArrK0 h_k = _m8111->u.V_SomeE.f1;
+        else if (_m8113->tag == 24) {
+            tycho_int h_l = _m8113->u.V_SomeE.f0;
+            TychoArrK0 h_k = _m8113->u.V_SomeE.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.SomeE"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 25) {
-            tycho_int h_l = _m8111->u.V_OkE.f0;
-            TychoArrK0 h_k = _m8111->u.V_OkE.f1;
+        else if (_m8113->tag == 25) {
+            tycho_int h_l = _m8113->u.V_OkE.f0;
+            TychoArrK0 h_k = _m8113->u.V_OkE.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.OkE"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 26) {
-            tycho_int h_l = _m8111->u.V_ErrE.f0;
-            TychoArrK0 h_k = _m8111->u.V_ErrE.f1;
+        else if (_m8113->tag == 26) {
+            tycho_int h_l = _m8113->u.V_ErrE.f0;
+            TychoArrK0 h_k = _m8113->u.V_ErrE.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.ErrE"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 27) {
-            tycho_int h_l = _m8111->u.V_NoneE.f0;
+        else if (_m8113->tag == 27) {
+            tycho_int h_l = _m8113->u.V_NoneE.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.NoneE"));
         }
-        else if (_m8111->tag == 28) {
-            tycho_int h_l = _m8111->u.V_SpawnE.f0;
-            TychoArrK0 h_k = _m8111->u.V_SpawnE.f1;
+        else if (_m8113->tag == 28) {
+            tycho_int h_l = _m8113->u.V_SpawnE.f0;
+            TychoArrK0 h_k = _m8113->u.V_SpawnE.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.SpawnE"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 29) {
-            tycho_int h_l = _m8111->u.V_OrRet.f0;
-            char *h_b = _m8111->u.V_OrRet.f1;
-            TychoArrK0 h_k = _m8111->u.V_OrRet.f2;
+        else if (_m8113->tag == 29) {
+            tycho_int h_l = _m8113->u.V_OrRet.f0;
+            char *h_b = _m8113->u.V_OrRet.f1;
+            TychoArrK0 h_k = _m8113->u.V_OrRet.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.OrRet"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 30) {
-            tycho_int h_l = _m8111->u.V_Spread.f0;
-            TychoArrK0 h_k = _m8111->u.V_Spread.f1;
+        else if (_m8113->tag == 30) {
+            tycho_int h_l = _m8113->u.V_Spread.f0;
+            TychoArrK0 h_k = _m8113->u.V_Spread.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Spread"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 31) {
-            tycho_int h_l = _m8111->u.V_Addr.f0;
-            TychoArrK0 h_k = _m8111->u.V_Addr.f1;
+        else if (_m8113->tag == 31) {
+            tycho_int h_l = _m8113->u.V_Addr.f0;
+            TychoArrK0 h_k = _m8113->u.V_Addr.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Addr"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 32) {
-            tycho_int h_l = _m8111->u.V_ChanE.f0;
-            TychoArrK1 h_ts = _m8111->u.V_ChanE.f1;
-            TychoArrK0 h_k = _m8111->u.V_ChanE.f2;
+        else if (_m8113->tag == 32) {
+            tycho_int h_l = _m8113->u.V_ChanE.f0;
+            TychoArrK1 h_ts = _m8113->u.V_ChanE.f1;
+            TychoArrK0 h_k = _m8113->u.V_ChanE.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.ChanE"));
             h_out = h_ast___cts__own1(_parent, h_ts, h_out);
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8111->tag == 33) {
-            tycho_int h_l = _m8111->u.V_Lambda.f0;
-            TychoArrK2 h_ps = _m8111->u.V_Lambda.f1;
-            TychoArrK1 h_r = _m8111->u.V_Lambda.f2;
-            TychoArrK0 h_b = _m8111->u.V_Lambda.f3;
+        else if (_m8113->tag == 33) {
+            tycho_int h_l = _m8113->u.V_Lambda.f0;
+            TychoArrK2 h_ps = _m8113->u.V_Lambda.f1;
+            TychoArrK1 h_r = _m8113->u.V_Lambda.f2;
+            TychoArrK0 h_b = _m8113->u.V_Lambda.f3;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("e.Lambda"));
             h_out = h_ast___cps__own1(_parent, h_ps, h_out);
             h_out = h_ast___cts__own1(_parent, h_r, h_out);
@@ -60345,12 +60346,12 @@ TychoArrStr h_ast___ce__own1(Arena *_parent, E_ast__Expr *h_e, TychoArrStr h_acc
 TychoArrStr h_ast___ces__own1(Arena *_parent, TychoArrK0 h_es, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        TychoArrK0 _fc8112 = h_es;
-        for (tycho_int _fi8113 = 0; _fi8113 < _fc8112.len; _fi8113 += 1) {
-            E_ast__Expr *h_a = _fc8112.data[_fi8113];
-            TychoArrStr _rec8115 = h_ast___ce__own1(_parent, h_a, h_out);
-            if (h_out.data && h_out.data != _rec8115.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-            h_out = _rec8115;
+        TychoArrK0 _fc8114 = h_es;
+        for (tycho_int _fi8115 = 0; _fi8115 < _fc8114.len; _fi8115 += 1) {
+            E_ast__Expr *h_a = _fc8114.data[_fi8115];
+            TychoArrStr _rec8117 = h_ast___ce__own1(_parent, h_a, h_out);
+            if (h_out.data && h_out.data != _rec8117.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+            h_out = _rec8117;
         }
     }
     { TychoArrStr _ret = h_out; return _ret; }
@@ -60359,9 +60360,9 @@ TychoArrStr h_ast___ces__own1(Arena *_parent, TychoArrK0 h_es, TychoArrStr h_acc
 TychoArrStr h_ast___cps__own1(Arena *_parent, TychoArrK2 h_ps, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        TychoArrK2 _fc8116 = h_ps;
-        for (tycho_int _fi8117 = 0; _fi8117 < _fc8116.len; _fi8117 += 1) {
-            S_ast__Param h_p = _fc8116.data[_fi8117];
+        TychoArrK2 _fc8118 = h_ps;
+        for (tycho_int _fi8119 = 0; _fi8119 < _fc8118.len; _fi8119 += 1) {
+            S_ast__Param h_p = _fc8118.data[_fi8119];
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("d.Param"));
             if ((h_p).f_is_inout) {
                 tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("d.inout"));
@@ -60372,9 +60373,9 @@ TychoArrStr h_ast___cps__own1(Arena *_parent, TychoArrK2 h_ps, TychoArrStr h_acc
             if ((h_p).f_is_variadic) {
                 tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("d.variadic"));
             }
-            TychoArrStr _rec8119 = h_ast___cts__own1(_parent, ((h_p).f_ty), h_out);
-            if (h_out.data && h_out.data != _rec8119.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-            h_out = _rec8119;
+            TychoArrStr _rec8121 = h_ast___cts__own1(_parent, ((h_p).f_ty), h_out);
+            if (h_out.data && h_out.data != _rec8121.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+            h_out = _rec8121;
         }
     }
     { TychoArrStr _ret = h_out; return _ret; }
@@ -60383,12 +60384,12 @@ TychoArrStr h_ast___cps__own1(Arena *_parent, TychoArrK2 h_ps, TychoArrStr h_acc
 TychoArrStr h_ast___cb__own1(Arena *_parent, TychoArrK3 h_b, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        TychoArrK3 _fc8120 = h_b;
-        for (tycho_int _fi8121 = 0; _fi8121 < _fc8120.len; _fi8121 += 1) {
-            E_ast__Stmt *h_s = _fc8120.data[_fi8121];
-            TychoArrStr _rec8123 = h_ast___cs__own1(_parent, h_s, h_out);
-            if (h_out.data && h_out.data != _rec8123.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-            h_out = _rec8123;
+        TychoArrK3 _fc8122 = h_b;
+        for (tycho_int _fi8123 = 0; _fi8123 < _fc8122.len; _fi8123 += 1) {
+            E_ast__Stmt *h_s = _fc8122.data[_fi8123];
+            TychoArrStr _rec8125 = h_ast___cs__own1(_parent, h_s, h_out);
+            if (h_out.data && h_out.data != _rec8125.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+            h_out = _rec8125;
         }
     }
     { TychoArrStr _ret = h_out; return _ret; }
@@ -60397,19 +60398,19 @@ TychoArrStr h_ast___cb__own1(Arena *_parent, TychoArrK3 h_b, TychoArrStr h_acc) 
 TychoArrStr h_ast___cs__own1(Arena *_parent, E_ast__Stmt *h_s, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        E_ast__Stmt *_m8124 = h_s;
-        if (_m8124->tag == 0) {
-            tycho_int h_l = _m8124->u.V_ExprStmt.f0;
-            TychoArrK0 h_k = _m8124->u.V_ExprStmt.f1;
+        E_ast__Stmt *_m8126 = h_s;
+        if (_m8126->tag == 0) {
+            tycho_int h_l = _m8126->u.V_ExprStmt.f0;
+            TychoArrK0 h_k = _m8126->u.V_ExprStmt.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.ExprStmt"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8124->tag == 1) {
-            tycho_int h_l = _m8124->u.V_Decl.f0;
-            char *h_n = _m8124->u.V_Decl.f1;
-            TychoArrK1 h_an = _m8124->u.V_Decl.f2;
-            TychoArrK0 h_rhs = _m8124->u.V_Decl.f3;
-            TychoArrK3 h_ctrl = _m8124->u.V_Decl.f4;
+        else if (_m8126->tag == 1) {
+            tycho_int h_l = _m8126->u.V_Decl.f0;
+            char *h_n = _m8126->u.V_Decl.f1;
+            TychoArrK1 h_an = _m8126->u.V_Decl.f2;
+            TychoArrK0 h_rhs = _m8126->u.V_Decl.f3;
+            TychoArrK3 h_ctrl = _m8126->u.V_Decl.f4;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.Decl"));
             if (((h_an).len) > 0LL) {
                 tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.DeclTyped"));
@@ -60421,11 +60422,11 @@ TychoArrStr h_ast___cs__own1(Arena *_parent, E_ast__Stmt *h_s, TychoArrStr h_acc
             h_out = h_ast___ces__own1(_parent, h_rhs, h_out);
             h_out = h_ast___cb__own1(_parent, h_ctrl, h_out);
         }
-        else if (_m8124->tag == 2) {
-            tycho_int h_l = _m8124->u.V_MDecl.f0;
-            int h_isd = _m8124->u.V_MDecl.f1;
-            TychoArrStr h_ns = _m8124->u.V_MDecl.f2;
-            TychoArrK0 h_rhs = _m8124->u.V_MDecl.f3;
+        else if (_m8126->tag == 2) {
+            tycho_int h_l = _m8126->u.V_MDecl.f0;
+            int h_isd = _m8126->u.V_MDecl.f1;
+            TychoArrStr h_ns = _m8126->u.V_MDecl.f2;
+            TychoArrK0 h_rhs = _m8126->u.V_MDecl.f3;
             if (h_isd) {
                 tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.MDecl"));
             } else {
@@ -60433,48 +60434,48 @@ TychoArrStr h_ast___cs__own1(Arena *_parent, E_ast__Stmt *h_s, TychoArrStr h_acc
             }
             h_out = h_ast___ces__own1(_parent, h_rhs, h_out);
         }
-        else if (_m8124->tag == 3) {
-            tycho_int h_l = _m8124->u.V_Assign.f0;
-            char *h_n = _m8124->u.V_Assign.f1;
-            TychoArrK0 h_k = _m8124->u.V_Assign.f2;
+        else if (_m8126->tag == 3) {
+            tycho_int h_l = _m8126->u.V_Assign.f0;
+            char *h_n = _m8126->u.V_Assign.f1;
+            TychoArrK0 h_k = _m8126->u.V_Assign.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.Assign"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8124->tag == 4) {
-            tycho_int h_l = _m8124->u.V_PlaceSet.f0;
-            TychoArrK0 h_k = _m8124->u.V_PlaceSet.f1;
+        else if (_m8126->tag == 4) {
+            tycho_int h_l = _m8126->u.V_PlaceSet.f0;
+            TychoArrK0 h_k = _m8126->u.V_PlaceSet.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.PlaceSet"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8124->tag == 5) {
-            tycho_int h_l = _m8124->u.V_ConstS.f0;
-            char *h_n = _m8124->u.V_ConstS.f1;
-            TychoArrK0 h_k = _m8124->u.V_ConstS.f2;
+        else if (_m8126->tag == 5) {
+            tycho_int h_l = _m8126->u.V_ConstS.f0;
+            char *h_n = _m8126->u.V_ConstS.f1;
+            TychoArrK0 h_k = _m8126->u.V_ConstS.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.ConstS"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8124->tag == 6) {
-            tycho_int h_l = _m8124->u.V_PassS.f0;
+        else if (_m8126->tag == 6) {
+            tycho_int h_l = _m8126->u.V_PassS.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.PassS"));
         }
-        else if (_m8124->tag == 7) {
-            tycho_int h_l = _m8124->u.V_ReturnS.f0;
-            TychoArrK0 h_k = _m8124->u.V_ReturnS.f1;
+        else if (_m8126->tag == 7) {
+            tycho_int h_l = _m8126->u.V_ReturnS.f0;
+            TychoArrK0 h_k = _m8126->u.V_ReturnS.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.ReturnS"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
-        else if (_m8124->tag == 8) {
-            tycho_int h_l = _m8124->u.V_BreakS.f0;
+        else if (_m8126->tag == 8) {
+            tycho_int h_l = _m8126->u.V_BreakS.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.BreakS"));
         }
-        else if (_m8124->tag == 9) {
-            tycho_int h_l = _m8124->u.V_ContinueS.f0;
+        else if (_m8126->tag == 9) {
+            tycho_int h_l = _m8126->u.V_ContinueS.f0;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.ContinueS"));
         }
-        else if (_m8124->tag == 10) {
-            tycho_int h_l = _m8124->u.V_IfS.f0;
-            TychoArrK4 h_arms = _m8124->u.V_IfS.f1;
-            TychoArrK3 h_e = _m8124->u.V_IfS.f2;
+        else if (_m8126->tag == 10) {
+            tycho_int h_l = _m8126->u.V_IfS.f0;
+            TychoArrK4 h_arms = _m8126->u.V_IfS.f1;
+            TychoArrK3 h_e = _m8126->u.V_IfS.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.IfS"));
             {
                 tycho_int h_i = 0LL;
@@ -60491,80 +60492,80 @@ TychoArrStr h_ast___cs__own1(Arena *_parent, E_ast__Stmt *h_s, TychoArrStr h_acc
                         if (((h_i + 1LL) < ((h_arms).len)) || (((h_e).len) > 0LL)) {
                             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.Else"));
                         }
-                        TychoArrStr _rec8126 = h_ast___ces__own1(_parent, ((tycho_arr_K4_get(h_arms, h_i)).f_cond), h_out);
-                        if (h_out.data && h_out.data != _rec8126.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                        h_out = _rec8126;
-                        TychoArrStr _rec8127 = h_ast___cb__own1(_parent, ((tycho_arr_K4_get(h_arms, h_i)).f_body), h_out);
-                        if (h_out.data && h_out.data != _rec8127.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                        h_out = _rec8127;
+                        TychoArrStr _rec8128 = h_ast___ces__own1(_parent, ((tycho_arr_K4_get(h_arms, h_i)).f_cond), h_out);
+                        if (h_out.data && h_out.data != _rec8128.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                        h_out = _rec8128;
+                        TychoArrStr _rec8129 = h_ast___cb__own1(_parent, ((tycho_arr_K4_get(h_arms, h_i)).f_body), h_out);
+                        if (h_out.data && h_out.data != _rec8129.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                        h_out = _rec8129;
                     }
                     h_i = (h_i + 1LL);
                 }
             }
             h_out = h_ast___cb__own1(_parent, h_e, h_out);
         }
-        else if (_m8124->tag == 11) {
-            tycho_int h_l = _m8124->u.V_WhileS.f0;
-            TychoArrK0 h_c = _m8124->u.V_WhileS.f1;
-            TychoArrK3 h_b = _m8124->u.V_WhileS.f2;
+        else if (_m8126->tag == 11) {
+            tycho_int h_l = _m8126->u.V_WhileS.f0;
+            TychoArrK0 h_c = _m8126->u.V_WhileS.f1;
+            TychoArrK3 h_b = _m8126->u.V_WhileS.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.WhileS"));
             h_out = h_ast___ces__own1(_parent, h_c, h_out);
             h_out = h_ast___cb__own1(_parent, h_b, h_out);
         }
-        else if (_m8124->tag == 12) {
-            tycho_int h_l = _m8124->u.V_For3.f0;
-            TychoArrK3 h_ip = _m8124->u.V_For3.f1;
-            TychoArrK0 h_c = _m8124->u.V_For3.f2;
-            TychoArrK3 h_b = _m8124->u.V_For3.f3;
+        else if (_m8126->tag == 12) {
+            tycho_int h_l = _m8126->u.V_For3.f0;
+            TychoArrK3 h_ip = _m8126->u.V_For3.f1;
+            TychoArrK0 h_c = _m8126->u.V_For3.f2;
+            TychoArrK3 h_b = _m8126->u.V_For3.f3;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.For3"));
             h_out = h_ast___cb__own1(_parent, h_ip, h_out);
             h_out = h_ast___ces__own1(_parent, h_c, h_out);
             h_out = h_ast___cb__own1(_parent, h_b, h_out);
         }
-        else if (_m8124->tag == 13) {
-            tycho_int h_l = _m8124->u.V_ForIn.f0;
-            char *h_n = _m8124->u.V_ForIn.f1;
-            TychoArrK0 h_c = _m8124->u.V_ForIn.f2;
-            TychoArrK3 h_b = _m8124->u.V_ForIn.f3;
-            int h_zpf = _m8124->u.V_ForIn.f4;
+        else if (_m8126->tag == 13) {
+            tycho_int h_l = _m8126->u.V_ForIn.f0;
+            char *h_n = _m8126->u.V_ForIn.f1;
+            TychoArrK0 h_c = _m8126->u.V_ForIn.f2;
+            TychoArrK3 h_b = _m8126->u.V_ForIn.f3;
+            int h_zpf = _m8126->u.V_ForIn.f4;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.ForIn"));
             h_out = h_ast___ces__own1(_parent, h_c, h_out);
             h_out = h_ast___cb__own1(_parent, h_b, h_out);
         }
-        else if (_m8124->tag == 14) {
-            tycho_int h_l = _m8124->u.V_ForRange.f0;
-            char *h_n = _m8124->u.V_ForRange.f1;
-            TychoArrK0 h_c = _m8124->u.V_ForRange.f2;
-            TychoArrK3 h_b = _m8124->u.V_ForRange.f3;
+        else if (_m8126->tag == 14) {
+            tycho_int h_l = _m8126->u.V_ForRange.f0;
+            char *h_n = _m8126->u.V_ForRange.f1;
+            TychoArrK0 h_c = _m8126->u.V_ForRange.f2;
+            TychoArrK3 h_b = _m8126->u.V_ForRange.f3;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.ForRange"));
             h_out = h_ast___ces__own1(_parent, h_c, h_out);
             h_out = h_ast___cb__own1(_parent, h_b, h_out);
         }
-        else if (_m8124->tag == 15) {
-            tycho_int h_l = _m8124->u.V_ParallelS.f0;
-            TychoArrK0 h_w = _m8124->u.V_ParallelS.f1;
-            TychoArrK3 h_b = _m8124->u.V_ParallelS.f2;
+        else if (_m8126->tag == 15) {
+            tycho_int h_l = _m8126->u.V_ParallelS.f0;
+            TychoArrK0 h_w = _m8126->u.V_ParallelS.f1;
+            TychoArrK3 h_b = _m8126->u.V_ParallelS.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.ParallelS"));
             h_out = h_ast___ces__own1(_parent, h_w, h_out);
             h_out = h_ast___cb__own1(_parent, h_b, h_out);
         }
-        else if (_m8124->tag == 16) {
-            tycho_int h_l = _m8124->u.V_MatchS.f0;
-            TychoArrK0 h_c = _m8124->u.V_MatchS.f1;
-            TychoArrK5 h_arms = _m8124->u.V_MatchS.f2;
+        else if (_m8126->tag == 16) {
+            tycho_int h_l = _m8126->u.V_MatchS.f0;
+            TychoArrK0 h_c = _m8126->u.V_MatchS.f1;
+            TychoArrK5 h_arms = _m8126->u.V_MatchS.f2;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.MatchS"));
             h_out = h_ast___ces__own1(_parent, h_c, h_out);
             h_out = h_ast___carms__own1(_parent, h_arms, h_out);
         }
-        else if (_m8124->tag == 17) {
-            tycho_int h_l = _m8124->u.V_SelectS.f0;
-            TychoArrK5 h_arms = _m8124->u.V_SelectS.f1;
+        else if (_m8126->tag == 17) {
+            tycho_int h_l = _m8126->u.V_SelectS.f0;
+            TychoArrK5 h_arms = _m8126->u.V_SelectS.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.SelectS"));
             h_out = h_ast___carms__own1(_parent, h_arms, h_out);
         }
-        else if (_m8124->tag == 18) {
-            tycho_int h_l = _m8124->u.V_DeleteS.f0;
-            TychoArrK0 h_k = _m8124->u.V_DeleteS.f1;
+        else if (_m8126->tag == 18) {
+            tycho_int h_l = _m8126->u.V_DeleteS.f0;
+            TychoArrK0 h_k = _m8126->u.V_DeleteS.f1;
             tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("s.DeleteS"));
             h_out = h_ast___ces__own1(_parent, h_k, h_out);
         }
@@ -60576,9 +60577,9 @@ TychoArrStr h_ast___cs__own1(Arena *_parent, E_ast__Stmt *h_s, TychoArrStr h_acc
 TychoArrStr h_ast___carms__own1(Arena *_parent, TychoArrK5 h_arms, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        TychoArrK5 _fc8128 = h_arms;
-        for (tycho_int _fi8129 = 0; _fi8129 < _fc8128.len; _fi8129 += 1) {
-            S_ast__Arm h_a = _fc8128.data[_fi8129];
+        TychoArrK5 _fc8130 = h_arms;
+        for (tycho_int _fi8131 = 0; _fi8131 < _fc8130.len; _fi8131 += 1) {
+            S_ast__Arm h_a = _fc8130.data[_fi8131];
             tycho_arr_str_push_move(_parent, &(h_out), tycho_str_concat(_parent, TYCHO_LIT("a."), ((h_a).f_kind)));
             if (tycho_str_len(((h_a).f_qual)) > 0LL) {
                 tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("a.qual"));
@@ -60587,41 +60588,41 @@ TychoArrStr h_ast___carms__own1(Arena *_parent, TychoArrK5 h_arms, TychoArrStr h
                 tycho_arr_str_push_move(_parent, &(h_out), TYCHO_LIT("a.nested"));
             }
             {
-                TychoArrStr _fc8131 = ((h_a).f_binds);
-                char * *_fd8134 = h_out.data; tycho_int _fd8134l = h_out.len, _fd8134c = h_out.cap;
-                for (tycho_int _fi8132 = 0; _fi8132 < _fc8131.len; _fi8132 += 1) {
-                    char *h_b = _fc8131.data[_fi8132];
-                    ({ if (_fd8134l == _fd8134c) tycho_arr_str_grow(_parent, &_fd8134, &_fd8134c, _fd8134l); _fd8134[_fd8134l++] = TYCHO_LIT("a.bind"); });
+                TychoArrStr _fc8133 = ((h_a).f_binds);
+                char * *_fd8136 = h_out.data; tycho_int _fd8136l = h_out.len, _fd8136c = h_out.cap;
+                for (tycho_int _fi8134 = 0; _fi8134 < _fc8133.len; _fi8134 += 1) {
+                    char *h_b = _fc8133.data[_fi8134];
+                    ({ if (_fd8136l == _fd8136c) tycho_arr_str_grow(_parent, &_fd8136, &_fd8136c, _fd8136l); _fd8136[_fd8136l++] = TYCHO_LIT("a.bind"); });
                 }
-                h_out.data = _fd8134; h_out.len = _fd8134l; h_out.cap = _fd8134c;
+                h_out.data = _fd8136; h_out.len = _fd8136l; h_out.cap = _fd8136c;
             }
             {
-                TychoArrStr _fc8135 = ((h_a).f_subbinds);
-                char * *_fd8138 = h_out.data; tycho_int _fd8138l = h_out.len, _fd8138c = h_out.cap;
-                for (tycho_int _fi8136 = 0; _fi8136 < _fc8135.len; _fi8136 += 1) {
-                    char *h_b = _fc8135.data[_fi8136];
-                    ({ if (_fd8138l == _fd8138c) tycho_arr_str_grow(_parent, &_fd8138, &_fd8138c, _fd8138l); _fd8138[_fd8138l++] = TYCHO_LIT("a.subbind"); });
+                TychoArrStr _fc8137 = ((h_a).f_subbinds);
+                char * *_fd8140 = h_out.data; tycho_int _fd8140l = h_out.len, _fd8140c = h_out.cap;
+                for (tycho_int _fi8138 = 0; _fi8138 < _fc8137.len; _fi8138 += 1) {
+                    char *h_b = _fc8137.data[_fi8138];
+                    ({ if (_fd8140l == _fd8140c) tycho_arr_str_grow(_parent, &_fd8140, &_fd8140c, _fd8140l); _fd8140[_fd8140l++] = TYCHO_LIT("a.subbind"); });
                 }
-                h_out.data = _fd8138; h_out.len = _fd8138l; h_out.cap = _fd8138c;
+                h_out.data = _fd8140; h_out.len = _fd8140l; h_out.cap = _fd8140c;
             }
             {
-                TychoArrK6 _fc8139 = ((h_a).f_pats);
-                char * *_fd8142 = h_out.data; tycho_int _fd8142l = h_out.len, _fd8142c = h_out.cap;
-                for (tycho_int _fi8140 = 0; _fi8140 < _fc8139.len; _fi8140 += 1) {
-                    S_ast__Pat h_p = _fc8139.data[_fi8140];
-                    ({ if (_fd8142l == _fd8142c) tycho_arr_str_grow(_parent, &_fd8142, &_fd8142c, _fd8142l); _fd8142[_fd8142l++] = tycho_str_concat(_parent, TYCHO_LIT("a.pat."), ((h_p).f_kind)); });
+                TychoArrK6 _fc8141 = ((h_a).f_pats);
+                char * *_fd8144 = h_out.data; tycho_int _fd8144l = h_out.len, _fd8144c = h_out.cap;
+                for (tycho_int _fi8142 = 0; _fi8142 < _fc8141.len; _fi8142 += 1) {
+                    S_ast__Pat h_p = _fc8141.data[_fi8142];
+                    ({ if (_fd8144l == _fd8144c) tycho_arr_str_grow(_parent, &_fd8144, &_fd8144c, _fd8144l); _fd8144[_fd8144l++] = tycho_str_concat(_parent, TYCHO_LIT("a.pat."), ((h_p).f_kind)); });
                     if ((h_p).f_ranged) {
-                        ({ if (_fd8142l == _fd8142c) tycho_arr_str_grow(_parent, &_fd8142, &_fd8142c, _fd8142l); _fd8142[_fd8142l++] = TYCHO_LIT("a.range"); });
+                        ({ if (_fd8144l == _fd8144c) tycho_arr_str_grow(_parent, &_fd8144, &_fd8144c, _fd8144l); _fd8144[_fd8144l++] = TYCHO_LIT("a.range"); });
                     }
                 }
-                h_out.data = _fd8142; h_out.len = _fd8142l; h_out.cap = _fd8142c;
+                h_out.data = _fd8144; h_out.len = _fd8144l; h_out.cap = _fd8144c;
             }
-            TychoArrStr _rec8143 = h_ast___ces__own1(_parent, ((h_a).f_ch), h_out);
-            if (h_out.data && h_out.data != _rec8143.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-            h_out = _rec8143;
-            TychoArrStr _rec8144 = h_ast___cb__own1(_parent, ((h_a).f_body), h_out);
-            if (h_out.data && h_out.data != _rec8144.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-            h_out = _rec8144;
+            TychoArrStr _rec8145 = h_ast___ces__own1(_parent, ((h_a).f_ch), h_out);
+            if (h_out.data && h_out.data != _rec8145.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+            h_out = _rec8145;
+            TychoArrStr _rec8146 = h_ast___cb__own1(_parent, ((h_a).f_body), h_out);
+            if (h_out.data && h_out.data != _rec8146.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+            h_out = _rec8146;
         }
     }
     { TychoArrStr _ret = h_out; return _ret; }
@@ -60630,86 +60631,86 @@ TychoArrStr h_ast___carms__own1(Arena *_parent, TychoArrK5 h_arms, TychoArrStr h
 TychoArrStr h_parse___collect_typarams_ty__own1(Arena *_parent, E_ast__Ty *h_t, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        E_ast__Ty *_m8145 = h_t;
-        if (_m8145->tag == 1) {
-            char *h_n = _m8145->u.V_TParam.f0;
+        E_ast__Ty *_m8147 = h_t;
+        if (_m8147->tag == 1) {
+            char *h_n = _m8147->u.V_TParam.f0;
             tycho_arr_str_push(_parent, &(h_out), h_n);
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8145->tag == 2) {
-            char *h_q = _m8145->u.V_TName.f0;
-            char *h_n = _m8145->u.V_TName.f1;
-            TychoArrK1 h_args = _m8145->u.V_TName.f2;
+        else if (_m8147->tag == 2) {
+            char *h_q = _m8147->u.V_TName.f0;
+            char *h_n = _m8147->u.V_TName.f1;
+            TychoArrK1 h_args = _m8147->u.V_TName.f2;
             {
-                TychoArrK1 _fc8146 = h_args;
-                for (tycho_int _fi8147 = 0; _fi8147 < _fc8146.len; _fi8147 += 1) {
-                    E_ast__Ty *h_a = _fc8146.data[_fi8147];
-                    TychoArrStr _rec8149 = h_parse___collect_typarams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8149.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8149;
+                TychoArrK1 _fc8148 = h_args;
+                for (tycho_int _fi8149 = 0; _fi8149 < _fc8148.len; _fi8149 += 1) {
+                    E_ast__Ty *h_a = _fc8148.data[_fi8149];
+                    TychoArrStr _rec8151 = h_parse___collect_typarams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8151.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8151;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8145->tag == 3) {
-            TychoArrK1 h_k = _m8145->u.V_TArr.f0;
+        else if (_m8147->tag == 3) {
+            TychoArrK1 h_k = _m8147->u.V_TArr.f0;
             { TychoArrStr _ret = h_parse___collect_typarams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8145->tag == 8) {
-            TychoArrK1 h_k = _m8145->u.V_TSoa.f0;
+        else if (_m8147->tag == 8) {
+            TychoArrK1 h_k = _m8147->u.V_TSoa.f0;
             { TychoArrStr _ret = h_parse___collect_typarams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8145->tag == 4) {
-            char *h_s = _m8145->u.V_TFix.f0;
-            TychoArrK1 h_k = _m8145->u.V_TFix.f1;
+        else if (_m8147->tag == 4) {
+            char *h_s = _m8147->u.V_TFix.f0;
+            TychoArrK1 h_k = _m8147->u.V_TFix.f1;
             { TychoArrStr _ret = h_parse___collect_typarams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8145->tag == 9) {
-            char *h_s = _m8145->u.V_TBnd.f0;
-            TychoArrK1 h_k = _m8145->u.V_TBnd.f1;
+        else if (_m8147->tag == 9) {
+            char *h_s = _m8147->u.V_TBnd.f0;
+            TychoArrK1 h_k = _m8147->u.V_TBnd.f1;
             { TychoArrStr _ret = h_parse___collect_typarams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8145->tag == 10) {
-            char *h_s = _m8145->u.V_TVec.f0;
-            TychoArrK1 h_k = _m8145->u.V_TVec.f1;
+        else if (_m8147->tag == 10) {
+            char *h_s = _m8147->u.V_TVec.f0;
+            TychoArrK1 h_k = _m8147->u.V_TVec.f1;
             { TychoArrStr _ret = h_parse___collect_typarams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8145->tag == 5) {
-            TychoArrK1 h_ks = _m8145->u.V_TMap.f0;
+        else if (_m8147->tag == 5) {
+            TychoArrK1 h_ks = _m8147->u.V_TMap.f0;
             {
-                TychoArrK1 _fc8150 = h_ks;
-                for (tycho_int _fi8151 = 0; _fi8151 < _fc8150.len; _fi8151 += 1) {
-                    E_ast__Ty *h_a = _fc8150.data[_fi8151];
-                    TychoArrStr _rec8153 = h_parse___collect_typarams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8153.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8153;
+                TychoArrK1 _fc8152 = h_ks;
+                for (tycho_int _fi8153 = 0; _fi8153 < _fc8152.len; _fi8153 += 1) {
+                    E_ast__Ty *h_a = _fc8152.data[_fi8153];
+                    TychoArrStr _rec8155 = h_parse___collect_typarams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8155.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8155;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8145->tag == 6) {
-            TychoArrK1 h_ks = _m8145->u.V_TTup.f0;
+        else if (_m8147->tag == 6) {
+            TychoArrK1 h_ks = _m8147->u.V_TTup.f0;
             {
-                TychoArrK1 _fc8154 = h_ks;
-                for (tycho_int _fi8155 = 0; _fi8155 < _fc8154.len; _fi8155 += 1) {
-                    E_ast__Ty *h_a = _fc8154.data[_fi8155];
-                    TychoArrStr _rec8157 = h_parse___collect_typarams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8157.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8157;
+                TychoArrK1 _fc8156 = h_ks;
+                for (tycho_int _fi8157 = 0; _fi8157 < _fc8156.len; _fi8157 += 1) {
+                    E_ast__Ty *h_a = _fc8156.data[_fi8157];
+                    TychoArrStr _rec8159 = h_parse___collect_typarams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8159.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8159;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8145->tag == 7) {
-            int h_hr = _m8145->u.V_TFn.f0;
-            TychoArrK1 h_ks = _m8145->u.V_TFn.f1;
+        else if (_m8147->tag == 7) {
+            int h_hr = _m8147->u.V_TFn.f0;
+            TychoArrK1 h_ks = _m8147->u.V_TFn.f1;
             {
-                TychoArrK1 _fc8158 = h_ks;
-                for (tycho_int _fi8159 = 0; _fi8159 < _fc8158.len; _fi8159 += 1) {
-                    E_ast__Ty *h_a = _fc8158.data[_fi8159];
-                    TychoArrStr _rec8161 = h_parse___collect_typarams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8161.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8161;
+                TychoArrK1 _fc8160 = h_ks;
+                for (tycho_int _fi8161 = 0; _fi8161 < _fc8160.len; _fi8161 += 1) {
+                    E_ast__Ty *h_a = _fc8160.data[_fi8161];
+                    TychoArrStr _rec8163 = h_parse___collect_typarams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8163.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8163;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
@@ -60724,84 +60725,84 @@ TychoArrStr h_parse___collect_typarams_ty__own1(Arena *_parent, E_ast__Ty *h_t, 
 TychoArrStr h_parse___collect_sizeparams_ty__own1(Arena *_parent, E_ast__Ty *h_t, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        E_ast__Ty *_m8162 = h_t;
-        if (_m8162->tag == 2) {
-            char *h_q = _m8162->u.V_TName.f0;
-            char *h_n = _m8162->u.V_TName.f1;
-            TychoArrK1 h_args = _m8162->u.V_TName.f2;
+        E_ast__Ty *_m8164 = h_t;
+        if (_m8164->tag == 2) {
+            char *h_q = _m8164->u.V_TName.f0;
+            char *h_n = _m8164->u.V_TName.f1;
+            TychoArrK1 h_args = _m8164->u.V_TName.f2;
             {
-                TychoArrK1 _fc8163 = h_args;
-                for (tycho_int _fi8164 = 0; _fi8164 < _fc8163.len; _fi8164 += 1) {
-                    E_ast__Ty *h_a = _fc8163.data[_fi8164];
-                    TychoArrStr _rec8166 = h_parse___collect_sizeparams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8166.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8166;
+                TychoArrK1 _fc8165 = h_args;
+                for (tycho_int _fi8166 = 0; _fi8166 < _fc8165.len; _fi8166 += 1) {
+                    E_ast__Ty *h_a = _fc8165.data[_fi8166];
+                    TychoArrStr _rec8168 = h_parse___collect_sizeparams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8168.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8168;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8162->tag == 3) {
-            TychoArrK1 h_k = _m8162->u.V_TArr.f0;
+        else if (_m8164->tag == 3) {
+            TychoArrK1 h_k = _m8164->u.V_TArr.f0;
             { TychoArrStr _ret = h_parse___collect_sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8162->tag == 8) {
-            TychoArrK1 h_k = _m8162->u.V_TSoa.f0;
+        else if (_m8164->tag == 8) {
+            TychoArrK1 h_k = _m8164->u.V_TSoa.f0;
             { TychoArrStr _ret = h_parse___collect_sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8162->tag == 4) {
-            char *h_s = _m8162->u.V_TFix.f0;
-            TychoArrK1 h_k = _m8162->u.V_TFix.f1;
+        else if (_m8164->tag == 4) {
+            char *h_s = _m8164->u.V_TFix.f0;
+            TychoArrK1 h_k = _m8164->u.V_TFix.f1;
             if ((tycho_str_len(h_s) > 0LL) && (tycho_str_get(h_s, 0LL) == 36LL)) {
-                tycho_arr_str_push(_parent, &(h_out), ({ const char *_ss8167 = h_s; tycho_str_substr(_parent, _ss8167, 1LL, tycho_str_len(_ss8167)); }));
+                tycho_arr_str_push(_parent, &(h_out), ({ const char *_ss8169 = h_s; tycho_str_substr(_parent, _ss8169, 1LL, tycho_str_len(_ss8169)); }));
             }
             { TychoArrStr _ret = h_parse___collect_sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8162->tag == 9) {
-            char *h_s = _m8162->u.V_TBnd.f0;
-            TychoArrK1 h_k = _m8162->u.V_TBnd.f1;
+        else if (_m8164->tag == 9) {
+            char *h_s = _m8164->u.V_TBnd.f0;
+            TychoArrK1 h_k = _m8164->u.V_TBnd.f1;
             { TychoArrStr _ret = h_parse___collect_sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8162->tag == 10) {
-            char *h_s = _m8162->u.V_TVec.f0;
-            TychoArrK1 h_k = _m8162->u.V_TVec.f1;
+        else if (_m8164->tag == 10) {
+            char *h_s = _m8164->u.V_TVec.f0;
+            TychoArrK1 h_k = _m8164->u.V_TVec.f1;
             { TychoArrStr _ret = h_parse___collect_sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8162->tag == 5) {
-            TychoArrK1 h_ks = _m8162->u.V_TMap.f0;
+        else if (_m8164->tag == 5) {
+            TychoArrK1 h_ks = _m8164->u.V_TMap.f0;
             {
-                TychoArrK1 _fc8168 = h_ks;
-                for (tycho_int _fi8169 = 0; _fi8169 < _fc8168.len; _fi8169 += 1) {
-                    E_ast__Ty *h_a = _fc8168.data[_fi8169];
-                    TychoArrStr _rec8171 = h_parse___collect_sizeparams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8171.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8171;
+                TychoArrK1 _fc8170 = h_ks;
+                for (tycho_int _fi8171 = 0; _fi8171 < _fc8170.len; _fi8171 += 1) {
+                    E_ast__Ty *h_a = _fc8170.data[_fi8171];
+                    TychoArrStr _rec8173 = h_parse___collect_sizeparams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8173.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8173;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8162->tag == 6) {
-            TychoArrK1 h_ks = _m8162->u.V_TTup.f0;
+        else if (_m8164->tag == 6) {
+            TychoArrK1 h_ks = _m8164->u.V_TTup.f0;
             {
-                TychoArrK1 _fc8172 = h_ks;
-                for (tycho_int _fi8173 = 0; _fi8173 < _fc8172.len; _fi8173 += 1) {
-                    E_ast__Ty *h_a = _fc8172.data[_fi8173];
-                    TychoArrStr _rec8175 = h_parse___collect_sizeparams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8175.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8175;
+                TychoArrK1 _fc8174 = h_ks;
+                for (tycho_int _fi8175 = 0; _fi8175 < _fc8174.len; _fi8175 += 1) {
+                    E_ast__Ty *h_a = _fc8174.data[_fi8175];
+                    TychoArrStr _rec8177 = h_parse___collect_sizeparams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8177.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8177;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8162->tag == 7) {
-            int h_hr = _m8162->u.V_TFn.f0;
-            TychoArrK1 h_ks = _m8162->u.V_TFn.f1;
+        else if (_m8164->tag == 7) {
+            int h_hr = _m8164->u.V_TFn.f0;
+            TychoArrK1 h_ks = _m8164->u.V_TFn.f1;
             {
-                TychoArrK1 _fc8176 = h_ks;
-                for (tycho_int _fi8177 = 0; _fi8177 < _fc8176.len; _fi8177 += 1) {
-                    E_ast__Ty *h_a = _fc8176.data[_fi8177];
-                    TychoArrStr _rec8179 = h_parse___collect_sizeparams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8179.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8179;
+                TychoArrK1 _fc8178 = h_ks;
+                for (tycho_int _fi8179 = 0; _fi8179 < _fc8178.len; _fi8179 += 1) {
+                    E_ast__Ty *h_a = _fc8178.data[_fi8179];
+                    TychoArrStr _rec8181 = h_parse___collect_sizeparams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8181.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8181;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
@@ -60816,87 +60817,87 @@ TychoArrStr h_parse___collect_sizeparams_ty__own1(Arena *_parent, E_ast__Ty *h_t
 TychoArrStr h_types___sizeparams_ty__own1(Arena *_parent, E_ast__Ty *h_t, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        E_ast__Ty *_m8180 = h_t;
-        if (_m8180->tag == 4) {
-            char *h_sz = _m8180->u.V_TFix.f0;
-            TychoArrK1 h_k = _m8180->u.V_TFix.f1;
+        E_ast__Ty *_m8182 = h_t;
+        if (_m8182->tag == 4) {
+            char *h_sz = _m8182->u.V_TFix.f0;
+            TychoArrK1 h_k = _m8182->u.V_TFix.f1;
             if ((tycho_str_len(h_sz) > 1LL) && (tycho_str_get(h_sz, 0LL) == 36LL)) {
-                tycho_arr_str_push(_parent, &(h_out), ({ const char *_ss8181 = h_sz; tycho_str_substr(_parent, _ss8181, 1LL, tycho_str_len(_ss8181)); }));
+                tycho_arr_str_push(_parent, &(h_out), ({ const char *_ss8183 = h_sz; tycho_str_substr(_parent, _ss8183, 1LL, tycho_str_len(_ss8183)); }));
             }
             { TychoArrStr _ret = h_types___sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8180->tag == 9) {
-            char *h_sz = _m8180->u.V_TBnd.f0;
-            TychoArrK1 h_k = _m8180->u.V_TBnd.f1;
+        else if (_m8182->tag == 9) {
+            char *h_sz = _m8182->u.V_TBnd.f0;
+            TychoArrK1 h_k = _m8182->u.V_TBnd.f1;
             if ((tycho_str_len(h_sz) > 1LL) && (tycho_str_get(h_sz, 0LL) == 36LL)) {
-                tycho_arr_str_push(_parent, &(h_out), ({ const char *_ss8182 = h_sz; tycho_str_substr(_parent, _ss8182, 1LL, tycho_str_len(_ss8182)); }));
+                tycho_arr_str_push(_parent, &(h_out), ({ const char *_ss8184 = h_sz; tycho_str_substr(_parent, _ss8184, 1LL, tycho_str_len(_ss8184)); }));
             }
             { TychoArrStr _ret = h_types___sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8180->tag == 10) {
-            char *h_sz = _m8180->u.V_TVec.f0;
-            TychoArrK1 h_k = _m8180->u.V_TVec.f1;
+        else if (_m8182->tag == 10) {
+            char *h_sz = _m8182->u.V_TVec.f0;
+            TychoArrK1 h_k = _m8182->u.V_TVec.f1;
             { TychoArrStr _ret = h_types___sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8180->tag == 3) {
-            TychoArrK1 h_k = _m8180->u.V_TArr.f0;
+        else if (_m8182->tag == 3) {
+            TychoArrK1 h_k = _m8182->u.V_TArr.f0;
             { TychoArrStr _ret = h_types___sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8180->tag == 8) {
-            TychoArrK1 h_k = _m8180->u.V_TSoa.f0;
+        else if (_m8182->tag == 8) {
+            TychoArrK1 h_k = _m8182->u.V_TSoa.f0;
             { TychoArrStr _ret = h_types___sizeparams_ty(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8180->tag == 2) {
-            char *h_q = _m8180->u.V_TName.f0;
-            char *h_n = _m8180->u.V_TName.f1;
-            TychoArrK1 h_ta = _m8180->u.V_TName.f2;
+        else if (_m8182->tag == 2) {
+            char *h_q = _m8182->u.V_TName.f0;
+            char *h_n = _m8182->u.V_TName.f1;
+            TychoArrK1 h_ta = _m8182->u.V_TName.f2;
             {
-                TychoArrK1 _fc8183 = h_ta;
-                for (tycho_int _fi8184 = 0; _fi8184 < _fc8183.len; _fi8184 += 1) {
-                    E_ast__Ty *h_a = _fc8183.data[_fi8184];
-                    TychoArrStr _rec8186 = h_types___sizeparams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8186.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8186;
+                TychoArrK1 _fc8185 = h_ta;
+                for (tycho_int _fi8186 = 0; _fi8186 < _fc8185.len; _fi8186 += 1) {
+                    E_ast__Ty *h_a = _fc8185.data[_fi8186];
+                    TychoArrStr _rec8188 = h_types___sizeparams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8188.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8188;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8180->tag == 5) {
-            TychoArrK1 h_k = _m8180->u.V_TMap.f0;
+        else if (_m8182->tag == 5) {
+            TychoArrK1 h_k = _m8182->u.V_TMap.f0;
             {
-                TychoArrK1 _fc8187 = h_k;
-                for (tycho_int _fi8188 = 0; _fi8188 < _fc8187.len; _fi8188 += 1) {
-                    E_ast__Ty *h_a = _fc8187.data[_fi8188];
-                    TychoArrStr _rec8190 = h_types___sizeparams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8190.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8190;
+                TychoArrK1 _fc8189 = h_k;
+                for (tycho_int _fi8190 = 0; _fi8190 < _fc8189.len; _fi8190 += 1) {
+                    E_ast__Ty *h_a = _fc8189.data[_fi8190];
+                    TychoArrStr _rec8192 = h_types___sizeparams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8192.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8192;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8180->tag == 6) {
-            TychoArrK1 h_k = _m8180->u.V_TTup.f0;
+        else if (_m8182->tag == 6) {
+            TychoArrK1 h_k = _m8182->u.V_TTup.f0;
             {
-                TychoArrK1 _fc8191 = h_k;
-                for (tycho_int _fi8192 = 0; _fi8192 < _fc8191.len; _fi8192 += 1) {
-                    E_ast__Ty *h_a = _fc8191.data[_fi8192];
-                    TychoArrStr _rec8194 = h_types___sizeparams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8194.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8194;
+                TychoArrK1 _fc8193 = h_k;
+                for (tycho_int _fi8194 = 0; _fi8194 < _fc8193.len; _fi8194 += 1) {
+                    E_ast__Ty *h_a = _fc8193.data[_fi8194];
+                    TychoArrStr _rec8196 = h_types___sizeparams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8196.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8196;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8180->tag == 7) {
-            int h_hr = _m8180->u.V_TFn.f0;
-            TychoArrK1 h_k = _m8180->u.V_TFn.f1;
+        else if (_m8182->tag == 7) {
+            int h_hr = _m8182->u.V_TFn.f0;
+            TychoArrK1 h_k = _m8182->u.V_TFn.f1;
             {
-                TychoArrK1 _fc8195 = h_k;
-                for (tycho_int _fi8196 = 0; _fi8196 < _fc8195.len; _fi8196 += 1) {
-                    E_ast__Ty *h_a = _fc8195.data[_fi8196];
-                    TychoArrStr _rec8198 = h_types___sizeparams_ty__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8198.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8198;
+                TychoArrK1 _fc8197 = h_k;
+                for (tycho_int _fi8198 = 0; _fi8198 < _fc8197.len; _fi8198 += 1) {
+                    E_ast__Ty *h_a = _fc8197.data[_fi8198];
+                    TychoArrStr _rec8200 = h_types___sizeparams_ty__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8200.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8200;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
@@ -60911,89 +60912,89 @@ TychoArrStr h_types___sizeparams_ty__own1(Arena *_parent, E_ast__Ty *h_t, TychoA
 TychoArrStr h_types___pat_params__own2(Arena *_parent, E_ast__Ty *h_t, TychoArrStr h_tps, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        E_ast__Ty *_m8199 = h_t;
-        if (_m8199->tag == 1) {
-            char *h_n = _m8199->u.V_TParam.f0;
+        E_ast__Ty *_m8201 = h_t;
+        if (_m8201->tag == 1) {
+            char *h_n = _m8201->u.V_TParam.f0;
             tycho_arr_str_push(_parent, &(h_out), h_n);
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8199->tag == 3) {
-            TychoArrK1 h_k = _m8199->u.V_TArr.f0;
+        else if (_m8201->tag == 3) {
+            TychoArrK1 h_k = _m8201->u.V_TArr.f0;
             { TychoArrStr _ret = h_types___pat_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_tps, h_out); return _ret; }
         }
-        else if (_m8199->tag == 8) {
-            TychoArrK1 h_k = _m8199->u.V_TSoa.f0;
+        else if (_m8201->tag == 8) {
+            TychoArrK1 h_k = _m8201->u.V_TSoa.f0;
             { TychoArrStr _ret = h_types___pat_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_tps, h_out); return _ret; }
         }
-        else if (_m8199->tag == 9) {
-            char *h_sz = _m8199->u.V_TBnd.f0;
-            TychoArrK1 h_k = _m8199->u.V_TBnd.f1;
+        else if (_m8201->tag == 9) {
+            char *h_sz = _m8201->u.V_TBnd.f0;
+            TychoArrK1 h_k = _m8201->u.V_TBnd.f1;
             { TychoArrStr _ret = h_types___pat_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_tps, h_out); return _ret; }
         }
-        else if (_m8199->tag == 10) {
-            char *h_sz = _m8199->u.V_TVec.f0;
-            TychoArrK1 h_k = _m8199->u.V_TVec.f1;
+        else if (_m8201->tag == 10) {
+            char *h_sz = _m8201->u.V_TVec.f0;
+            TychoArrK1 h_k = _m8201->u.V_TVec.f1;
             { TychoArrStr _ret = h_types___pat_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_tps, h_out); return _ret; }
         }
-        else if (_m8199->tag == 4) {
-            char *h_sz = _m8199->u.V_TFix.f0;
-            TychoArrK1 h_k = _m8199->u.V_TFix.f1;
+        else if (_m8201->tag == 4) {
+            char *h_sz = _m8201->u.V_TFix.f0;
+            TychoArrK1 h_k = _m8201->u.V_TFix.f1;
             { TychoArrStr _ret = h_types___pat_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_tps, h_out); return _ret; }
         }
-        else if (_m8199->tag == 5) {
-            TychoArrK1 h_k = _m8199->u.V_TMap.f0;
+        else if (_m8201->tag == 5) {
+            TychoArrK1 h_k = _m8201->u.V_TMap.f0;
             {
-                TychoArrK1 _fc8200 = h_k;
-                for (tycho_int _fi8201 = 0; _fi8201 < _fc8200.len; _fi8201 += 1) {
-                    E_ast__Ty *h_a = _fc8200.data[_fi8201];
-                    TychoArrStr _rec8203 = h_types___pat_params__own2(_parent, h_a, h_tps, h_out);
-                    if (h_out.data && h_out.data != _rec8203.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8203;
+                TychoArrK1 _fc8202 = h_k;
+                for (tycho_int _fi8203 = 0; _fi8203 < _fc8202.len; _fi8203 += 1) {
+                    E_ast__Ty *h_a = _fc8202.data[_fi8203];
+                    TychoArrStr _rec8205 = h_types___pat_params__own2(_parent, h_a, h_tps, h_out);
+                    if (h_out.data && h_out.data != _rec8205.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8205;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8199->tag == 6) {
-            TychoArrK1 h_k = _m8199->u.V_TTup.f0;
+        else if (_m8201->tag == 6) {
+            TychoArrK1 h_k = _m8201->u.V_TTup.f0;
             {
-                TychoArrK1 _fc8204 = h_k;
-                for (tycho_int _fi8205 = 0; _fi8205 < _fc8204.len; _fi8205 += 1) {
-                    E_ast__Ty *h_a = _fc8204.data[_fi8205];
-                    TychoArrStr _rec8207 = h_types___pat_params__own2(_parent, h_a, h_tps, h_out);
-                    if (h_out.data && h_out.data != _rec8207.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8207;
+                TychoArrK1 _fc8206 = h_k;
+                for (tycho_int _fi8207 = 0; _fi8207 < _fc8206.len; _fi8207 += 1) {
+                    E_ast__Ty *h_a = _fc8206.data[_fi8207];
+                    TychoArrStr _rec8209 = h_types___pat_params__own2(_parent, h_a, h_tps, h_out);
+                    if (h_out.data && h_out.data != _rec8209.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8209;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8199->tag == 7) {
-            int h_hr = _m8199->u.V_TFn.f0;
-            TychoArrK1 h_k = _m8199->u.V_TFn.f1;
+        else if (_m8201->tag == 7) {
+            int h_hr = _m8201->u.V_TFn.f0;
+            TychoArrK1 h_k = _m8201->u.V_TFn.f1;
             {
-                TychoArrK1 _fc8208 = h_k;
-                for (tycho_int _fi8209 = 0; _fi8209 < _fc8208.len; _fi8209 += 1) {
-                    E_ast__Ty *h_a = _fc8208.data[_fi8209];
-                    TychoArrStr _rec8211 = h_types___pat_params__own2(_parent, h_a, h_tps, h_out);
-                    if (h_out.data && h_out.data != _rec8211.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8211;
+                TychoArrK1 _fc8210 = h_k;
+                for (tycho_int _fi8211 = 0; _fi8211 < _fc8210.len; _fi8211 += 1) {
+                    E_ast__Ty *h_a = _fc8210.data[_fi8211];
+                    TychoArrStr _rec8213 = h_types___pat_params__own2(_parent, h_a, h_tps, h_out);
+                    if (h_out.data && h_out.data != _rec8213.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8213;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8199->tag == 2) {
-            char *h_q = _m8199->u.V_TName.f0;
-            char *h_n = _m8199->u.V_TName.f1;
-            TychoArrK1 h_targs = _m8199->u.V_TName.f2;
+        else if (_m8201->tag == 2) {
+            char *h_q = _m8201->u.V_TName.f0;
+            char *h_n = _m8201->u.V_TName.f1;
+            TychoArrK1 h_targs = _m8201->u.V_TName.f2;
             if ((tycho_str_len(h_q) == 0LL) && h_types___has_name6(_parent, h_tps, h_n)) {
                 tycho_arr_str_push(_parent, &(h_out), h_n);
             }
             {
-                TychoArrK1 _fc8212 = h_targs;
-                for (tycho_int _fi8213 = 0; _fi8213 < _fc8212.len; _fi8213 += 1) {
-                    E_ast__Ty *h_a = _fc8212.data[_fi8213];
-                    TychoArrStr _rec8215 = h_types___pat_params__own2(_parent, h_a, h_tps, h_out);
-                    if (h_out.data && h_out.data != _rec8215.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8215;
+                TychoArrK1 _fc8214 = h_targs;
+                for (tycho_int _fi8215 = 0; _fi8215 < _fc8214.len; _fi8215 += 1) {
+                    E_ast__Ty *h_a = _fc8214.data[_fi8215];
+                    TychoArrStr _rec8217 = h_types___pat_params__own2(_parent, h_a, h_tps, h_out);
+                    if (h_out.data && h_out.data != _rec8217.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8217;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
@@ -61008,84 +61009,84 @@ TychoArrStr h_types___pat_params__own2(Arena *_parent, E_ast__Ty *h_t, TychoArrS
 TychoArrStr h_types___size_params__own1(Arena *_parent, E_ast__Ty *h_t, TychoArrStr h_acc) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_acc);
     {
-        E_ast__Ty *_m8216 = h_t;
-        if (_m8216->tag == 4) {
-            char *h_sz = _m8216->u.V_TFix.f0;
-            TychoArrK1 h_k = _m8216->u.V_TFix.f1;
+        E_ast__Ty *_m8218 = h_t;
+        if (_m8218->tag == 4) {
+            char *h_sz = _m8218->u.V_TFix.f0;
+            TychoArrK1 h_k = _m8218->u.V_TFix.f1;
             if ((tycho_str_len(h_sz) > 0LL) && (tycho_str_get(h_sz, 0LL) == 36LL)) {
-                tycho_arr_str_push(_parent, &(h_out), ({ const char *_ss8217 = h_sz; tycho_str_substr(_parent, _ss8217, 1LL, tycho_str_len(_ss8217)); }));
+                tycho_arr_str_push(_parent, &(h_out), ({ const char *_ss8219 = h_sz; tycho_str_substr(_parent, _ss8219, 1LL, tycho_str_len(_ss8219)); }));
             }
             { TychoArrStr _ret = h_types___size_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8216->tag == 3) {
-            TychoArrK1 h_k = _m8216->u.V_TArr.f0;
+        else if (_m8218->tag == 3) {
+            TychoArrK1 h_k = _m8218->u.V_TArr.f0;
             { TychoArrStr _ret = h_types___size_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8216->tag == 8) {
-            TychoArrK1 h_k = _m8216->u.V_TSoa.f0;
+        else if (_m8218->tag == 8) {
+            TychoArrK1 h_k = _m8218->u.V_TSoa.f0;
             { TychoArrStr _ret = h_types___size_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8216->tag == 9) {
-            char *h_sz = _m8216->u.V_TBnd.f0;
-            TychoArrK1 h_k = _m8216->u.V_TBnd.f1;
+        else if (_m8218->tag == 9) {
+            char *h_sz = _m8218->u.V_TBnd.f0;
+            TychoArrK1 h_k = _m8218->u.V_TBnd.f1;
             { TychoArrStr _ret = h_types___size_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8216->tag == 10) {
-            char *h_sz = _m8216->u.V_TVec.f0;
-            TychoArrK1 h_k = _m8216->u.V_TVec.f1;
+        else if (_m8218->tag == 10) {
+            char *h_sz = _m8218->u.V_TVec.f0;
+            TychoArrK1 h_k = _m8218->u.V_TVec.f1;
             { TychoArrStr _ret = h_types___size_params(_parent, tycho_arr_K1_get(h_k, 0LL), h_out); return _ret; }
         }
-        else if (_m8216->tag == 5) {
-            TychoArrK1 h_k = _m8216->u.V_TMap.f0;
+        else if (_m8218->tag == 5) {
+            TychoArrK1 h_k = _m8218->u.V_TMap.f0;
             {
-                TychoArrK1 _fc8218 = h_k;
-                for (tycho_int _fi8219 = 0; _fi8219 < _fc8218.len; _fi8219 += 1) {
-                    E_ast__Ty *h_a = _fc8218.data[_fi8219];
-                    TychoArrStr _rec8221 = h_types___size_params__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8221.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8221;
+                TychoArrK1 _fc8220 = h_k;
+                for (tycho_int _fi8221 = 0; _fi8221 < _fc8220.len; _fi8221 += 1) {
+                    E_ast__Ty *h_a = _fc8220.data[_fi8221];
+                    TychoArrStr _rec8223 = h_types___size_params__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8223.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8223;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8216->tag == 6) {
-            TychoArrK1 h_k = _m8216->u.V_TTup.f0;
+        else if (_m8218->tag == 6) {
+            TychoArrK1 h_k = _m8218->u.V_TTup.f0;
             {
-                TychoArrK1 _fc8222 = h_k;
-                for (tycho_int _fi8223 = 0; _fi8223 < _fc8222.len; _fi8223 += 1) {
-                    E_ast__Ty *h_a = _fc8222.data[_fi8223];
-                    TychoArrStr _rec8225 = h_types___size_params__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8225.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8225;
+                TychoArrK1 _fc8224 = h_k;
+                for (tycho_int _fi8225 = 0; _fi8225 < _fc8224.len; _fi8225 += 1) {
+                    E_ast__Ty *h_a = _fc8224.data[_fi8225];
+                    TychoArrStr _rec8227 = h_types___size_params__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8227.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8227;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8216->tag == 7) {
-            int h_hr = _m8216->u.V_TFn.f0;
-            TychoArrK1 h_k = _m8216->u.V_TFn.f1;
+        else if (_m8218->tag == 7) {
+            int h_hr = _m8218->u.V_TFn.f0;
+            TychoArrK1 h_k = _m8218->u.V_TFn.f1;
             {
-                TychoArrK1 _fc8226 = h_k;
-                for (tycho_int _fi8227 = 0; _fi8227 < _fc8226.len; _fi8227 += 1) {
-                    E_ast__Ty *h_a = _fc8226.data[_fi8227];
-                    TychoArrStr _rec8229 = h_types___size_params__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8229.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8229;
+                TychoArrK1 _fc8228 = h_k;
+                for (tycho_int _fi8229 = 0; _fi8229 < _fc8228.len; _fi8229 += 1) {
+                    E_ast__Ty *h_a = _fc8228.data[_fi8229];
+                    TychoArrStr _rec8231 = h_types___size_params__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8231.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8231;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
         }
-        else if (_m8216->tag == 2) {
-            char *h_q = _m8216->u.V_TName.f0;
-            char *h_n = _m8216->u.V_TName.f1;
-            TychoArrK1 h_ts = _m8216->u.V_TName.f2;
+        else if (_m8218->tag == 2) {
+            char *h_q = _m8218->u.V_TName.f0;
+            char *h_n = _m8218->u.V_TName.f1;
+            TychoArrK1 h_ts = _m8218->u.V_TName.f2;
             {
-                TychoArrK1 _fc8230 = h_ts;
-                for (tycho_int _fi8231 = 0; _fi8231 < _fc8230.len; _fi8231 += 1) {
-                    E_ast__Ty *h_a = _fc8230.data[_fi8231];
-                    TychoArrStr _rec8233 = h_types___size_params__own1(_parent, h_a, h_out);
-                    if (h_out.data && h_out.data != _rec8233.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
-                    h_out = _rec8233;
+                TychoArrK1 _fc8232 = h_ts;
+                for (tycho_int _fi8233 = 0; _fi8233 < _fc8232.len; _fi8233 += 1) {
+                    E_ast__Ty *h_a = _fc8232.data[_fi8233];
+                    TychoArrStr _rec8235 = h_types___size_params__own1(_parent, h_a, h_out);
+                    if (h_out.data && h_out.data != _rec8235.data) arena_recycle(_parent, h_out.data, (size_t)h_out.cap * sizeof(*h_out.data));
+                    h_out = _rec8235;
                 }
             }
             { TychoArrStr _ret = h_out; return _ret; }
@@ -61112,18 +61113,18 @@ char *h_emit___tofloat__own0(Arena *_parent, char *h_c) {
                 {
                     tycho_int h_d = tycho_str_get(h_c, h_i);
                     if ((h_d == 45LL) && (h_i == 0LL)) {
-                        { goto _post8234; }
+                        { goto _post8236; }
                     }
                     if ((h_d < 48LL) || (h_d > 57LL)) {
                         h_ok = 0;
                     }
                 }
-                _post8234: ;
+                _post8236: ;
                 h_i = (h_i + 1LL);
             }
         }
         if (h_ok) {
-            { char *_ret = tycho_str_concat(_parent, ({ const char *_ss8235 = h_c; tycho_str_substr(_parent, _ss8235, 0LL, (h_n - 2LL)); }), TYCHO_LIT(".0")); return _ret; }
+            { char *_ret = tycho_str_concat(_parent, ({ const char *_ss8237 = h_c; tycho_str_substr(_parent, _ss8237, 0LL, (h_n - 2LL)); }), TYCHO_LIT(".0")); return _ret; }
         }
     }
     { char *_ret = tycho_str_concat3(_parent, TYCHO_LIT("(double)("), h_c, TYCHO_LIT(")")); return _ret; }
@@ -61169,7 +61170,7 @@ char *h_emit___copy__own1(Arena *_parent, S_emit__C *h_cs, Arena *_ina_h_cs, cha
 
 char *h_emit___elem__own0(Arena *_parent, char *h_t) {
     Arena _scope = arena_child(_parent); _scope.name = "emit___elem__own0";
-    { char *_ret = tycho_str_copy(_parent, ({ const char *_ss8236 = h_t; tycho_str_substr(&_scope, _ss8236, 1LL, (tycho_str_len(h_t) - 1LL)); })); arena_free(&_scope); return _ret; }
+    { char *_ret = tycho_str_copy(_parent, ({ const char *_ss8238 = h_t; tycho_str_substr(&_scope, _ss8238, 1LL, (tycho_str_len(h_t) - 1LL)); })); arena_free(&_scope); return _ret; }
 }
 
 char *h_strings__replace__own0(Arena *_parent, char *h_s, char *h_old, char *h_new) {
@@ -61184,26 +61185,26 @@ char *h_strings__replace__own0(Arena *_parent, char *h_s, char *h_old, char *h_n
     tycho_int h_span = 0LL;
     tycho_int h_i = 0LL;
     {
-        Arena _scr8237 = arena_child(&_scope); _scr8237.name = "strings__replace__own0:0";
+        Arena _scr8239 = arena_child(&_scope); _scr8239.name = "strings__replace__own0:0";
         #if defined(__clang__)
         #pragma clang loop unroll_count(4)
         #elif defined(__GNUC__)
         #pragma GCC unroll 4
         #endif
         while (h_i < h_n) {
-            arena_reset(&_scr8237);
-            if (((h_i + h_ol) <= h_n) && tycho_str_eq(tycho_str_substr(&_scr8237, h_s, h_i, (h_i + h_ol)), h_old)) {
-                char* _ap8238 = tycho_str_substr(&_scope, h_s, h_span, h_i);
-                char* _ap8239 = h_new;
-                tycho_str_append(&_scope, &h_r, &_append_h_r, _ap8238);
-                tycho_str_append(&_scope, &h_r, &_append_h_r, _ap8239);
+            arena_reset(&_scr8239);
+            if (((h_i + h_ol) <= h_n) && tycho_str_eq(tycho_str_substr(&_scr8239, h_s, h_i, (h_i + h_ol)), h_old)) {
+                char* _ap8240 = tycho_str_substr(&_scope, h_s, h_span, h_i);
+                char* _ap8241 = h_new;
+                tycho_str_append(&_scope, &h_r, &_append_h_r, _ap8240);
+                tycho_str_append(&_scope, &h_r, &_append_h_r, _ap8241);
                 h_i = (h_i + h_ol);
                 h_span = h_i;
             } else {
                 h_i = (h_i + 1LL);
             }
         }
-        arena_free(&_scr8237);
+        arena_free(&_scr8239);
     }
     { char *_ret = tycho_str_concat(_parent, h_r, tycho_str_substr(_parent, h_s, h_span, h_n)); arena_free(&_scope); return _ret; }
 }
@@ -61213,35 +61214,35 @@ TychoArrStr h_sort__asc__string__string(Arena *_parent, TychoArrStr h_xs) {
     TychoArrStr h_out = tycho_arr_str_copy(_parent, h_xs);
     {
         tycho_int h_i = 1LL;
-        Arena _scr8240 = arena_child(&_scope); _scr8240.name = "sort__asc__string__string:0";
+        Arena _scr8242 = arena_child(&_scope); _scr8242.name = "sort__asc__string__string:0";
         while (h_i < ((h_out).len)) {
-            arena_reset(&_scr8240);
+            arena_reset(&_scr8242);
             {
-                char *h_cur = tycho_str_copy(&_scr8240, tycho_arr_str_get(h_out, h_i));
+                char *h_cur = tycho_str_copy(&_scr8242, tycho_arr_str_get(h_out, h_i));
                 tycho_int h_j = (h_i - 1LL);
                 {
-                    Arena _scr8241 = arena_child(&_scr8240); _scr8241.name = "sort__asc__string__string:1";
+                    Arena _scr8243 = arena_child(&_scr8242); _scr8243.name = "sort__asc__string__string:1";
                     #if defined(__clang__)
                     #pragma clang loop unroll_count(4)
                     #elif defined(__GNUC__)
                     #pragma GCC unroll 4
                     #endif
                     while ((h_j >= 0LL) && (tycho_str_cmp(tycho_arr_str_get(h_out, h_j), h_cur) > 0)) {
-                        arena_reset(&_scr8241);
-                        tycho_int h__mk8243 = (h_j + 1LL);
-                        char * _ps8243 = tycho_str_copy(&_scr8241, tycho_arr_str_get(h_out, h_j));
-                        tycho_arr_str_set(_parent, &(h_out), h__mk8243, _ps8243);
+                        arena_reset(&_scr8243);
+                        tycho_int h__mk8245 = (h_j + 1LL);
+                        char * _ps8245 = tycho_str_copy(&_scr8243, tycho_arr_str_get(h_out, h_j));
+                        tycho_arr_str_set(_parent, &(h_out), h__mk8245, _ps8245);
                         h_j = (h_j - 1LL);
                     }
-                    arena_free(&_scr8241);
+                    arena_free(&_scr8243);
                 }
-                tycho_int h__mk8245 = (h_j + 1LL);
-                char * _ps8245 = h_cur;
-                tycho_arr_str_set(_parent, &(h_out), h__mk8245, _ps8245);
+                tycho_int h__mk8247 = (h_j + 1LL);
+                char * _ps8247 = h_cur;
+                tycho_arr_str_set(_parent, &(h_out), h__mk8247, _ps8247);
             }
             h_i = (h_i + 1LL);
         }
-        arena_free(&_scr8240);
+        arena_free(&_scr8242);
     }
     { TychoArrStr _ret = h_out; arena_free(&_scope); return _ret; }
 }
@@ -61253,14 +61254,14 @@ TychoArrK24 h_sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef(
     tycho_int h_n = ((h_a).len);
     tycho_int h_width = 1LL;
     {
-        Arena _scr8246 = arena_child(&_scope); _scr8246.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:0";
+        Arena _scr8248 = arena_child(&_scope); _scr8248.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:0";
         while (h_width < h_n) {
-            arena_reset(&_scr8246);
+            arena_reset(&_scr8248);
             tycho_int h_lo = 0LL;
             {
-                Arena _scr8247 = arena_child(&_scr8246); _scr8247.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:1";
+                Arena _scr8249 = arena_child(&_scr8248); _scr8249.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:1";
                 while (h_lo < h_n) {
-                    arena_reset(&_scr8247);
+                    arena_reset(&_scr8249);
                     tycho_int h_mid = (h_lo + h_width);
                     tycho_int h_hi = ((h_lo + h_width) + h_width);
                     if (h_mid > h_n) {
@@ -61273,40 +61274,40 @@ TychoArrK24 h_sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef(
                     tycho_int h_j = h_mid;
                     tycho_int h_k = h_lo;
                     {
-                        Arena _scr8248 = arena_child(&_scr8247); _scr8248.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:2";
+                        Arena _scr8250 = arena_child(&_scr8249); _scr8250.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:2";
                         #if defined(__clang__)
                         #pragma clang loop unroll_count(4)
                         #elif defined(__GNUC__)
                         #pragma GCC unroll 4
                         #endif
                         while (h_k < h_hi) {
-                            arena_reset(&_scr8248);
+                            arena_reset(&_scr8250);
                             int h_take_left = 0;
                             if (h_i >= h_mid) {
                                 h_take_left = 0;
                             } else if (h_j >= h_hi) {
                                 h_take_left = 1;
                             } else {
-                                h_take_left = (({ FnC0  *_fv8249 = &(h_cmp); _fv8249->call((void *)&_fv8249->c0, &_scr8248, tycho_arr_K24_get(h_a, h_i), tycho_arr_K24_get(h_a, h_j)); }) <= 0LL);
+                                h_take_left = (({ FnC0  *_fv8251 = &(h_cmp); _fv8251->call((void *)&_fv8251->c0, &_scr8250, tycho_arr_K24_get(h_a, h_i), tycho_arr_K24_get(h_a, h_j)); }) <= 0LL);
                             }
                             if (h_take_left) {
-                                tycho_int h__mk8251 = h_k;
-                                S_types__DRef _ps8251 = tycho_arr_K24_get(h_a, h_i);
-                                (*tycho_arr_K24_ptr(&(h_b), h__mk8251)) = _ps8251;
+                                tycho_int h__mk8253 = h_k;
+                                S_types__DRef _ps8253 = tycho_arr_K24_get(h_a, h_i);
+                                (*tycho_arr_K24_ptr(&(h_b), h__mk8253)) = _ps8253;
                                 h_i = (h_i + 1LL);
                             } else {
-                                tycho_int h__mk8253 = h_k;
-                                S_types__DRef _ps8253 = tycho_arr_K24_get(h_a, h_j);
-                                (*tycho_arr_K24_ptr(&(h_b), h__mk8253)) = _ps8253;
+                                tycho_int h__mk8255 = h_k;
+                                S_types__DRef _ps8255 = tycho_arr_K24_get(h_a, h_j);
+                                (*tycho_arr_K24_ptr(&(h_b), h__mk8255)) = _ps8255;
                                 h_j = (h_j + 1LL);
                             }
                             h_k = (h_k + 1LL);
                         }
-                        arena_free(&_scr8248);
+                        arena_free(&_scr8250);
                     }
                     h_lo = ((h_lo + h_width) + h_width);
                 }
-                arena_free(&_scr8247);
+                arena_free(&_scr8249);
             }
             {
                 tycho_int h_t = 0LL;
@@ -61317,16 +61318,16 @@ TychoArrK24 h_sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef(
                 #endif
                 while (h_t < h_n) {
                     {
-                        tycho_int h__mk8256 = h_t;
-                        S_types__DRef _ps8256 = tycho_arr_K24_get(h_b, h_t);
-                        (*tycho_arr_K24_ptr(&(h_a), h__mk8256)) = _ps8256;
+                        tycho_int h__mk8258 = h_t;
+                        S_types__DRef _ps8258 = tycho_arr_K24_get(h_b, h_t);
+                        (*tycho_arr_K24_ptr(&(h_a), h__mk8258)) = _ps8258;
                     }
                     h_t = (h_t + 1LL);
                 }
             }
             h_width = (h_width + h_width);
         }
-        arena_free(&_scr8246);
+        arena_free(&_scr8248);
     }
     { TychoArrK24 _ret = h_a; arena_free(&_scope); return _ret; }
 }

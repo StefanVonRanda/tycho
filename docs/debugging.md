@@ -67,7 +67,8 @@ their Tycho names (the `h_` prefix is stripped; arena machinery is hidden):
 
 ```sh
 tycho debug program.ty [args...]
-tycho debug -b 7 -b 12 program.ty     # pre-set breakpoints
+tycho debug -b 7 -b 12 program.ty              # entry-file lines
+tycho debug -b lib/parse.ty:42 program.ty      # a package file
 ```
 
 ```text
@@ -172,9 +173,8 @@ Reading it:
 ## Limits
 
 - **Package builds.** `-g` emits a `#line` before each statement naming the
-  file that owns it, so gdb/lldb stop in the right `.ty` file. `tycho debug`
-  still drives one source file and refuses a package build; use gdb/lldb
-  directly for those.
+  file that owns it. `tycho debug` accepts package builds; break with
+  `b lib/parse.ty:42`, and `l` follows whichever file the stop is in.
 - **Synthesized glue is unmapped.** The program entry point, arena bootstrap,
   and other compiler-generated scaffolding have no `.ty` line; a `#line`
   directive only anchors real statements, so stepping through the glue shows the

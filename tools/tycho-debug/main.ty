@@ -61,6 +61,8 @@ struct Sess:
     pid: int
     src: string
     bin: string          # the -g compiled binary, removed at quit
+    curfile: string
+    srcs: [string: [string]]
 
 # TYCHOC wins; then a tychoc sitting BESIDE this binary; then PATH. The middle
 # rung is what makes `./tycho-debug f.ty` work in a checkout, where ./tychoc is
@@ -223,21 +225,12 @@ fn strip_h(name: string) -> string:
         return substr(name, 2, len(name))
     return name
 
-# a `package` header needs more than one source view -- refuse up front rather
-# than showing one file's lines for another file's stop
-fn is_package_file(src: string) -> bool:
-    lines := split(src, "\n")
-    for ln in lines:
-        t := strings.trim(ln)
-        if t == "":
-            continue
-        if strings.starts_with(t, "#"):
-            continue
-        w := split(t, " ")
-        if len(w) >= 2 and w[0] == "package":
-            return true
-        return false
-    return false
+fn display_fn(name: string) -> string:
+    n := strip_h(name)
+    cut := find(n, "__")
+    if cut > 0:
+        return n[0:cut] + "." + n[cut + 2:len(n)]
+    return n
 
 fn all_digits(s: string) -> bool:
     if len(s) == 0:
@@ -250,13 +243,13 @@ fn all_digits(s: string) -> bool:
 
 fn usage():
     println("tycho-debug - debug a Tycho program under gdb")
-    println("usage: tycho-debug [-b <line>]... <program.ty> [args...]")
+    println("usage: tycho-debug [-b <line>|<file>:<line>]... <program.ty> [args...]")
     println("  compiles <program.ty> with -g, then drives an interactive gdb session")
-    println("  -b <line>    pre-set a breakpoint on that source line (repeatable)")
-    println("  commands: b <line>  r  n  s  c  p <expr>  loc  bt  l  $ <gdb>  q  h")
+    println("  -b <where>  pre-set a breakpoint on a line or file:line (repeatable)")
+    println("  commands: b [file:]line  r  n  s  c  p <expr>  loc  bt  l  $ <gdb>  q  h")
 
 fn help():
-    println("  b <line>   break on a source line (prog.ty:<line>)")
+    println("  b [file:]line  break on a source line, optionally in a package file")
     println("  r          run the program")
     println("  n          next -- step over")
     println("  s          step into")
@@ -374,27 +367,38 @@ fn show_stopped(s: inout Sess, rec: string):
     fn_ := field(fparts, "func")
     f := field(fparts, "file")
     ln := field(fparts, "line")
-    if norm_sep(f) == norm_sep(s.src) or f == "":
+    if f != "" and strings.ends_with(f, ".ty"):
+        s.curfile = f
         if ln != "":
             s.cur = strings.parse_int_prefix(ln)
-        println("  at " + base_name(s.src) + ":" + ln + "  (" + strip_h(fn_) + ")")
+        println("  at " + base_name(f) + ":" + ln + "  (" + display_fn(fn_) + ")")
     else:
-        println("  at " + f + ":" + ln + "  (" + fn_ + ")")   # runtime glue: no .ty line
+        println("  at " + f + ":" + ln + "  (" + display_fn(fn_) + ")")   # runtime glue: no .ty line
 
 # ---- commands -------------------------------------------------------------
 
 fn cmd_break(s: inout Sess, rest: string):
-    if not all_digits(rest):
-        println("break: source line expected, e.g.  b 7")
+    file := ""
+    line := rest
+    colon := find(rest, ":")
+    if colon >= 0:
+        file = substr(rest, 0, colon)
+        line = substr(rest, colon + 1, len(rest))
+    if not all_digits(line):
+        println("break: line expected, e.g.  b 7  or  b lib/lib.ty:7")
         return
-    payload := mi(&s, "-break-insert " + s.src + ":" + rest, false)
+    if file == "":
+        file = s.curfile
+        if file == "":
+            file = s.src
+    payload := mi(&s, "-break-insert " + file + ":" + line, false)
     if payload == "":
         return
     bk := field(rec_fields(payload), "bkpt")
     num := ""
     if bk != "":
         num = field(blob_fields(bk), "number")
-    println("breakpoint " + num + " at " + base_name(s.src) + ":" + rest)
+    println("breakpoint " + num + " at " + base_name(file) + ":" + line)
 
 fn cmd_print(s: inout Sess, expr: string):
     if expr == "":
@@ -427,10 +431,22 @@ fn cmd_locals(s: inout Sess):
     if shown == 0:
         println("(no user locals)")
 
-fn cmd_list(lines: [string], cur: int):
+fn source_lines(s: inout Sess, file: string) -> [string]:
+    if file == "":
+        file = s.src
+    key := norm_sep(file)
+    if key in s.srcs:
+        return s.srcs[key]
+    ls := split(read_file(file), "\n")
+    s.srcs[key] = ls
+    return ls
+
+fn cmd_list(s: inout Sess):
+    cur := s.cur
     if cur < 1:
         println("list: not stopped at a source line yet -- run first")
         return
+    lines := source_lines(&s, s.curfile)
     lo := cur - 4
     if lo < 0:
         lo = 0
@@ -466,7 +482,7 @@ fn split_cmd(line: string) -> (string, string):
 
 # ---- the REPL -------------------------------------------------------------
 
-fn repl(s: inout Sess, src_lines: [string]):
+fn repl(s: inout Sess):
     println("tycho-debug: debugging " + base_name(s.src) + "  (q quits, h for help)")
     last := ""
     for true:
@@ -515,7 +531,7 @@ fn repl(s: inout Sess, src_lines: [string]):
         elif cmd == "bt" or cmd == "backtrace":
             mi(&s, "-interpreter-exec console \"bt\"", false)
         elif cmd == "l" or cmd == "list":
-            cmd_list(src_lines, s.cur)
+            cmd_list(&s)
         elif cmd == "$":
             mi(&s, "-interpreter-exec console \"" + c_quote(rest) + "\"", false)
         else:
@@ -548,12 +564,6 @@ fn main():
             abs = p
         None:
             die("tycho-debug: no such file: " + prog)
-    src_text := read_file(abs)
-    if is_package_file(src_text):
-        die("tycho-debug: " + prog + " is a package build -- this tool drives " +
-            "one source file, so its source view cannot follow the other files. " +
-            "Use gdb/lldb directly for a package build (see docs/debugging.md).")
-    src_lines := split(src_text, "\n")
     # compile with -g: #line directives + -O0 -g (stderr passes through so a
     # compile error is visible; the "built ..." line is suppressed)
     ensure_tmp_root()
@@ -584,7 +594,7 @@ fn main():
     # session setup: no paging, no confirm prompts. MI stays in its default
     # SYNC mode on purpose -- see the header comment (mi-async on misses
     # breakpoints on the first run; probed on gdb 17.2).
-    s := Sess(g, 0, 0, abs, bin)
+    s := Sess(g, 0, 0, abs, bin, abs, []string: [string])
     mi(&s, "-gdb-set pagination off", false)
     mi(&s, "-gdb-set confirm off", false)
     mi(&s, "-gdb-set style enabled off", false)
@@ -594,4 +604,4 @@ fn main():
     mi(&s, "-gdb-set print frame-info short-location", false)
     for b in bpoints:
         cmd_break(&s, b)
-    repl(&s, src_lines)
+    repl(&s)

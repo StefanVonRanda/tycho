@@ -173,9 +173,8 @@ want a different tool, is
 removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails,
 for debugging); `-o name` names the output, `--emit-c` stops at the C (writing
 it to stdout unless `-o` names a file) — that is how you keep the C. The
-production compiler is self-hosted; the bootstrap is one generated C file. Set
-`TYCHO_CCACHE=1` to prepend `ccache` to the C compiler invocation; the generated
-C is deterministic, so unchanged builds hit the cache. The only optional extras are
+production compiler is self-hosted; the bootstrap is one generated C file. The
+only optional extras are
 `pkg-config` plus a library for the FFI-backed corelib modules (like
 `core:http`) and a Go toolchain for the cross-language benchmarks — both skip
 cleanly when absent.

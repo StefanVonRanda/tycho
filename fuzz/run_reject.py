@@ -20,8 +20,12 @@ def first_marker(err):
 
 def build_asan_tychoc(tmp):
     exe = os.path.join(tmp, "tychoc_asan")
-    r = subprocess.run(["cc", "-O1", "-fwrapv", "-std=c11"] + ASAN + ["-Ibuild",
-                        os.path.join(REPO, "src", "tychoc.c"), "-o", exe, "-lm"],
+    r = subprocess.run(["cc", "-O1", "-fwrapv", "-std=c11", "-pthread"] + ASAN + ["-Icorelib",
+                        os.path.join(REPO, "bootstrap", "tycho_compiler.c"),
+                        os.path.join(REPO, "corelib", "strings", "strings_shim.c"),
+                        os.path.join(REPO, "corelib", "os", "os_shim.c"),
+                        os.path.join(REPO, "corelib", "io", "io_shim.c"),
+                        "-o", exe, "-lm"],
                        cwd=REPO, capture_output=True, text=True, timeout=BUILD_TIMEOUT)
     if r.returncode != 0:
         print("ASan tychoc build FAILED:\n" + r.stderr[:2000]); return None
@@ -85,7 +89,7 @@ def main():
     start = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     os.makedirs(FINDINGS, exist_ok=True)
     tmp = tempfile.mkdtemp()
-    print("building the ASan+UBSan tychoc from src/tychoc.c...")
+    print("building the ASan+UBSan compiler from bootstrap/tycho_compiler.c...")
     hc = build_asan_tychoc(tmp)
     if not hc:
         shutil.rmtree(tmp, ignore_errors=True); return 2
