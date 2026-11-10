@@ -12,3 +12,10 @@ rwlock: read blocks write=true
 rwlock: free try write=true
 waitgroup: total=10000 (want 10000)
 once: count=1 (want 1) done=true
+semaphore: before=0 after=1 count=0
+semaphore try0=false
+semaphore try1=true count=0
+cond: woken=1
+cond timed=2 (2=timeout)
+ptr load nonnull=true
+ptr swap nonnull=true cas=true lost=false null=true

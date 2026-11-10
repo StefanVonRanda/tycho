@@ -255,8 +255,15 @@ expression-bodied; pass a named function where you need a multi-line body.
   `waitgroup_done`, `waitgroup_wait` join a dynamic task count. `once_new`,
   `once_free`, `once_done`, `once_do(o, f)` run `f` exactly once: the first
   caller runs it, later callers block until it finishes. `f` must not re-enter
-  the same once object. Channels are language builtins (`channel`, `send`,
-  `recv`, `close`), not part of this package.
+  the same once object. `cond_new`/`cond_free` with `cond_wait(c, m)` (caller
+  holds `m`), `cond_timed_wait(c, m, ms) -> bool`, `cond_signal` and
+  `cond_broadcast`; `semaphore_new(n)`/`semaphore_free`, `semaphore_wait`,
+  `semaphore_try_wait`, `semaphore_post`, `semaphore_count` are a counting
+  semaphore; `atomic_ptr_new(p)`/`atomic_ptr_free` with `atomic_ptr_load`,
+  `atomic_ptr_store`, `atomic_ptr_swap` and `atomic_ptr_cas` give a
+  sequentially-consistent atomic pointer cell (null is a legal value). Channels
+  are language builtins (`channel`, `send`, `recv`, `close`), not part of this
+  package.
 - **`intern`** — hash-consing / interning: canonical storage of values keyed by a hashable
   key. Generic `Interner($K, $V)`: `intern(&i, k, v) -> Handle` returns the canonical handle
   for key `k` — the first sight stores `v` and mints the handle, every later sight of the

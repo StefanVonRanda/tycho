@@ -239,3 +239,113 @@ fn once_do(o: ptr, f: fn()):
             atomic_int_store(o, 2)
             return
         time.sleep_ms(1)
+
+# ---- condition variables, semaphores, atomic pointers ----
+extern fn syncx_cond_new() -> ptr
+extern fn syncx_cond_free(c: ptr) -> int
+extern fn syncx_cond_wait(c: ptr, m: ptr) -> int
+extern fn syncx_cond_timed_wait(c: ptr, m: ptr, ms: int) -> int
+extern fn syncx_cond_signal(c: ptr) -> int
+extern fn syncx_cond_broadcast(c: ptr) -> int
+
+extern fn syncx_semaphore_new(n: int) -> ptr
+extern fn syncx_semaphore_free(s: ptr) -> int
+extern fn syncx_semaphore_wait(s: ptr) -> int
+extern fn syncx_semaphore_try_wait(s: ptr) -> int
+extern fn syncx_semaphore_post(s: ptr) -> int
+extern fn syncx_semaphore_count(s: ptr) -> int
+
+extern fn syncx_atomic_ptr_new(p: ptr) -> ptr
+extern fn syncx_atomic_ptr_free(p: ptr)
+extern fn syncx_atomic_ptr_load(p: ptr) -> ptr
+extern fn syncx_atomic_ptr_store(p: ptr, v: ptr)
+extern fn syncx_atomic_ptr_swap(p: ptr, v: ptr) -> ptr
+extern fn syncx_atomic_ptr_cas(p: ptr, expected: ptr, desired: ptr) -> int
+
+fn cond_new() -> ptr:
+    return syncx_cond_new()
+
+fn cond_free(c: ptr):
+    if is_null(c):
+        return
+    if syncx_cond_free(c) != 0:
+        die("sync.cond_free: waiters are still blocked")
+
+# The caller must hold `m`; wait releases it atomically and reacquires it before
+# returning. `ms` is a non-negative relative timeout.
+fn cond_wait(c: ptr, m: ptr):
+    _need(c, "cond_wait")
+    _need(m, "cond_wait")
+    if syncx_cond_wait(c, m) != 0:
+        die("sync.cond_wait: the platform wait failed")
+
+fn cond_timed_wait(c: ptr, m: ptr, ms: int) -> bool:
+    _need(c, "cond_timed_wait")
+    _need(m, "cond_timed_wait")
+    if ms < 0:
+        die("sync.cond_timed_wait: negative timeout")
+    return syncx_cond_timed_wait(c, m, ms) == 1
+
+fn cond_signal(c: ptr):
+    _need(c, "cond_signal")
+    if syncx_cond_signal(c) != 0:
+        die("sync.cond_signal: the platform signal failed")
+
+fn cond_broadcast(c: ptr):
+    _need(c, "cond_broadcast")
+    if syncx_cond_broadcast(c) != 0:
+        die("sync.cond_broadcast: the platform broadcast failed")
+
+# Counting semaphore; `n` is the initial permit count.
+fn semaphore_new(n: int) -> ptr:
+    if n < 0:
+        die("sync.semaphore_new: negative permit count")
+    return syncx_semaphore_new(n)
+
+fn semaphore_free(s: ptr):
+    if is_null(s):
+        return
+    if syncx_semaphore_free(s) != 0:
+        die("sync.semaphore_free: waiters are still blocked")
+
+fn semaphore_wait(s: ptr):
+    _need(s, "semaphore_wait")
+    if syncx_semaphore_wait(s) != 0:
+        die("sync.semaphore_wait: the platform wait failed")
+
+fn semaphore_try_wait(s: ptr) -> bool:
+    _need(s, "semaphore_try_wait")
+    return syncx_semaphore_try_wait(s) == 1
+
+fn semaphore_post(s: ptr):
+    _need(s, "semaphore_post")
+    if syncx_semaphore_post(s) != 0:
+        die("sync.semaphore_post: the platform post failed")
+
+fn semaphore_count(s: ptr) -> int:
+    _need(s, "semaphore_count")
+    return syncx_semaphore_count(s)
+
+# Atomic pointer value. The handle points at the atomic cell; the pointer value
+# it holds is separate, so load returns the stored pointer (null is valid).
+fn atomic_ptr_new(p: ptr) -> ptr:
+    return syncx_atomic_ptr_new(p)
+
+fn atomic_ptr_free(p: ptr):
+    syncx_atomic_ptr_free(p)
+
+fn atomic_ptr_load(p: ptr) -> ptr:
+    _need(p, "atomic_ptr_load")
+    return syncx_atomic_ptr_load(p)
+
+fn atomic_ptr_store(p: ptr, v: ptr):
+    _need(p, "atomic_ptr_store")
+    syncx_atomic_ptr_store(p, v)
+
+fn atomic_ptr_swap(p: ptr, v: ptr) -> ptr:
+    _need(p, "atomic_ptr_swap")
+    return syncx_atomic_ptr_swap(p, v)
+
+fn atomic_ptr_cas(p: ptr, expected: ptr, desired: ptr) -> bool:
+    _need(p, "atomic_ptr_cas")
+    return syncx_atomic_ptr_cas(p, expected, desired) == 1

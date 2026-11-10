@@ -22,8 +22,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   order for the remaining gaps.
 - Added `core:container`: `Deque`, `Queue`, binary-heap `PriorityQueue`,
   `BitArray` and an LRU cache, all value-semantic and golden-tested.
-- Added `core:sync`: C11 atomics (`AtomicInt`/`AtomicBool` operations),
-  non-recursive `Mutex`, `RwLock`, `WaitGroup` and `Once` over pthreads/Win32.
+- Added `core:sync`: C11 atomics (`AtomicInt`/`AtomicBool`/atomic pointer),
+  non-recursive `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup` and `Once`
+  over pthreads/Win32.
 - Expanded `core:os` with environment, cwd/chdir, pid, hostname, home and temp
   paths; added sorted, fail-closed `io.walk`; added `path.relative`.
 - Added `core:base32`, `core:varint`, `core:endian`, `core:pem`, `core:ini`,

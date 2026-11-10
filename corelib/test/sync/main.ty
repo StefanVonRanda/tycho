@@ -43,6 +43,27 @@ fn once_worker(o: ptr, c: ptr) -> int:
     sync.once_do(o, fn(): once_bump(c))
     return 0
 
+fn sem_worker(s: ptr, out: ptr) -> int:
+    sync.semaphore_wait(s)
+    sync.atomic_int_store(out, 1)
+    return 0
+
+fn cond_worker(m: ptr, c: ptr, out: ptr) -> int:
+    sync.mutex_lock(m)
+    sync.cond_wait(c, m)
+    sync.atomic_int_store(out, 1)
+    sync.mutex_unlock(m)
+    return 0
+
+fn timed_worker(m: ptr, c: ptr, out: ptr) -> int:
+    sync.mutex_lock(m)
+    if sync.cond_timed_wait(c, m, 30):
+        sync.atomic_int_store(out, 1)
+    else:
+        sync.atomic_int_store(out, 2)
+    sync.mutex_unlock(m)
+    return 0
+
 fn main():
     ctr := sync.atomic_int_new(0)
     t1 := spawn bump(ctr, 10000)
@@ -145,3 +166,52 @@ fn main():
     println("once: count=" + str(sync.atomic_int_load(oc)) + " (want 1) done=" + str(sync.once_done(o)))
     sync.atomic_int_free(oc)
     sync.once_free(o)
+
+    # ---- condition variable, semaphore, atomic pointer ----
+    sem := sync.semaphore_new(0)
+    so := sync.atomic_int_new(0)
+    st := spawn sem_worker(sem, so)
+    time.sleep_ms(20)
+    before := sync.atomic_int_load(so)
+    sync.semaphore_post(sem)
+    wait(st)
+    after := sync.atomic_int_load(so)
+    println("semaphore: before=" + str(before) + " after=" + str(after) + " count=" + str(sync.semaphore_count(sem)))
+    println("semaphore try0=" + str(sync.semaphore_try_wait(sem)))
+    sync.semaphore_post(sem)
+    try1 := sync.semaphore_try_wait(sem)
+    cnt1 := sync.semaphore_count(sem)
+    println("semaphore try1=" + str(try1) + " count=" + str(cnt1))
+    sync.semaphore_free(sem)
+    sync.atomic_int_free(so)
+
+    cm := sync.mutex_new()
+    cc := sync.cond_new()
+    co := sync.atomic_int_new(0)
+    ct := spawn cond_worker(cm, cc, co)
+    time.sleep_ms(20)
+    sync.cond_signal(cc)
+    wait(ct)
+    println("cond: woken=" + str(sync.atomic_int_load(co)))
+    sync.cond_free(cc)
+    sync.mutex_free(cm)
+    sync.atomic_int_free(co)
+
+    tmutex := sync.mutex_new()
+    tc := sync.cond_new()
+    to := sync.atomic_int_new(0)
+    tt := spawn timed_worker(tmutex, tc, to)
+    wait(tt)
+    println("cond timed=" + str(sync.atomic_int_load(to)) + " (2=timeout)")
+    sync.cond_free(tc)
+    sync.mutex_free(tmutex)
+    sync.atomic_int_free(to)
+
+    ap := sync.atomic_ptr_new(to_ptr(1))
+    println("ptr load nonnull=" + str(not is_null(sync.atomic_ptr_load(ap))))
+    pold := sync.atomic_ptr_swap(ap, to_ptr(2))
+    pcas := sync.atomic_ptr_cas(ap, to_ptr(2), to_ptr(3))
+    plost := sync.atomic_ptr_cas(ap, to_ptr(2), to_ptr(4))
+    sync.atomic_ptr_store(ap, null)
+    println("ptr swap nonnull=" + str(not is_null(pold)) + " cas=" + str(pcas) + " lost=" + str(plost) + " null=" + str(is_null(sync.atomic_ptr_load(ap))))
+    sync.atomic_ptr_free(ap)

@@ -380,3 +380,288 @@ tycho_int syncx_waitgroup_wait(void *vp) {
 }
 
 #endif
+
+/* ---- condition variables, semaphores and atomic pointers ---- */
+#ifdef _WIN32
+
+typedef struct { CONDITION_VARIABLE cv; } SyncCond;
+typedef struct { CRITICAL_SECTION cs; CONDITION_VARIABLE cv; tycho_int n; } SyncSemaphore;
+typedef struct { _Atomic(void *) v; } SyncAtomicPtr;
+
+void *syncx_cond_new(void) {
+    SyncCond *c = (SyncCond *)malloc(sizeof *c);
+    if (!c) return NULL;
+    InitializeConditionVariable(&c->cv);
+    return c;
+}
+
+tycho_int syncx_cond_free(void *vp) {
+    free(vp);
+    return 0;
+}
+
+tycho_int syncx_cond_wait(void *cvp, void *mvp) {
+    SyncCond *c = (SyncCond *)cvp;
+    SyncMutex *m = (SyncMutex *)mvp;
+    return SleepConditionVariableSRW(&c->cv, &m->l, INFINITE, 0) ? 0 : -1;
+}
+
+tycho_int syncx_cond_timed_wait(void *cvp, void *mvp, tycho_int ms) {
+    SyncCond *c = (SyncCond *)cvp;
+    SyncMutex *m = (SyncMutex *)mvp;
+    if (ms < 0) return -1;
+    return SleepConditionVariableSRW(&c->cv, &m->l, (DWORD)ms, 0) ? 1 : 0;
+}
+
+tycho_int syncx_cond_signal(void *vp) {
+    SyncCond *c = (SyncCond *)vp;
+    WakeConditionVariable(&c->cv);
+    return 0;
+}
+
+tycho_int syncx_cond_broadcast(void *vp) {
+    SyncCond *c = (SyncCond *)vp;
+    WakeAllConditionVariable(&c->cv);
+    return 0;
+}
+
+void *syncx_semaphore_new(tycho_int n) {
+    if (n < 0) return NULL;
+    SyncSemaphore *s = (SyncSemaphore *)malloc(sizeof *s);
+    if (!s) return NULL;
+    InitializeCriticalSection(&s->cs);
+    InitializeConditionVariable(&s->cv);
+    s->n = n;
+    return s;
+}
+
+tycho_int syncx_semaphore_free(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    if (!s) return 0;
+    DeleteCriticalSection(&s->cs);
+    free(s);
+    return 0;
+}
+
+tycho_int syncx_semaphore_wait(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    EnterCriticalSection(&s->cs);
+    while (s->n == 0) SleepConditionVariableCS(&s->cv, &s->cs, INFINITE);
+    s->n -= 1;
+    LeaveCriticalSection(&s->cs);
+    return 0;
+}
+
+tycho_int syncx_semaphore_try_wait(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    EnterCriticalSection(&s->cs);
+    if (s->n == 0) {
+        LeaveCriticalSection(&s->cs);
+        return 0;
+    }
+    s->n -= 1;
+    LeaveCriticalSection(&s->cs);
+    return 1;
+}
+
+tycho_int syncx_semaphore_post(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    EnterCriticalSection(&s->cs);
+    s->n += 1;
+    WakeConditionVariable(&s->cv);
+    LeaveCriticalSection(&s->cs);
+    return 0;
+}
+
+tycho_int syncx_semaphore_count(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    EnterCriticalSection(&s->cs);
+    tycho_int n = s->n;
+    LeaveCriticalSection(&s->cs);
+    return n;
+}
+
+void *syncx_atomic_ptr_new(void *p) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)malloc(sizeof *a);
+    if (!a) return NULL;
+    atomic_init(&a->v, p);
+    return a;
+}
+
+void syncx_atomic_ptr_free(void *vp) { free(vp); }
+
+void *syncx_atomic_ptr_load(void *vp) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)vp;
+    return atomic_load_explicit(&a->v, memory_order_seq_cst);
+}
+
+void syncx_atomic_ptr_store(void *vp, void *v) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)vp;
+    atomic_store_explicit(&a->v, v, memory_order_seq_cst);
+}
+
+void *syncx_atomic_ptr_swap(void *vp, void *v) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)vp;
+    return atomic_exchange_explicit(&a->v, v, memory_order_seq_cst);
+}
+
+tycho_int syncx_atomic_ptr_cas(void *vp, void *expected, void *desired) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)vp;
+    void *old = expected;
+    return atomic_compare_exchange_strong_explicit(
+        &a->v, &old, desired, memory_order_seq_cst, memory_order_seq_cst) ? 1 : 0;
+}
+
+#else
+
+typedef struct { pthread_cond_t cv; } SyncCond;
+typedef struct { pthread_mutex_t m; pthread_cond_t cv; tycho_int n; } SyncSemaphore;
+typedef struct { _Atomic(void *) v; } SyncAtomicPtr;
+
+void *syncx_cond_new(void) {
+    SyncCond *c = (SyncCond *)malloc(sizeof *c);
+    if (!c) return NULL;
+    if (pthread_cond_init(&c->cv, NULL) != 0) { free(c); return NULL; }
+    return c;
+}
+
+tycho_int syncx_cond_free(void *vp) {
+    SyncCond *c = (SyncCond *)vp;
+    if (!c) return 0;
+    if (pthread_cond_destroy(&c->cv) != 0) return -1;
+    free(c);
+    return 0;
+}
+
+tycho_int syncx_cond_wait(void *cvp, void *mvp) {
+    SyncCond *c = (SyncCond *)cvp;
+    SyncMutex *m = (SyncMutex *)mvp;
+    return pthread_cond_wait(&c->cv, &m->m) == 0 ? 0 : -1;
+}
+
+tycho_int syncx_cond_timed_wait(void *cvp, void *mvp, tycho_int ms) {
+    SyncCond *c = (SyncCond *)cvp;
+    SyncMutex *m = (SyncMutex *)mvp;
+    if (ms < 0) return -1;
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) return -1;
+    ts.tv_sec += ms / 1000;
+    ts.tv_nsec += (long)(ms % 1000) * 1000000L;
+    if (ts.tv_nsec >= 1000000000L) {
+        ts.tv_sec += 1;
+        ts.tv_nsec -= 1000000000L;
+    }
+    return pthread_cond_timedwait(&c->cv, &m->m, &ts) == 0 ? 1 : 0;
+}
+
+tycho_int syncx_cond_signal(void *vp) {
+    SyncCond *c = (SyncCond *)vp;
+    return pthread_cond_signal(&c->cv) == 0 ? 0 : -1;
+}
+
+tycho_int syncx_cond_broadcast(void *vp) {
+    SyncCond *c = (SyncCond *)vp;
+    return pthread_cond_broadcast(&c->cv) == 0 ? 0 : -1;
+}
+
+void *syncx_semaphore_new(tycho_int n) {
+    if (n < 0) return NULL;
+    SyncSemaphore *s = (SyncSemaphore *)malloc(sizeof *s);
+    if (!s) return NULL;
+    if (pthread_mutex_init(&s->m, NULL) != 0) { free(s); return NULL; }
+    if (pthread_cond_init(&s->cv, NULL) != 0) {
+        pthread_mutex_destroy(&s->m);
+        free(s);
+        return NULL;
+    }
+    s->n = n;
+    return s;
+}
+
+tycho_int syncx_semaphore_free(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    if (!s) return 0;
+    if (pthread_cond_destroy(&s->cv) != 0) return -1;
+    if (pthread_mutex_destroy(&s->m) != 0) return -1;
+    free(s);
+    return 0;
+}
+
+tycho_int syncx_semaphore_wait(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    if (pthread_mutex_lock(&s->m) != 0) return -1;
+    while (s->n == 0) {
+        if (pthread_cond_wait(&s->cv, &s->m) != 0) {
+            pthread_mutex_unlock(&s->m);
+            return -1;
+        }
+    }
+    s->n -= 1;
+    if (pthread_mutex_unlock(&s->m) != 0) return -1;
+    return 0;
+}
+
+tycho_int syncx_semaphore_try_wait(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    if (pthread_mutex_lock(&s->m) != 0) return 0;
+    if (s->n == 0) {
+        pthread_mutex_unlock(&s->m);
+        return 0;
+    }
+    s->n -= 1;
+    pthread_mutex_unlock(&s->m);
+    return 1;
+}
+
+tycho_int syncx_semaphore_post(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    if (pthread_mutex_lock(&s->m) != 0) return -1;
+    s->n += 1;
+    if (pthread_cond_signal(&s->cv) != 0) {
+        pthread_mutex_unlock(&s->m);
+        return -1;
+    }
+    if (pthread_mutex_unlock(&s->m) != 0) return -1;
+    return 0;
+}
+
+tycho_int syncx_semaphore_count(void *vp) {
+    SyncSemaphore *s = (SyncSemaphore *)vp;
+    if (pthread_mutex_lock(&s->m) != 0) return -1;
+    tycho_int n = s->n;
+    pthread_mutex_unlock(&s->m);
+    return n;
+}
+
+void *syncx_atomic_ptr_new(void *p) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)malloc(sizeof *a);
+    if (!a) return NULL;
+    atomic_init(&a->v, p);
+    return a;
+}
+
+void syncx_atomic_ptr_free(void *vp) { free(vp); }
+
+void *syncx_atomic_ptr_load(void *vp) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)vp;
+    return atomic_load_explicit(&a->v, memory_order_seq_cst);
+}
+
+void syncx_atomic_ptr_store(void *vp, void *v) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)vp;
+    atomic_store_explicit(&a->v, v, memory_order_seq_cst);
+}
+
+void *syncx_atomic_ptr_swap(void *vp, void *v) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)vp;
+    return atomic_exchange_explicit(&a->v, v, memory_order_seq_cst);
+}
+
+tycho_int syncx_atomic_ptr_cas(void *vp, void *expected, void *desired) {
+    SyncAtomicPtr *a = (SyncAtomicPtr *)vp;
+    void *old = expected;
+    return atomic_compare_exchange_strong_explicit(
+        &a->v, &old, desired, memory_order_seq_cst, memory_order_seq_cst) ? 1 : 0;
+}
+
+#endif
