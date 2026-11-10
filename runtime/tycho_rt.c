@@ -1769,26 +1769,36 @@ int tycho_str_cmp(const char *a, const char *b) {
     return la < lb ? -1 : (la > lb ? 1 : 0);
 }
 
-tycho_int tycho_str_get(const char *s, tycho_int i) {
+static __attribute__((noinline)) void tycho_str_oob(tycho_int i, tycho_int n) {
+    fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
+    TYCHO_EXIT();
+}
+
+/* The hot string byte read. It used to be an out-of-line call whose body held
+ * the fprintf/exit slow path, so gcc declined to inline it and every `s[i]` in
+ * a parser was a function call. The slow path is now separately out of line and
+ * generated C reaches this through the macro below: json_tree parse+fold drops
+ * 290.7e6 -> 194.0e6 cycles and 1.286e9 -> 895e6 Ir at the large size. The
+ * exported symbols stay real for separately compiled shims. */
+static inline __attribute__((always_inline)) tycho_int tycho_str_get_i(const char *s, tycho_int i) {
     tycho_int n = tycho_str_len(s);
-    if (i < 0 || i >= n) {
-        fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
-        TYCHO_EXIT();
-    }
+    if (__builtin_expect(i < 0 || i >= n, 0)) tycho_str_oob(i, n);
     return (tycho_int)(unsigned char)tycho_str_data(s)[i];   /* unsigned: 0..255, never negative */
 }
+
+tycho_int tycho_str_get(const char *s, tycho_int i) { return tycho_str_get_i(s, i); }
+#define tycho_str_get(s, i) tycho_str_get_i((s), (i))
 
 /* Same bounds-checked byte read, but the caller passes the length — used when the
  * codegen has hoisted strlen(s) into a sidecar for an indexed, never-reassigned
  * string (its length is loop-invariant). Turns an O(n)-per-access bounds check
  * into O(1), so indexing a string in a loop is O(n) not O(n^2). */
-tycho_int tycho_str_get_n(const char *s, tycho_int i, tycho_int n) {
-    if (i < 0 || i >= n) {
-        fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
-        TYCHO_EXIT();
-    }
+static inline __attribute__((always_inline)) tycho_int tycho_str_get_n_i(const char *s, tycho_int i, tycho_int n) {
+    if (__builtin_expect(i < 0 || i >= n, 0)) tycho_str_oob(i, n);
     return (tycho_int)(unsigned char)tycho_str_data(s)[i];
 }
+tycho_int tycho_str_get_n(const char *s, tycho_int i, tycho_int n) { return tycho_str_get_n_i(s, i, n); }
+#define tycho_str_get_n(s, i, n) tycho_str_get_n_i((s), (i), (n))
 
 /* substring [start, end); out-of-range bounds are clamped, not an error */
 char *tycho_str_substr(Arena *a, const char *s, tycho_int start, tycho_int end) {

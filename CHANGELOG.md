@@ -33,6 +33,25 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   frozen `compiler/reject_sites.json` instead of the C source. See
   [`docs/internals/archived-c-compiler.md`](docs/internals/archived-c-compiler.md).
 
+### Performance
+
+- **String byte indexing is inlined.** `tycho_str_get` was an out-of-line call
+  whose body held the `fprintf`/`exit` slow path, so every `s[i]` in a parser
+  paid a function call. The slow path is now separately out of line and the hot
+  read is `always_inline`; `json_tree` at the large size drops 84 -> 58 ms
+  against C's 50 ms, with memory still below C (81.4 vs 103.2 MB).
+- **Maps compact at 1/8 dead, not 1/2.** A churn-heavy map reaches its reserved
+  entry capacity while nearly all entries are live, so the old rule did not
+  fire before it grew, and the old arrays stayed in the arena. `bench/lru`'s
+  large peak drops 20.2 -> 14.4 MB (C 11.9) at 236 vs 240 ms, and its
+  `reserve(idx, cap)` no longer needs the temporary 2x workaround.
+- **`dispatch` expert remains an ABI limit, not an allocator cost.** Its record
+  is 40 bytes against C's 24 because a Tycho `fn` value carries the call pointer
+  plus two inline capture slots. An 8-byte-descriptor prototype matches C
+  (~63e6 vs ~67e6 cycles at 8000x2000), but a capturing `fn` cannot be 8 bytes.
+  The idiomatic `dispatch` row is 14 ms against C's 14 ms; `expert` is an
+  explicit alternate, not part of that claim.
+
 ### Runtime
 
 - **String-map insertion is race-free across tasks.** The process-global intern

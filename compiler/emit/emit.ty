@@ -9885,7 +9885,7 @@ fn _map_defs(cs: inout C) -> (string, string, string, string):
             "static tycho_int " + p + "_append(Arena *a, " + ct + " *m, " + kp + ", " + vc + "v) {\n" +
             "    (void)" + p + "_cow(a, m);\n" +
             "    if (m->ecount == m->ecap) { tycho_int dead = m->ecount - m->len;\n" +
-            "        if (dead > m->ecap / 2) " + p + "_compact(m);\n" +
+            "        if (dead > m->ecap / 8) " + p + "_compact(m);  /* 1/8, not 1/2: reserve(cap) leaves ~1/8 headroom; 1/2 grew on lru churn */\n" +
             "        else { tycho_int nc = m->ecap ? m->ecap * 2 : 4;\n" +
             "            " + ks + "*nk = (" + ks + "*)arena_alloc(a, (size_t)nc * sizeof(" + ks + ")); " +
             vc + "*nv = (" + vc + "*)arena_alloc(a, (size_t)nc * sizeof(" + vc + ")); unsigned char *nl = (unsigned char *)arena_alloc(a, (size_t)nc);\n" +

@@ -85,9 +85,12 @@ fn main():
     nops := 5000000
     state := 88172645463325252
     pool := []Node
-    reserve(pool, 200000)
+    reserve(pool, cap)
     idx := []int: int
-    reserve(idx, 400000)
+    # The map holds at most `cap` live entries. reserve(cap) is enough because
+    # the map compacts tombstones in place at 1/8 dead rather than growing (the
+    # old 2x reserve was compensating for the 1/2 rule, and doubled the peak).
+    reserve(idx, cap)
     meta := [-1, -1, 0]
     hits := 0
     sum := 0

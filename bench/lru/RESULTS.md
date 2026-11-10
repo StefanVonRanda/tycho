@@ -42,20 +42,35 @@ wall is parity with that run, memory dropped a third.)
 The O6 scalar-map regression had made this row a 121 GB OOM; the fix is
 described below.
 
-## Verdict — ahead of Go, memory ~1.8× C with the reserve idiom
+### 2026-11-10 repeat (1/8 map compaction)
 
-tycho's value-semantic LRU is **ahead of Go on memory** (20.4 vs 20.6 MB in the
-2026-10-20 repeat; 19.8 vs 21.4 in the 2026-08-04 run) and sits at **~1.8× C
-memory**. Wall is **139 ms vs C 123 ms (~1.1×)** in the repeat; the August run
-was ~4× C. Compare within a row, not across dates: the repeat includes O1–O7 and
-a newer host/toolchain. The move from ~2.8× to ~1.8× C was the **`reserve`
-idiom** (the same one-line fix that closed the trie): the map and the node pool
-pre-size for the known cache cap, so the arena never retains the growth
-intermediates (the idiomatic run bumped 73 allocations totaling 33 MB; the reserved
-run bumps **9 allocations totaling 18.6 MB** — peak live 18.6 MiB, RSS ~20 MB, checksum
-byte-identical). `reserve(m, n)` for maps is a language feature (bench/lru's two lines:
-`reserve(pool, 200000)` and `reserve(idx, 400000)` — the map needs ~2× the live set
-while tombstones accumulate between compactions).
+`sh bench/lru/run.sh` with the current `tychoc1`; same checksum:
+
+| lang | peak RSS | time |
+|------|---------:|-----:|
+| tycho | **14.4 MB** | **236 ms** |
+| C | 11.9 MB | 240 ms |
+| go | 21.1 MB | 324 ms |
+
+`reserve(idx, 400000)` is gone. `reserve(idx, cap)` now suffices because the map
+compacts tombstones at **1/8 dead** instead of 1/2. At 1/2, a churn-heavy map
+reached its reserved entry capacity with ~cap live entries, so the rule never
+fired before it grew; the old arrays stayed in the arena and the peak was ~20
+MB. At 1/8 the reserved array is reused, and the cache holds 200k nodes in
+14.4 MB. Time is parity with C because the extra compactions are cheaper than
+the growth they prevent.
+
+## Verdict — ahead of Go, 1.2× C after the 1/8 compaction
+
+tycho's value-semantic LRU is now **14.4 MB to C's 11.9 MB (1.2×)** and
+**236 ms to C's 240 ms**, while staying well ahead of Go (21.1 MB / 324 ms).
+Before the 2026-11-10 fix it was 20.4 MB / 139 ms (1.8× C memory); the
+memory step came from `reserve(idx, cap)` plus the 1/8 compaction rule, not from
+changing the LRU algorithm.
+
+The older 1.8× result and the four fixes that produced it are kept below as the
+historical record. Compare within a row, not across dates.
+
 
 Getting to ~1.8× took four fixes, all driven by this bench:
 
