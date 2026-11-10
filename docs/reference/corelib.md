@@ -471,7 +471,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   (`aes_gcm_encrypt`/`aes_gcm_decrypt`, 16/24/32-byte keys, 12-byte nonce,
   ciphertext plus 16-byte tag), AES-CTR (`aes_ctr`, 16-byte counter block),
   Ed25519
-  (`ed25519_pubkey`/`sign`/`verify`), and X25519 (`x25519_pubkey`/`shared`). Pure Tycho
+  (`ed25519_pubkey`/`sign`/`verify`), X25519 (`x25519_pubkey`/`shared`), and RSA
+  PKCS#1 v1.5 with SHA-256 (`rsa_key_from_pem`, `rsa_pubkey_from_pem`,
+  `rsa_key_random(bits)`, `rsa_key_bits`, `rsa_key_to_pem`,
+  `rsa_pubkey_to_pem`, `rsa_key_free`, `rsa_sign_sha256`,
+  `rsa_verify_sha256`). Pure Tycho
   arithmetic cannot promise constant-time behavior, so these primitives bind OpenSSL
   rather than reimplementing them. Every value (keys, nonces, ciphertext, signatures,
   digests) crosses as lowercase hexadecimal text at this interface; use `core:hex`

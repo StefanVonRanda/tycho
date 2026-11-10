@@ -35,6 +35,15 @@ extern fn cx_x25519_key_random() -> ptr
 extern fn cx_x25519_key_from_secret(sec_hex: string) -> ptr
 extern fn cx_x25519_pubkey_hex(k: ptr) -> string
 extern fn cx_x25519_shared(k: ptr, their_pub_hex: string) -> ptr
+extern fn cx_rsa_key_from_pem(pem: string) -> ptr
+extern fn cx_rsa_pubkey_from_pem(pem: string) -> ptr
+extern fn cx_rsa_key_random(bits: int) -> ptr
+extern fn cx_rsa_key_free(k: ptr)
+extern fn cx_rsa_key_bits(k: ptr) -> int
+extern fn cx_rsa_key_to_pem(k: ptr) -> string
+extern fn cx_rsa_pubkey_to_pem(k: ptr) -> string
+extern fn cx_rsa_sign_sha256(k: ptr, msg_hex: string) -> string
+extern fn cx_rsa_verify_sha256(k: ptr, msg_hex: string, sig_hex: string) -> int
 
 # Hex arguments cross to C strings; reject embedded NULs before strlen-based
 # decoding so distinct Tycho values can never collapse to the same prefix.
@@ -237,3 +246,41 @@ fn x25519_shared(my_key: ptr, their_pubkey_hex: string) -> ptr:
     if _has_nul_hex(their_pubkey_hex):
         return null
     return cx_x25519_shared(my_key, their_pubkey_hex)
+
+# ---- RSA (PKCS#1 v1.5, SHA-256) ----
+# PEM/DER material crosses as text; keys are opaque handles with an explicit
+# free. Generation is bounded to 2048..8192 bits and is intentionally slow.
+fn rsa_key_from_pem(pem: string) -> ptr:
+    if _has_nul_hex(pem):
+        return null
+    return cx_rsa_key_from_pem(pem)
+
+fn rsa_pubkey_from_pem(pem: string) -> ptr:
+    if _has_nul_hex(pem):
+        return null
+    return cx_rsa_pubkey_from_pem(pem)
+
+fn rsa_key_random(bits: int) -> ptr:
+    return cx_rsa_key_random(bits)
+
+fn rsa_key_free(k: ptr):
+    cx_rsa_key_free(k)
+
+fn rsa_key_bits(k: ptr) -> int:
+    return cx_rsa_key_bits(k)
+
+fn rsa_key_to_pem(k: ptr) -> string:
+    return cx_rsa_key_to_pem(k)
+
+fn rsa_pubkey_to_pem(k: ptr) -> string:
+    return cx_rsa_pubkey_to_pem(k)
+
+fn rsa_sign_sha256(k: ptr, msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_rsa_sign_sha256(k, msg_hex)
+
+fn rsa_verify_sha256(k: ptr, msg_hex: string, sig_hex: string) -> bool:
+    if _has_nul_hex(msg_hex) or _has_nul_hex(sig_hex):
+        return false
+    return cx_rsa_verify_sha256(k, msg_hex, sig_hex) == 1

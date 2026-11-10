@@ -1,5 +1,8 @@
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
+#include <openssl/pem.h>
+#include <openssl/rsa.h>
+#include <openssl/bio.h>
 #include <openssl/rand.h>
 #include <openssl/hmac.h>
 #include <openssl/crypto.h>
@@ -493,6 +496,144 @@ done:
     if (ctx) EVP_CIPHER_CTX_free(ctx);
     if (pt) OPENSSL_cleanse(pt, ctlen);       /* the recovered plaintext */
     free(nonce); free(ctt); free(aad); free(pt);
+    return res;
+}
+
+/* =====================================================================
+ * RSA (PKCS#1 v1.5 with SHA-256). The opaque handle is an EVP_PKEY*.
+ * ===================================================================== */
+static __thread char *g_pem = NULL;
+static __thread size_t g_pem_n = 0;
+
+static const char *pem_from_bio(BIO *b) {
+    char *data = NULL;
+    long n = BIO_get_mem_data(b, &data);
+    if (n <= 0 || !data) return ERRTAG;
+    if (g_pem && g_pem_n) OPENSSL_cleanse(g_pem, g_pem_n);
+    char *p = realloc(g_pem, (size_t)n + 1);
+    if (!p) return ERRTAG;
+    memcpy(p, data, (size_t)n);
+    p[n] = 0;
+    g_pem = p;
+    g_pem_n = (size_t)n;
+    return g_pem;
+}
+
+void *cx_rsa_key_from_pem(const char *pem) {
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    if (!b) return NULL;
+    EVP_PKEY *pk = PEM_read_bio_PrivateKey(b, NULL, NULL, NULL);
+    BIO_free(b);
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_RSA) {
+        if (pk) EVP_PKEY_free(pk);
+        return NULL;
+    }
+    return pk;
+}
+
+void *cx_rsa_pubkey_from_pem(const char *pem) {
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    if (!b) return NULL;
+    EVP_PKEY *pk = PEM_read_bio_PUBKEY(b, NULL, NULL, NULL);
+    BIO_free(b);
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_RSA) {
+        if (pk) EVP_PKEY_free(pk);
+        return NULL;
+    }
+    return pk;
+}
+
+void *cx_rsa_key_random(tycho_int bits) {
+    if (bits < 2048 || bits > 8192) return NULL;
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+    if (!ctx) return NULL;
+    EVP_PKEY *pk = NULL;
+    int ok = EVP_PKEY_keygen_init(ctx) > 0 &&
+             EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, (int)bits) > 0 &&
+             EVP_PKEY_keygen(ctx, &pk) > 0;
+    EVP_PKEY_CTX_free(ctx);
+    if (!ok) {
+        if (pk) EVP_PKEY_free(pk);
+        return NULL;
+    }
+    return pk;
+}
+
+void cx_rsa_key_free(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (pk) EVP_PKEY_free(pk);
+}
+
+tycho_int cx_rsa_key_bits(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_RSA) return -1;
+    return (tycho_int)EVP_PKEY_bits(pk);
+}
+
+const char *cx_rsa_key_to_pem(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_RSA) return ERRTAG;
+    BIO *b = BIO_new(BIO_s_mem());
+    if (!b) return ERRTAG;
+    const char *res = ERRTAG;
+    if (PEM_write_bio_PrivateKey(b, pk, NULL, NULL, 0, NULL, NULL) == 1) res = pem_from_bio(b);
+    BIO_free(b);
+    return res;
+}
+
+const char *cx_rsa_pubkey_to_pem(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_RSA) return ERRTAG;
+    BIO *b = BIO_new(BIO_s_mem());
+    if (!b) return ERRTAG;
+    const char *res = ERRTAG;
+    if (PEM_write_bio_PUBKEY(b, pk) == 1) res = pem_from_bio(b);
+    BIO_free(b);
+    return res;
+}
+
+const char *cx_rsa_sign_sha256(void *kp, const char *msg_hex) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    size_t mlen = 0;
+    unsigned char *msg = hexdec(msg_hex, &mlen);
+    const char *res = ERRTAG;
+    EVP_MD_CTX *md = NULL;
+    unsigned char *sig = NULL;
+    size_t siglen = 0;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_RSA || !msg) goto done;
+    md = EVP_MD_CTX_new();
+    if (!md) goto done;
+    if (EVP_DigestSignInit(md, NULL, EVP_sha256(), NULL, pk) != 1) goto done;
+    if (EVP_DigestSignUpdate(md, msg, mlen) != 1) goto done;
+    if (EVP_DigestSignFinal(md, NULL, &siglen) != 1) goto done;
+    sig = malloc(siglen ? siglen : 1);
+    if (!sig) goto done;
+    if (EVP_DigestSignFinal(md, sig, &siglen) != 1) goto done;
+    res = out_hex(sig, siglen);
+done:
+    if (md) EVP_MD_CTX_free(md);
+    free(msg);
+    free(sig);
+    return res;
+}
+
+tycho_int cx_rsa_verify_sha256(void *kp, const char *msg_hex, const char *sig_hex) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    size_t mlen = 0, slen = 0;
+    unsigned char *msg = hexdec(msg_hex, &mlen);
+    unsigned char *sig = hexdec(sig_hex, &slen);
+    tycho_int res = 0;
+    EVP_MD_CTX *md = NULL;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_RSA || !msg || !sig) goto done;
+    md = EVP_MD_CTX_new();
+    if (!md) goto done;
+    if (EVP_DigestVerifyInit(md, NULL, EVP_sha256(), NULL, pk) != 1) goto done;
+    if (EVP_DigestVerifyUpdate(md, msg, mlen) != 1) goto done;
+    res = EVP_DigestVerifyFinal(md, sig, slen) == 1 ? 1 : 0;
+done:
+    if (md) EVP_MD_CTX_free(md);
+    free(msg);
+    free(sig);
     return res;
 }
 

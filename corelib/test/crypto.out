@@ -58,3 +58,12 @@ aes_ctr_rt=1
 aes_badkey=1
 nul_aes=1
 nul_ctr=1
+rsa_bits=2048 pub_bits=2048
+rsa_siglen=512 verify=true
+rsa_tamper=true
+rsa_roundtrip=true
+rsa_pub_roundtrip=true
+rsa_badpem=true
+rsa_badbits=-1
+rsa_nul=true
+rsa_gen=2048 verify=true
