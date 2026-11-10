@@ -140,3 +140,19 @@ fn main():
     cmapped[14] = 1
     cmapped[16] = 8
     println("tga short=" + str(short.width) + " cmapped=" + str(raster.decode_tga(to_bytes(cmapped)).width))
+
+    # ---- Netpbm PPM / PGM ----
+    ppm_img := raster.make(2, 1, to_bytes([255, 0, 0, 255, 0, 255, 0, 255]))
+    ppm := raster.encode_ppm(ppm_img)
+    ppm_back := raster.decode_ppm(ppm)
+    println("ppm hdr=" + str(len(ppm)) + " rt=" + str(b(ppm_back.width == 2 and ppm_back.pixels == ppm_img.pixels)))
+    pgm_img := raster.make(2, 1, to_bytes([0, 0, 0, 255, 255, 255, 255, 255]))
+    pgm := raster.encode_pgm(pgm_img)
+    pgm_back := raster.decode_pgm(pgm)
+    println("pgm hdr=" + str(len(pgm)) + " rt=" + str(b(pgm_back.width == 2 and pgm_back.pixels == pgm_img.pixels)))
+    comment := to_bytes("P6\n# a comment\n2 1\n15\n" + chr(0) + chr(8) + chr(15) + chr(15) + chr(15) + chr(0))
+    cimg := raster.decode_ppm(comment)
+    println("ppm comment=" + str(cimg.width) + "x" + str(cimg.height) + " px=" + hex.encode(to_str(cimg.pixels)))
+    pgray := raster.decode_pgm(to_bytes("P5\n2 1\n15\n" + chr(0) + chr(15)))
+    println("pgm scale=" + hex.encode(to_str(pgray.pixels)))
+    println("ppm bad=" + str(raster.decode_ppm(to_bytes("P3\n1 1\n255\n")).width) + " pgm bad=" + str(raster.decode_pgm(to_bytes("P6\n1 1\n255\n")).width))

@@ -1,0 +1,16 @@
+empty-decomp=
+hello=80 104 101 108 108 111 
+empty-comp=0 
+match=97 98 99 100 97 98 99 100 
+literal7=97 98 99 100 101 102 103 
+empty in=0 comp=1 rt=true
+a in=1 comp=2 rt=true
+hello in=23 comp=15 rt=true
+repeat in=100 comp=11 rt=true
+pattern in=60 comp=13 rt=true
+many in=512 comp=29 rt=true
+bound=116
+bad-off=BadOffset
+small=OutputTooSmall
+truncated=Truncated
+badsize=BadSize

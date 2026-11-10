@@ -17,6 +17,8 @@
 # than MAX_OUT bytes of RGBA. encode/decode round-trip losslessly.
 package raster
 
+import "core:strings"
+
 struct Image:
     width: int
     height: int
@@ -285,6 +287,149 @@ fn decode_tga(data: bytes) -> Image:
             push(px, raw[base + x])
             x += 1
         y += 1
+    return Image(w, h, to_bytes(px))
+
+# ---- Netpbm PPM / PGM -------------------------------------------------------
+
+fn _pnm_ws(c: int) -> bool:
+    return c == 32 or c == 9 or c == 10 or c == 13 or c == 11 or c == 12
+
+fn _pnm_token(s: string, pos: inout int) -> string:
+    for true:
+        for pos < len(s) and _pnm_ws(s[pos]):
+            pos += 1
+        if pos < len(s) and s[pos] == 35:      # '#'
+            for pos < len(s) and s[pos] != 10:
+                pos += 1
+            if pos < len(s):
+                pos += 1
+        else:
+            break
+    start := pos
+    for pos < len(s) and not _pnm_ws(s[pos]) and s[pos] != 35:
+        pos += 1
+    return s[start:pos]
+
+fn _pnm_header(s: string) -> (string, int, int, int, int):
+    pos := 0
+    magic := _pnm_token(s, &pos)
+    if magic != "P5" and magic != "P6":
+        return ("", 0, 0, 0, 0)
+    ws := _pnm_token(s, &pos)
+    hs := _pnm_token(s, &pos)
+    ms := _pnm_token(s, &pos)
+    w := 0
+    h := 0
+    maxv := 0
+    match strings.parse_int(ws):
+        Ok(v): w = v
+        Err(_): return ("", 0, 0, 0, 0)
+    match strings.parse_int(hs):
+        Ok(v): h = v
+        Err(_): return ("", 0, 0, 0, 0)
+    match strings.parse_int(ms):
+        Ok(v): maxv = v
+        Err(_): return ("", 0, 0, 0, 0)
+    if w <= 0 or h <= 0 or maxv < 1 or maxv > 255:
+        return ("", 0, 0, 0, 0)
+    if pos >= len(s) or not _pnm_ws(s[pos]):
+        return ("", 0, 0, 0, 0)
+    pos += 1                    # exactly one whitespace byte after maxval
+    return (magic, w, h, maxv, pos)
+
+fn encode_ppm(img: Image) -> bytes:
+    w := img.width
+    h := img.height
+    ps := to_str(img.pixels)
+    if w <= 0 or h <= 0 or len(ps) != w * h * 4:
+        return to_bytes([]int)
+    hdr := "P6\n" + str(w) + " " + str(h) + "\n255\n"
+    out := []int
+    i := 0
+    for i < w * h * 4:
+        push(out, ps[i])
+        push(out, ps[i + 1])
+        push(out, ps[i + 2])
+        i += 4
+    return to_bytes(hdr) + to_bytes(out)
+
+fn decode_ppm(data: bytes) -> Image:
+    s := to_str(data)
+    hd := _pnm_header(s)
+    if hd.0 != "P6":
+        return _empty_image()
+    w := hd.1
+    h := hd.2
+    maxv := hd.3
+    off := hd.4
+    if too_big(w, h):
+        return _empty_image()
+    n := w * h
+    if off + n * 3 > len(s):
+        return _empty_image()
+    px := []int
+    i := 0
+    for i < n:
+        r := s[off + i * 3]
+        g := s[off + i * 3 + 1]
+        b := s[off + i * 3 + 2]
+        if r > maxv or g > maxv or b > maxv:
+            return _empty_image()
+        if maxv != 255:
+            r = (r * 255 + maxv / 2) / maxv
+            g = (g * 255 + maxv / 2) / maxv
+            b = (b * 255 + maxv / 2) / maxv
+        push(px, r)
+        push(px, g)
+        push(px, b)
+        push(px, 255)
+        i += 1
+    return Image(w, h, to_bytes(px))
+
+fn encode_pgm(img: Image) -> bytes:
+    w := img.width
+    h := img.height
+    ps := to_str(img.pixels)
+    if w <= 0 or h <= 0 or len(ps) != w * h * 4:
+        return to_bytes([]int)
+    hdr := "P5\n" + str(w) + " " + str(h) + "\n255\n"
+    out := []int
+    i := 0
+    for i < w * h * 4:
+        r := ps[i]
+        g := ps[i + 1]
+        b := ps[i + 2]
+        push(out, (r * 299 + g * 587 + b * 114 + 500) / 1000)
+        i += 4
+    return to_bytes(hdr) + to_bytes(out)
+
+fn decode_pgm(data: bytes) -> Image:
+    s := to_str(data)
+    hd := _pnm_header(s)
+    if hd.0 != "P5":
+        return _empty_image()
+    w := hd.1
+    h := hd.2
+    maxv := hd.3
+    off := hd.4
+    if too_big(w, h):
+        return _empty_image()
+    n := w * h
+    if off + n > len(s):
+        return _empty_image()
+    px := []int
+    i := 0
+    for i < n:
+        g := s[off + i]
+        if g > maxv:
+            return _empty_image()
+        if maxv != 255:
+            g = (g * 255 + maxv / 2) / maxv
+        push(px, g)
+        push(px, g)
+        push(px, g)
+        push(px, 255)
+        i += 1
     return Image(w, h, to_bytes(px))
 
 # ---- QOI --------------------------------------------------------------------

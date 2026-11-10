@@ -763,7 +763,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   `encode_bmp`/`decode_bmp` (writes 32-bit BGRA, bottom-up, uncompressed; reads 24- or
   32-bpp `BI_RGB`), `encode_qoi`/`decode_qoi` (all six QOI chunk types), and
   `encode_tga`/`decode_tga` (uncompressed 24/32-bpp, top-down write; reads type 2 and
-  RLE type 10, top-down or bottom-up; color-mapped and grayscale TGA are refused).
+  RLE type 10, top-down or bottom-up; color-mapped and grayscale TGA are refused),
+  and `encode_ppm`/`decode_ppm` (P6) plus `encode_pgm`/`decode_pgm` (P5), with
+  comments, CRLF and any maxval 1..255 scaled to 8-bit (PGM writes luma).
   All **round-trip losslessly**; the decoders **fail closed** to a 0×0 Image on a
   malformed / truncated / wrong-format input (check `width > 0`). `too_big(w, h)` is
   the decode guard in front of every codec here: it answers whether a declared width
@@ -831,6 +833,11 @@ The `deps`-backed modules are `http` (libcurl) and `crypto` (libcrypto), documen
 plus four more:
 
 - **`gfx`** — SDL3 window/render/audio (`deps: sdl3`); see the package entry above.
+- **`lz4`** — a pure LZ4 block codec, no external library. `compress(src)` is
+  greedy and emits a valid block; `decompress(src, out_len)` needs the original
+  size because a block does not carry it, and `compress_bound(n)` is the safe
+  output bound. Errors are `Truncated`, `BadOffset`, `OutputTooSmall` and
+  `BadSize`. Frames and checksums are not implemented.
 - **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`).
   `compress(bytes) -> bytes`; `decompress(bytes) -> Result(bytes, ZErr)` and
   `raw_decompress` likewise, where `ZErr` is `Corrupt` / `Truncated` / `Failed` /

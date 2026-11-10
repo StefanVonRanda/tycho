@@ -1,0 +1,158 @@
+package lz4
+
+enum Lz4Err:
+    Truncated
+    BadOffset
+    OutputTooSmall
+    BadSize
+
+const MIN_MATCH = 4
+const MFLIMIT = 12
+const LAST_LITERALS = 5
+const HASH_SIZE = 4096
+
+fn compress_bound(n: int) -> int:
+    if n < 0:
+        return 0
+    return n + n / 255 + 16
+
+fn _read32(s: string, i: int) -> int:
+    return s[i] | (s[i + 1] << 8) | (s[i + 2] << 16) | (s[i + 3] << 24)
+
+fn _hash(v: int) -> int:
+    return ((v * 2654435761) & 1048575) % HASH_SIZE
+
+fn _put_len(out: inout [int], n: int):
+    v := n
+    for v >= 255:
+        push(out, 255)
+        v -= 255
+    push(out, v)
+
+# Greedy LZ4 block compressor (no frame, no checksum). The output is a valid
+# LZ4 block; `decompress` needs the original uncompressed size.
+fn compress(src: bytes) -> bytes:
+    s := to_str(src)
+    n := len(s)
+    out := []int
+    if n == 0:
+        push(out, 0)
+        return to_bytes(out)
+    table := []int
+    i := 0
+    for i < HASH_SIZE:
+        push(table, -1)
+        i += 1
+    anchor := 0
+    ip := 0
+    limit := n - MFLIMIT
+    for ip <= limit:
+        seq := _read32(s, ip)
+        h := _hash(seq)
+        ref := table[h]
+        table[h] = ip
+        if ref >= 0 and ip - ref <= 65535 and _read32(s, ref) == seq:
+            mlen := MIN_MATCH
+            cap := n - LAST_LITERALS
+            for ip + mlen < cap and s[ref + mlen] == s[ip + mlen]:
+                mlen += 1
+            litlen := ip - anchor
+            token_pos := len(out)
+            push(out, 0)
+            if litlen >= 15:
+                out[token_pos] = 15 << 4
+                _put_len(&out, litlen - 15)
+            else:
+                out[token_pos] = litlen << 4
+            k := anchor
+            for k < ip:
+                push(out, s[k])
+                k += 1
+            off := ip - ref
+            push(out, off & 255)
+            push(out, (off >> 8) & 255)
+            ml := mlen - MIN_MATCH
+            if ml >= 15:
+                out[token_pos] = out[token_pos] | 15
+                _put_len(&out, ml - 15)
+            else:
+                out[token_pos] = out[token_pos] | ml
+            ip += mlen
+            anchor = ip
+        else:
+            ip += 1
+    litlen := n - anchor
+    token_pos := len(out)
+    push(out, 0)
+    if litlen >= 15:
+        out[token_pos] = 15 << 4
+        _put_len(&out, litlen - 15)
+    else:
+        out[token_pos] = litlen << 4
+    k := anchor
+    for k < n:
+        push(out, s[k])
+        k += 1
+    return to_bytes(out)
+
+fn decompress(src: bytes, out_len: int) -> Result(bytes, Lz4Err):
+    if out_len < 0:
+        return Err(BadSize)
+    s := to_str(src)
+    out := []int
+    reserve(out, out_len)
+    ip := 0
+    if len(s) == 0:
+        if out_len == 0:
+            return Ok(to_bytes(out))
+        return Err(Truncated)
+    for ip < len(s):
+        token := s[ip]
+        ip += 1
+        litlen := token >> 4
+        if litlen == 15:
+            for true:
+                if ip >= len(s):
+                    return Err(Truncated)
+                b := s[ip]
+                ip += 1
+                litlen += b
+                if b != 255:
+                    break
+        if litlen > out_len - len(out):
+            return Err(OutputTooSmall)
+        if ip + litlen > len(s):
+            return Err(Truncated)
+        k := 0
+        for k < litlen:
+            push(out, s[ip])
+            ip += 1
+            k += 1
+        if ip == len(s):
+            break
+        if ip + 2 > len(s):
+            return Err(Truncated)
+        off := s[ip] | (s[ip + 1] << 8)
+        ip += 2
+        if off == 0 or off > len(out):
+            return Err(BadOffset)
+        mlen := token & 15
+        if mlen == 15:
+            for true:
+                if ip >= len(s):
+                    return Err(Truncated)
+                b := s[ip]
+                ip += 1
+                mlen += b
+                if b != 255:
+                    break
+        mlen += MIN_MATCH
+        if mlen > out_len - len(out):
+            return Err(OutputTooSmall)
+        k = 0
+        for k < mlen:
+            push(out, out[len(out) - off])
+            k += 1
+    if len(out) != out_len:
+        return Err(BadSize)
+    return Ok(to_bytes(out))

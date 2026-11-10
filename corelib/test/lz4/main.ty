@@ -1,0 +1,53 @@
+package main
+
+import "core:lz4"
+
+fn hx(b: bytes) -> string:
+    out := ""
+    for i := 0; i < len(b); i += 1:
+        out = out + str(b[i]) + " "
+    return out
+
+fn bytes_or(r: Result(bytes, lz4.Lz4Err)) -> bytes:
+    match r:
+        Ok(v): return v
+        Err(_): return to_bytes([]int)
+
+fn show_err(r: Result(bytes, lz4.Lz4Err)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(lz4.Truncated): return "Truncated"
+        Err(lz4.BadOffset): return "BadOffset"
+        Err(lz4.OutputTooSmall): return "OutputTooSmall"
+        Err(lz4.BadSize): return "BadSize"
+
+fn rt(label: string, s: string):
+    src := to_bytes(s)
+    c := lz4.compress(src)
+    d := lz4.decompress(c, len(src))
+    ok := false
+    match d:
+        Ok(v): ok = v == src
+        Err(_): ok = false
+    println(label + " in=" + str(len(src)) + " comp=" + str(len(c)) + " rt=" + str(ok))
+
+fn main():
+    println("empty-decomp=" + hx(bytes_or(lz4.decompress(to_bytes([]int), 0))))
+    println("hello=" + hx(lz4.compress(to_bytes("hello"))))
+    println("empty-comp=" + hx(lz4.compress(to_bytes(""))))
+    println("match=" + hx(bytes_or(lz4.decompress(to_bytes([64, 97, 98, 99, 100, 4, 0]), 8))))
+    println("literal7=" + hx(bytes_or(lz4.decompress(to_bytes([112, 97, 98, 99, 100, 101, 102, 103]), 7))))
+    rt("empty", "")
+    rt("a", "a")
+    rt("hello", "hello hello hello hello")
+    rt("repeat", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    rt("pattern", "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabc")
+    many := ""
+    for i := 0; i < 512; i += 1:
+        many = many + chr(65 + (i % 17))
+    rt("many", many)
+    println("bound=" + str(lz4.compress_bound(100)))
+    println("bad-off=" + show_err(lz4.decompress(to_bytes([64, 97, 98, 99, 100, 0, 0]), 8)))
+    println("small=" + show_err(lz4.decompress(to_bytes([64, 97, 98, 99, 100, 4, 0]), 4)))
+    println("truncated=" + show_err(lz4.decompress(to_bytes([112, 97]), 7)))
+    println("badsize=" + show_err(lz4.decompress(to_bytes([16, 97]), 2)))
