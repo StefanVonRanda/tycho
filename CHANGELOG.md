@@ -27,6 +27,14 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - **`tycho-debug bt` is source-aware.** Frames show demangled `pkg.name`
   symbols and `.ty` file:line; runtime glue and native frames are tagged
   `[runtime]` / `[native]` instead of being presented as user code.
+- **Function values are 8 bytes when the program cannot create a closure.**
+  A `fn` value normally carries a 24-byte descriptor (call + two inline capture
+  slots). If a whole program has no lambda and no extern, every value is a
+  top-level function, so the emitter gives that program a bare
+  `(Arena *, args...)` pointer. `dispatch` expert's record drops from 40 to 24
+  bytes and the large row from ~24 ms to 13 ms against C's 15 ms; the idiomatic
+  `dispatch` row still has a lambda and stays on the 24-byte descriptor (14 ms
+  vs C 14 ms). Any lambda or extern keeps the general ABI.
 - **The archived C compiler is deleted from the tree.** It is preserved in git
   history at commit `c7d46528ac6efcf9dc93359d14d98bedcb7ddbad`; historical
   citations resolve against that revision, and the reject classifier reads the
@@ -35,22 +43,24 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ### Performance
 
-- **String byte indexing is inlined.** `tycho_str_get` was an out-of-line call
-  whose body held the `fprintf`/`exit` slow path, so every `s[i]` in a parser
-  paid a function call. The slow path is now separately out of line and the hot
-  read is `always_inline`; `json_tree` at the large size drops 84 -> 58 ms
-  against C's 50 ms, with memory still below C (81.4 vs 103.2 MB).
+- **String byte indexing and short equality are inlined.** `tycho_str_get` was
+  an out-of-line call whose body held the `fprintf`/`exit` slow path, so every
+  `s[i]` in a parser paid a function call. `tycho_str_eq` had the same shape for
+  map keys. Both now have an inline fast path with the slow/long path out of
+  line: `json_tree` at the large size drops 84 -> 51 ms against C's 49 ms with
+  memory still below C (81.7 vs 103.6 MB), and `trie` drops toward C's range
+  (~1.2-1.3x).
+- **`binary/arena` is a representation limit, not an allocator regression.**
+  Profiled at maxd=20: 2.16e9 vs C's 1.40e9 cycles, but 9.15e9 vs C's 6.44e9
+  instructions and 2.13e9 vs 1.06e9 branches. The node is a 24-byte tagged enum
+  against C's 16-byte pair of pointers; a bump-only allocator fast path was
+  measured and did not pay (it raised instructions/branches). The C row is an
+  explicit expert control, not the idiomatic claim.
 - **Maps compact at 1/8 dead, not 1/2.** A churn-heavy map reaches its reserved
   entry capacity while nearly all entries are live, so the old rule did not
   fire before it grew, and the old arrays stayed in the arena. `bench/lru`'s
-  large peak drops 20.2 -> 14.4 MB (C 11.9) at 236 vs 240 ms, and its
+  large peak drops 20.2 -> 14.7 MB (C 12.0) at 226 vs 233 ms, and its
   `reserve(idx, cap)` no longer needs the temporary 2x workaround.
-- **`dispatch` expert remains an ABI limit, not an allocator cost.** Its record
-  is 40 bytes against C's 24 because a Tycho `fn` value carries the call pointer
-  plus two inline capture slots. An 8-byte-descriptor prototype matches C
-  (~63e6 vs ~67e6 cycles at 8000x2000), but a capturing `fn` cannot be 8 bytes.
-  The idiomatic `dispatch` row is 14 ms against C's 14 ms; `expert` is an
-  explicit alternate, not part of that claim.
 
 ### Runtime
 

@@ -1,10 +1,8 @@
 # Expert variant: a record with a separately stored function value, against C's
-# raw function pointer. `f` is a Tycho fn value, whose descriptor carries the
-# call pointer plus two inline capture slots (24 bytes), so S_Clo is 40 bytes
-# and C's Clo is 24. That layout difference is the measured gap: an 8-byte
-# descriptor prototype matches C (~63e6 vs ~67e6 cycles at 8000x2000), while a
-# capturing fn value cannot be 8 bytes. This is the explicit expert alternate;
-# the idiomatic `dispatch` row is the comparable closure claim.
+# raw function pointer. This program has no lambda and no extern, so the
+# compiler represents `fn` as a bare (Arena*, args...) pointer (8 bytes) and
+# S_Clo is 24 bytes, like C. A program with a capturing closure keeps the
+# 24-byte descriptor (call + two inline capture slots).
 struct Clo:
     i: int
     p: int

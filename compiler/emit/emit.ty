@@ -177,9 +177,10 @@ struct C:
     desta: [string]
     destvi: [int]                      # persistent: variable indices whose buffer may move there
     destva: [string]
+    thin: bool                         # no lambdas and no externs: function values are bare (Arena*, args...) pointers
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []string, []int, []string)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []string, []int, []string, false)
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -837,7 +838,7 @@ fn _heap(cs: inout C, t: string) -> bool:
     if t == "string" or t == "bytes":
         return true
     if _is_fn(t):
-        return true
+        return not cs.thin
     if _is_enum(t):
         return not _inline_enum(&cs, _tname(t))
     if _is_arr(t) or _is_map(t) or _is_soa(t):
@@ -2379,6 +2380,8 @@ fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
         return "tycho_str_copy(" + arena + ", " + code + ")"
     if _is_fn(t):
         # re-home a returned closure's captures; a plain fn ref has c0/c1 == 0
+        if cs.thin:
+            return code
         return "({ " + _ctyz(&cs, t) + "_fcp = (" + code + "); tycho_fn_copy(" + arena +
             ", (void *)_fcp.call, &_fcp.c0); _fcp; })"
     if _is_arr(t):
@@ -2404,6 +2407,8 @@ fn _recycle_name(cs: inout C, t: string) -> string:
     if t == "string" or t == "bytes":
         return "tycho_str_recycle"
     if _is_fn(t):
+        if cs.thin:
+            return ""
         return "tycho_recycle_FnC" + _tname(t)
     if _is_arr(t):
         return _apfx(&cs, _elem(t)) + "_recycle"
@@ -2528,6 +2533,8 @@ fn _zero(cs: inout C, t: string) -> string:
     if _is_map(t):
         return "(" + _cty(&cs, t) + "){&tycho_mapM" + _tname(t) + "_empty, 0}"
     if _is_fn(t):
+        if cs.thin:
+            return "(" + _cty(&cs, t) + "){0}"
         return "(" + _cty(&cs, t) + "){0, 0, 0}"
     if t == "float":
         return "0.0"
@@ -2538,6 +2545,8 @@ fn _zero(cs: inout C, t: string) -> string:
 fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
     if _is_fn(t):
         # identity: same thunk and same captures/env -- src/tychoc.c:13435
+        if cs.thin:
+            return "((" + a + ").call == (" + b + ").call)"
         return "((" + a + ").call == (" + b + ").call && (" + a + ").c0 == (" + b + ").c0 && (" + a + ").c1 == (" + b + ").c1)"
     if t == "string" or t == "bytes":
         # EQUALITY, not order: tycho_str_eq settles on the length headers and
@@ -2822,6 +2831,8 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             if fi2 >= 0:
                 _need_clo(&cs, fi2)
                 ft2 := _fn_of(&cs, cs.fds[fi2].ret, cs.fds[fi2].ptypes)
+                if cs.thin:
+                    return ("(" + _cty(&cs, ft2) + "){h_" + cs.fds[fi2].name + "}", ft2)
                 return ("(" + _cty(&cs, ft2) + "){" + cs.fds[fi2].name + "__clo, 0, 0}", ft2)
             _bad("unknown name '" + n + "'")
         ast.Field(l, r, f):
@@ -3297,12 +3308,16 @@ fn _fps(cs: inout C, t: string) -> [string]:
 # value, so an unused function grows no code and an `inout` parameter (which a
 # fn value cannot carry) is never wrapped.
 fn _need_clo(cs: inout C, fi: int):
+    if cs.thin:
+        return
     for x in cs.clos:
         if x == cs.fds[fi].name:
             return
     push(cs.clos, cs.fds[fi].name)
 
 fn _clo_defs(cs: inout C) -> (string, string):
+    if cs.thin:
+        return ("", "")
     pr := ""
     bd := ""
     for nm in cs.clos:
@@ -3338,10 +3353,16 @@ fn _fn_defs(cs: inout C) -> string:
         "    if (env) ((TychoEnvHdr *)env)[-1].drop(a, env);\n}\n"
     for i := 0; i < len(cs.fks); i += 1:
         ps := split(cs.fks[i], "|")
-        s := "typedef struct { " + _ctyz(&cs, ps[0]) + "(*call)(void *, Arena *"
-        for j := 1; j < len(ps); j += 1:
-            s = s + ", " + _cty(&cs, ps[j])
-        out = out + s + "); tycho_int c0; tycho_int c1; } FnC" + str(i) + ";\n"
+        if cs.thin:
+            s := "typedef struct { " + _ctyz(&cs, ps[0]) + "(*call)(Arena *"
+            for j := 1; j < len(ps); j += 1:
+                s = s + ", " + _cty(&cs, ps[j])
+            out = out + s + "); } FnC" + str(i) + ";\n"
+        else:
+            s := "typedef struct { " + _ctyz(&cs, ps[0]) + "(*call)(void *, Arena *"
+            for j := 1; j < len(ps); j += 1:
+                s = s + ", " + _cty(&cs, ps[j])
+            out = out + s + "); tycho_int c0; tycho_int c1; } FnC" + str(i) + ";\n"
     return out
 
 # A lambda body is one EXPRESSION (parse/parse.ty:310), so the only binder
@@ -3824,6 +3845,8 @@ fn _pkgmember(cs: inout C, r: ast.Expr, f: string) -> (string, string):
     if fi >= 0:
         _need_clo(&cs, fi)
         ft := _fn_of(&cs, cs.fds[fi].ret, cs.fds[fi].ptypes)
+        if cs.thin:
+            return ("(" + _cty(&cs, ft) + "){h_" + cs.fds[fi].name + "}", ft)
         return ("(" + _cty(&cs, ft) + "){" + cs.fds[fi].name + "__clo, 0, 0}", ft)
     _bad("unknown package member '" + q + "." + f + "'")
     return ("", "")
@@ -4253,7 +4276,15 @@ fn _callfv(cs: inout C, k: [ast.Expr]) -> (string, string):
     direct := _simple_call_place(k[0]) and _place(k[0])
     fv := _fresh(&cs, "_fv")
     out := ""
-    if direct:
+    if cs.thin:
+        if direct:
+            lv, _lt := _lvalue(&cs, k[0])
+            out = "({ " + _ctyz(&cs, ft) + " *" + fv + " = &(" + lv + "); " +
+                fv + "->call(" + cs.arena
+        else:
+            out = "({ " + _ctyz(&cs, ft) + "" + fv + " = " + fc + "; " + fv +
+                ".call(" + cs.arena
+    elif direct:
         lv, _lt := _lvalue(&cs, k[0])
         out = "({ " + _ctyz(&cs, ft) + " *" + fv + " = &(" + lv + "); " +
             fv + "->call((void *)&" + fv + "->c0, " + cs.arena
@@ -10083,6 +10114,8 @@ fn _recycle_defs(cs: inout C) -> (string, string):
                     ", (size_t)s.cap * sizeof(*s.f" + str(j) + "));\n"
             body = body + b + "}\n"
         for i := 0; i < len(cs.fks); i += 1:
+            if cs.thin:
+                continue
             nm := "tycho_recycle_FnC" + str(i)
             if not _need(&cs, nm):
                 continue
@@ -11212,9 +11245,150 @@ fn _own_find(cs: inout C, program: types.Program):
 # alignment invariant of five parallel arrays. This parameter is not inout;
 # emitter-owned tables still take independent values where they store/mutate.
 # Paths/text retain the enclosing file identity for re-tokenized f-string holes.
+fn _has_lambda_expr(e: ast.Expr) -> bool:
+    match e:
+        ast.Lambda(l, p, t, b): return true
+        _: pass
+    for k in ast.kids(e):
+        if _has_lambda_expr(k):
+            return true
+    return false
+
+fn _has_lambda_stmts(ss: [ast.Stmt]) -> bool:
+    for s in ss:
+        if _has_lambda_stmt(s):
+            return true
+    return false
+
+fn _has_lambda_arm(a: ast.Arm) -> bool:
+    if _has_lambda_stmts(a.body):
+        return true
+    for c in a.ch:
+        if _has_lambda_expr(c):
+            return true
+    return false
+
+fn _has_lambda_stmt(s: ast.Stmt) -> bool:
+    match s:
+        ast.ExprStmt(l, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        ast.Decl(l, n, t, r, v):
+            for e in r:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(v):
+                return true
+        ast.MDecl(l, d, ns, r):
+            for e in r:
+                if _has_lambda_expr(e):
+                    return true
+        ast.Assign(l, n, r):
+            for e in r:
+                if _has_lambda_expr(e):
+                    return true
+        ast.PlaceSet(l, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        ast.ConstS(l, n, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        ast.ReturnS(l, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        ast.IfS(l, arms, e):
+            for a in arms:
+                for c in a.cond:
+                    if _has_lambda_expr(c):
+                        return true
+                if _has_lambda_stmts(a.body):
+                    return true
+            if _has_lambda_stmts(e):
+                return true
+        ast.WhileS(l, c, b):
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.For3(l, ip, c, b):
+            if _has_lambda_stmts(ip):
+                return true
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.ForIn(l, n, c, b, p):
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.ForRange(l, n, c, b):
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.ParallelS(l, w, b):
+            for e in w:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.MatchS(l, c, arms):
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            for a in arms:
+                if _has_lambda_arm(a):
+                    return true
+        ast.SelectS(l, arms):
+            for a in arms:
+                if _has_lambda_arm(a):
+                    return true
+        ast.DeleteS(l, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        _: pass
+    return false
+
+fn _has_lambda_unit(u: ast.Unit) -> bool:
+    for f in u.fns:
+        if _has_lambda_stmts(f.body):
+            return true
+    for c in u.consts:
+        if _has_lambda_expr(c.value):
+            return true
+    for s in u.subscripts:
+        if _has_lambda_expr(s.place):
+            return true
+    return false
+
 fn program_in(program: types.Program, dbgf: string) -> string:
     cs := _new()
     cs.dbgfile = dbgf
+    # A function value carries a 24-byte descriptor (call + two inline capture
+    # slots) because it MAY be a closure. A program with no lambda and no extern
+    # cannot create one: every value is a top-level function, which already has
+    # the bare (Arena*, args...) signature. Such a program gets 8-byte function
+    # values, so `struct { i, p, f }` is 24 bytes like C's raw pointer instead
+    # of 40. Conservatively fat for any extern, because an extern can hand back
+    # a function value whose ABI is C's.
+    thin := true
+    for file in program.files:
+        for f in file.unit.fns:
+            if f.is_extern:
+                thin = false
+        if _has_lambda_unit(file.unit):
+            thin = false
+    cs.thin = thin
     for file in program.files:
         push(cs.fpath, file.path)
         push(cs.fsrc, file.src)

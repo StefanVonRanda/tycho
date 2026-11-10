@@ -48,22 +48,22 @@ described below.
 
 | lang | peak RSS | time |
 |------|---------:|-----:|
-| tycho | **14.4 MB** | **236 ms** |
-| C | 11.9 MB | 240 ms |
-| go | 21.1 MB | 324 ms |
+| tycho | **14.7 MB** | **226 ms** |
+| C | 12.0 MB | 233 ms |
+| go | 21.1 MB | 308 ms |
 
 `reserve(idx, 400000)` is gone. `reserve(idx, cap)` now suffices because the map
 compacts tombstones at **1/8 dead** instead of 1/2. At 1/2, a churn-heavy map
 reached its reserved entry capacity with ~cap live entries, so the rule never
 fired before it grew; the old arrays stayed in the arena and the peak was ~20
 MB. At 1/8 the reserved array is reused, and the cache holds 200k nodes in
-14.4 MB. Time is parity with C because the extra compactions are cheaper than
+14.7 MB. Time is parity with C because the extra compactions are cheaper than
 the growth they prevent.
 
 ## Verdict — ahead of Go, 1.2× C after the 1/8 compaction
 
-tycho's value-semantic LRU is now **14.4 MB to C's 11.9 MB (1.2×)** and
-**236 ms to C's 240 ms**, while staying well ahead of Go (21.1 MB / 324 ms).
+tycho's value-semantic LRU is now **14.7 MB to C's 12.0 MB (1.2×)** and
+**226 ms to C's 233 ms**, while staying well ahead of Go (21.1 MB / 308 ms).
 Before the 2026-11-10 fix it was 20.4 MB / 139 ms (1.8× C memory); the
 memory step came from `reserve(idx, cap)` plus the 1/8 compaction rule, not from
 changing the LRU algorithm.

@@ -59,23 +59,23 @@ Tycho / competitor; below 1.00 is faster. Rows are tier-matched: an idiomatic co
 | binary | 0.13x | 0.08x | 0.14x | 0.46x | 0.04x |
 | dbquery | 1.02x | 1.13x | 1.03x | 0.94x | 1.12x |
 | dijkstra | 1.12x | 0.98x | 0.87x | 0.69x | 0.48x |
-| dispatch | 1.14x | 0.06x | 0.11x | 0.12x | 0.02x |
+| dispatch | 1.00x | 0.05x | 0.09x | 0.10x | 0.02x |
 | gcscan | 0.16x | 0.12x | 0.17x | 0.22x | 0.09x |
 | interp | 0.46x | 0.40x | 0.35x | 0.97x | 0.20x |
-| invindex_map | 0.96x | 0.88x | 0.88x | 0.65x | 0.49x |
-| invindex_side | 0.93x | 0.88x | 0.85x | 0.86x | 0.45x |
+| invindex_map | 1.05x | 1.00x | 0.96x | 0.80x | 0.55x |
+| invindex_side | 0.96x | 0.91x | 0.82x | 0.77x | 0.39x |
 | iter | 0.92x | 0.69x | 0.63x | 0.36x | 0.48x |
-| json | 0.62x | 0.72x | 0.51x | 0.93x | 0.17x |
-| json_tree | 1.13x | 1.19x | 0.36x | 0.56x | 0.01x |
+| json | 0.64x | 0.74x | 0.53x | 0.96x | 0.17x |
+| json_tree | 1.04x | 1.09x | 0.30x | 0.40x | 0.01x |
 | latency | 0.74x | 0.93x | 0.10x | 0.32x | 0.58x |
-| lru | 1.12x | 1.05x | 0.79x | 0.33x | 0.16x |
-| maptree | 0.06x | 0.04x | 0.05x | 0.32x | 0.01x |
-| string | 1.50x | 1.20x | 0.67x | 0.22x | 0.32x |
-| trie | 1.19x | 0.54x | 0.89x | 0.92x | 0.56x |
+| lru | 0.97x | 0.90x | 0.73x | 0.33x | 0.16x |
+| maptree | 0.05x | 0.05x | 0.05x | 0.32x | 0.01x |
+| string | 1.67x | 1.25x | 0.56x | 0.18x | 0.28x |
+| trie | 1.30x | 0.63x | 0.64x | 0.97x | 0.57x |
 | winagg | 0.95x | 0.46x | 0.39x | 0.26x | 0.19x |
 | window_int | 1.17x | 7.00x | 1.40x | 0.29x | 0.35x |
 | window_string | 0.49x | 0.64x | 0.56x | 0.95x | 0.27x |
-| **geometric mean** | 0.66x | 0.55x | 0.42x | 0.45x | 0.18x |
+| **geometric mean** | 0.66x | 0.55x | 0.40x | 0.43x | 0.18x |
 
 ### Expert
 
@@ -85,23 +85,23 @@ Tycho / competitor; below 1.00 is faster. Rows are tier-matched: an idiomatic co
 | binary | 1.40x | 0.74x | - | - | - |
 | dbquery | - | - | - | - | - |
 | dijkstra | - | - | - | - | - |
-| dispatch | 1.32x | - | - | - | - |
+| dispatch | 0.92x | - | - | - | - |
 | gcscan | - | - | - | - | - |
 | interp | - | - | - | - | - |
-| invindex_map | 0.99x | 0.86x | 0.86x | 0.85x | 0.48x |
-| invindex_side | 0.88x | 0.75x | 0.57x | 0.77x | 0.38x |
+| invindex_map | 0.98x | 0.85x | 0.90x | 0.90x | 0.47x |
+| invindex_side | 0.88x | 0.75x | 0.56x | 0.79x | 0.38x |
 | iter | - | - | - | - | - |
 | json | - | - | - | - | - |
 | json_tree | - | - | - | - | - |
 | latency | - | - | - | - | - |
 | lru | - | - | - | - | - |
-| maptree | 0.38x | 0.45x | - | - | - |
+| maptree | 0.36x | 0.47x | - | - | - |
 | string | - | - | - | - | - |
 | trie | - | - | - | - | - |
 | winagg | 1.16x | 0.45x | 0.43x | 0.29x | 0.16x |
 | window_int | - | - | - | - | - |
 | window_string | - | - | - | - | - |
-| **geometric mean** | 0.94x | 0.62x | 0.60x | 0.58x | 0.31x |
+| **geometric mean** | 0.88x | 0.63x | 0.60x | 0.59x | 0.31x |
 
 ## Aggregate by category
 
@@ -109,14 +109,14 @@ These use the best measured variant in each group, independently for Tycho and e
 
 | category | vs C | vs Rust | vs Go | vs Java | vs Swift |
 |---|---:|---:|---:|---:|---:|
-| core time | 0.89x | 0.54x | 0.26x | 0.31x | 0.10x |
-| core memory | 0.89x | 0.99x | 0.36x |
-| service time | 0.70x | 0.82x | 0.50x | 0.48x | 0.35x |
+| core time | 0.87x | 0.53x | 0.25x | 0.30x | 0.10x |
+| core memory | 0.87x | 1.00x | 0.31x |
+| service time | 0.71x | 0.84x | 0.50x | 0.48x | 0.35x |
 | service memory | 0.97x | 0.91x | 0.46x |
-| specialized time | 0.95x | 0.76x | 0.60x | 0.65x | 0.14x |
-| specialized memory | 0.82x | 0.79x | 0.77x |
+| specialized time | 0.93x | 0.75x | 0.53x | 0.61x | 0.14x |
+| specialized memory | 0.82x | 0.80x | 0.77x |
 
-Explicitly slower rows (Tycho / competitor > 1.00): arr vs Rust (1.08x), binary vs C (1.37x), dbquery vs C (1.02x), dbquery vs Rust (1.13x), dbquery vs Go (1.03x), dbquery vs Swift (1.12x), dijkstra vs C (1.12x), dispatch vs C (1.14x), json_tree vs C (1.13x), json_tree vs Rust (1.19x), lru vs C (1.12x), lru vs Rust (1.05x), string vs C (1.50x), string vs Rust (1.20x), trie vs C (1.19x), window_int vs C (1.17x), window_int vs Rust (7.00x), window_int vs Go (1.40x).
+Explicitly slower rows (Tycho / competitor > 1.00): arr vs Rust (1.08x), binary vs C (1.37x), dbquery vs C (1.02x), dbquery vs Rust (1.13x), dbquery vs Go (1.03x), dbquery vs Swift (1.12x), dijkstra vs C (1.12x), invindex_map vs C (1.05x), json_tree vs C (1.04x), json_tree vs Rust (1.09x), string vs C (1.67x), string vs Rust (1.25x), trie vs C (1.30x), window_int vs C (1.17x), window_int vs Rust (7.00x), window_int vs Go (1.40x).
 
 ## Relative peak RSS at the large size
 
@@ -128,23 +128,23 @@ Tycho / competitor; below 1.00 is smaller. Java/Swift are omitted: their RSS inc
 | binary | 0.51x | 1.00x | 0.37x |
 | dbquery | 0.99x | 0.98x | 0.56x |
 | dijkstra | 0.99x | 0.88x | 0.90x |
-| dispatch | 0.99x | 0.89x | 0.25x |
+| dispatch | 0.99x | 1.00x | 0.10x |
 | gcscan | 0.44x | 0.31x | 0.34x |
 | interp | 0.44x | 0.58x | 0.42x |
-| invindex_map | 1.04x | 1.01x | 0.50x |
-| invindex_side | 1.02x | 1.02x | 0.50x |
+| invindex_map | 1.04x | 1.02x | 0.49x |
+| invindex_side | 1.03x | 1.02x | 0.55x |
 | iter | 1.05x | 1.01x | 0.38x |
-| json | 1.15x | 1.14x | 0.60x |
+| json | 1.14x | 1.14x | 0.60x |
 | json_tree | 0.79x | 1.16x | 0.96x |
 | latency | 0.97x | 0.95x | 0.16x |
-| lru | 1.20x | 0.69x | 0.69x |
+| lru | 1.22x | 0.71x | 0.69x |
 | maptree | 0.65x | 0.85x | 0.31x |
-| string | 1.11x | 1.00x | 0.33x |
-| trie | 0.89x | 0.77x | 1.07x |
+| string | 0.94x | 0.97x | 0.29x |
+| trie | 0.89x | 0.76x | 1.06x |
 | winagg | 1.07x | 1.03x | 0.45x |
 | window_int | 1.44x | 1.64x | 1.25x |
 | window_string | 1.12x | 0.94x | 0.45x |
-| **geometric mean** | 0.90x | 0.91x | 0.48x |
+| **geometric mean** | 0.90x | 0.91x | 0.46x |
 
 ## Large-size absolute results
 
@@ -188,30 +188,30 @@ Time is ms; RSS is MB. Java/Swift RSS includes the runtime baseline.
 | winagg / count-fill | expert | Go | 742 | 23.8 |
 | winagg / count-fill | expert | Java | 1106 | 1174.0 |
 | winagg / count-fill | expert | Swift | 1961 | 18.2 |
-| invindex / side-growth | idiomatic | Tycho | 903 | 193.7 |
-| invindex / side-growth | idiomatic | C | 971 | 263.1 |
-| invindex / side-growth | idiomatic | Rust | 1026 | 263.7 |
-| invindex / side-growth | idiomatic | Go | 1066 | 363.9 |
-| invindex / side-growth | idiomatic | Java | 1045 | 1173.1 |
-| invindex / side-growth | idiomatic | Swift | 1994 | 269.9 |
-| invindex / side-count-fill | expert | Tycho | 1047 | 172.2 |
-| invindex / side-count-fill | expert | C | 1194 | 168.0 |
-| invindex / side-count-fill | expert | Rust | 1405 | 169.4 |
-| invindex / side-count-fill | expert | Go | 1834 | 342.9 |
-| invindex / side-count-fill | expert | Java | 1353 | 1155.9 |
-| invindex / side-count-fill | expert | Swift | 2778 | 176.1 |
-| invindex / map-growth | idiomatic | Tycho | 560 | 150.6 |
-| invindex / map-growth | idiomatic | C | 581 | 133.6 |
-| invindex / map-growth | idiomatic | Rust | 635 | 133.9 |
-| invindex / map-growth | idiomatic | Go | 639 | 174.6 |
-| invindex / map-growth | idiomatic | Java | 868 | 1165.3 |
-| invindex / map-growth | idiomatic | Swift | 1154 | 142.9 |
-| invindex / map-count-fill | expert | Tycho | 952 | 87.9 |
-| invindex / map-count-fill | expert | C | 966 | 84.9 |
-| invindex / map-count-fill | expert | Rust | 1107 | 86.7 |
-| invindex / map-count-fill | expert | Go | 1103 | 180.3 |
-| invindex / map-count-fill | expert | Java | 1119 | 1201.1 |
-| invindex / map-count-fill | expert | Swift | 1978 | 93.6 |
+| invindex / side-growth | idiomatic | Tycho | 785 | 195.0 |
+| invindex / side-growth | idiomatic | C | 819 | 263.7 |
+| invindex / side-growth | idiomatic | Rust | 867 | 264.3 |
+| invindex / side-growth | idiomatic | Go | 958 | 362.0 |
+| invindex / side-growth | idiomatic | Java | 1021 | 1173.0 |
+| invindex / side-growth | idiomatic | Swift | 2008 | 270.7 |
+| invindex / side-count-fill | expert | Tycho | 1036 | 172.7 |
+| invindex / side-count-fill | expert | C | 1180 | 167.4 |
+| invindex / side-count-fill | expert | Rust | 1382 | 169.4 |
+| invindex / side-count-fill | expert | Go | 1845 | 313.9 |
+| invindex / side-count-fill | expert | Java | 1306 | 1154.2 |
+| invindex / side-count-fill | expert | Swift | 2693 | 176.7 |
+| invindex / map-growth | idiomatic | Tycho | 622 | 150.9 |
+| invindex / map-growth | idiomatic | C | 592 | 133.7 |
+| invindex / map-growth | idiomatic | Rust | 623 | 134.1 |
+| invindex / map-growth | idiomatic | Go | 649 | 178.4 |
+| invindex / map-growth | idiomatic | Java | 780 | 1166.3 |
+| invindex / map-growth | idiomatic | Swift | 1129 | 142.4 |
+| invindex / map-count-fill | expert | Tycho | 944 | 88.0 |
+| invindex / map-count-fill | expert | C | 963 | 84.9 |
+| invindex / map-count-fill | expert | Rust | 1106 | 86.2 |
+| invindex / map-count-fill | expert | Go | 1050 | 181.8 |
+| invindex / map-count-fill | expert | Java | 1054 | 1104.5 |
+| invindex / map-count-fill | expert | Swift | 2002 | 93.7 |
 | binary / default | idiomatic | Tycho | 416 | 50.1 |
 | binary / default | idiomatic | C | 3244 | 129.6 |
 | binary / default | idiomatic | Rust | 5361 | 129.5 |
@@ -230,42 +230,42 @@ Time is ms; RSS is MB. Java/Swift RSS includes the runtime baseline.
 | arr / default | idiomatic | Go | 123 | 21.8 |
 | arr / default | idiomatic | Java | 282 | 576.4 |
 | arr / default | idiomatic | Swift | 136 | 16.0 |
-| dispatch / default | idiomatic | Tycho | 16 | 2.4 |
-| dispatch / default | idiomatic | C | 14 | 2.2 |
-| dispatch / default | idiomatic | Rust | 250 | 2.5 |
-| dispatch / default | idiomatic | Go | 152 | 8.6 |
-| dispatch / default | idiomatic | Java | 135 | 499.2 |
-| dispatch / default | idiomatic | Swift | 648 | 9.7 |
-| dispatch / expert | expert | Tycho | 25 | 2.2 |
-| dispatch / expert | expert | C | 19 | 2.4 |
+| dispatch / default | idiomatic | Tycho | 13 | 2.2 |
+| dispatch / default | idiomatic | C | 13 | 2.2 |
+| dispatch / default | idiomatic | Rust | 242 | 2.2 |
+| dispatch / default | idiomatic | Go | 139 | 21.2 |
+| dispatch / default | idiomatic | Java | 127 | 427.4 |
+| dispatch / default | idiomatic | Swift | 637 | 9.9 |
+| dispatch / expert | expert | Tycho | 12 | 2.4 |
+| dispatch / expert | expert | C | 13 | 2.2 |
 | dispatch / expert | expert | Rust | - | - |
 | dispatch / expert | expert | Go | - | - |
 | dispatch / expert | expert | Java | - | - |
 | dispatch / expert | expert | Swift | - | - |
-| json / default | idiomatic | Tycho | 2107 | 265.0 |
-| json / default | idiomatic | C | 3424 | 231.0 |
-| json / default | idiomatic | Rust | 2939 | 233.3 |
-| json / default | idiomatic | Go | 4093 | 440.5 |
-| json / default | idiomatic | Java | 2276 | 3325.2 |
-| json / default | idiomatic | Swift | 12636 | 285.1 |
-| maptree / default | idiomatic | Tycho | 184 | 21.9 |
-| maptree / default | idiomatic | C | 3336 | 49.9 |
-| maptree / default | idiomatic | Rust | 4597 | 33.7 |
-| maptree / default | idiomatic | Go | 3912 | 70.5 |
-| maptree / default | idiomatic | Java | 581 | 1087.6 |
-| maptree / default | idiomatic | Swift | 15415 | 71.8 |
-| maptree / arena | expert | Tycho | 185 | 22.1 |
-| maptree / arena | expert | C | 491 | 34.0 |
-| maptree / arena | expert | Rust | 411 | 25.9 |
+| json / default | idiomatic | Tycho | 2173 | 264.9 |
+| json / default | idiomatic | C | 3401 | 231.5 |
+| json / default | idiomatic | Rust | 2927 | 232.8 |
+| json / default | idiomatic | Go | 4138 | 442.8 |
+| json / default | idiomatic | Java | 2268 | 3395.3 |
+| json / default | idiomatic | Swift | 12473 | 285.1 |
+| maptree / default | idiomatic | Tycho | 180 | 22.0 |
+| maptree / default | idiomatic | C | 3331 | 49.9 |
+| maptree / default | idiomatic | Rust | 3958 | 33.9 |
+| maptree / default | idiomatic | Go | 3286 | 70.8 |
+| maptree / default | idiomatic | Java | 571 | 1086.1 |
+| maptree / default | idiomatic | Swift | 12587 | 71.8 |
+| maptree / arena | expert | Tycho | 179 | 21.9 |
+| maptree / arena | expert | C | 493 | 33.7 |
+| maptree / arena | expert | Rust | 379 | 25.9 |
 | maptree / arena | expert | Go | - | - |
 | maptree / arena | expert | Java | - | - |
 | maptree / arena | expert | Swift | - | - |
-| string / default | idiomatic | Tycho | 6 | 2.1 |
-| string / default | idiomatic | C | 4 | 1.9 |
-| string / default | idiomatic | Rust | 5 | 2.1 |
-| string / default | idiomatic | Go | 9 | 6.4 |
-| string / default | idiomatic | Java | 27 | 47.2 |
-| string / default | idiomatic | Swift | 19 | 9.4 |
+| string / default | idiomatic | Tycho | 5 | 1.9 |
+| string / default | idiomatic | C | 3 | 2.1 |
+| string / default | idiomatic | Rust | 4 | 2.0 |
+| string / default | idiomatic | Go | 9 | 6.6 |
+| string / default | idiomatic | Java | 28 | 47.6 |
+| string / default | idiomatic | Swift | 18 | 9.7 |
 | iter / default | idiomatic | Tycho | 564 | 8.2 |
 | iter / default | idiomatic | C | 615 | 7.8 |
 | iter / default | idiomatic | Rust | 818 | 8.1 |
@@ -278,36 +278,36 @@ Time is ms; RSS is MB. Java/Swift RSS includes the runtime baseline.
 | dbquery / default | idiomatic | Go | 1015 | 15.1 |
 | dbquery / default | idiomatic | Java | 1120 | 154.0 |
 | dbquery / default | idiomatic | Swift | 938 | 22.7 |
-| trie / default | idiomatic | Tycho | 134 | 76.7 |
-| trie / default | idiomatic | C | 113 | 86.1 |
-| trie / default | idiomatic | Rust | 250 | 99.4 |
-| trie / default | idiomatic | Go | 150 | 71.4 |
-| trie / default | idiomatic | Java | 146 | 125.2 |
-| trie / default | idiomatic | Swift | 238 | 79.0 |
+| trie / default | idiomatic | Tycho | 116 | 76.4 |
+| trie / default | idiomatic | C | 89 | 86.1 |
+| trie / default | idiomatic | Rust | 183 | 99.9 |
+| trie / default | idiomatic | Go | 180 | 72.3 |
+| trie / default | idiomatic | Java | 119 | 125.5 |
+| trie / default | idiomatic | Swift | 203 | 79.6 |
 | dijkstra / default | idiomatic | Tycho | 131 | 88.1 |
 | dijkstra / default | idiomatic | C | 117 | 89.4 |
 | dijkstra / default | idiomatic | Rust | 133 | 99.7 |
 | dijkstra / default | idiomatic | Go | 150 | 97.9 |
 | dijkstra / default | idiomatic | Java | 190 | 238.5 |
 | dijkstra / default | idiomatic | Swift | 274 | 128.4 |
-| lru / default | idiomatic | Tycho | 272 | 14.4 |
-| lru / default | idiomatic | C | 243 | 12.0 |
-| lru / default | idiomatic | Rust | 260 | 20.7 |
-| lru / default | idiomatic | Go | 344 | 21.0 |
-| lru / default | idiomatic | Java | 813 | 284.0 |
-| lru / default | idiomatic | Swift | 1720 | 40.9 |
+| lru / default | idiomatic | Tycho | 226 | 14.7 |
+| lru / default | idiomatic | C | 233 | 12.0 |
+| lru / default | idiomatic | Rust | 250 | 20.6 |
+| lru / default | idiomatic | Go | 308 | 21.1 |
+| lru / default | idiomatic | Java | 694 | 284.0 |
+| lru / default | idiomatic | Swift | 1394 | 40.8 |
 | interp / default | idiomatic | Tycho | 734 | 908.7 |
 | interp / default | idiomatic | C | 1581 | 2048.5 |
 | interp / default | idiomatic | Rust | 1848 | 1574.0 |
 | interp / default | idiomatic | Go | 2117 | 2162.1 |
 | interp / default | idiomatic | Java | 754 | 2037.0 |
 | interp / default | idiomatic | Swift | 3753 | 2635.4 |
-| json_tree / default | idiomatic | Tycho | 68 | 81.5 |
-| json_tree / default | idiomatic | C | 60 | 102.9 |
-| json_tree / default | idiomatic | Rust | 57 | 70.2 |
-| json_tree / default | idiomatic | Go | 187 | 85.2 |
-| json_tree / default | idiomatic | Java | 122 | 240.8 |
-| json_tree / default | idiomatic | Swift | 9519 | 117.9 |
+| json_tree / default | idiomatic | Tycho | 51 | 81.7 |
+| json_tree / default | idiomatic | C | 49 | 103.6 |
+| json_tree / default | idiomatic | Rust | 47 | 70.2 |
+| json_tree / default | idiomatic | Go | 172 | 84.6 |
+| json_tree / default | idiomatic | Java | 126 | 238.2 |
+| json_tree / default | idiomatic | Swift | 9337 | 118.7 |
 
 ## Scaling
 
@@ -321,25 +321,25 @@ Each cell is best time in ms at small / medium / large. The full per-language da
 | gcscan / default | 10 / 18 / 46 | 29 / 80 / 292 | 32 / 102 / 375 | 68 / 109 / 273 | 63 / 102 / 208 | 43 / 135 / 525 |
 | winagg / default | 26 / 82 / 259 | 41 / 94 / 273 | 63 / 171 / 565 | 94 / 268 / 667 | 97 / 285 / 985 | 120 / 377 / 1340 |
 | winagg / count-fill | 31 / 97 / 320 | 26 / 82 / 275 | 61 / 226 / 716 | 72 / 220 / 742 | 121 / 388 / 1106 | 145 / 466 / 1961 |
-| invindex / side-growth | 66 / 253 / 903 | 63 / 257 / 971 | 74 / 289 / 1026 | 100 / 305 / 1066 | 117 / 361 / 1045 | 160 / 702 / 1994 |
-| invindex / side-count-fill | 82 / 350 / 1047 | 101 / 391 / 1194 | 115 / 463 / 1405 | 152 / 625 / 1834 | 167 / 476 / 1353 | 224 / 902 / 2778 |
-| invindex / map-growth | 54 / 186 / 560 | 50 / 190 / 581 | 54 / 209 / 635 | 69 / 211 / 639 | 117 / 294 / 868 | 96 / 376 / 1154 |
-| invindex / map-count-fill | 91 / 336 / 952 | 77 / 324 / 966 | 90 / 359 / 1107 | 98 / 385 / 1103 | 130 / 376 / 1119 | 168 / 668 / 1978 |
+| invindex / side-growth | 73 / 261 / 785 | 64 / 269 / 819 | 78 / 294 / 867 | 93 / 348 / 958 | 113 / 370 / 1021 | 164 / 639 / 2008 |
+| invindex / side-count-fill | 86 / 345 / 1036 | 102 / 407 / 1180 | 123 / 460 / 1382 | 158 / 642 / 1845 | 168 / 459 / 1306 | 227 / 887 / 2693 |
+| invindex / map-growth | 54 / 186 / 622 | 49 / 196 / 592 | 54 / 211 / 623 | 71 / 207 / 649 | 103 / 284 / 780 | 99 / 390 / 1129 |
+| invindex / map-count-fill | 89 / 324 / 944 | 88 / 312 / 963 | 101 / 360 / 1106 | 98 / 359 / 1050 | 141 / 375 / 1054 | 163 / 667 / 2002 |
 | binary / default | 5 / 93 / 416 | 38 / 705 / 3244 | 45 / 1044 / 5361 | 34 / 749 / 2968 | 37 / 360 / 898 | 105 / 2322 / 11234 |
 | binary / arena | 6 / 101 / 423 | 3 / 65 / 303 | 6 / 130 / 573 | - / - / - | - / - / - | - / - / - |
 | arr / default | 6 / 16 / 66 | 6 / 24 / 77 | 4 / 17 / 61 | 11 / 37 / 123 | 29 / 79 / 282 | 10 / 41 / 136 |
-| dispatch / default | 1 / 3 / 16 | 1 / 3 / 14 | 13 / 59 / 250 | 10 / 35 / 152 | 29 / 53 / 135 | 38 / 149 / 648 |
-| dispatch / expert | 2 / 8 / 25 | 1 / 4 / 19 | - / - / - | - / - / - | - / - / - | - / - / - |
-| json / default | 138 / 522 / 2107 | 179 / 823 / 3424 | 167 / 717 / 2939 | 241 / 946 / 4093 | 257 / 664 / 2276 | 750 / 3121 / 12636 |
-| maptree / default | 16 / 44 / 184 | 82 / 308 / 3336 | 127 / 512 / 4597 | 106 / 428 / 3912 | 49 / 226 / 581 | 253 / 1753 / 15415 |
-| maptree / arena | 12 / 47 / 185 | 14 / 43 / 491 | 19 / 75 / 411 | - / - / - | - / - / - | - / - / - |
-| string / default | 0 / 2 / 6 | 0 / 1 / 4 | 0 / 2 / 5 | 1 / 2 / 9 | 15 / 21 / 27 | 2 / 6 / 19 |
+| dispatch / default | 1 / 5 / 13 | 1 / 3 / 13 | 13 / 53 / 242 | 10 / 40 / 139 | 31 / 50 / 127 | 38 / 147 / 637 |
+| dispatch / expert | 1 / 3 / 12 | 1 / 3 / 13 | - / - / - | - / - / - | - / - / - | - / - / - |
+| json / default | 127 / 526 / 2173 | 177 / 866 / 3401 | 145 / 707 / 2927 | 205 / 1149 / 4138 | 253 / 678 / 2268 | 747 / 3115 / 12473 |
+| maptree / default | 13 / 43 / 180 | 85 / 301 / 3331 | 122 / 498 / 3958 | 120 / 360 / 3286 | 50 / 243 / 571 | 250 / 1219 / 12587 |
+| maptree / arena | 11 / 44 / 179 | 12 / 43 / 493 | 17 / 73 / 379 | - / - / - | - / - / - | - / - / - |
+| string / default | 0 / 1 / 5 | 0 / 1 / 3 | 0 / 1 / 4 | 1 / 2 / 9 | 15 / 20 / 28 | 2 / 7 / 18 |
 | iter / default | 38 / 146 / 564 | 38 / 156 / 615 | 52 / 208 / 818 | 83 / 241 / 895 | 152 / 518 / 1553 | 76 / 291 / 1164 |
 | dbquery / default | 58 / 230 / 1050 | 56 / 230 / 1030 | 58 / 230 / 931 | 63 / 251 / 1015 | 161 / 366 / 1120 | 61 / 245 / 938 |
-| trie / default | 9 / 35 / 134 | 9 / 34 / 113 | 19 / 73 / 250 | 18 / 60 / 150 | 27 / 58 / 146 | 23 / 71 / 238 |
+| trie / default | 8 / 34 / 116 | 8 / 28 / 89 | 13 / 56 / 183 | 15 / 62 / 180 | 27 / 50 / 119 | 24 / 70 / 203 |
 | dijkstra / default | 5 / 36 / 131 | 6 / 38 / 117 | 9 / 37 / 133 | 15 / 40 / 150 | 54 / 80 / 190 | 32 / 73 / 274 |
-| lru / default | 30 / 114 / 272 | 27 / 114 / 243 | 29 / 368 / 260 | 40 / 200 / 344 | 92 / 603 / 813 | 155 / 1092 / 1720 |
+| lru / default | 32 / 109 / 226 | 26 / 118 / 233 | 33 / 121 / 250 | 47 / 149 / 308 | 152 / 344 / 694 | 254 / 614 / 1394 |
 | interp / default | 9 / 188 / 734 | 18 / 389 / 1581 | 27 / 440 / 1848 | 26 / 552 / 2117 | 40 / 288 / 754 | 61 / 927 / 3753 |
-| json_tree / default | 5 / 23 / 68 | 4 / 18 / 60 | 5 / 20 / 57 | 17 / 64 / 187 | 42 / 69 / 122 | 102 / 1310 / 9519 |
+| json_tree / default | 4 / 16 / 51 | 4 / 17 / 49 | 4 / 17 / 47 | 13 / 57 / 172 | 28 / 58 / 126 | 84 / 1097 / 9337 |
 
 Java/Swift memory is omitted from ratios; see the absolute table. Rows around the process floor are directional, not throughput claims.
