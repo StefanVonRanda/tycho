@@ -51,12 +51,12 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   memory still below C (81.7 vs 103.6 MB), and `trie` drops toward C's range
   (116 -> 89 ms GCC, 165 -> 90 ms clang) by scanning dense entries for int-key
   maps of eight or fewer instead of hashing an index.
-- **`binary/arena` is a representation limit, not an allocator regression.**
-  Profiled at maxd=20: 2.16e9 vs C's 1.40e9 cycles, but 9.15e9 vs C's 6.44e9
-  instructions and 2.13e9 vs 1.06e9 branches. The node is a 24-byte tagged enum
-  against C's 16-byte pair of pointers; a bump-only allocator fast path was
-  measured and did not pay (it raised instructions/branches). The C row is an
-  explicit expert control, not the idiomatic claim.
+- **Recursive two-variant enums use NULL as the empty variant.** `enum Tree:
+  Leaf | Node(Tree, Tree)` no longer stores a tag: NULL is `Leaf`, a non-NULL
+  pointer is a 16-byte payload. The node drops 24 -> 16 bytes (C's size), and
+  `binary/arena` large goes 423 -> 377 ms GCC (C 292) and 516 ms clang (C 504),
+  with peak RSS 34 MB against C's 98 MB. Restricted to recursive enums so
+  Option/Result and scalar enums keep their existing lowering.
 - **Maps compact at 1/8 dead, not 1/2.** A churn-heavy map reaches its reserved
   entry capacity while nearly all entries are live, so the old rule did not
   fire before it grew, and the old arrays stayed in the arena. `bench/lru`'s

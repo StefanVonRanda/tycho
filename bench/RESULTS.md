@@ -30,8 +30,8 @@ Generated 2026-11-10 13:14 UTC with `cc` for Tycho/C. Best of 3 after 2 discarde
 | invindex / side-count-fill | Y | Y | Y | Y | Y | Y |
 | invindex / map-growth | Y | Y | Y | Y | Y | Y |
 | invindex / map-count-fill | Y | Y | Y | Y | Y | Y |
-| binary / default | Y | Y | Y | Y | Y | Y |
-| binary / arena | Y | Y | Y | - | - | - |
+| binary / default | - | - | - | - | - | - |
+| binary / arena | - | - | - | - | - | - |
 | arr / default | Y | Y | Y | Y | Y | Y |
 | dispatch / default | Y | Y | Y | Y | Y | Y |
 | dispatch / expert | Y | Y | - | - | - | - |
@@ -56,7 +56,7 @@ Tycho / competitor; below 1.00 is faster. Rows are tier-matched: an idiomatic co
 | group | vs C | vs Rust | vs Go | vs Java | vs Swift |
 |---|---:|---:|---:|---:|---:|
 | arr | 0.86x | 1.08x | 0.54x | 0.23x | 0.49x |
-| binary | 0.13x | 0.08x | 0.14x | 0.46x | 0.04x |
+| binary | 0.12x | 0.07x | 0.13x | 0.42x | 0.03x |
 | dbquery | 1.02x | 1.13x | 1.03x | 0.94x | 1.12x |
 | dijkstra | 1.12x | 0.98x | 0.87x | 0.69x | 0.48x |
 | dispatch | 1.00x | 0.05x | 0.09x | 0.10x | 0.02x |
@@ -75,14 +75,14 @@ Tycho / competitor; below 1.00 is faster. Rows are tier-matched: an idiomatic co
 | winagg | 0.95x | 0.46x | 0.39x | 0.26x | 0.19x |
 | window_int | 1.17x | 7.00x | 1.40x | 0.29x | 0.35x |
 | window_string | 0.49x | 0.64x | 0.56x | 0.95x | 0.27x |
-| **geometric mean** | 0.66x | 0.55x | 0.40x | 0.43x | 0.18x |
+| **geometric mean** | 0.65x | 0.55x | 0.40x | 0.43x | 0.18x |
 
 ### Expert
 
 | group | vs C | vs Rust | vs Go | vs Java | vs Swift |
 |---|---:|---:|---:|---:|---:|
 | arr | - | - | - | - | - |
-| binary | 1.40x | 0.74x | - | - | - |
+| binary | 1.29x | 0.66x | - | - | - |
 | dbquery | - | - | - | - | - |
 | dijkstra | - | - | - | - | - |
 | dispatch | 0.92x | - | - | - | - |
@@ -101,7 +101,7 @@ Tycho / competitor; below 1.00 is faster. Rows are tier-matched: an idiomatic co
 | winagg | 1.16x | 0.45x | 0.43x | 0.29x | 0.16x |
 | window_int | - | - | - | - | - |
 | window_string | - | - | - | - | - |
-| **geometric mean** | 0.88x | 0.63x | 0.60x | 0.59x | 0.31x |
+| **geometric mean** | 0.87x | 0.62x | 0.60x | 0.59x | 0.31x |
 
 ## Aggregate by category
 
@@ -109,14 +109,14 @@ These use the best measured variant in each group, independently for Tycho and e
 
 | category | vs C | vs Rust | vs Go | vs Java | vs Swift |
 |---|---:|---:|---:|---:|---:|
-| core time | 0.87x | 0.53x | 0.25x | 0.30x | 0.10x |
-| core memory | 0.87x | 1.00x | 0.31x |
+| core time | 0.86x | 0.52x | 0.25x | 0.29x | 0.10x |
+| core memory | 0.83x | 0.94x | 0.30x |
 | service time | 0.71x | 0.84x | 0.50x | 0.48x | 0.35x |
 | service memory | 0.97x | 0.91x | 0.46x |
 | specialized time | 0.90x | 0.72x | 0.53x | 0.58x | 0.13x |
 | specialized memory | 0.82x | 0.80x | 0.77x |
 
-Explicitly slower rows (Tycho / competitor > 1.00): arr vs Rust (1.08x), binary vs C (1.37x), dbquery vs C (1.02x), dbquery vs Rust (1.13x), dbquery vs Go (1.03x), dbquery vs Swift (1.12x), dijkstra vs C (1.12x), invindex_map vs C (1.05x), json_tree vs C (1.04x), json_tree vs Rust (1.09x), string vs C (1.67x), string vs Rust (1.25x), trie vs C (1.13x), window_int vs C (1.17x), window_int vs Rust (7.00x), window_int vs Go (1.40x).
+Explicitly slower rows (Tycho / competitor > 1.00): arr vs Rust (1.08x), binary vs C (1.29x), dbquery vs C (1.02x), dbquery vs Rust (1.13x), dbquery vs Go (1.03x), dbquery vs Swift (1.12x), dijkstra vs C (1.12x), invindex_map vs C (1.05x), json_tree vs C (1.04x), json_tree vs Rust (1.09x), string vs C (1.67x), string vs Rust (1.25x), trie vs C (1.13x), window_int vs C (1.17x), window_int vs Rust (7.00x), window_int vs Go (1.40x).
 
 ## Relative peak RSS at the large size
 
@@ -125,7 +125,7 @@ Tycho / competitor; below 1.00 is smaller. Java/Swift are omitted: their RSS inc
 | group | vs C | vs Rust | vs Go |
 |---|---:|---:|---:|
 | arr | 1.05x | 1.04x | 0.38x |
-| binary | 0.51x | 1.00x | 0.37x |
+| binary | 0.35x | 0.68x | 0.25x |
 | dbquery | 0.99x | 0.98x | 0.56x |
 | dijkstra | 0.99x | 0.88x | 0.90x |
 | dispatch | 0.99x | 1.00x | 0.10x |
@@ -144,7 +144,7 @@ Tycho / competitor; below 1.00 is smaller. Java/Swift are omitted: their RSS inc
 | winagg | 1.07x | 1.03x | 0.45x |
 | window_int | 1.44x | 1.64x | 1.25x |
 | window_string | 1.12x | 0.94x | 0.45x |
-| **geometric mean** | 0.90x | 0.91x | 0.46x |
+| **geometric mean** | 0.88x | 0.89x | 0.45x |
 
 ## Large-size absolute results
 
@@ -212,15 +212,15 @@ Time is ms; RSS is MB. Java/Swift RSS includes the runtime baseline.
 | invindex / map-count-fill | expert | Go | 1050 | 181.8 |
 | invindex / map-count-fill | expert | Java | 1054 | 1104.5 |
 | invindex / map-count-fill | expert | Swift | 2002 | 93.7 |
-| binary / default | idiomatic | Tycho | 416 | 50.1 |
+| binary / default | idiomatic | Tycho | 378 | 34.0 |
 | binary / default | idiomatic | C | 3244 | 129.6 |
-| binary / default | idiomatic | Rust | 5361 | 129.5 |
-| binary / default | idiomatic | Go | 2968 | 133.8 |
-| binary / default | idiomatic | Java | 898 | 1405.6 |
-| binary / default | idiomatic | Swift | 11234 | 200.6 |
-| binary / arena | expert | Tycho | 423 | 50.0 |
-| binary / arena | expert | C | 303 | 97.6 |
-| binary / arena | expert | Rust | 573 | 49.9 |
+| binary / default | idiomatic | Rust | 5085 | 129.7 |
+| binary / default | idiomatic | Go | 2926 | 138.0 |
+| binary / default | idiomatic | Java | 909 | 2803.8 |
+| binary / default | idiomatic | Swift | 10937 | 200.9 |
+| binary / arena | expert | Tycho | 377 | 34.1 |
+| binary / arena | expert | C | 292 | 97.9 |
+| binary / arena | expert | Rust | 575 | 50.2 |
 | binary / arena | expert | Go | - | - |
 | binary / arena | expert | Java | - | - |
 | binary / arena | expert | Swift | - | - |
@@ -325,8 +325,8 @@ Each cell is best time in ms at small / medium / large. The full per-language da
 | invindex / side-count-fill | 86 / 345 / 1036 | 102 / 407 / 1180 | 123 / 460 / 1382 | 158 / 642 / 1845 | 168 / 459 / 1306 | 227 / 887 / 2693 |
 | invindex / map-growth | 54 / 186 / 622 | 49 / 196 / 592 | 54 / 211 / 623 | 71 / 207 / 649 | 103 / 284 / 780 | 99 / 390 / 1129 |
 | invindex / map-count-fill | 89 / 324 / 944 | 88 / 312 / 963 | 101 / 360 / 1106 | 98 / 359 / 1050 | 141 / 375 / 1054 | 163 / 667 / 2002 |
-| binary / default | 5 / 93 / 416 | 38 / 705 / 3244 | 45 / 1044 / 5361 | 34 / 749 / 2968 | 37 / 360 / 898 | 105 / 2322 / 11234 |
-| binary / arena | 6 / 101 / 423 | 3 / 65 / 303 | 6 / 130 / 573 | - / - / - | - / - / - | - / - / - |
+| binary / default | - / - / 378 | - / - / 3244 | - / - / 5085 | - / - / 2926 | - / - / 909 | - / - / 10937 |
+| binary / arena | - / - / 377 | - / - / 292 | - / - / 575 | - / - / - | - / - / - | - / - / - |
 | arr / default | 6 / 16 / 66 | 6 / 24 / 77 | 4 / 17 / 61 | 11 / 37 / 123 | 29 / 79 / 282 | 10 / 41 / 136 |
 | dispatch / default | 1 / 5 / 13 | 1 / 3 / 13 | 13 / 53 / 242 | 10 / 40 / 139 | 31 / 50 / 127 | 38 / 147 / 637 |
 | dispatch / expert | 1 / 3 / 12 | 1 / 3 / 13 | - / - / - | - / - / - | - / - / - | - / - / - |

@@ -280,6 +280,32 @@ fn _inline_enum(cs: inout C, n: string) -> bool:
 fn _tname(t: string) -> string:
     return t[2:]
 
+# A two-variant recursive enum with one empty variant and one payload variant
+# uses the pointer's NULL as the empty variant. `enum Tree: Leaf | Node(Tree,
+# Tree)` becomes a 16-byte payload (`two E_Tree *`) instead of a 24-byte tagged
+# cell: binary_trees' node drops 24 -> 16 bytes and its large row matches the C
+# arena's node size. Restricted to recursive enums so Option/Result and scalar
+# enums keep their dedicated lowering.
+fn _nul_enum(cs: inout C, en: string) -> bool:
+    ei := _eidx(&cs, en)
+    if ei < 0 or _inline_enum(&cs, en):
+        return false
+    if len(cs.eds[ei].vnames) != 2:
+        return false
+    empty := 0
+    pay := 0
+    rec := false
+    for t := 0; t < len(cs.eds[ei].vnames); t += 1:
+        ps := cs.eds[ei].vpay[t].ptypes
+        if len(ps) == 0:
+            empty = empty + 1
+            continue
+        pay = pay + 1
+        for p in ps:
+            if p == "E~" + en:
+                rec = true
+    return empty == 1 and pay == 1 and rec
+
 # A newtype is ERASED in lowering (spec 5.4): it is represented exactly as its
 # underlying type, so `_ty` resolves the name away and nothing downstream ever
 # sees one.
@@ -3001,6 +3027,10 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 _bad("`is` on a non-enum")
             ei := _eidx(&cs, _tname(st))
             tag := _tag(&cs, ei, vn)
+            if _nul_enum(&cs, _tname(st)):
+                if len(cs.eds[ei].vpay[tag].ptypes) == 0:
+                    return ("((" + sc + ") == NULL)", "bool")
+                return ("((" + sc + ") != NULL)", "bool")
             if _inline_enum(&cs, _tname(st)):
                 return ("((" + sc + ").tag == " + str(tag) + ")", "bool")
             return ("((" + sc + ")->tag == " + str(tag) + ")", "bool")
@@ -3890,13 +3920,19 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
     if len(pay) != len(args):
         _bad("variant " + vn + " takes " + str(len(pay)) + " payload value(s)")
     inl := _inline_enum(&cs, en)
+    nel := _nul_enum(&cs, en)
     if len(pay) == 0:
+        if nel:
+            return ("((E_" + en + " *)0)", "E~" + en)
         if inl:
             return ("((E_" + en + "){ .tag = " + str(tag) + " })", "E~" + en)
         return ("(&_sing_" + en + "_" + str(tag) + ")", "E~" + en)
     v := _fresh(&cs, "_v")
     out := "({ E_" + en + " " + v + " = {0}; " + v + ".tag = " + str(tag) + "; "
-    if not inl:
+    if nel:
+        out = "({ E_" + en + " *" + v + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", sizeof(" +
+            _vpaytype(en, vn) + ")); "
+    elif not inl:
         out = "({ E_" + en + " *" + v + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", offsetof(E_" +
             en + ", u) + sizeof(" + _vpaytype(en, vn) + ")); " + v + "->tag = " + str(tag) + "; "
     for i := 0; i < len(args); i += 1:
@@ -3916,7 +3952,9 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
                 not _canmove(&cs, args[i], cs.arena) and
                 not _move_same_array(&cs, args[i], pay[i], cs.arena) and not same_enum:
             ac = _copy(&cs, ac, pay[i], cs.arena)
-        if inl:
+        if nel:
+            out = out + "((" + _vpaytype(en, vn) + " *)" + v + ")->f" + str(i) + " = " + ac + "; "
+        elif inl:
             out = out + v + ".u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
         else:
             out = out + v + "->u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
@@ -9217,6 +9255,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     if _is_enum(st):
         ei := _eidx(&cs, _tname(st))
         inl := _inline_enum(&cs, _tname(st))
+        nel := _nul_enum(&cs, _tname(st))
         tagp := "->tag"
         usep := "->u."
         if inl:
@@ -9268,6 +9307,8 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
                     continue
                 bcn := _push(&cs, a.binds[i], pay[i])
                 psrc := v + usep + _vfield(a.name) + ".f" + str(i)
+                if nel:
+                    psrc = "((" + _vpaytype(_tname(st), a.name) + " *)" + v + ")->f" + str(i)
                 pv := psrc
                 cs.vown[len(cs.vown) - 1] = sown
                 if owned_subj:
@@ -9283,12 +9324,21 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             # the inner binding was simply never in scope. The payload is itself
             # an enum: test its tag too, and bind from ITS payload.
             cond := v + tagp + " == " + str(tag)
+            if nel:
+                if len(pay) == 0:
+                    cond = v + " == NULL"
+                else:
+                    cond = v + " != NULL"
             if len(nulsub) > 0:
+                if nel:
+                    _bad("a nested nullary pattern is not supported on a nullable enum")
                 npsep := "->tag"
                 if len(pay) > 0 and _inline_enum(&cs, _tname(pay[0])):
                     npsep = ".tag"
                 cond = "(" + cond + ") && ((" + v + usep + _vfield(a.name) + ".f0)" + npsep + " == " + nulsub + ")"
             if len(a.sub) > 0:
+                if nel:
+                    _bad("a nested pattern is not supported on a nullable enum")
                 if len(pay) != 1:
                     _bad("a nested pattern needs a single-payload variant")
                 ii := _eidx(&cs, _tname(pay[0]))
@@ -10052,6 +10102,19 @@ fn _recycle_defs(cs: inout C) -> (string, string):
             proto = proto + "static void " + nm + "(Arena *, E_" + cs.eds[i].name + " *);\n"
             b := "static void " + nm + "(Arena *a, E_" + cs.eds[i].name + " *v) {\n" +
                 "    if (!v || !arena_owns(a, v)) return;\n"
+            if _nul_enum(&cs, cs.eds[i].name):
+                for j := 0; j < len(cs.eds[i].vnames); j += 1:
+                    ps := cs.eds[i].vpay[j].ptypes
+                    if len(ps) == 0:
+                        continue
+                    pty := _vpaytype(cs.eds[i].name, cs.eds[i].vnames[j])
+                    for k := 0; k < len(ps); k += 1:
+                        rc := _recycle_call(&cs, "a", "((" + pty + " *)v)->f" + str(k), ps[k])
+                        if len(rc) > 0:
+                            b = b + "    " + rc + "\n"
+                    b = b + "    arena_recycle(a, v, sizeof(" + pty + "));\n"
+                body = body + b + "}\n"
+                continue
             for j := 0; j < len(cs.eds[i].vnames); j += 1:
                 ps := cs.eds[i].vpay[j].ptypes
                 if len(ps) == 0:
@@ -10441,6 +10504,7 @@ fn _enum_support(cs: inout C) -> (string, string, string):
     for i := 0; i < len(cs.eds); i += 1:
         n := cs.eds[i].name
         inl := _inline_enum(&cs, n)
+        nel := _nul_enum(&cs, n)
         if not inl and _once(&cs, "def_E_" + n):
             un := ""
             for t := 0; t < len(cs.eds[i].vnames); t += 1:
@@ -10453,12 +10517,14 @@ fn _enum_support(cs: inout C) -> (string, string, string):
                     fl = fl + " " + _ctyz(&cs, ps[j]) + "f" + str(j) + ";"
                 defs = defs + "typedef struct {" + fl + " } " + _vpaytype(n, vn) + ";\n"
                 un = un + " " + _vpaytype(n, vn) + " " + _vfield(vn) + ";"
-            defs = defs + "struct E_" + n + " { int tag; union {" + un + " } u; };\n"
+            if not nel:
+                defs = defs + "struct E_" + n + " { int tag; union {" + un + " } u; };\n"
             allbare := true
             for t := 0; t < len(cs.eds[i].vnames); t += 1:
                 if len(cs.eds[i].vpay[t].ptypes) == 0:
-                    defs = defs + "static E_" + n + " _sing_" + n + "_" + str(t) +
-                        " = { " + str(t) + " };\n"
+                    if not nel:
+                        defs = defs + "static E_" + n + " _sing_" + n + "_" + str(t) +
+                            " = { " + str(t) + " };\n"
                 else:
                     allbare = false
             if allbare and len(cs.eds[i].vnames) > 0:
@@ -10509,6 +10575,48 @@ fn _enum_support(cs: inout C) -> (string, string, string):
             if n[q] == 95 and n[q + 1] == 95:
                 epfx = n[0:q + 2]
                 break
+        if nel:
+            pvn := ""
+            evn := ""
+            pps := []string
+            for t := 0; t < len(cs.eds[i].vnames); t += 1:
+                if len(cs.eds[i].vpay[t].ptypes) == 0:
+                    evn = cs.eds[i].vnames[t]
+                else:
+                    pvn = cs.eds[i].vnames[t]
+                    pps = cs.eds[i].vpay[t].ptypes
+            pty := _vpaytype(n, pvn)
+            if docp:
+                c2 := "static E_" + n + " *tycho_copy_E_" + n + "(Arena *a, E_" + n + " *v) {\n" +
+                    "    if (!v) return v;\n" +
+                    "    " + pty + " *d = (" + pty + " *)arena_alloc(a, sizeof(" + pty + "));\n"
+                for j := 0; j < len(pps); j += 1:
+                    c2 = c2 + "    d->f" + str(j) + " = " +
+                        _copy(&cs, "((" + pty + " *)v)->f" + str(j), pps[j], "a") + ";\n"
+                c2 = c2 + "    return (E_" + n + " *)d;\n}\n"
+                body = body + c2
+            if doeq:
+                e2 := "static int tycho_eq_E_" + n + "(E_" + n + " *x, E_" + n + " *y) {\n" +
+                    "    if (!x || !y) return x == y;\n    return "
+                for j := 0; j < len(pps); j += 1:
+                    if j > 0:
+                        e2 = e2 + " && "
+                    e2 = e2 + _eq(&cs, "((" + pty + " *)x)->f" + str(j),
+                        "((" + pty + " *)y)->f" + str(j), pps[j])
+                e2 = e2 + ";\n}\n"
+                body = body + e2
+            if dost:
+                s2 := "static char *tycho_str_E_" + n + "(Arena *a, E_" + n + " *v) {\n" +
+                    "    if (!v) return tycho_str_from_c(a, \"" + epfx + evn + "\");\n" +
+                    "    char *r = tycho_str_from_c(a, \"" + epfx + pvn + "(\");\n"
+                for j := 0; j < len(pps); j += 1:
+                    if j > 0:
+                        s2 = s2 + "    r = tycho_str_concat(a, r, tycho_str_from_c(a, \", \"));\n"
+                    s2 = s2 + "    r = tycho_str_concat(a, r, " +
+                        _tostr_a(&cs, "((" + pty + " *)v)->f" + str(j), pps[j]) + ");\n"
+                s2 = s2 + "    return tycho_str_concat(a, r, tycho_str_from_c(a, \")\"));\n}\n"
+                body = body + s2
+            continue
         for t := 0; t < len(cs.eds[i].vnames); t += 1:
             vn := cs.eds[i].vnames[t]
             shown := epfx + vn

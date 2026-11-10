@@ -1684,135 +1684,47 @@
      "group": "binary",
      "tier": "idiomatic",
      "rows": {
-      "small": {
-       "tycho": {
-        "ms": 6,
-        "rss": 2.9296875,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.1666666666666667,
-        "ok": true
-       },
-       "c": {
-        "ms": 36,
-        "rss": 4.15234375,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.0833333333333333,
-        "ok": true
-       },
-       "rust": {
-        "ms": 47,
-        "rss": 3.890625,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.1914893617021276,
-        "ok": true
-       },
-       "go": {
-        "ms": 34,
-        "rss": 8.6328125,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.1176470588235294,
-        "ok": true
-       },
-       "java": {
-        "ms": 45,
-        "rss": 122.61328125,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.2444444444444445,
-        "ok": true
-       },
-       "swift": {
-        "ms": 107,
-        "rss": 12.0234375,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.02803738317757,
-        "ok": true
-       }
-      },
-      "medium": {
-       "tycho": {
-        "ms": 120,
-        "rss": 14.140625,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.05,
-        "ok": true
-       },
-       "c": {
-        "ms": 751,
-        "rss": 33.9921875,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.0266311584553929,
-        "ok": true
-       },
-       "rust": {
-        "ms": 1066,
-        "rss": 33.921875,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.0112570356472796,
-        "ok": true
-       },
-       "go": {
-        "ms": 752,
-        "rss": 36.890625,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.0398936170212767,
-        "ok": true
-       },
-       "java": {
-        "ms": 349,
-        "rss": 1020.6796875,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.0773638968481376,
-        "ok": true
-       },
-       "swift": {
-        "ms": 2380,
-        "rss": 56.83203125,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.0907563025210083,
-        "ok": true
-       }
-      },
       "large": {
        "tycho": {
-        "ms": 565,
-        "rss": 49.9609375,
+        "ms": 527,
+        "rss": 33.8984375,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.0460176991150443,
+        "spread": 1.0360531309297913,
         "ok": true
        },
        "c": {
-        "ms": 4003,
-        "rss": 129.95703125,
+        "ms": 3434,
+        "rss": 129.859375,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.0831876092930302,
+        "spread": 1.0276645311589983,
         "ok": true
        },
        "rust": {
-        "ms": 5236,
-        "rss": 129.9375,
+        "ms": 5079,
+        "rss": 129.94140625,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.018716577540107,
+        "spread": 1.0285489269541248,
         "ok": true
        },
        "go": {
-        "ms": 2855,
-        "rss": 136.3203125,
+        "ms": 2925,
+        "rss": 136.18359375,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.001751313485114,
+        "spread": 1.0355555555555556,
         "ok": true
        },
        "java": {
-        "ms": 1025,
-        "rss": 3170.34765625,
+        "ms": 918,
+        "rss": 3090.73828125,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.3473170731707318,
+        "spread": 1.326797385620915,
         "ok": true
        },
        "swift": {
-        "ms": 11302,
-        "rss": 200.609375,
+        "ms": 10892,
+        "rss": 200.8515625,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.0259246151123695,
+        "spread": 1.0174439955930958,
         "ok": true
        }
       }
@@ -1822,72 +1734,26 @@
      "group": "binary",
      "tier": "expert",
      "rows": {
-      "small": {
-       "tycho": {
-        "ms": 9,
-        "rss": 2.69921875,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.0,
-        "ok": true
-       },
-       "c": {
-        "ms": 7,
-        "rss": 3.4296875,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.1428571428571428,
-        "ok": true
-       },
-       "rust": {
-        "ms": 8,
-        "rss": 2.953125,
-        "out": "stretch tree of depth 15 check: 65535\n16384 trees of depth 4 check: 507904\n4096 trees of depth 6 check: 520192\n1024 trees of depth 8 check: 523264\n256 trees of depth 10 check: 524032\n64 trees of depth 12 check: 524224\n16 trees of depth 14 check: 524272\nlong-lived tree of depth 14 check: 32767",
-        "spread": 1.125,
-        "ok": true
-       }
-      },
-      "medium": {
-       "tycho": {
-        "ms": 123,
-        "rss": 13.9296875,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.0975609756097562,
-        "ok": true
-       },
-       "c": {
-        "ms": 114,
-        "rss": 25.8984375,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.0526315789473684,
-        "ok": true
-       },
-       "rust": {
-        "ms": 135,
-        "rss": 13.94140625,
-        "out": "stretch tree of depth 19 check: 1048575\n262144 trees of depth 4 check: 8126464\n65536 trees of depth 6 check: 8323072\n16384 trees of depth 8 check: 8372224\n4096 trees of depth 10 check: 8384512\n1024 trees of depth 12 check: 8387584\n256 trees of depth 14 check: 8388352\n64 trees of depth 16 check: 8388544\n16 trees of depth 18 check: 8388592\nlong-lived tree of depth 18 check: 524287",
-        "spread": 1.0148148148148148,
-        "ok": true
-       }
-      },
       "large": {
        "tycho": {
-        "ms": 556,
-        "rss": 50.140625,
+        "ms": 516,
+        "rss": 34.140625,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.026978417266187,
+        "spread": 1.0348837209302326,
         "ok": true
        },
        "c": {
-        "ms": 557,
-        "rss": 97.95703125,
+        "ms": 504,
+        "rss": 97.86328125,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.0107719928186714,
+        "spread": 1.0257936507936507,
         "ok": true
        },
        "rust": {
-        "ms": 580,
-        "rss": 49.95703125,
+        "ms": 567,
+        "rss": 49.94140625,
         "out": "stretch tree of depth 21 check: 4194303\n1048576 trees of depth 4 check: 32505856\n262144 trees of depth 6 check: 33292288\n65536 trees of depth 8 check: 33488896\n16384 trees of depth 10 check: 33538048\n4096 trees of depth 12 check: 33550336\n1024 trees of depth 14 check: 33553408\n256 trees of depth 16 check: 33554176\n64 trees of depth 18 check: 33554368\n16 trees of depth 20 check: 33554416\nlong-lived tree of depth 20 check: 2097151",
-        "spread": 1.0844827586206895,
+        "spread": 1.0158730158730158,
         "ok": true
        }
       }
