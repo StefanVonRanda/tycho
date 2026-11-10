@@ -103,6 +103,20 @@ by `make debug-check`. Its shell-outs go through the shim rather than core:os
 because `os.system` reaches cmd.exe verbatim on Windows, which cannot execute a
 command name written with forward slashes.
 
+## Runtime traps
+
+A `-g` build records the current statement before it runs, so a bounds, division,
+empty-pop or similar runtime trap prints the owning source line:
+
+```text
+tycho: index 5 out of bounds (len 3)
+  at examples/parse.ty:42
+```
+
+Set `TYCHO_BACKTRACE=1` to add the C frames. They are addresses and symbols;
+resolve them against the binary with `addr2line -e ./program <address>`. Normal
+builds print neither, and pay nothing on the non-trapping path.
+
 ## What the frames look like
 
 The emitted C is faithful but not idiomatic, so a few things read differently

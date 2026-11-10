@@ -2928,7 +2928,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                     sl + " = " + lo + ", " + sh + " = " + hi + "; if (" + sl + " < 0 || " +
                     sh + " > " + ss + ".len || " + sl + " > " + sh + ") { fprintf(stderr, " +
                     "\"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
-                    sl + ", " + sh + ", " + ss + ".len); exit(1); } (" + _cty(&cs, rt) + "){ " +
+                    sl + ", " + sh + ", " + ss + ".len); TYCHO_EXIT(); } (" + _cty(&cs, rt) + "){ " +
                     offs + sh + " - " + sl + ", 0 }; }))", rt)
             if not _is_arr(rt):
                 _bad("slicing '" + rt + "'")
@@ -2941,7 +2941,7 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             sl := "({ " + act + " " + sv + " = " + rc + "; tycho_int " + alo + " = " + lo +
                 ", " + ahi + " = " + hi + "; if (" + alo + " < 0 || " + ahi + " > " + sv +
                 ".len || " + alo + " > " + ahi + ") { fprintf(stderr, \"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
-                alo + ", " + ahi + ", " + sv + ".len); exit(1); } (" + act + "){ " + sv +
+                alo + ", " + ahi + ", " + sv + ".len); TYCHO_EXIT(); } (" + act + "){ " + sv +
                 ".data + " + alo + ", " + ahi + " - " + alo + ", 0 }; })"
             return (_copy(&cs, sl, rt, cs.arena), rt)
         ast.Unop(l, op, k):
@@ -4515,7 +4515,7 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
         return ("(" + a + " " + op + " " + b + ")", rt)
     if op == "<<" or op == ">>":
         # A count >= the operand's width is 0 and a negative one aborts, neither
-        # of which C gives -- runtime/tycho_rt.c:348 onwards owns both.
+        # of which C gives -- runtime/tycho_rt.c:380 onwards owns both.
         st := "int"
         if _is_sized(at):
             st = at
@@ -5652,7 +5652,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             # the capacity trap: a bounded array refuses the push that would
             # exceed its declared N (src/tychoc.c's per-capacity push helper)
             pc9 = "({ if ((" + rc + ").len >= " + str(cap9) + "LL) { " +
-                "fprintf(stderr, \"tycho: push to a full bounded[" + str(cap9) + "]\\n\"); exit(1); } " +
+                "fprintf(stderr, \"tycho: push to a full bounded[" + str(cap9) + "]\\n\"); TYCHO_EXIT(); } " +
                 pc9 + "; })"
         return (pc9, "void")
     if n == "pop" and len(args) == 1:
@@ -7404,6 +7404,7 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
             if cs.cf >= 0 and cs.cf < len(cs.fpath):
                 dbgf = cs.fpath[cs.cf]
             out = out + "#line " + str(ast.sline_of(s)) + " \"" + _c_escape_path(dbgf) + "\"\n"
+            out = out + ind + "tycho_trap_at(\"" + _c_escape_path(dbgf) + "\", " + str(ast.sline_of(s)) + ");\n"
         cs.ret_store = i == cs.ret_update
         # A canonical `i := 0; while ...` builder/reader gets the same
         # presizing and monotone-index proof as a three-clause for loop. The
@@ -9298,7 +9299,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
         if hasdef:
             out = out + ind + "    else {\n" + deflt + ind + "    }\n"
         else:
-            out = out + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n"
+            out = out + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT(); }\n"
         return out + ind + "}\n"
     # scalar subject
     out2 := ind + "{\n" + ind + "    " + _ctyz(&cs, st) + "" + v + " = " + sc + ";\n"
@@ -9346,7 +9347,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     else:
         # src/tychoc.c:16914 -- unreachable, and emitted anyway so the generated
         # C provably returns on every path.
-        out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); exit(1); }\n"
+        out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT(); }\n"
     return out2 + ind + "}\n"
 
 # --- declaration collection -------------------------------------------------
@@ -9472,7 +9473,7 @@ fn _soa_defs(cs: inout C) -> (string, string):
         sb = sb + "typedef struct { " + flds + "tycho_int len; tycho_int cap; } " + ct + ";\n"
         sb = sb + "static tycho_int " + ct + "_bound(" + ct + " *s, tycho_int i) { " +
             "if (i < 0 || i >= s->len) { fprintf(stderr, \"tycho: index %\" TY_PRId " +
-            "\" out of bounds (len %\" TY_PRId \")\\n\", i, s->len); exit(1); } return i; }\n"
+            "\" out of bounds (len %\" TY_PRId \")\\n\", i, s->len); TYCHO_EXIT(); } return i; }\n"
         # Prototypes: a struct's own eq/str is emitted BEFORE these bodies and
         # can call them (a struct field may be a soa -- tests/soa.ty's Bag).
         sb = sb + "static void " + ct + "_push(Arena*, " + ct + "*, " + et + ");\n" +
@@ -9521,7 +9522,7 @@ fn _soa_defs(cs: inout C) -> (string, string):
         fb = fb + "static void " + ct + "_set(Arena *a, " + ct + " *s, tycho_int ix, " +
             et + " v) {\n    tycho_int _si = " + ct + "_bound(s, ix);\n" + sets + "}\n"
         fb = fb + "static " + et + " " + ct + "_pop(" + ct + " *s) {\n" +
-            "    if (s->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); exit(1); }\n" +
+            "    if (s->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); TYCHO_EXIT(); }\n" +
             "    s->len--;\n    tycho_int _i = s->len;\n    return (" + et + "){ " + gath + " };\n}\n"
         fb = fb + "static " + et + " " + ct + "_get(" + ct + " *s, tycho_int ix) {\n" +
             "    tycho_int _i = " + ct + "_bound(s, ix);\n    return (" + et + "){ " + gath + " };\n}\n"
@@ -9590,17 +9591,17 @@ fn _arr_defs(cs: inout C) -> (string, string, string, string):
         if _need(&cs, p + "_pop"):
             pr = pr + "static " + et + " " + p + "_pop(Arena *, " + ct + " *);\n"
             fb = fb + "static " + et + " " + p + "_pop(Arena *a, " + ct + " *xs) {\n" +
-                "    if (xs->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); exit(1); }\n" +
+                "    if (xs->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); TYCHO_EXIT(); }\n" +
                 "    xs->len--;\n    return xs->data[xs->len];\n}\n"
         if _need(&cs, p + "_get"):
             pr = pr + "static " + et + " " + p + "_get(" + ct + ", tycho_int);\n"
             fb = fb + "static " + et + " " + p + "_get(" + ct + " xs, tycho_int i) {\n" +
-                "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs.len); exit(1); }\n" +
+                "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs.len); TYCHO_EXIT(); }\n" +
                 "    return xs.data[i];\n}\n"
         if _need(&cs, p + "_ptr"):
             pr = pr + "static " + et + " *" + p + "_ptr(" + ct + " *, tycho_int);\n"
             fb = fb + "static " + et + " *" + p + "_ptr(" + ct + " *xs, tycho_int i) {\n" +
-                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n" +
+                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs->len); TYCHO_EXIT(); }\n" +
                 "    return &xs->data[i];\n}\n"
         if _need(&cs, p + "_set"):
             pr = pr + "static void " + p + "_set(Arena *, " + ct + " *, tycho_int, " + et + ");\n"
@@ -9609,7 +9610,7 @@ fn _arr_defs(cs: inout C) -> (string, string, string, string):
             if len(rc) > 0:
                 recy = "    " + rc + "\n"
             fb = fb + "static void " + p + "_set(Arena *a, " + ct + " *xs, tycho_int i, " + et + " v) {\n" +
-                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs->len); exit(1); }\n" +
+                "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs->len); TYCHO_EXIT(); }\n" +
                 "    " + et + " _new = " + _copy(&cs, "v", e, "a") + ";\n" +
                 "    " + et + " _old = xs->data[i]; xs->data[i] = _new;\n" + recy + "}\n"
         if _need(&cs, p + "_copy"):
@@ -9679,7 +9680,7 @@ fn _vec_defs(cs: inout C) -> (string, string, string):
             "static uint64_t " + p + "_hash(" + ct + ");\n" +
             "static uint64_t " + p + "_dhash(" + ct + ");\n"
         oob := "{ fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len " +
-            ns + ")\\n\", i); exit(1); }"
+            ns + ")\\n\", i); TYCHO_EXIT(); }"
         # _ptr casts the vector member's address instead of writing `&xs->v[i]`:
         # clang refuses the address of a vector ELEMENT in every version, gcc
         # allows it. A lane READ needs no address, so only _ptr is affected.

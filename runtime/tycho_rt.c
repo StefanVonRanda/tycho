@@ -64,6 +64,9 @@
 #ifndef _WIN32
 #include <dlfcn.h>     /* optional OpenSSL SHA-256 acceleration; falls back below */
 #endif
+#if defined(__linux__) || defined(__APPLE__)
+#include <execinfo.h>  /* TYCHO_BACKTRACE=1: symbols for the abort, resolved by addr2line */
+#endif
 #if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__))
 #include <immintrin.h> /* SHA-NI whole-file acceleration; the scalar path stays below */
 #define TYCHO_SHA_NI 1
@@ -298,7 +301,36 @@ typedef struct FreeNode { struct FreeNode *next; size_t size; } FreeNode;
 #define TYCHO_NBKT 16
 typedef struct { HBlock *head; size_t blocksz; FreeNode **bkt; FreeNode *freelist; int nfree; const char *name; } Arena;
 
-static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); exit(1); }
+static __thread const char *tycho_trap_file;
+static __thread int tycho_trap_line;
+
+#if defined(__GNUC__) || defined(__clang__)
+#define TYCHO_NOINLINE __attribute__((noinline))
+#else
+#define TYCHO_NOINLINE
+#endif
+
+static TYCHO_NOINLINE void tycho_trap_at(const char *file, int line) {
+    tycho_trap_file = file;
+    tycho_trap_line = line;
+}
+
+static TYCHO_NOINLINE void tycho_trap_note(void) {
+    if (tycho_trap_file)
+        fprintf(stderr, "  at %s:%d\n", tycho_trap_file, tycho_trap_line);
+#if defined(__linux__) || defined(__APPLE__)
+    if (getenv("TYCHO_BACKTRACE")) {
+        void *frames[64];
+        int n = backtrace(frames, 64);
+        fprintf(stderr, "  backtrace (%d frame(s); resolve with addr2line):\n", n);
+        backtrace_symbols_fd(frames, n, 2);
+    }
+#endif
+}
+
+#define TYCHO_EXIT() do { tycho_trap_note(); exit(1); } while (0)
+
+static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); TYCHO_EXIT(); }
 
 /* Integer division/modulo guard. The int-overflow contract
  * defines signed overflow as two's-complement
@@ -308,23 +340,23 @@ static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); exit(1)
  * the bounds checks. INT64_MIN % -1 is mathematically 0, so modulo returns it
  * directly instead of trapping. Int `/`/`%` route through these (codegen). */
 static tycho_int tycho_idiv(tycho_int a, tycho_int b) {
-    if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); exit(1); }
-    if (a == INT64_MIN && b == -1) { fprintf(stderr, "tycho: division overflow\n"); exit(1); }
+    if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); TYCHO_EXIT(); }
+    if (a == INT64_MIN && b == -1) { fprintf(stderr, "tycho: division overflow\n"); TYCHO_EXIT(); }
     return a / b;
 }
 static tycho_int tycho_imod(tycho_int a, tycho_int b) {
-    if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); exit(1); }
+    if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); TYCHO_EXIT(); }
     if (a == INT64_MIN && b == -1) return 0;
     return a % b;
 }
 /* Unsigned div/mod for u32/u64: same clean-abort guard as the signed path. No
  * overflow case (unsigned division never traps except on zero). */
 static unsigned long long tycho_udiv(unsigned long long a, unsigned long long b) {
-    if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); exit(1); }
+    if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); TYCHO_EXIT(); }
     return a / b;
 }
 static unsigned long long tycho_umod(unsigned long long a, unsigned long long b) {
-    if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); exit(1); }
+    if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); TYCHO_EXIT(); }
     return a % b;
 }
 /* Shift guard. Shifting by >= the operand's bit width, or by a negative count, is
@@ -339,37 +371,37 @@ static unsigned long long tycho_umod(unsigned long long a, unsigned long long b)
 static long long tycho_shift_count(uint64_t n, int is_unsigned) {
     if (!is_unsigned && n > INT64_MAX) {
         fprintf(stderr, "tycho: negative shift count\n");
-        exit(1);
+        TYCHO_EXIT();
     }
     return n > INT64_MAX ? INT64_MAX : (long long)n;
 }
 static tycho_int tycho_shl_i(tycho_int x, long long n) {
-    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 64) return 0;
     return (tycho_int)((uint64_t)x << n);
 }
 static tycho_int tycho_shr_i(tycho_int x, long long n) {
-    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 64) return 0;
     return x >> n;
 }
 static unsigned int tycho_shl_u32(unsigned int x, long long n) {
-    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 32) return 0;
     return x << n;
 }
 static unsigned int tycho_shr_u32(unsigned int x, long long n) {
-    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 32) return 0;
     return x >> n;
 }
 static unsigned long long tycho_shl_u64(unsigned long long x, long long n) {
-    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 64) return 0;
     return x << n;
 }
 static unsigned long long tycho_shr_u64(unsigned long long x, long long n) {
-    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 64) return 0;
     return x >> n;
 }
@@ -379,12 +411,12 @@ static unsigned long long tycho_shr_u64(unsigned long long x, long long n) {
  * shrn's `sgn` selects arithmetic (signed) vs logical (unsigned) fill; the caller
  * passes x already widened with the correct sign. */
 static long long tycho_shln(long long x, long long n, int w) {
-    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= w) return 0;
     return (long long)((unsigned long long)x << n);
 }
 static long long tycho_shrn(long long x, long long n, int w, int sgn) {
-    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); exit(1); }
+    if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= w) return 0;
     if (sgn) return x >> n;
     return (long long)((unsigned long long)x >> n);
@@ -397,7 +429,7 @@ static long long tycho_shrn(long long x, long long n, int w, int sgn) {
 static tycho_int tycho_f2i(double x) {
     if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) {
         fprintf(stderr, "tycho: float-to-int conversion out of range\n");
-        exit(1);
+        TYCHO_EXIT();
     }
     return (tycho_int)x;
 }
@@ -426,7 +458,7 @@ static uint64_t tycho_f2u64(double x) {
 static void tycho_cap_check(tycho_int n, size_t elem) {
     if (n < 0 || (uint64_t)n > (size_t)-1 / elem) {
         fprintf(stderr, "tycho: reserve capacity %" TY_PRId " out of range\n", n);
-        exit(1);
+        TYCHO_EXIT();
     }
 }
 /* Map index slots store entry numbers in `int`, and the open-addressed table
@@ -436,7 +468,7 @@ static void tycho_map_cap_check(tycho_int cap) {
     if (cap < 0 || cap > 2147483000L ||
         (uint64_t)cap > (size_t)-1 / (4 * sizeof(int))) {
         fprintf(stderr, "tycho: map capacity %" TY_PRId " out of range\n", cap);
-        exit(1);
+        TYCHO_EXIT();
     }
 }
 
@@ -1026,7 +1058,7 @@ static void tycho_task_start(HTask *t, void *(*fn)(void *), void *arg) {
     if (atomic_fetch_add(&g_live_tasks, 1) + 1 > tycho_max_tasks()) {
         atomic_fetch_sub(&g_live_tasks, 1);
         fprintf(stderr, "tycho: too many concurrent tasks (max %" TY_PRId "); raise TYCHO_MAX_TASKS to override\n", tycho_max_tasks());
-        exit(1);
+        TYCHO_EXIT();
     }
     /* The trampoline installs THIS thread's stack bounds and alternate stack
      * (both per-thread), so deep recursion inside a spawned task fails closed
@@ -1041,7 +1073,7 @@ static void tycho_task_start(HTask *t, void *(*fn)(void *), void *arg) {
     if (pthread_create(&t->th, NULL, tycho_task_trampoline, start) != 0) {
         atomic_fetch_sub(&g_live_tasks, 1);
         fprintf(stderr, "tycho: spawn failed (cannot create thread)\n");
-        exit(1);
+        TYCHO_EXIT();
     }
 }
 
@@ -1050,7 +1082,7 @@ static void tycho_task_start(HTask *t, void *(*fn)(void *), void *arg) {
  * lands HERE on done==1 and dies loudly -- a defined error, never a freed
  * read or a double pthread_join (UB). */
 static void tycho_task_join(HTask *t) {
-    if (t->done) { fprintf(stderr, "tycho: task already waited\n"); exit(1); }
+    if (t->done) { fprintf(stderr, "tycho: task already waited\n"); TYCHO_EXIT(); }
     pthread_join(t->th, NULL);
     t->done = 1;
     atomic_fetch_sub(&g_live_tasks, 1);   /* reaped: free a slot under the spawn cap */
@@ -1116,7 +1148,7 @@ typedef struct {
 } HChan;
 
 static HChan *tycho_chan_new(tycho_int cap) {
-    if (cap < 1) { fprintf(stderr, "tycho: channel capacity must be >= 1\n"); exit(1); }
+    if (cap < 1) { fprintf(stderr, "tycho: channel capacity must be >= 1\n"); TYCHO_EXIT(); }
     /* Minimum ring size 2: with one cell the published state (seq == pos+1)
      * and the recycled next-lap state (seq == pos+cap) are the same value, so
      * a second send claims the cell before the receiver takes the first value
@@ -1124,12 +1156,12 @@ static HChan *tycho_chan_new(tycho_int cap) {
      * requires buffer_size >= 2 for exactly this reason. */
     const size_t max_cells = (size_t)-1 / sizeof(HCell);
     if ((uint64_t)cap > max_cells) {
-        fprintf(stderr, "tycho: channel capacity too large\n"); exit(1);
+        fprintf(stderr, "tycho: channel capacity too large\n"); TYCHO_EXIT();
     }
     tycho_int c2 = 2;
     while (c2 < cap) {
         if (c2 > INT64_MAX / 2 || (uint64_t)c2 > max_cells / 2) {
-            fprintf(stderr, "tycho: channel capacity too large\n"); exit(1);
+            fprintf(stderr, "tycho: channel capacity too large\n"); TYCHO_EXIT();
         }
         c2 *= 2;
     }
@@ -1189,7 +1221,7 @@ static HCell *tycho_chan_send_cell(HChan *ch) {
             if (atomic_compare_exchange_weak_explicit(&ch->enq, &pos, pos + 1,
                                                       memory_order_relaxed, memory_order_relaxed)) {
                 if (atomic_load_explicit(&ch->closed, memory_order_acquire)) {
-                    fprintf(stderr, "tycho: send on a closed channel\n"); exit(1);
+                    fprintf(stderr, "tycho: send on a closed channel\n"); TYCHO_EXIT();
                 }
                 arena_free(&c->arena);          /* recycle the previous payload's bytes */
                 c->pos = pos;
@@ -1198,7 +1230,7 @@ static HCell *tycho_chan_send_cell(HChan *ch) {
             /* CAS failure reloaded pos; retry */
         } else if (d < 0) {                     /* full */
             if (atomic_load_explicit(&ch->closed, memory_order_acquire)) {
-                fprintf(stderr, "tycho: send on a closed channel\n"); exit(1);
+                fprintf(stderr, "tycho: send on a closed channel\n"); TYCHO_EXIT();
             }
             if (++spins < 256) { /* tight spin */ }
             else if (spins < 512) sched_yield();
@@ -1289,7 +1321,7 @@ static void tycho_select_pause(int *spins) {
 static void tycho_chan_close(HChan *ch) {
     pthread_mutex_lock(&ch->mu);
     if (atomic_load_explicit(&ch->closed, memory_order_relaxed)) {
-        fprintf(stderr, "tycho: channel already closed\n"); exit(1);
+        fprintf(stderr, "tycho: channel already closed\n"); TYCHO_EXIT();
     }
     atomic_store_explicit(&ch->closed, 1, memory_order_release);
     pthread_cond_broadcast(&ch->cv);            /* receivers drain then see None; senders die loudly */
@@ -1331,7 +1363,7 @@ static char *tycho_str_alloc(Arena *a, tycho_int n) {
      * overflow the size_t computation on a 64-bit host. */
     if (n < 0) {
         fprintf(stderr, "tycho: string length %" TY_PRId " out of range\n", n);
-        exit(1);
+        TYCHO_EXIT();
     }
     char *base = (char *)arena_alloc(a, (size_t)(8 + n + 1));
     *(tycho_int *)base = n;
@@ -1741,7 +1773,7 @@ tycho_int tycho_str_get(const char *s, tycho_int i) {
     tycho_int n = tycho_str_len(s);
     if (i < 0 || i >= n) {
         fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
-        exit(1);
+        TYCHO_EXIT();
     }
     return (tycho_int)(unsigned char)tycho_str_data(s)[i];   /* unsigned: 0..255, never negative */
 }
@@ -1753,7 +1785,7 @@ tycho_int tycho_str_get(const char *s, tycho_int i) {
 tycho_int tycho_str_get_n(const char *s, tycho_int i, tycho_int n) {
     if (i < 0 || i >= n) {
         fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
-        exit(1);
+        TYCHO_EXIT();
     }
     return (tycho_int)(unsigned char)tycho_str_data(s)[i];
 }
@@ -1889,7 +1921,7 @@ static char **tycho_argv = NULL;
  * cleanly (like a bad index), rather than silently masking to a byte. n==0 is a
  * real NUL byte, one byte tycho_int: strings are byte-safe. */
 char *tycho_chr(Arena *a, tycho_int n) {
-    if (n < 0 || n > 255) { fprintf(stderr, "tycho: chr(%" TY_PRId ") out of byte range 0..255\n", n); exit(1); }
+    if (n < 0 || n > 255) { fprintf(stderr, "tycho: chr(%" TY_PRId ") out of byte range 0..255\n", n); TYCHO_EXIT(); }
     char *r = tycho_str_alloc(a, 1);
     r[0] = (char)n;
     return r;
@@ -1900,7 +1932,7 @@ char *tycho_chr(Arena *a, tycho_int n) {
  * function that dies in a branch still gets its defensive fallback return. */
 void tycho_die(const char *msg) {
     fprintf(stderr, "%s\n", msg);
-    exit(1);
+    TYCHO_EXIT();
 }
 
 char *tycho_int_to_str(Arena *a, tycho_int n) {
@@ -2200,14 +2232,14 @@ static inline void tycho_arr_int_push(Arena *a, TychoArrInt *xs, tycho_int v) {
  * arena is unused. Dies on an empty array (a value must always be returned). */
 tycho_int tycho_arr_int_pop(Arena *a, TychoArrInt *xs) {
     (void)a;
-    if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); exit(1); }
+    if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); TYCHO_EXIT(); }
     return xs->data[--xs->len];
 }
 
 tycho_int tycho_arr_int_get(TychoArrInt xs, tycho_int i) {
     if (i < 0 || i >= xs.len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs.len);
-        exit(1);
+        TYCHO_EXIT();
     }
     return xs.data[i];
 }
@@ -2215,7 +2247,7 @@ tycho_int tycho_arr_int_get(TychoArrInt xs, tycho_int i) {
 void tycho_arr_int_set(TychoArrInt *xs, tycho_int i, tycho_int v) {
     if (i < 0 || i >= xs->len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len);
-        exit(1);
+        TYCHO_EXIT();
     }
     xs->data[i] = v;
 }
@@ -2306,14 +2338,14 @@ void tycho_arr_float_grow(Arena *a, double **data, tycho_int *cap, tycho_int len
 
 double tycho_arr_float_pop(Arena *a, TychoArrFloat *xs) {
     (void)a;
-    if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); exit(1); }
+    if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); TYCHO_EXIT(); }
     return xs->data[--xs->len];
 }
 
 double tycho_arr_float_get(TychoArrFloat xs, tycho_int i) {
     if (i < 0 || i >= xs.len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs.len);
-        exit(1);
+        TYCHO_EXIT();
     }
     return xs.data[i];
 }
@@ -2321,7 +2353,7 @@ double tycho_arr_float_get(TychoArrFloat xs, tycho_int i) {
 void tycho_arr_float_set(TychoArrFloat *xs, tycho_int i, double v) {
     if (i < 0 || i >= xs->len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len);
-        exit(1);
+        TYCHO_EXIT();
     }
     xs->data[i] = v;
 }
@@ -2407,7 +2439,7 @@ void tycho_arr_str_grow(Arena *a, char ***data, tycho_int *cap, tycho_int len) {
 
 void tycho_str_recycle(Arena *a, const char *s);
 char *tycho_arr_str_pop(Arena *a, TychoArrStr *xs) {
-    if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); exit(1); }
+    if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); TYCHO_EXIT(); }
     xs->len--;
     char *old = xs->data[xs->len];
     char *out = tycho_str_copy(a, old);   /* deep-copy out before releasing the owned slot */
@@ -2418,7 +2450,7 @@ char *tycho_arr_str_pop(Arena *a, TychoArrStr *xs) {
 char *tycho_arr_str_get(TychoArrStr xs, tycho_int i) {
     if (i < 0 || i >= xs.len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs.len);
-        exit(1);
+        TYCHO_EXIT();
     }
     return xs.data[i];
 }
@@ -2429,15 +2461,15 @@ char *tycho_arr_str_get(TychoArrStr xs, tycho_int i) {
  * int/float/str arrays had none, so gen_lvalue emitted a bogus tycho_arr_C<garbage>
  * _ptr and the C failed to compile. Mirrors the composite _ptr contract. */
 tycho_int *tycho_arr_int_ptr(TychoArrInt *xs, tycho_int i) {
-    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); exit(1); }
+    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); TYCHO_EXIT(); }
     return &xs->data[i];
 }
 double *tycho_arr_float_ptr(TychoArrFloat *xs, tycho_int i) {
-    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); exit(1); }
+    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); TYCHO_EXIT(); }
     return &xs->data[i];
 }
 char **tycho_arr_str_ptr(TychoArrStr *xs, tycho_int i) {
-    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); exit(1); }
+    if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); TYCHO_EXIT(); }
     return &xs->data[i];
 }
 
@@ -2461,7 +2493,7 @@ void tycho_str_slot_set(Arena *a, char **slot, const char *v) {
 void tycho_arr_str_set(Arena *a, TychoArrStr *xs, tycho_int i, const char *v) {
     if (i < 0 || i >= xs->len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len);
-        exit(1);
+        TYCHO_EXIT();
     }
     /* MM-9: the overwritten element is dead by value semantics. The shared
      * string-slot helper copies before recycling, including self-assignment. */
@@ -2504,7 +2536,7 @@ TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
     tycho_int sl = tycho_str_len(s), pl = tycho_str_len(sep);   /* byte-safe: header lengths, not strlen/strstr */
     if (pl == 0) {
         fprintf(stderr, "tycho: split with an empty separator\n");
-        exit(1);
+        TYCHO_EXIT();
     }
     TychoArrStr r = tycho_arr_str_with_cap(a, 4);
     tycho_int start = 0, i = 0;
@@ -3593,7 +3625,7 @@ char *tycho_map_if_str(Arena *a, TychoMapIF m) {
 static void tycho_ew_len(tycho_int a, tycho_int b) {
     fprintf(stderr, "tycho: element-wise arithmetic on arrays of different lengths "
                     "(%" TY_PRId " and %" TY_PRId ")\n", a, b);
-    exit(1);
+    TYCHO_EXIT();
 }
 
 /* SHA-256 used by the CLI tree hasher. The pure-Tycho implementation remains

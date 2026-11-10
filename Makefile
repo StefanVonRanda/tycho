@@ -231,6 +231,7 @@ test: tychoc
 	@sh tests/nested_blocks_scale.sh
 	@sh tests/stream_source.sh
 	@sh tests/debug_path.sh
+	@sh tests/trap_location.sh
 	@sh tests/struct_defs_scale.sh
 	@sh tests/expression_scale.sh
 	@sh tests/depth_recovery.sh

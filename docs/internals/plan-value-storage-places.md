@@ -23,7 +23,7 @@ One 8 KB line in 64 B chunks (128 appends), `tychoc` and `tychoc1` agree:
 
 Verdict: copying dominates. Compiler-side reuse is warranted; `Place` stays gated on reuse failing. Probe programs under `/tmp/opencode/` (not checked in); no repo change made for the measurement.
 
-Pre-fix compiler shape (historical baseline): whole-value moves only — move-on-last-use `src/tychoc.c:11348`, `sink` adopt `src/tychoc.c:11435`, construction `arg_into` `src/tychoc.c:12735`, self-rebuild `src/tychoc.c:13262`, return-slot `src/tychoc.c:11589`, match-payload borrow `src/tychoc.c:11479`; syntactic in-place (`is_self_append` `src/tychoc.c:11752`, map `src/tychoc.c:11835`, array `do_recycle` `src/tychoc.c:16203`); lexical arenas + loop `_scr` reset + `arena_recycle` freelist (`runtime/tycho_rt.c:706`). No field/partial move (refused `src/tychoc.c:12915`), no COW, no mid-scope subarenas.
+Pre-fix compiler shape (historical baseline): whole-value moves only — move-on-last-use `src/tychoc.c:11348`, `sink` adopt `src/tychoc.c:11435`, construction `arg_into` `src/tychoc.c:12735`, self-rebuild `src/tychoc.c:13262`, return-slot `src/tychoc.c:11589`, match-payload borrow `src/tychoc.c:11479`; syntactic in-place (`is_self_append` `src/tychoc.c:11752`, map `src/tychoc.c:11835`, array `do_recycle` `src/tychoc.c:16203`); lexical arenas + loop `_scr` reset + `arena_recycle` freelist (`runtime/tycho_rt.c:738`). No field/partial move (refused `src/tychoc.c:12915`), no COW, no mid-scope subarenas.
 
 ## Immediate actions from the language investigation
 

@@ -42,13 +42,13 @@
   Estimate: ~1 day.
 - The **runtime** (`runtime/tycho_rt.c`, embedded verbatim into every emitted
   program) needs: winpthreads for the whole concurrency model
-  (`runtime/tycho_rt.c:1041@pthread_create` — free under `-pthread`),
+  (`runtime/tycho_rt.c:1073@pthread_create` — free under `-pthread`),
   `clock_gettime`/`nanosleep`/`sched_yield`/`sysconf`
-  (`runtime/tycho_rt.c:79@sysconf` — mingw shims, a few lines), and **the one
+  (`runtime/tycho_rt.c:82@sysconf` — mingw shims, a few lines), and **the one
   hard piece**: the deep-recursion stack-overflow guard built on
-  `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:64-69`,
-  `:231@sigaltstack`). The per-platform pattern already exists
-  (`runtime/tycho_rt.c:192@__APPLE__`); Windows gets a third branch via
+  `sigaltstack`/`sigaction`/`ucontext` (`runtime/tycho_rt.c:64-72`,
+  `:234@sigaltstack`). The per-platform pattern already exists
+  (`runtime/tycho_rt.c:195@__APPLE__`); Windows gets a third branch via
   `GetCurrentThreadStackLimits` + `AddVectoredExceptionHandler` catching
   `EXCEPTION_STACK_OVERFLOW` (~60-100 lines). Estimate: 2-3 days.
 - Two corelib shims are **already ported**: `core:os` has `_popen`/`_pclose`

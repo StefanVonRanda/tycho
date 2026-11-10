@@ -398,11 +398,11 @@ def selfcheck():
     # a real file: `tycho_idiv` is defined at one line of runtime/tycho_rt.c and
     # is nowhere near line 161.
     prov = [
-        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:310-314`.", False,
+        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:342-346`.", False,
          "range that holds its symbol"),
-        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:161-173`.", True,
+        ("> Provenance: `tycho_idiv` `runtime/tycho_rt.c:164-176`.", True,
          "range the symbol has moved out of"),
-        ("Prose: `tycho_idiv` `runtime/tycho_rt.c:161-173`.", False,
+        ("Prose: `tycho_idiv` `runtime/tycho_rt.c:164-176`.", False,
          "same shape OUTSIDE a Provenance block"),
     ]
     for text, want, why in prov:
