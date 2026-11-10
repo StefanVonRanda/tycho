@@ -85,7 +85,8 @@ new platform found and fixed latent defects in shipped code. Details are in
 2. **An external security review.** `docs/internals/audit-brief.md` is what that
    reviewer gets handed.
 
-Both need a person. See [ROADMAP](ROADMAP.md#what-10-requires).
+Both need a person. See [ROADMAP](ROADMAP.md#what-10-requires) and the
+[1.0 readiness snapshot](docs/internals/1.0-readiness.md).
 
 **Ergonomics.** The surface is frozen and the implementation has substantial test
 coverage, but it has not been tuned for daily use. `or_else` (shipped 2026-09-25) removed one class of

@@ -25,6 +25,8 @@ measurements, and they assume you already know the codebase.
 
 ## Records
 
+- [`1.0-readiness.md`](1.0-readiness.md) — the 2026-11-10 readiness snapshot:
+  internal gates, current performance, and the two external requirements.
 - [`archived-c-compiler.md`](archived-c-compiler.md) — the deleted C compiler,
   the revision its citations resolve against, and the frozen reject-site index.
 - [`FRICTION.md`](FRICTION.md) — the running log of what fought back while

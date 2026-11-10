@@ -21,7 +21,7 @@ another person.
 
 ## The self-hosted compiler
 
-`compiler/` is Tycho written in Tycho — 25,642 lines in six packages (`lex`,
+`compiler/` is Tycho written in Tycho — 26,036 lines in six packages (`lex`,
 `parse`, `ast`, `types`, `emit`, `driver`), built as `tychoc1` and installed as
 `tychoc`. The test, corelib, example and server runners default to it, so the
 gates run on the self-hosted compiler. `bootstrap/tycho_compiler.c` is the
@@ -118,8 +118,14 @@ promises of dates.
 generated GCC/clang suite and `make test`. Target 2 is **DONE for the idiomatic
 default row**: the generated group is `1.08x` C under GCC and `1.00x` under
 clang. The expert struct variant is an explicit alternate, not part of that
-claim, and remains slower (`1.38x` GCC / `1.27x` clang); the report lists it
-rather than hiding it.
+claim; a later thin-function-value change brought it to 12–13 ms GCC / 26 ms
+clang against C's 13 / 30 ms. The report lists it rather than hiding it.
+
+**Update 2026-11-10:** `json_tree` is 51 ms against C's 49 ms, `lru` is 226 ms
+and 14.7 MB against C's 233 ms and 12.0 MB, and `trie` is 89 ms GCC / 90 ms
+clang against C's 79 / 74 ms. The remaining gaps are structural (generic-map
+duplication and the last few percent of trie/dijkstra), not missing language
+work. See [`docs/internals/1.0-readiness.md`](docs/internals/1.0-readiness.md).
 
 Follow-up work after the benchmark refresh:
 
