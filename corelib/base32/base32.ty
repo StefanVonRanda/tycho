@@ -1,0 +1,75 @@
+package base32
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+enum Base32Err:
+    BadLength
+    BadChar
+    BadPadding
+
+fn _enc_char(n: int) -> int:
+    return ALPHABET[n]
+
+fn _dec_val(c: int) -> int:
+    if c >= 65 and c <= 90:                    # A-Z
+        return c - 65
+    if c >= 50 and c <= 55:                    # 2-7
+        return c - 50 + 26
+    return -1
+
+fn _encode_impl(data: bytes, pad: bool) -> string:
+    out := ""
+    buf := 0
+    bits := 0
+    i := 0
+    for i < len(data):
+        buf = (buf << 8) | data[i]
+        bits += 8
+        for bits >= 5:
+            bits -= 5
+            out = out + chr(_enc_char((buf >> bits) & 31))
+        i += 1
+    if bits > 0:
+        out = out + chr(_enc_char((buf << (5 - bits)) & 31))
+    if pad:
+        for len(out) % 8 != 0:
+            out = out + "="
+    return out
+
+fn encode(data: bytes) -> string:
+    return _encode_impl(data, true)
+
+fn encode_no_pad(data: bytes) -> string:
+    return _encode_impl(data, false)
+
+fn decode(s: string) -> Result(bytes, Base32Err):
+    end := len(s)
+    for end > 0 and s[end - 1] == 61:          # '='
+        end -= 1
+    padded := end < len(s)
+    if padded and len(s) % 8 != 0:
+        return Err(BadLength)
+    rem := end % 8
+    if rem == 1 or rem == 3 or rem == 6:
+        return Err(BadLength)
+    out := []int
+    buf := 0
+    bits := 0
+    i := 0
+    for i < end:
+        v := _dec_val(s[i])
+        if v < 0:
+            return Err(BadChar)
+        buf = (buf << 5) | v
+        bits += 5
+        if bits >= 8:
+            bits -= 8
+            push(out, (buf >> bits) & 255)
+        i += 1
+    for i < len(s):
+        if s[i] != 61:
+            return Err(BadPadding)
+        i += 1
+    if bits > 0 and (buf & ((1 << bits) - 1)) != 0:
+        return Err(BadPadding)
+    return Ok(to_bytes(out))

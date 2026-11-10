@@ -1,0 +1,13 @@
+package main
+
+import "core:edit"
+import "core:strings"
+
+fn main():
+    println("lev kitten=" + str(edit.levenshtein("kitten", "sitting")))
+    println("lev empty=" + str(edit.levenshtein("", "abc")) + " reverse=" + str(edit.levenshtein("abc", "")) + " same=" + str(edit.levenshtein("same", "same")))
+    println("lev flaw=" + str(edit.levenshtein("flaw", "lawn")) + " gumbo=" + str(edit.levenshtein("gumbo", "gambol")))
+    println("dam ca=" + str(edit.damerau("ca", "abc")) + " ab=" + str(edit.damerau("ab", "ba")) + " kitten=" + str(edit.damerau("kitten", "sitting")))
+    println("dam same=" + str(edit.damerau("same", "same")) + " empty=" + str(edit.damerau("", "abc")))
+    println("sim abc=" + strings.format_g17(edit.similarity("abc", "abd")))
+    println("sim same=" + strings.format_g17(edit.similarity("abc", "abc")) + " empty=" + strings.format_g17(edit.similarity("", "")) + " half=" + strings.format_g17(edit.similarity("ab", "abcd")))

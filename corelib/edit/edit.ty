@@ -1,0 +1,105 @@
+package edit
+
+fn _min3(a: int, b: int, c: int) -> int:
+    m := a
+    if b < m:
+        m = b
+    if c < m:
+        m = c
+    return m
+
+# Levenshtein over BYTES, two rows of O(m) memory.
+fn levenshtein(a: string, b: string) -> int:
+    n := len(a)
+    m := len(b)
+    if n == 0:
+        return m
+    if m == 0:
+        return n
+    prev := []int
+    i := 0
+    for i <= m:
+        push(prev, i)
+        i += 1
+    cur := []int
+    i = 1
+    for i <= n:
+        cur = cur[0:0]
+        push(cur, i)
+        j := 1
+        for j <= m:
+            cost := 1
+            if a[i - 1] == b[j - 1]:
+                cost = 0
+            push(cur, _min3(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost))
+            j += 1
+        prev = cur
+        i += 1
+    return prev[m]
+
+# Unrestricted Damerau-Levenshtein (adjacent transposition costs one edit).
+# Flat (n+2)*(m+2) matrix; `da` remembers the last row each byte appeared in.
+fn damerau(a: string, b: string) -> int:
+    n := len(a)
+    m := len(b)
+    if n == 0:
+        return m
+    if m == 0:
+        return n
+    w := m + 2
+    d := []int
+    i := 0
+    for i < (n + 2) * w:
+        push(d, 0)
+        i += 1
+    maxd := n + m
+    d[0] = maxd
+    i = 0
+    for i <= n:
+        d[(i + 1) * w] = maxd
+        d[(i + 1) * w + 1] = i
+        i += 1
+    j := 0
+    for j <= m:
+        d[j + 1] = maxd
+        d[w + j + 1] = j
+        j += 1
+    da := []int
+    i = 0
+    for i < 256:
+        push(da, 0)
+        i += 1
+    i = 1
+    for i <= n:
+        db := 0
+        j = 1
+        for j <= m:
+            i1 := da[b[j - 1]]
+            j1 := db
+            cost := 1
+            if a[i - 1] == b[j - 1]:
+                cost = 0
+                db = j
+            best := d[i * w + j] + cost
+            x := d[(i + 1) * w + j] + 1
+            if x < best:
+                best = x
+            x = d[i * w + (j + 1)] + 1
+            if x < best:
+                best = x
+            x = d[i1 * w + j1] + (i - i1 - 1) + 1 + (j - j1 - 1)
+            if x < best:
+                best = x
+            d[(i + 1) * w + (j + 1)] = best
+            j += 1
+        da[a[i - 1]] = i
+        i += 1
+    return d[(n + 1) * w + (m + 1)]
+
+fn similarity(a: string, b: string) -> float:
+    longest := len(a)
+    if len(b) > longest:
+        longest = len(b)
+    if longest == 0:
+        return 1.0
+    return 1.0 - to_float(levenshtein(a, b)) / to_float(longest)

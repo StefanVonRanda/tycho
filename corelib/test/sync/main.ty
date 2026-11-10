@@ -1,0 +1,147 @@
+package main
+
+import "core:sync"
+import "core:time"
+
+fn bump(ctr: ptr, n: int) -> int:
+    i := 0
+    for i < n:
+        sync.atomic_int_add(ctr, 1)
+        i += 1
+    return n
+
+fn wg_worker(wg: ptr, ctr: ptr, n: int) -> int:
+    bump(ctr, n)
+    sync.waitgroup_done(wg)
+    return n
+
+fn mutex_probe(m: ptr, out: ptr) -> int:
+    time.sleep_ms(20)
+    if sync.mutex_try_lock(m):
+        sync.atomic_int_store(out, 1)
+        sync.mutex_unlock(m)
+    return 0
+
+fn rw_read_probe(r: ptr, out: ptr) -> int:
+    time.sleep_ms(20)
+    if sync.rwlock_try_read_lock(r):
+        sync.atomic_int_store(out, 1)
+        sync.rwlock_read_unlock(r)
+    return 0
+
+fn rw_write_probe(r: ptr, out: ptr) -> int:
+    time.sleep_ms(20)
+    if sync.rwlock_try_write_lock(r):
+        sync.atomic_int_store(out, 1)
+        sync.rwlock_write_unlock(r)
+    return 0
+
+fn once_bump(c: ptr):
+    sync.atomic_int_add(c, 1)
+
+fn once_worker(o: ptr, c: ptr) -> int:
+    sync.once_do(o, fn(): once_bump(c))
+    return 0
+
+fn main():
+    ctr := sync.atomic_int_new(0)
+    t1 := spawn bump(ctr, 10000)
+    t2 := spawn bump(ctr, 10000)
+    t3 := spawn bump(ctr, 10000)
+    t4 := spawn bump(ctr, 10000)
+    wait(t1)
+    wait(t2)
+    wait(t3)
+    wait(t4)
+    println("atomic add: " + str(sync.atomic_int_load(ctr)) + " (want 40000)")
+
+    sync.atomic_int_store(ctr, 5)
+    old := sync.atomic_int_swap(ctr, 7)
+    println("swap: old=" + str(old) + " now=" + str(sync.atomic_int_load(ctr)))
+    won := sync.atomic_int_cas(ctr, 7, 9)
+    lost := sync.atomic_int_cas(ctr, 7, 11)
+    println("cas: won=" + str(won) + " lost=" + str(lost) + " now=" + str(sync.atomic_int_load(ctr)))
+    seen := sync.atomic_int_compare_swap(ctr, 9, 12)
+    println("compare_swap: seen=" + str(seen) + " now=" + str(sync.atomic_int_load(ctr)))
+    println("sub: " + str(sync.atomic_int_sub(ctr, 2)) + " (want 10)")
+    sync.atomic_int_free(ctr)
+
+    ab := sync.atomic_bool_new(false)
+    println("bool: load=" + str(sync.atomic_bool_load(ab)))
+    sync.atomic_bool_store(ab, true)
+    oldb := sync.atomic_bool_swap(ab, false)
+    wonb := sync.atomic_bool_cas(ab, false, true)
+    lostb := sync.atomic_bool_cas(ab, false, true)
+    println("bool: swap_old=" + str(oldb) + " cas=" + str(wonb) + " again=" + str(lostb) + " now=" + str(sync.atomic_bool_load(ab)))
+    sync.atomic_bool_free(ab)
+
+    m := sync.mutex_new()
+    free_try := sync.mutex_try_lock(m)
+    if free_try:
+        sync.mutex_unlock(m)
+    println("mutex: free try=" + str(free_try))
+    sync.mutex_lock(m)
+    out := sync.atomic_int_new(0)
+    tm := spawn mutex_probe(m, out)
+    wait(tm)
+    held := sync.atomic_int_load(out) == 0
+    println("mutex: held try refused=" + str(held))
+    sync.mutex_unlock(m)
+    sync.atomic_int_free(out)
+    sync.mutex_free(m)
+
+    rw := sync.rwlock_new()
+    sync.rwlock_write_lock(rw)
+    ro := sync.atomic_int_new(0)
+    tr := spawn rw_read_probe(rw, ro)
+    wait(tr)
+    read_refused := sync.atomic_int_load(ro) == 0
+    println("rwlock: write blocks read=" + str(read_refused))
+    sync.rwlock_write_unlock(rw)
+    sync.atomic_int_free(ro)
+
+    sync.rwlock_read_lock(rw)
+    wo := sync.atomic_int_new(0)
+    tw := spawn rw_write_probe(rw, wo)
+    wait(tw)
+    write_refused := sync.atomic_int_load(wo) == 0
+    println("rwlock: read blocks write=" + str(write_refused))
+    sync.rwlock_read_unlock(rw)
+    sync.atomic_int_free(wo)
+
+    free_rw := sync.rwlock_try_write_lock(rw)
+    if free_rw:
+        sync.rwlock_write_unlock(rw)
+    println("rwlock: free try write=" + str(free_rw))
+    sync.rwlock_free(rw)
+
+    wg := sync.waitgroup_new()
+    sync.waitgroup_add(wg, 4)
+    wctr := sync.atomic_int_new(0)
+    w1 := spawn wg_worker(wg, wctr, 2500)
+    w2 := spawn wg_worker(wg, wctr, 2500)
+    w3 := spawn wg_worker(wg, wctr, 2500)
+    w4 := spawn wg_worker(wg, wctr, 2500)
+    sync.waitgroup_wait(wg)
+    println("waitgroup: total=" + str(sync.atomic_int_load(wctr)) + " (want 10000)")
+    wait(w1)
+    wait(w2)
+    wait(w3)
+    wait(w4)
+    sync.atomic_int_free(wctr)
+    sync.waitgroup_free(wg)
+
+    o := sync.once_new()
+    oc := sync.atomic_int_new(0)
+    p1 := spawn once_worker(o, oc)
+    p2 := spawn once_worker(o, oc)
+    p3 := spawn once_worker(o, oc)
+    p4 := spawn once_worker(o, oc)
+    wait(p1)
+    wait(p2)
+    wait(p3)
+    wait(p4)
+    sync.once_do(o, fn(): once_bump(oc))
+    println("once: count=" + str(sync.atomic_int_load(oc)) + " (want 1) done=" + str(sync.once_done(o)))
+    sync.atomic_int_free(oc)
+    sync.once_free(o)

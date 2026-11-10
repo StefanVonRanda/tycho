@@ -1,0 +1,27 @@
+deque: len=3 front=1 back=3 at1=2
+deque pop front=1 pop back=3 left=2
+deque pop back=2 pop front=0 empty=true
+deque out of range=none
+deque cleared len=0
+queue: pop=10 peek=20 len=1
+queue: pop=none empty=true
+min-heap: 1 1 3 4 5 peek=none
+max-heap: 5 3 1
+heapify: 1 2 3 4 5
+bits: len=70 count=5 get5=true get6=false get64=true
+bits toggle5: count=4 get5=false
+bits clear0: count=4 any=true
+bits resize64: len=64 count=2 get63=true
+bits resize70: len=70 count=2 get64=false
+bits empty: len=0 none=true
+lru: keys=c b a a=1
+lru after get a: keys=a c b
+lru after put d: keys=d a c has_b=false len=3
+lru peek c=3 keys=d a c
+lru update c: keys=c d a c=30
+lru remove d=true again=false keys=c a
+lru refill: keys=f e c cap=3
+lru clear: len=0 empty=true keys=
+lru after clear put: 26
+int-key lru: get7=seven
+int-key lru: has7=false get8=eight

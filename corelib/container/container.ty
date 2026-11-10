@@ -1,0 +1,369 @@
+package container
+
+# A two-stack deque: `front` is stored in reverse, so its last element is the
+# front-most one. Both ends are amortized O(1); no dummy elements are needed.
+struct Deque($T):
+    front: [$T]
+    back: [$T]
+
+fn make_deque() -> Deque($T):
+    f: [$T] = []
+    b: [$T] = []
+    return Deque(f, b)
+
+fn deque_len(d: Deque($T)) -> int:
+    return len(d.front) + len(d.back)
+
+fn deque_empty(d: Deque($T)) -> bool:
+    return len(d.front) == 0 and len(d.back) == 0
+
+fn deque_push_front(d: inout Deque($T), v: $T):
+    push(d.front, v)
+
+fn deque_push_back(d: inout Deque($T), v: $T):
+    push(d.back, v)
+
+fn deque_pop_front(d: inout Deque($T)) -> Option($T):
+    if len(d.front) == 0:
+        for len(d.back) > 0:
+            push(d.front, pop(d.back))
+    if len(d.front) == 0:
+        return None
+    return Some(pop(d.front))
+
+fn deque_pop_back(d: inout Deque($T)) -> Option($T):
+    if len(d.back) == 0:
+        for len(d.front) > 0:
+            push(d.back, pop(d.front))
+    if len(d.back) == 0:
+        return None
+    return Some(pop(d.back))
+
+fn deque_peek_front(d: Deque($T)) -> Option($T):
+    if len(d.front) > 0:
+        return Some(d.front[len(d.front) - 1])
+    if len(d.back) > 0:
+        return Some(d.back[0])
+    return None
+
+fn deque_peek_back(d: Deque($T)) -> Option($T):
+    if len(d.back) > 0:
+        return Some(d.back[len(d.back) - 1])
+    if len(d.front) > 0:
+        return Some(d.front[0])
+    return None
+
+fn deque_get(d: Deque($T), i: int) -> Option($T):
+    if i < 0 or i >= deque_len(d):
+        return None
+    if i < len(d.front):
+        return Some(d.front[len(d.front) - 1 - i])
+    return Some(d.back[i - len(d.front)])
+
+fn deque_clear(d: inout Deque($T)):
+    d.front = d.front[0:0]
+    d.back = d.back[0:0]
+
+# A FIFO queue built on the deque. `queue_push` is the back, `queue_pop` the front.
+struct Queue($T):
+    d: Deque($T)
+
+fn make_queue() -> Queue($T):
+    return Queue(make_deque$(T)())
+
+fn queue_len(q: Queue($T)) -> int:
+    return deque_len(q.d)
+
+fn queue_empty(q: Queue($T)) -> bool:
+    return deque_empty(q.d)
+
+fn queue_push(q: inout Queue($T), v: $T):
+    deque_push_back(&q.d, v)
+
+fn queue_pop(q: inout Queue($T)) -> Option($T):
+    return deque_pop_front(&q.d)
+
+fn queue_peek(q: Queue($T)) -> Option($T):
+    return deque_peek_front(q.d)
+
+fn queue_clear(q: inout Queue($T)):
+    deque_clear(&q.d)
+
+# `less(a, b)` true means `a` is served before `b`. Ties are not stable.
+struct PriorityQueue($T):
+    items: [$T]
+    less: fn($T, $T) -> bool
+
+fn make_heap(less: fn($T, $T) -> bool) -> PriorityQueue($T):
+    xs: [$T] = []
+    return PriorityQueue(xs, less)
+
+fn heap_len(p: PriorityQueue($T)) -> int:
+    return len(p.items)
+
+fn heap_empty(p: PriorityQueue($T)) -> bool:
+    return len(p.items) == 0
+
+fn heap_clear(p: inout PriorityQueue($T)):
+    p.items = p.items[0:0]
+
+fn _sift_down(p: inout PriorityQueue($T), i: int):
+    n := len(p.items)
+    for true:
+        left := 2 * i + 1
+        if left >= n:
+            break
+        small := left
+        right := left + 1
+        if right < n and p.less(p.items[right], p.items[left]):
+            small = right
+        if not p.less(p.items[small], p.items[i]):
+            break
+        tmp := p.items[i]
+        p.items[i] = p.items[small]
+        p.items[small] = tmp
+        i = small
+
+fn heap_push(p: inout PriorityQueue($T), v: $T):
+    push(p.items, v)
+    i := len(p.items) - 1
+    for i > 0:
+        parent := (i - 1) / 2
+        if not p.less(p.items[i], p.items[parent]):
+            break
+        tmp := p.items[i]
+        p.items[i] = p.items[parent]
+        p.items[parent] = tmp
+        i = parent
+
+fn heap_pop(p: inout PriorityQueue($T)) -> Option($T):
+    if len(p.items) == 0:
+        return None
+    top := p.items[0]
+    last := pop(p.items)
+    if len(p.items) > 0:
+        p.items[0] = last
+        _sift_down(&p, 0)
+    return Some(top)
+
+fn heap_peek(p: PriorityQueue($T)) -> Option($T):
+    if len(p.items) == 0:
+        return None
+    return Some(p.items[0])
+
+fn heap_from(xs: [$T], less: fn($T, $T) -> bool) -> PriorityQueue($T):
+    p := PriorityQueue(xs, less)
+    i := len(p.items) / 2 - 1
+    for i >= 0:
+        _sift_down(&p, i)
+        i -= 1
+    return p
+
+struct BitArray:
+    words: [u64]
+    nbits: int
+
+fn make_bits(nbits: int) -> BitArray:
+    if nbits < 0:
+        die("container.make_bits: negative bit count " + str(nbits))
+    ws := []u64
+    i := 0
+    for i < (nbits + 63) / 64:
+        push(ws, 0)
+        i += 1
+    return BitArray(ws, nbits)
+
+fn bits_len(b: BitArray) -> int:
+    return b.nbits
+
+fn _bits_check(b: BitArray, i: int, who: string):
+    if i < 0 or i >= b.nbits:
+        die("container." + who + ": bit " + str(i) + " outside 0.." + str(b.nbits - 1))
+
+fn bits_get(b: BitArray, i: int) -> bool:
+    _bits_check(b, i, "bits_get")
+    word := b.words[i / 64]
+    return ((word >> (i % 64)) & to_u64(1)) != 0
+
+fn bits_set(b: inout BitArray, i: int):
+    _bits_check(b, i, "bits_set")
+    w := i / 64
+    b.words[w] = b.words[w] | (to_u64(1) << (i % 64))
+
+fn bits_clear(b: inout BitArray, i: int):
+    _bits_check(b, i, "bits_clear")
+    w := i / 64
+    b.words[w] = b.words[w] & ~(to_u64(1) << (i % 64))
+
+fn bits_toggle(b: inout BitArray, i: int):
+    _bits_check(b, i, "bits_toggle")
+    w := i / 64
+    b.words[w] = b.words[w] ^ (to_u64(1) << (i % 64))
+
+fn bits_count(b: BitArray) -> int:
+    total := 0
+    for word in b.words:
+        x := word
+        for x != 0:
+            x = x & (x - to_u64(1))
+            total += 1
+    return total
+
+fn bits_any(b: BitArray) -> bool:
+    for word in b.words:
+        if word != 0:
+            return true
+    return false
+
+fn bits_none(b: BitArray) -> bool:
+    return not bits_any(b)
+
+fn bits_resize(b: inout BitArray, nbits: int):
+    if nbits < 0:
+        die("container.bits_resize: negative bit count " + str(nbits))
+    nwords := (nbits + 63) / 64
+    ws := []u64
+    i := 0
+    for i < nwords:
+        if i < len(b.words):
+            push(ws, b.words[i])
+        else:
+            push(ws, 0)
+        i += 1
+    keep := nbits % 64
+    if nwords > 0 and keep != 0:
+        ws[nwords - 1] = ws[nwords - 1] & ((to_u64(1) << keep) - 1)
+    b.words = ws
+    b.nbits = nbits
+
+# Recency list: `head` is most recently used, `tail` is next to evict.
+struct Lru($K, $V):
+    cap: int
+    index: [$K: int]
+    keys: [$K]
+    vals: [Option($V)]
+    prev: [int]
+    next: [int]
+    head: int
+    tail: int
+    free: [int]
+
+fn make_lru(cap: int) -> Lru($K, $V) where hashable(K):
+    if cap <= 0:
+        die("container.make_lru: capacity must be > 0, got " + str(cap))
+    ix: [$K: int] = []
+    ks: [$K] = []
+    vs: [Option($V)] = []
+    pv := []int
+    nx := []int
+    fr := []int
+    return Lru(cap, ix, ks, vs, pv, nx, -1, -1, fr)
+
+fn _lru_unlink(l: inout Lru($K, $V), i: int):
+    p := l.prev[i]
+    n := l.next[i]
+    if p >= 0:
+        l.next[p] = n
+    else:
+        l.head = n
+    if n >= 0:
+        l.prev[n] = p
+    else:
+        l.tail = p
+    l.prev[i] = -1
+    l.next[i] = -1
+
+fn _lru_link_head(l: inout Lru($K, $V), i: int):
+    l.prev[i] = -1
+    l.next[i] = l.head
+    if l.head >= 0:
+        l.prev[l.head] = i
+    l.head = i
+    if l.tail < 0:
+        l.tail = i
+
+fn _lru_alloc(l: inout Lru($K, $V), k: $K, v: $V) -> int:
+    if len(l.free) > 0:
+        i := pop(l.free)
+        l.keys[i] = k
+        l.vals[i] = Some(v)
+        return i
+    i := len(l.keys)
+    push(l.keys, k)
+    push(l.vals, Some(v))
+    push(l.prev, -1)
+    push(l.next, -1)
+    return i
+
+fn lru_cap(l: Lru($K, $V)) -> int:
+    return l.cap
+
+fn lru_len(l: Lru($K, $V)) -> int:
+    return len(l.index)
+
+fn lru_empty(l: Lru($K, $V)) -> bool:
+    return len(l.index) == 0
+
+fn lru_contains(l: Lru($K, $V), k: $K) -> bool where hashable(K):
+    return k in l.index
+
+fn lru_peek(l: Lru($K, $V), k: $K) -> Option($V) where hashable(K):
+    if not (k in l.index):
+        return None
+    return l.vals[l.index[k]]
+
+fn lru_get(l: inout Lru($K, $V), k: $K) -> Option($V) where hashable(K):
+    if not (k in l.index):
+        return None
+    i := l.index[k]
+    v := l.vals[i]
+    _lru_unlink(&l, i)
+    _lru_link_head(&l, i)
+    return v
+
+fn lru_put(l: inout Lru($K, $V), k: $K, v: $V) where hashable(K):
+    if k in l.index:
+        i := l.index[k]
+        l.vals[i] = Some(v)
+        _lru_unlink(&l, i)
+        _lru_link_head(&l, i)
+        return
+    if len(l.index) >= l.cap:
+        old := l.tail
+        old_key := l.keys[old]
+        delete l.index[old_key]
+        l.vals[old] = None
+        _lru_unlink(&l, old)
+        push(l.free, old)
+    i := _lru_alloc(&l, k, v)
+    l.index[k] = i
+    _lru_link_head(&l, i)
+
+fn lru_remove(l: inout Lru($K, $V), k: $K) -> bool where hashable(K):
+    if not (k in l.index):
+        return false
+    i := l.index[k]
+    delete l.index[k]
+    l.vals[i] = None
+    _lru_unlink(&l, i)
+    push(l.free, i)
+    return true
+
+fn lru_keys(l: Lru($K, $V)) -> [$K]:
+    out: [$K] = []
+    i := l.head
+    for i >= 0:
+        push(out, l.keys[i])
+        i = l.next[i]
+    return out
+
+fn lru_clear(l: inout Lru($K, $V)) where hashable(K):
+    ix: [$K: int] = []
+    l.index = ix
+    l.keys = l.keys[0:0]
+    l.vals = l.vals[0:0]
+    l.prev = l.prev[0:0]
+    l.next = l.next[0:0]
+    l.free = l.free[0:0]
+    l.head = -1
+    l.tail = -1

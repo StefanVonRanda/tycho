@@ -1,4 +1,5 @@
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
 #include <openssl/rand.h>
 #include <openssl/hmac.h>
 #include <openssl/crypto.h>
@@ -169,6 +170,32 @@ static const char *digest_hex(const EVP_MD *md, const char *msg_hex) {
 }
 const char *cx_sha256_hex(const char *msg_hex) { return digest_hex(EVP_sha256(), msg_hex); }
 const char *cx_sha512_hex(const char *msg_hex) { return digest_hex(EVP_sha512(), msg_hex); }
+const char *cx_sha3_256_hex(const char *msg_hex) { return digest_hex(EVP_sha3_256(), msg_hex); }
+const char *cx_sha3_512_hex(const char *msg_hex) { return digest_hex(EVP_sha3_512(), msg_hex); }
+const char *cx_blake2b_hex(const char *msg_hex) { return digest_hex(EVP_blake2b512(), msg_hex); }
+const char *cx_blake2s_hex(const char *msg_hex) { return digest_hex(EVP_blake2s256(), msg_hex); }
+
+static const char *xof_hex(const EVP_MD *md, const char *msg_hex, tycho_int outlen) {
+    if (outlen < 1 || outlen > (1L << 20)) return ERRTAG;
+    size_t mlen;
+    unsigned char *m = hexdec(msg_hex, &mlen);
+    if (!m) return ERRTAG;
+    unsigned char *out = malloc((size_t)outlen);
+    if (!out) { free(m); return ERRTAG; }
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    const char *res = ERRTAG;
+    if (ctx && EVP_DigestInit_ex(ctx, md, NULL) == 1 &&
+        EVP_DigestUpdate(ctx, m, mlen) == 1 &&
+        EVP_DigestFinalXOF(ctx, out, (size_t)outlen) == 1) {
+        res = out_hex(out, (size_t)outlen);
+    }
+    if (ctx) EVP_MD_CTX_free(ctx);
+    free(out);
+    free(m);
+    return res;
+}
+const char *cx_shake128_hex(const char *msg_hex, tycho_int outlen) { return xof_hex(EVP_shake128(), msg_hex, outlen); }
+const char *cx_shake256_hex(const char *msg_hex, tycho_int outlen) { return xof_hex(EVP_shake256(), msg_hex, outlen); }
 
 /* =====================================================================
  * HMAC-SHA256(key handle, msg_hex) -> hex MAC
@@ -186,6 +213,56 @@ const char *cx_hmac_sha256_hex(void *kp, const char *msg_hex) {
     const char *res = r ? out_hex(mac, maclen) : ERRTAG;
     free(m);
     return res;
+}
+
+const char *cx_hmac_sha512_hex(void *kp, const char *msg_hex) {
+    CxKey *k = kp;
+    cxk_live(k, 0);
+    if (!k) return ERRTAG;
+    size_t mlen;
+    unsigned char *m = hexdec(msg_hex, &mlen);
+    if (!m) return ERRTAG;
+    unsigned char mac[EVP_MAX_MD_SIZE];
+    unsigned int maclen = 0;
+    unsigned char *r = HMAC(EVP_sha512(), k->buf, (int)k->len, m, mlen, mac, &maclen);
+    const char *res = r ? out_hex(mac, maclen) : ERRTAG;
+    free(m);
+    return res;
+}
+
+/* HKDF-SHA256 (RFC 5869): IKM is a key handle; salt and info are hex. */
+void *cx_hkdf_sha256(void *ikm, const char *salt_hex, const char *info_hex, tycho_int outlen) {
+    if (outlen < 1 || outlen > (1L << 20)) return NULL;
+    CxKey *k = ikm;
+    cxk_live(k, 0);
+    if (!k) return NULL;
+    size_t slen = 0, ilen = 0;
+    unsigned char *salt = hexdec(salt_hex, &slen);
+    unsigned char *info = hexdec(info_hex, &ilen);
+    if (!salt || !info) { free(salt); free(info); return NULL; }
+    if (slen > (size_t)INT_MAX || ilen > (size_t)INT_MAX) {
+        free(salt); free(info); return NULL;
+    }
+    CxKey *out = key_new((size_t)outlen);
+    EVP_PKEY_CTX *p = EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, NULL);
+    int ok = out && p &&
+             EVP_PKEY_derive_init(p) > 0 &&
+             EVP_PKEY_CTX_set_hkdf_md(p, EVP_sha256()) > 0 &&
+             (slen == 0 || EVP_PKEY_CTX_set1_hkdf_salt(p, salt, (int)slen) > 0) &&
+             EVP_PKEY_CTX_set1_hkdf_key(p, k->buf, (int)k->len) > 0 &&
+             (ilen == 0 || EVP_PKEY_CTX_add1_hkdf_info(p, info, (int)ilen) > 0);
+    if (ok) {
+        size_t n = (size_t)outlen;
+        ok = EVP_PKEY_derive(p, out->buf, &n) > 0 && n == (size_t)outlen;
+    }
+    if (p) EVP_PKEY_CTX_free(p);
+    free(salt);
+    free(info);
+    if (!ok) {
+        if (out) cx_key_free(out);
+        return NULL;
+    }
+    return out;
 }
 
 void *cx_pbkdf2_sha256(const char *password, tycho_int pwlen, const char *salt_hex, tycho_int iters, tycho_int dklen) {

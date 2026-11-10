@@ -1,0 +1,39 @@
+package main
+
+import "core:hex"
+import "core:utf16"
+
+fn hx(r: Result(bytes, utf16.Utf16Err)) -> string:
+    match r:
+        Ok(b): return hex.encode(to_str(b))
+        Err(utf16.OddLength): return "OddLength"
+        Err(utf16.BadSurrogate): return "BadSurrogate"
+        Err(utf16.BadUtf8): return "BadUtf8"
+
+fn eb(r: Result(bytes, utf16.Utf16Err)) -> bytes:
+    match r:
+        Ok(b): return b
+        Err(_): return to_bytes([]int)
+
+fn show(r: Result(string, utf16.Utf16Err)) -> string:
+    match r:
+        Ok(s): return s
+        Err(utf16.OddLength): return "OddLength"
+        Err(utf16.BadSurrogate): return "BadSurrogate"
+        Err(utf16.BadUtf8): return "BadUtf8"
+
+fn main():
+    println("le A=" + hx(utf16.encode("A")))
+    println("le euro=" + hx(utf16.encode("€")))
+    println("le emoji=" + hx(utf16.encode("😀")))
+    println("be A=" + hx(utf16.encode_be("A")) + " euro=" + hx(utf16.encode_be("€")) + " emoji=" + hx(utf16.encode_be("😀")))
+    println("bom le=" + hx(utf16.encode_bom("A", false)) + " be=" + hx(utf16.encode_bom("A", true)))
+    println("decode le=" + show(utf16.decode(eb(utf16.encode("héllo 😀")))))
+    println("decode be=" + show(utf16.decode(eb(utf16.encode_bom("héllo 😀", true)))))
+    println("decode be explicit=" + show(utf16.decode_be(eb(utf16.encode_be("héllo 😀")))))
+    println("odd=" + show(utf16.decode(to_bytes([65]))))
+    lone := to_bytes([0x3D, 0xD8])
+    println("lone=" + show(utf16.decode(lone)))
+    bad := utf16.encode(chr(255))
+    println("badutf8=" + hx(bad))
+    println("roundtrip euro=" + show(utf16.decode(eb(utf16.encode("€")))) + " emoji=" + show(utf16.decode(eb(utf16.encode("😀")))))

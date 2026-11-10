@@ -1,4 +1,5 @@
 package main
+import "core:hex"
 import "core:raster"
 
 fn b(x: bool) -> int:
@@ -107,3 +108,35 @@ fn main():
     # The ceiling must ADMIT as well as refuse, or a decoder that refused
     # everything would score the two lines above: both sides of the boundary.
     println("ceiling = " + str(b(raster.too_big(134217728, 1))) + str(b(raster.too_big(134217729, 1))) + str(b(raster.too_big(11585, 11585))) + str(b(raster.too_big(11586, 11586))) + str(b(raster.too_big(4, 2))))
+
+    # ---- TGA: uncompressed round-trip, header fields, RLE and refusals ----
+    tga_img := raster.make(2, 2, to_bytes([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 128]))
+    tga := raster.encode_tga(tga_img)
+    println("tga hdr=" + str(len(tga)) + "," + str(tga[2]) + "," + str(tga[12]) + "x" + str(tga[14]) + "," + str(tga[16]) + "," + str(tga[17]))
+    tga_back := raster.decode_tga(tga)
+    println("tga roundtrip=" + str(b(tga_back.width == 2 and tga_back.height == 2 and tga_back.pixels == tga_img.pixels)))
+    rle := []int
+    for i := 0; i < 18; i += 1:
+        push(rle, 0)
+    rle[2] = 10
+    rle[12] = 2
+    rle[14] = 1
+    rle[16] = 32
+    rle[17] = 40
+    push(rle, 129)
+    push(rle, 0)
+    push(rle, 0)
+    push(rle, 255)
+    push(rle, 255)
+    rle_img := raster.decode_tga(to_bytes(rle))
+    println("tga rle=" + str(rle_img.width) + "x" + str(rle_img.height) + " " + hex.encode(to_str(rle_img.pixels)))
+    short := raster.decode_tga(to_bytes([0, 0, 2]))
+    cmapped := []int
+    for i := 0; i < 18; i += 1:
+        push(cmapped, 0)
+    cmapped[1] = 1
+    cmapped[2] = 1
+    cmapped[12] = 1
+    cmapped[14] = 1
+    cmapped[16] = 8
+    println("tga short=" + str(short.width) + " cmapped=" + str(raster.decode_tga(to_bytes(cmapped)).width))

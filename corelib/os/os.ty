@@ -32,6 +32,20 @@ extern fn osx_exec(argv: [string]) -> int      # [string] crosses as (const char
 extern fn osx_exec_out(argv: [string]) -> ptr  # same OsRun handle shape osx_run returns
 extern fn osx_exec_capture(argv: [string]) -> ptr
 extern fn osx_is_windows() -> int              # the build's _WIN32, as a runtime answer
+extern fn osx_env_get(name: string) -> Option(string)
+extern fn osx_env_set(name: string, value: string) -> int
+extern fn osx_env_unset(name: string) -> int
+extern fn osx_cwd() -> Option(string)
+extern fn osx_chdir(p: string) -> int          # 0 ok, 1 not found, 2 denied, 3 not a dir, 4 failed
+extern fn osx_pid() -> int
+extern fn osx_hostname() -> Option(string)
+
+enum OsErr:
+    BadName
+    BadValue
+    NotFound
+    Denied
+    Failed
 
 # Run cmd, inheriting stdout/stderr; return its exit code.
 fn system(cmd: string) -> int:
@@ -99,3 +113,97 @@ fn exec_capture(argv: [string]) -> Capture:
 # answers from _WIN32), reported at run time because Tycho has no comptime.
 fn is_windows() -> bool:
     return osx_is_windows() != 0
+
+fn _bad_env_name(name: string) -> bool:
+    if len(name) == 0:
+        return true
+    for i := 0; i < len(name); i += 1:
+        if name[i] == 0 or name[i] == 61:      # NUL or '='
+            return true
+    return false
+
+# Environment value: None when unset, Some("") when set to empty.
+fn env(name: string) -> Option(string):
+    if _bad_env_name(name):
+        return None
+    return osx_env_get(name)
+
+# Set (or replace) an environment variable. Refused names and NUL values are
+# BadName/BadValue; nothing is written in either case.
+fn set_env(name: string, value: string) -> Result(void, OsErr):
+    if _bad_env_name(name):
+        return Err(BadName)
+    if _has_nul(value):
+        return Err(BadValue)
+    if osx_env_set(name, value) != 0:
+        return Err(Failed)
+    return Ok()
+
+# Remove an environment variable; absent is success (idempotent).
+fn unset_env(name: string) -> Result(void, OsErr):
+    if _bad_env_name(name):
+        return Err(BadName)
+    if osx_env_unset(name) != 0:
+        return Err(Failed)
+    return Ok()
+
+# Current working directory. The shim answers through a thread-local buffer, so
+# paths longer than that buffer fail with Failed rather than a truncated answer.
+fn cwd() -> Result(string, OsErr):
+    match osx_cwd():
+        Some(p): return Ok(p)
+        None: return Err(Failed)
+
+fn chdir(p: string) -> Result(void, OsErr):
+    if _has_nul(p) or len(p) == 0:
+        return Err(BadName)
+    k := osx_chdir(p)
+    if k == 0:
+        return Ok()
+    if k == 1:
+        return Err(NotFound)
+    if k == 2:
+        return Err(Denied)
+    return Err(Failed)
+
+fn pid() -> int:
+    return osx_pid()
+
+# Host name, or None when the platform call fails or truncates.
+fn hostname() -> Option(string):
+    return osx_hostname()
+
+# HOME, then USERPROFILE, then HOMEDRIVE+HOMEPATH. Empty values are skipped.
+fn home_dir() -> Option(string):
+    for name in ["HOME", "USERPROFILE"]:
+        match env(name):
+            Some(v):
+                if len(v) > 0:
+                    return Some(v)
+            None:
+                pass
+    drive := ""
+    tail := ""
+    match env("HOMEDRIVE"):
+        Some(v): drive = v
+        None: pass
+    match env("HOMEPATH"):
+        Some(v): tail = v
+        None: pass
+    if len(drive) > 0 and len(tail) > 0:
+        return Some(drive + tail)
+    return None
+
+# TMPDIR, then TEMP, then TMP; the platform default when none is set. Not
+# guaranteed to exist or be writable -- callers still open under it.
+fn temp_dir() -> string:
+    for name in ["TMPDIR", "TEMP", "TMP"]:
+        match env(name):
+            Some(v):
+                if len(v) > 0:
+                    return v
+            None:
+                pass
+    if is_windows():
+        return "."
+    return "/tmp"

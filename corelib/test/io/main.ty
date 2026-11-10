@@ -2,6 +2,19 @@ package main
 import "core:io"
 import "core:os"
 import "core:result"
+import "core:strings"
+
+fn rm_tree(p: string):
+    match io.lstat(p):
+        Ok(st):
+            if st.kind == io.KindDir:
+                for e in io.list(p):
+                    rm_tree(p + "/" + e)
+            match io.remove(p):
+                Ok(_): pass
+                Err(_): pass
+        Err(_):
+            pass
 
 fn b2i(b: bool) -> int:
     if b:
@@ -632,3 +645,33 @@ fn nul_checks():
     # same five bytes. Without the guard write/write_bytes rewrote it.
     println(f"nul_target_intact=[{io.read(nt)}] nul_target_is_file={dwhy(io.is_dir(nt))}")
     println(f"nul_cleanup={fswhy(io.remove(nt))}")
+
+    # ---- walk: sorted depth-first, root excluded, symlinked dirs not followed ----
+    wbase := "/tmp/tycho_corelib_io_walk_" + str(os.pid())
+    rm_tree(wbase)
+    setup := false
+    match io.make_dir_all(wbase + "/sub/deep"):
+        Ok(_): setup = true
+        Err(_): pass
+    wa := io.write(wbase + "/a.txt", "a")
+    wb := io.write(wbase + "/sub/b.txt", "b")
+    wc := io.write(wbase + "/sub/deep/c.txt", "c")
+    println(f"walk_setup={b2i(setup and wa and wb and wc)}")
+    match io.walk(wbase):
+        Ok(paths):
+            rel := ""
+            for p in paths:
+                rel = rel + p[len(wbase) + 1:] + " "
+            println(f"walk=[{strings.trim(rel)}]")
+        Err(_):
+            println("walk=Err")
+    match io.walk(wbase + "/a.txt"):
+        Ok(_): println("walk_file=Ok")
+        Err(io.Failed): println("walk_file=Failed")
+        Err(_): println("walk_file=Other")
+    match io.walk(wbase + "/absent"):
+        Ok(_): println("walk_missing=Ok")
+        Err(io.NotFound): println("walk_missing=NotFound")
+        Err(_): println("walk_missing=Other")
+    rm_tree(wbase)
+    println(f"walk_cleanup={b2i(not io.exists(wbase))}")

@@ -1,5 +1,6 @@
 package io
 import "core:strings"
+import "core:sort"
 
 enum IoErr:
     NotFound           # no such path
@@ -721,3 +722,41 @@ fn exists(p: string) -> bool:
         return false
     k := iox_stat_kind(p)
     return k == RF_OK or k == RF_DIR
+
+fn _child(dir: string, name: string) -> string:
+    if len(dir) == 0:
+        return name
+    if dir[len(dir) - 1] == 47:
+        return dir + name
+    return dir + "/" + name
+
+fn _walk_dir(dir: string, out: inout [string]) -> Result(void, IoErr):
+    names := sort.asc(list_checked(dir) or_return)
+    for name in names:
+        p := _child(dir, name)
+        push(out, p)
+        match lstat(p):
+            Ok(st):
+                if st.kind == KindDir:
+                    _walk_dir(p, &out) or_return
+            Err(e):
+                return Err(e)
+    return Ok()
+
+# Every path below `root`, depth-first with entry names sorted, pre-order.
+# `root` itself is not included. Symlinked directories are reported but not
+# followed, so a link cycle cannot recurse forever. An unreadable directory or
+# a path that cannot be lstat'ed fails the whole walk rather than silently
+# returning a partial tree; the already-visited paths are discarded.
+fn walk(root: string) -> Result([string], IoErr):
+    if _has_nul(root):
+        return Err(BadPath)
+    match stat(root):
+        Ok(st):
+            if st.kind != KindDir:
+                return Err(Failed)          # IoErr has no NotDir; is_dir() can distinguish
+        Err(e):
+            return Err(e)
+    out := []string
+    _walk_dir(root, &out) or_return
+    return Ok(out)

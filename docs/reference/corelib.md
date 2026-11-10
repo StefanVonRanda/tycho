@@ -121,7 +121,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   and `slice_bytes(b, start, stop)` — a plain slice **clamps** rather than
   bounds-checking (`b[1:99]` on three bytes gives two and no trap), so these are
   the forms that refuse an out-of-range window instead of narrowing it.
-  `format_g17(v)` renders a float at the 17 significant digits that round-trip.
+  `format_g17(v)` renders a float at the 17 significant digits that round-trip;
+  `format_float(v, digits)` is fixed notation with 0..17 digits after the point
+  and keeps trailing zeros. `format_int_base(n, base, upper)` and
+  `parse_int_base(s, base)` cover bases 2..36 (`parse_int_base` is fail-closed
+  like the decimal parser; `format_int_base` handles the minimum int).
 - **`path`** — POSIX path utilities (separator `/`). The pure functions below are
   string math only (no filesystem access, every function returns a fresh value):
   `base` (final element, trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir`
@@ -130,7 +134,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   (exactly one separator, empty operands drop out), `is_abs`,
   `split_path(p) -> (dir, base)` (the inverse of `join`), and `clean` (lexical
   normalize: collapse `//`, drop `.`, resolve `..` but never above the root or
-  past a leading `..`). `last_slash(s)` is the shared scan helper (index of
+  past a leading `..`). `relative(base, target)` is the lexical inverse of
+  joining: both paths are cleaned, common leading segments are dropped, and each
+  remaining base segment becomes `..` (`/a/b` to `/a/c` is `../c`). It does not
+  resolve symlinks or require either path to exist, and a mixed absolute/relative
+  pair returns the cleaned target unchanged. `last_slash(s)` is the shared scan helper (index of
   the last `/`, or -1). `quote(p)` is POSIX shell-safe single quoting for
   display (`'a b'`, and an embedded quote as `'\''`), so a text report can print
   an arbitrary path as one unambiguous word. `safe_join(base, rel)` is the lexical containment
@@ -192,6 +200,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   keep their input order under a descending compare too. `asc(a, b)` and
   `desc(a, b)` are the two ready-made comparators for that parameter, so the
   common orderings need no lambda: `sort_by(xs, sort.asc)`.
+- **`edit`** — byte-oriented edit distance: `levenshtein(a, b)` (two-row, O(min)
+  memory), `damerau(a, b)` (unrestricted adjacent transposition) and
+  `similarity(a, b) -> float` (`1 - distance / max(len)`; both empty is `1.0`).
 - **`pool`** — a generational node pool for pointer-shaped data (graphs, trees,
   doubly-linked structures). Hold every node in one array and link by integer
   index; `pool` packages that idiom. Generic over the element type `Pool($T)`:
@@ -203,6 +214,44 @@ expression-bodied; pass a named function where you need a multi-line body.
   Create one with `p := pool.Pool([]pool.Slot(int), []int)`. It removes the
   hand-rolled bookkeeping, not the cost: pointer-shaped storage costs more in
   this model (see [value-semantics limits](../internals/value-semantics-limits.md)).
+- **`container`** — value-semantics data structures that arrays and maps do not cover.
+  `Deque` is a two-stack, amortized-O(1) double-ended queue:
+  `make_deque$(T)()`, `deque_push_front`/`deque_push_back`,
+  `deque_pop_front`/`deque_pop_back`, `deque_peek_front`/`deque_peek_back`,
+  `deque_get`, `deque_len`, `deque_empty`, `deque_clear`. `Queue` wraps it as a
+  FIFO: `make_queue$(T)()`, `queue_push`/`queue_pop`/`queue_peek`, `queue_len`,
+  `queue_empty`, `queue_clear`. `PriorityQueue` is a binary heap ordered by a
+  caller-supplied `less(a, b)` where true means `a` is served first:
+  `make_heap(less)`, `heap_push`, `heap_pop`, `heap_peek`, `heap_from(xs, less)`
+  for O(n) heapify, `heap_len`, `heap_empty`, `heap_clear`; ties are not stable.
+  `BitArray` is a bounds-checked packed bit set over `[u64]`: `make_bits(nbits)`,
+  `bits_set`, `bits_clear`, `bits_toggle`, `bits_get`, `bits_count`, `bits_any`,
+  `bits_none`, `bits_resize`, `bits_len`. `Lru` is a capacity-bounded cache:
+  `make_lru$(K, V)(cap)`, `lru_put`, `lru_get` (promotes the hit), `lru_peek`
+  (does not), `lru_remove`, `lru_contains`, `lru_keys` (most recently used
+  first), `lru_len`, `lru_empty`, `lru_cap`, `lru_clear`. Every container is a
+  deep value: copying one gives an independent container. `core:pool` is the
+  generational handle-map equivalent.
+- **`sync`** — pthreads/Win32 primitives and C11 atomics, for state shared by
+  `spawn`/`parallel for` tasks. Every object is a C-owned `ptr` handle with an
+  explicit free; free only after every task that uses it has been joined. All
+  atomic operations are sequentially consistent. `atomic_int_new(v)`,
+  `atomic_int_free`, `atomic_int_load`, `atomic_int_store`, `atomic_int_add`
+  and `atomic_int_sub` (both return the **new** value), `atomic_int_swap`
+  (returns the **old** value), `atomic_int_cas(p, expected, desired) -> bool`,
+  and `atomic_int_compare_swap` (returns the value observed at the exchange,
+  whether it won or lost). `atomic_bool_new`, `atomic_bool_free`,
+  `atomic_bool_load`, `atomic_bool_store`, `atomic_bool_swap`,
+  `atomic_bool_cas` mirror them. `mutex_new`/`mutex_free`, `mutex_lock`,
+  `mutex_try_lock`, `mutex_unlock` are non-recursive; `rwlock_new`/`rwlock_free`,
+  `rwlock_read_lock`/`rwlock_try_read_lock`/`rwlock_read_unlock`,
+  `rwlock_write_lock`/`rwlock_try_write_lock`/`rwlock_write_unlock` allow many
+  readers or one writer. `waitgroup_new`/`waitgroup_free`, `waitgroup_add(w, n)`,
+  `waitgroup_done`, `waitgroup_wait` join a dynamic task count. `once_new`,
+  `once_free`, `once_done`, `once_do(o, f)` run `f` exactly once: the first
+  caller runs it, later callers block until it finishes. `f` must not re-enter
+  the same once object. Channels are language builtins (`channel`, `send`,
+  `recv`, `close`), not part of this package.
 - **`intern`** — hash-consing / interning: canonical storage of values keyed by a hashable
   key. Generic `Interner($K, $V)`: `intern(&i, k, v) -> Handle` returns the canonical handle
   for key `k` — the first sight stores `v` and mints the handle, every later sight of the
@@ -312,6 +361,22 @@ expression-bodied; pass a named function where you need a multi-line body.
   byte, plus `is_valid` (strict: even length, all hex digits). `decode` is lenient (skips
   any non-hex byte, so `de:ad:be:ef` and spaced/newlined hex work, either case) and reuses
   `core:char`'s `hex_val`. Decoding `"00"` returns a one-byte string containing NUL.
+- **`base32`** — RFC 4648 Base32 (`A-Z2-7`): `encode` (padded) and
+  `encode_no_pad`, plus `decode`, which accepts padded and unpadded input and
+  reports `BadLength`, `BadChar` or `BadPadding` instead of returning partial
+  bytes.
+- **`endian`** — width-checked reads and fresh writes for binary framing.
+  `get_u16_le`/`get_u16_be`, `get_u32_le`/`get_u32_be`, `get_u64_le`/`get_u64_be`
+  return `Result(..., EndianErr)` (`Short` when the window is too small);
+  `put_u16_le`/`put_u16_be`, `put_u32_le`/`put_u32_be`, `put_u64_le`/`put_u64_be`
+  return the encoded `bytes`.
+- **`varint`** — LEB128: `put_u64` and `get_u64` (value plus bytes consumed),
+  `put_i64` and `get_i64` (zigzag signed). `get_*` fails with `Truncated` or
+  `Overflow`, never a partial value.
+- **`pem`** — RFC 7468-style PEM blocks. `Block{label, data}`; `encode(label,
+  data)` wraps Base64 at 64 columns, and `decode(s)` returns the first block and
+  ignores text outside its markers. `PemErr` separates `NoBlock`,
+  `Unterminated`, `BadLabel` (END label differs) and `BadBase64`.
 - **`url`** — URL percent-encoding (RFC 3986). `encode` is component-style (like JS
   `encodeURIComponent` — everything but unreserved `A-Z a-z 0-9 - _ . ~` becomes `%XX`,
   uppercase, space → `%20`); `encode_form` / `decode_form` use the
@@ -360,8 +425,11 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`crypto`** — the security-grade module, a C-shim over OpenSSL `libcrypto` (see
   [C-shim modules](#c-shim-ffi-backed-modules); needs the OpenSSL dev package). Where the
   pure-Tycho `sha256`/`md5` are for non-adversarial integrity, this is what to reach for
-  when an attacker is in the threat model: CSPRNG (`random_hex`), `sha256`/`sha512` of
-  binary, `hmac_sha256`, `pbkdf2_sha256`, constant-time `ct_equal`, ChaCha20-Poly1305 AEAD
+  when an attacker is in the threat model: CSPRNG (`random_hex`), `sha256`/`sha512`/
+  `sha3_256`/`sha3_512` of binary, extendable-output `shake128`/`shake256(msg,
+  outlen)`, `blake2b`/`blake2s`, `hmac_sha256`/`hmac_sha512`, `pbkdf2_sha256`,
+  `hkdf_sha256(ikm, salt_hex, info_hex, outlen) -> ptr` (derived key handle),
+  constant-time `ct_equal`, ChaCha20-Poly1305 AEAD
   (`aead_encrypt`/`aead_decrypt`, `"!err"` on auth failure), Ed25519
   (`ed25519_pubkey`/`sign`/`verify`), and X25519 (`x25519_pubkey`/`shared`). Pure Tycho
   arithmetic cannot promise constant-time behavior, so these primitives bind OpenSSL
@@ -413,6 +481,14 @@ expression-bodied; pass a named function where you need a multi-line body.
   trailing commas; an ISO-8601 datetime is kept as a string. Not inline tables
   or multi-line strings.
   `empty_table()` gives an empty `Value` table, the starting point for building one up rather than parsing it. Parsing is bounded to 64 KiB, 512 assignments/headers and 128 nesting levels; larger documents return `Err` rather than consuming unbounded time or memory.
+- **`ini`** — an INI reader/writer: `Document` holds ordered `Section`s of
+  `Entry`s; `parse(s) -> Result(Document, IniErr)` accepts `;`/`#` comments,
+  `key = value` and `key: value`, section headers, and trims surrounding
+  whitespace (`BadLine(n)` / `BadSection(n)` name the 1-based line).
+  `get(d, section, key) -> Option(string)` returns the last duplicate, with `""`
+  naming the unnamed top-level section; `has`, `section_names` and `render`
+  round-trip the document. There is no value escaping, so a value containing a
+  newline does not survive `parse`/`render`.
 - **`zip`** — a ZIP archive reader and writer over core:compress's raw
   deflate: `list(bytes)` (names, methods, sizes, CRCs and local offsets),
   `extract_entry(bytes, meta)` for one-pass iteration, `extract(bytes, name)`
@@ -440,6 +516,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   → `(codepoint, width)` at a byte offset (the iteration idiom), `encode(cp)` →
   its UTF-8 bytes, `count(s)` → codepoints or -1. No case mapping or full
   tables — validation + iteration is the core.
+- **`utf16`** — UTF-16 with surrogate pairs and BOM handling:
+  `encode(s)` (little-endian), `encode_be(s)`, `encode_bom(s, big_endian)`,
+  `decode(b)` (BOM-aware, little-endian when absent) and `decode_be(b)`.
+  `OddLength`, `BadSurrogate` and `BadUtf8` are refused rather than decoded
+  leniently.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins.
   `read(p)` — **fail-open**: `""` for a missing file, an unreadable one and a genuinely
   empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` or `read_bytes(p)`
@@ -452,7 +533,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `write_lines_checked(p, lines) -> Result(void, IoErr)`,
   `list(p)` (entry basenames) and `list_checked(p) ->
   Result([string], IoErr)` (which distinguishes an empty directory from an unreadable
-  one, where `list` cannot), `rename(src, dst) -> Result(void, IoErr)` (atomically
+  one, where `list` cannot), `walk(root) -> Result([string], IoErr)` (every path
+  below `root`, depth-first with entry names sorted, `root` excluded; symlinked
+  directories are reported but not followed, and an unreadable directory fails
+  the whole walk instead of silently dropping that subtree), `rename(src, dst) -> Result(void, IoErr)` (atomically
   replaces a destination on the same filesystem),
   `lock_exclusive(p) -> Result(bool, IoErr)` is a nonblocking process-lifetime lock
   (`Ok(false)` means busy; the OS releases it when the process exits),
@@ -520,6 +604,15 @@ expression-bodied; pass a named function where you need a multi-line body.
   `exec_out` with stderr kept separate; both pipes are drained concurrently, so a
   child cannot deadlock by filling one stream before the other. Same no-shell,
   fail-closed `-1` contract with both strings empty.
+  The environment and process-location surface is fail-closed too:
+  `env(name) -> Option(string)` distinguishes unset (`None`) from set-to-empty
+  (`Some("")`); `set_env(name, value)` and `unset_env(name)` return
+  `Result(void, OsErr)` and refuse an empty name, an embedded `=`, or a NUL value
+  (`BadName` / `BadValue`). `cwd()` / `chdir(p)` round-trip the working directory,
+  with `NotFound` / `Denied` / `Failed` kept apart; `pid()` and
+  `hostname() -> Option(string)` report the process identity; `home_dir()` tries
+  `HOME`, then `USERPROFILE`, then `HOMEDRIVE`+`HOMEPATH`; `temp_dir()` tries
+  `TMPDIR`, `TEMP`, then `TMP`, and falls back to `/tmp` on POSIX or `.` on Windows.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (POSIX sockets; no `deps`,
   nothing to install). **The transfer calls block; readiness does not.**
   `read`/`write`/`connect` block, so a worker-per-connection server still has its
@@ -627,14 +720,17 @@ expression-bodied; pass a named function where you need a multi-line body.
   package has — it would make `-abc` ambiguous); use `--port 80`. Accessors:
   `get(c, key, default)`, `has(c, key)`, `flag(c, name)` (long or short), `positionals(c)`,
   `count(c)`, `missing(c)`, `unknown(c)`. Uses parallel arrays, not maps.
-- **`raster`** — pure-Tycho raster image codecs, **BMP** and **QOI**, with no external
-  dependency (unlike `core:image`'s libpng-backed PNG). An `Image` is 8-bit RGBA (4
-  bytes/pixel, row-major, top-to-bottom); pixel data is `bytes`. `encode_bmp`/`decode_bmp`
-  (writes 32-bit BGRA, bottom-up, uncompressed; reads 24- or 32-bpp `BI_RGB`) and
-  `encode_qoi`/`decode_qoi` (all six QOI chunk types). Both **round-trip losslessly**; the
-  decoders **fail closed** to a 0×0 Image on a malformed / truncated / wrong-format input
-  (check `width > 0`). `too_big(w, h)` is the decode guard in front of every codec here:
-  it answers whether a declared width and height would allocate past the ceiling.
+- **`raster`** — pure-Tycho raster image codecs, **BMP**, **QOI** and **TGA**, with no
+  external dependency (unlike `core:image`'s libpng-backed PNG). An `Image` is 8-bit RGBA
+  (4 bytes/pixel, row-major, top-to-bottom); pixel data is `bytes`.
+  `encode_bmp`/`decode_bmp` (writes 32-bit BGRA, bottom-up, uncompressed; reads 24- or
+  32-bpp `BI_RGB`), `encode_qoi`/`decode_qoi` (all six QOI chunk types), and
+  `encode_tga`/`decode_tga` (uncompressed 24/32-bpp, top-down write; reads type 2 and
+  RLE type 10, top-down or bottom-up; color-mapped and grayscale TGA are refused).
+  All **round-trip losslessly**; the decoders **fail closed** to a 0×0 Image on a
+  malformed / truncated / wrong-format input (check `width > 0`). `too_big(w, h)` is
+  the decode guard in front of every codec here: it answers whether a declared width
+  and height would allocate past the ceiling.
 - **`signal`** — **clean shutdown on SIGTERM/SIGINT, and nothing else**: a libc-only shim
   with nothing to install and nothing to link.
   `on_shutdown(fd) -> bool` installs one handler for both signals whose **only** action is

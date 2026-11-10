@@ -1,0 +1,14 @@
+encoded=[
+-----BEGIN TEST-----
+aGVsbG8=
+-----END TEST-----
+]
+decoded=TEST:hello
+preamble=TEST:hello
+empty=EMPTY:
+big=BIG:ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUV len=177
+noblock=NoBlock
+unterminated=Unterminated
+mismatch=BadLabel
+badb64=BadBase64
+longlabel=A B:x

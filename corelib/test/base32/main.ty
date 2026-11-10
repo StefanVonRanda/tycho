@@ -1,0 +1,28 @@
+package main
+
+import "core:base32"
+import "core:hex"
+
+fn hx(b: bytes) -> string:
+    return hex.encode(to_str(b))
+
+fn show(r: Result(bytes, base32.Base32Err)) -> string:
+    match r:
+        Ok(b): return hx(b)
+        Err(base32.BadLength): return "BadLength"
+        Err(base32.BadChar): return "BadChar"
+        Err(base32.BadPadding): return "BadPadding"
+
+fn main():
+    for s in ["", "f", "fo", "foo", "foob", "fooba", "foobar"]:
+        println("enc [" + s + "]=" + base32.encode(to_bytes(s)) + " nopad=" + base32.encode_no_pad(to_bytes(s)))
+    println("dec MY------=" + show(base32.decode("MY======")))
+    println("dec MZXQ=====" + show(base32.decode("MZXQ====")))
+    println("dec MZXW6====" + show(base32.decode("MZXW6===")))
+    println("dec MZXW6YTB=" + show(base32.decode("MZXW6YTB")))
+    println("dec MZXW6YTBOI======" + show(base32.decode("MZXW6YTBOI======")))
+    println("nopad MY=" + show(base32.decode("MY")))
+    println("badchar=" + show(base32.decode("M1======")))
+    println("badlen=" + show(base32.decode("M======")))
+    println("badpad=" + show(base32.decode("MY=====")))
+    println("badbits=" + show(base32.decode("MZ")))

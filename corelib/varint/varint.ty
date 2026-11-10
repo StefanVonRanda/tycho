@@ -1,0 +1,55 @@
+package varint
+
+enum VarintErr:
+    Truncated
+    Overflow
+
+fn put_u64(v: u64) -> bytes:
+    out := []int
+    n := to_u64(v)
+    for true:
+        x := to_int(n & 127)
+        n = n >> 7
+        if n != 0:
+            push(out, x | 128)
+        else:
+            push(out, x)
+            return to_bytes(out)
+    return to_bytes(out)
+
+fn get_u64(b: bytes, at: int) -> Result((u64, int), VarintErr):
+    if at < 0 or at >= len(b):
+        return Err(Truncated)
+    v := to_u64(0)
+    shift := 0
+    i := at
+    for i < len(b):
+        k := i - at
+        if k >= 10:
+            return Err(Overflow)
+        x := b[i]
+        if k == 9 and x > 1:
+            return Err(Overflow)
+        v = v | (to_u64(x & 127) << shift)
+        if (x & 128) == 0:
+            return Ok((v, k + 1))
+        shift += 7
+        i += 1
+    return Err(Truncated)
+
+fn put_i64(v: int) -> bytes:
+    u := to_u64(v) << 1
+    if v < 0:
+        u = ~u
+    return put_u64(u)
+
+fn get_i64(b: bytes, at: int) -> Result((int, int), VarintErr):
+    match get_u64(b, at):
+        Ok(pair):
+            u := pair.0
+            n := to_int(u >> 1)
+            if (u & 1) != 0:
+                n = -n - 1
+            return Ok((n, pair.1))
+        Err(e):
+            return Err(e)

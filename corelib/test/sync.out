@@ -1,0 +1,14 @@
+atomic add: 40000 (want 40000)
+swap: old=5 now=7
+cas: won=true lost=false now=9
+compare_swap: seen=9 now=12
+sub: 10 (want 10)
+bool: load=false
+bool: swap_old=true cas=true again=false now=true
+mutex: free try=true
+mutex: held try refused=true
+rwlock: write blocks read=true
+rwlock: read blocks write=true
+rwlock: free try write=true
+waitgroup: total=10000 (want 10000)
+once: count=1 (want 1) done=true

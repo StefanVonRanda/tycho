@@ -80,6 +80,9 @@ packed struct BmpHeader:                    # 14 + 40 = 54 bytes
 fn _rd_u32_be(s: string, i: int) -> int:
     return s[i] * 16777216 + s[i + 1] * 65536 + s[i + 2] * 256 + s[i + 3]
 
+fn _rd_u16_le(s: string, i: int) -> int:
+    return s[i] + s[i + 1] * 256
+
 # ---- BMP --------------------------------------------------------------------
 
 # Encode to a 32-bit BGRA, bottom-up, uncompressed (BI_RGB) BMP. 32bpp rows are
@@ -158,6 +161,130 @@ fn decode_bmp(data: bytes) -> Image:
             push(px, g)
             push(px, b)
             push(px, a)
+    return Image(w, h, to_bytes(px))
+
+# ---- TGA --------------------------------------------------------------------
+
+# Encode an uncompressed 32-bit truecolor TGA, top-down (descriptor 0x28).
+fn encode_tga(img: Image) -> bytes:
+    w := img.width
+    h := img.height
+    ps := to_str(img.pixels)
+    out := []int
+    push(out, 0)                           # id length
+    push(out, 0)                           # no color map
+    push(out, 2)                           # uncompressed truecolor
+    for i := 0; i < 5; i += 1:
+        push(out, 0)                       # color-map spec
+    for i := 0; i < 4; i += 1:
+        push(out, 0)                       # x/y origin
+    push(out, w & 255)
+    push(out, (w >> 8) & 255)
+    push(out, h & 255)
+    push(out, (h >> 8) & 255)
+    push(out, 32)
+    push(out, 40)                          # top-down + 8 alpha bits
+    p := 0
+    for p < w * h * 4:
+        push(out, ps[p + 2])               # B
+        push(out, ps[p + 1])               # G
+        push(out, ps[p])                   # R
+        push(out, ps[p + 3])               # A
+        p += 4
+    return to_bytes(out)
+
+fn _tga_rgba(s: string, i: int, bpx: int) -> (int, int, int, int):
+    r := s[i + 2]
+    g := s[i + 1]
+    b := s[i]
+    a := 255
+    if bpx == 4:
+        a = s[i + 3]
+    return (r, g, b, a)
+
+# Decode uncompressed (type 2) or RLE (type 10) truecolor TGA at 24 or 32 bpp.
+# Color-mapped and grayscale variants fail closed to a 0x0 Image.
+fn decode_tga(data: bytes) -> Image:
+    s := to_str(data)
+    n := len(s)
+    if n < 18:
+        return _empty_image()
+    idlen := s[0]
+    cmap := s[1]
+    typ := s[2]
+    w := _rd_u16_le(s, 12)
+    h := _rd_u16_le(s, 14)
+    bpp := s[16]
+    desc := s[17]
+    if cmap != 0 or (typ != 2 and typ != 10) or (bpp != 24 and bpp != 32):
+        return _empty_image()
+    if w <= 0 or h <= 0 or too_big(w, h):
+        return _empty_image()
+    bpx := bpp / 8
+    npx := w * h
+    off := 18 + idlen
+    raw := []int
+    if typ == 2:
+        if off + npx * bpx > n:
+            return _empty_image()
+        i := 0
+        for i < npx:
+            p := off + i * bpx
+            r, g, b, a := _tga_rgba(s, p, bpx)
+            push(raw, r)
+            push(raw, g)
+            push(raw, b)
+            push(raw, a)
+            i += 1
+    else:
+        i := off
+        done := 0
+        for done < npx:
+            if i >= n:
+                return _empty_image()
+            hd := s[i]
+            i += 1
+            count := (hd & 127) + 1
+            if done + count > npx:
+                return _empty_image()
+            if (hd & 128) != 0:
+                if i + bpx > n:
+                    return _empty_image()
+                r, g, b, a := _tga_rgba(s, i, bpx)
+                i += bpx
+                k := 0
+                for k < count:
+                    push(raw, r)
+                    push(raw, g)
+                    push(raw, b)
+                    push(raw, a)
+                    k += 1
+            else:
+                k := 0
+                for k < count:
+                    if i + bpx > n:
+                        return _empty_image()
+                    r, g, b, a := _tga_rgba(s, i, bpx)
+                    i += bpx
+                    push(raw, r)
+                    push(raw, g)
+                    push(raw, b)
+                    push(raw, a)
+                    k += 1
+            done += count
+    topdown := (desc & 32) != 0
+    px := []int
+    y := 0
+    for y < h:
+        sy := y
+        if not topdown:
+            sy = h - 1 - y
+        base := sy * w * 4
+        x := 0
+        for x < w * 4:
+            push(px, raw[base + x])
+            x += 1
+        y += 1
     return Image(w, h, to_bytes(px))
 
 # ---- QOI --------------------------------------------------------------------

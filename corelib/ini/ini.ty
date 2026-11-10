@@ -1,0 +1,95 @@
+package ini
+
+import "core:strings"
+
+enum IniErr:
+    BadLine(int)           # 1-based line number
+    BadSection(int)
+
+struct Entry:
+    key: string
+    value: string
+
+struct Section:
+    name: string           # "" is the unnamed top-level section
+    entries: [Entry]
+
+struct Document:
+    sections: [Section]
+
+fn parse(s: string) -> Result(Document, IniErr):
+    raw := split(s, "\n")
+    out := []Section
+    cur_name := ""
+    cur_entries := []Entry
+    started := false
+    ln := 0
+    for ln < len(raw):
+        line := strings.trim(raw[ln])
+        n := ln + 1
+        ln += 1
+        if len(line) == 0 or line[0] == 59 or line[0] == 35:   # ';' or '#'
+            pass
+        elif line[0] == 91:                    # '['
+            if line[len(line) - 1] != 93:      # ']'
+                return Err(BadLine(n))
+            name := strings.trim(line[1:len(line) - 1])
+            if len(name) == 0:
+                return Err(BadSection(n))
+            if len(cur_entries) > 0 or started:
+                push(out, Section(cur_name, cur_entries))
+            cur_name = name
+            cur_entries = cur_entries[0:0]
+            started = true
+        else:
+            cut := -1
+            i := 0
+            for i < len(line) and cut < 0:
+                if line[i] == 61 or line[i] == 58:   # '=' or ':'
+                    cut = i
+                i += 1
+            if cut < 0:
+                return Err(BadLine(n))
+            key := strings.trim(line[0:cut])
+            if len(key) == 0:
+                return Err(BadLine(n))
+            push(cur_entries, Entry(key, strings.trim(line[cut + 1:len(line)])))
+    if len(cur_entries) > 0 or started:
+        push(out, Section(cur_name, cur_entries))
+    return Ok(Document(out))
+
+# Last value for (section, key), or None. Section "" is the unnamed top level.
+fn get(d: Document, section: string, key: string) -> Option(string):
+    for sec in d.sections:
+        if sec.name == section:
+            v := ""
+            found := false
+            for e in sec.entries:
+                if e.key == key:
+                    v = e.value
+                    found = true
+            if found:
+                return Some(v)
+    return None
+
+fn has(d: Document, section: string, key: string) -> bool:
+    match get(d, section, key):
+        Some(_): return true
+        None: return false
+
+fn section_names(d: Document) -> [string]:
+    out := []string
+    for sec in d.sections:
+        push(out, sec.name)
+    return out
+
+# Entries in file order; no escaping, so a value containing a newline does not
+# round-trip through parse.
+fn render(d: Document) -> string:
+    out := ""
+    for sec in d.sections:
+        if len(sec.name) > 0:
+            out = out + "[" + sec.name + "]\n"
+        for e in sec.entries:
+            out = out + e.key + " = " + e.value + "\n"
+    return out

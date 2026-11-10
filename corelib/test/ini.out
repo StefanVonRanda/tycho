@@ -1,0 +1,23 @@
+parse=Ok[server,quoted,server]
+default name=tycho empty=[]
+server host=localhost port=8080 has=true
+quoted path="a b" color=blue
+missing=none
+render=[
+name = tycho
+empty = 
+[server]
+host = localhost
+port = 8080
+[quoted]
+path = "a b"
+color = blue
+[server]
+port = 9090
+]
+spaces=Ok[a b]
+empty=Ok[]
+badline=BadLine(1)
+badsection=BadSection(1)
+badclose=BadLine(1)
+emptykey=BadLine(1)

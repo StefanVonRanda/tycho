@@ -133,6 +133,11 @@ fn main():
     println("padWide=[" + strings.pad_left("hello", 3, ".") + "] " + str(len(strings.pad_left("hello", 3, "."))))
     println("padNone=[" + strings.pad_left("x", 5, "") + "] " + str(len(strings.pad_left("x", 5, ""))))
 
+    # ---- integer bases and fixed float formatting ----
+    println("base fmt=" + strings.format_int_base(255, 16, false) + "," + strings.format_int_base(255, 16, true) + "," + strings.format_int_base(-255, 16, true) + "," + strings.format_int_base(5, 2, false) + "," + strings.format_int_base(0, 10, false))
+    println("base parse=" + prbase("ff", 16) + "," + prbase("-FF", 16) + "," + prbase("101", 2) + "," + prbase("2", 2) + "," + prbase("", 10) + "," + prbase("8000000000000000", 16))
+    println("float fmt=[" + strings.format_float(3.14159, 2) + "][" + strings.format_float(-0.5, 1) + "][" + strings.format_float(1.0, 0) + "][" + strings.format_float(1234.5, 2) + "]")
+
 # ---- slice helpers: render the Result as one word, never a clamped value ----
 fn sb(b: bytes, a: int, z: int) -> string:
     match strings.slice_bytes(b, a, z):
@@ -185,6 +190,13 @@ fn pfrt(x: float) -> string:
         Err(strings.Syntax): return "err Syntax"
         Err(strings.Overflow): return "err Overflow"
         Err(strings.Underflow): return "err Underflow"
+
+fn prbase(s: string, base: int) -> string:
+    match strings.parse_int_base(s, base):
+        Ok(v): return "ok:" + str(v)
+        Err(strings.EmptyInput): return "Empty"
+        Err(strings.Garbage): return "Garbage"
+        Err(strings.OutOfRange): return "OutOfRange"
 
 fn jn(xs: [string]) -> string:    # local join with '|' so pieces are visible
     r := ""

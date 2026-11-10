@@ -1,0 +1,12 @@
+le A=4100
+le euro=ac20
+le emoji=3dd800de
+be A=0041 euro=20ac emoji=d83dde00
+bom le=fffe4100 be=feff0041
+decode le=héllo 😀
+decode be=héllo 😀
+decode be explicit=héllo 😀
+odd=OddLength
+lone=BadSurrogate
+badutf8=BadUtf8
+roundtrip euro=€ emoji=😀

@@ -1,7 +1,47 @@
 
 package main
 import "core:os"
+import "core:io"
 import "core:strings"          # trim: cmd.exe's `echo` appends CRLF, /bin/sh's printf does not
+
+fn show_opt(o: Option(string)) -> string:
+    match o:
+        Some(v):
+            return "[" + v + "]"
+        None:
+            return "none"
+
+fn show_os(r: Result(void, os.OsErr)) -> string:
+    match r:
+        Ok():
+            return "Ok"
+        Err(os.BadName):
+            return "BadName"
+        Err(os.BadValue):
+            return "BadValue"
+        Err(os.NotFound):
+            return "NotFound"
+        Err(os.Denied):
+            return "Denied"
+        Err(os.Failed):
+            return "Failed"
+
+fn show_cwd(r: Result(string, os.OsErr)) -> string:
+    match r:
+        Ok(v):
+            if len(v) > 0:
+                return "Ok"
+            return "OkEmpty"
+        Err(os.BadName):
+            return "BadName"
+        Err(os.BadValue):
+            return "BadValue"
+        Err(os.NotFound):
+            return "NotFound"
+        Err(os.Denied):
+            return "Denied"
+        Err(os.Failed):
+            return "Failed"
 
 fn main():
     # system(): exit code only. These commands write nothing to stdout, so they
@@ -109,3 +149,57 @@ fn main():
         println("nul_child_exec=" + str(len(enul.out)) + "," + str(enul.out[1] == 0) + "," + str(enul.out[2]))
     else:
         println("nul_child_output=windows-unavailable")
+
+    # ---- environment: unset is None, set-empty is Some("") ----
+    ename := "TYCHO_CORELIB_OS_ENV_TEST"
+    println("env_clear=" + show_os(os.unset_env(ename)))
+    println("env_absent=" + show_opt(os.env(ename)))
+    rset := os.set_env(ename, "v1")
+    vset := os.env(ename)
+    println("env_set=" + show_os(rset) + " value=" + show_opt(vset))
+    rempty := os.set_env(ename, "")
+    vempty := os.env(ename)
+    println("env_empty=" + show_os(rempty) + " value=" + show_opt(vempty))
+    runset := os.unset_env(ename)
+    vunset := os.env(ename)
+    println("env_unset=" + show_os(runset) + " value=" + show_opt(vunset))
+    enone := os.env("")
+    eset := os.set_env("", "x")
+    eeq := os.set_env("A=B", "x")
+    println("env_badname=" + show_opt(enone) + " set=" + show_os(eset) + " eq=" + show_os(eeq))
+    rnul := os.set_env(ename, "a" + chr(0) + "b")
+    vnul := os.env(ename)
+    println("env_nulvalue=" + show_os(rnul) + " value=" + show_opt(vnul))
+
+    # ---- cwd/chdir: round-trip, then the refusal paths ----
+    before := ""
+    match os.cwd():
+        Ok(v): before = v
+        Err(_): pass
+    println("cwd_ok=" + show_cwd(os.cwd()))
+    base := os.temp_dir() + "/tycho_os_test_" + str(os.pid())
+    match io.make_dir_all(base):
+        Ok(_): pass
+        Err(_): pass
+    cdt := os.chdir(base)
+    cdw := os.cwd()
+    println("chdir_temp=" + show_os(cdt) + " cwd=" + show_cwd(cdw))
+    println("chdir_back=" + show_os(os.chdir(before)))
+    println("chdir_missing=" + show_os(os.chdir(base + "/absent")))
+    println("chdir_empty=" + show_os(os.chdir("")))
+    match io.remove(base):
+        Ok(_): pass
+        Err(_): pass
+
+    println("pid_positive=" + str(os.pid() > 0))
+    hn := false
+    match os.hostname():
+        Some(h): hn = len(h) > 0
+        None: pass
+    println("hostname_nonempty=" + str(hn))
+    home := false
+    match os.home_dir():
+        Some(h): home = len(h) > 0
+        None: pass
+    println("home_nonempty=" + str(home))
+    println("temp_nonempty=" + str(len(os.temp_dir()) > 0))

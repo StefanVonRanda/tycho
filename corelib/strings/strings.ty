@@ -199,12 +199,92 @@ fn parse_float(s: string) -> Result(float, FloatErr):
     return Err(Syntax)                           # shim disagreed with the scan above
 
 extern fn strx_format_g17(v: float) -> string
+extern fn strx_format_fixed(v: float, digits: int) -> string
 
 fn format_g17(v: float) -> string:
     # C-locale `%.17g`: 17 significant digits, which round-trip a binary64 exactly.
     # NOT the shortest form `str(float)` gives -- format_g17(0.1) is
     # "0.10000000000000001". inf/nan come back as the C library spells them.
     return strx_format_g17(v)
+
+# C-locale fixed notation with `digits` digits after the point (clamped to
+# 0..17). Unlike str(float), this keeps trailing zeros.
+fn format_float(v: float, digits: int) -> string:
+    d := digits
+    if d < 0:
+        d = 0
+    if d > 17:
+        d = 17
+    return strx_format_fixed(v, d)
+
+fn _digit_char(d: int, upper: bool) -> int:
+    if d < 10:
+        return 48 + d
+    if upper:
+        return 65 + d - 10
+    return 97 + d - 10
+
+fn _digit_val(c: int, base: int) -> int:
+    d := -1
+    if c >= 48 and c <= 57:
+        d = c - 48
+    elif c >= 97 and c <= 122:
+        d = c - 97 + 10
+    elif c >= 65 and c <= 90:
+        d = c - 65 + 10
+    if d < 0 or d >= base:
+        return -1
+    return d
+
+# Base 2..36, lowercase by default. A negative value keeps its `-` and uses the
+# magnitude, so the minimum int formats without overflowing.
+fn format_int_base(n: int, base: int, upper: bool) -> string:
+    if base < 2 or base > 36:
+        die("strings.format_int_base: base must be 2..36, got " + str(base))
+    if n == 0:
+        return "0"
+    neg := n < 0
+    u := to_u64(n)
+    if neg:
+        u = to_u64(0) - u
+    b := to_u64(base)
+    out := ""
+    for u != 0:
+        out = chr(_digit_char(to_int(u % b), upper)) + out
+        u = u / b
+    if neg:
+        return "-" + out
+    return out
+
+# Base 2..36, optional leading '-', no prefix and no underscores. Fail-closed:
+# a bad digit, an empty body, or a value outside int is an Err.
+fn parse_int_base(s: string, base: int) -> Result(int, IntErr):
+    if base < 2 or base > 36:
+        return Err(Garbage)
+    if len(s) == 0:
+        return Err(EmptyInput)
+    neg := false
+    i := 0
+    if s[0] == 45:                             # '-'
+        neg = true
+        i = 1
+        if i >= len(s):
+            return Err(Garbage)
+    min64 := (0 - 9223372036854775807) - 1
+    v := 0
+    for i < len(s):
+        d := _digit_val(s[i], base)
+        if d < 0:
+            return Err(Garbage)
+        if v < (min64 + d) / base:             # v*base - d would underflow int64
+            return Err(OutOfRange)
+        v = v * base - d
+        i += 1
+    if neg:
+        return Ok(v)
+    if v == min64:                             # +2^63 does not fit
+        return Err(OutOfRange)
+    return Ok(0 - v)
 
 
 # (split(s, sep) and find(s, sub) are language builtins -- not duplicated here.)

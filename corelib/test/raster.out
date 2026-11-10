@@ -15,3 +15,7 @@ empty   = 0
 qoi bomb= 0
 bmp bomb= 0
 ceiling = 01010
+tga hdr=34,2,2x2,32,40
+tga roundtrip=1
+tga rle=2x1 ff0000ffff0000ff
+tga short=0 cmapped=0

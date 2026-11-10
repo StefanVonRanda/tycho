@@ -1,0 +1,88 @@
+package utf16
+
+import "core:utf8"
+
+enum Utf16Err:
+    OddLength
+    BadSurrogate
+    BadUtf8
+
+fn _unit(out: inout [int], u: int, big_endian: bool):
+    if big_endian:
+        push(out, (u >> 8) & 255)
+        push(out, u & 255)
+    else:
+        push(out, u & 255)
+        push(out, (u >> 8) & 255)
+
+fn _encode(s: string, big_endian: bool, bom: bool) -> Result(bytes, Utf16Err):
+    if not utf8.valid(s):
+        return Err(BadUtf8)
+    out := []int
+    if bom:
+        _unit(&out, 0xFEFF, big_endian)
+    i := 0
+    for i < len(s):
+        cp, w := utf8.decode(s, i)
+        if cp < 0:
+            return Err(BadUtf8)
+        if cp <= 0xFFFF:
+            _unit(&out, cp, big_endian)
+        else:
+            u := cp - 0x10000
+            _unit(&out, 0xD800 + (u >> 10), big_endian)
+            _unit(&out, 0xDC00 + (u & 0x3FF), big_endian)
+        i += w
+    return Ok(to_bytes(out))
+
+fn encode(s: string) -> Result(bytes, Utf16Err):
+    return _encode(s, false, false)
+
+fn encode_be(s: string) -> Result(bytes, Utf16Err):
+    return _encode(s, true, false)
+
+fn encode_bom(s: string, big_endian: bool) -> Result(bytes, Utf16Err):
+    return _encode(s, big_endian, true)
+
+fn _read_unit(b: bytes, at: int, big_endian: bool) -> int:
+    if big_endian:
+        return (b[at] << 8) | b[at + 1]
+    return b[at] | (b[at + 1] << 8)
+
+fn _decode(b: bytes, big_endian: bool, auto_bom: bool) -> Result(string, Utf16Err):
+    if len(b) % 2 != 0:
+        return Err(OddLength)
+    i := 0
+    if len(b) >= 2:
+        u := _read_unit(b, 0, big_endian)
+        if u == 0xFEFF:
+            i = 2
+        elif auto_bom and u == 0xFFFE:
+            big_endian = not big_endian
+            i = 2
+    out := ""
+    for i < len(b):
+        u := _read_unit(b, i, big_endian)
+        if u >= 0xD800 and u <= 0xDBFF:
+            if i + 4 > len(b):
+                return Err(BadSurrogate)
+            lo := _read_unit(b, i + 2, big_endian)
+            if lo < 0xDC00 or lo > 0xDFFF:
+                return Err(BadSurrogate)
+            cp := 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00)
+            out = out + utf8.encode(cp)
+            i += 4
+        elif u >= 0xDC00 and u <= 0xDFFF:
+            return Err(BadSurrogate)
+        else:
+            out = out + utf8.encode(u)
+            i += 2
+    return Ok(out)
+
+# BOM-aware: a leading FEFF selects big-endian, FFFE little-endian, and no BOM
+# means little-endian. The BOM itself is not part of the text.
+fn decode(b: bytes) -> Result(string, Utf16Err):
+    return _decode(b, false, true)
+
+fn decode_be(b: bytes) -> Result(string, Utf16Err):
+    return _decode(b, true, false)

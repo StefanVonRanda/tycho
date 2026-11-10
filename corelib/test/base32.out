@@ -1,0 +1,17 @@
+enc []= nopad=
+enc [f]=MY====== nopad=MY
+enc [fo]=MZXQ==== nopad=MZXQ
+enc [foo]=MZXW6=== nopad=MZXW6
+enc [foob]=MZXW6YQ= nopad=MZXW6YQ
+enc [fooba]=MZXW6YTB nopad=MZXW6YTB
+enc [foobar]=MZXW6YTBOI====== nopad=MZXW6YTBOI
+dec MY------=66
+dec MZXQ=====666f
+dec MZXW6====666f6f
+dec MZXW6YTB=666f6f6261
+dec MZXW6YTBOI======666f6f626172
+nopad MY=66
+badchar=BadChar
+badlen=BadLength
+badpad=BadLength
+badbits=BadPadding

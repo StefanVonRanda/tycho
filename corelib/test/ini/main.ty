@@ -1,0 +1,41 @@
+package main
+
+import "core:ini"
+fn join(xs: [string]) -> string:
+    out := ""
+    for x in xs:
+        if len(out) > 0:
+            out = out + ","
+        out = out + x
+    return out
+
+fn show(r: Result(ini.Document, ini.IniErr)) -> string:
+    match r:
+        Ok(d): return "Ok[" + join(ini.section_names(d)) + "]"
+        Err(ini.BadLine(n)): return "BadLine(" + str(n) + ")"
+        Err(ini.BadSection(n)): return "BadSection(" + str(n) + ")"
+
+fn showv(o: Option(string)) -> string:
+    match o:
+        Some(v): return v
+        None: return "none"
+
+fn main():
+    src := "; comment\nname = tycho\nempty =   \n[server]\nhost = localhost\nport=8080\n[quoted]\npath = \"a b\"\ncolor: blue\n[server]\nport = 9090\n"
+    r := ini.parse(src)
+    println("parse=" + show(r))
+    match r:
+        Ok(d):
+            println("default name=" + showv(ini.get(d, "", "name")) + " empty=[" + showv(ini.get(d, "", "empty")) + "]")
+            println("server host=" + showv(ini.get(d, "server", "host")) + " port=" + showv(ini.get(d, "server", "port")) + " has=" + str(ini.has(d, "server", "host")))
+            println("quoted path=" + showv(ini.get(d, "quoted", "path")) + " color=" + showv(ini.get(d, "quoted", "color")))
+            println("missing=" + showv(ini.get(d, "nope", "x")))
+            println("render=[\n" + ini.render(d) + "]")
+        Err(_):
+            pass
+    println("spaces=" + show(ini.parse("  [ a b ]  \n k = v \n")))
+    println("empty=" + show(ini.parse("")))
+    println("badline=" + show(ini.parse("just a key")))
+    println("badsection=" + show(ini.parse("[]\n")))
+    println("badclose=" + show(ini.parse("[x\n")))
+    println("emptykey=" + show(ini.parse("= value\n")))

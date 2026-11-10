@@ -1,0 +1,69 @@
+package endian
+
+enum EndianErr:
+    Short                  # fewer bytes than the requested width
+
+fn _has(b: bytes, at: int, n: int) -> bool:
+    return at >= 0 and at + n <= len(b)
+
+fn get_u16_le(b: bytes, at: int) -> Result(u16, EndianErr):
+    if not _has(b, at, 2):
+        return Err(Short)
+    return Ok(to_u16(b[at]) | (to_u16(b[at + 1]) << 8))
+
+fn get_u16_be(b: bytes, at: int) -> Result(u16, EndianErr):
+    if not _has(b, at, 2):
+        return Err(Short)
+    return Ok((to_u16(b[at]) << 8) | to_u16(b[at + 1]))
+
+fn get_u32_le(b: bytes, at: int) -> Result(u32, EndianErr):
+    if not _has(b, at, 4):
+        return Err(Short)
+    v := to_u32(b[at]) | (to_u32(b[at + 1]) << 8) | (to_u32(b[at + 2]) << 16) | (to_u32(b[at + 3]) << 24)
+    return Ok(v)
+
+fn get_u32_be(b: bytes, at: int) -> Result(u32, EndianErr):
+    if not _has(b, at, 4):
+        return Err(Short)
+    v := (to_u32(b[at]) << 24) | (to_u32(b[at + 1]) << 16) | (to_u32(b[at + 2]) << 8) | to_u32(b[at + 3])
+    return Ok(v)
+
+fn get_u64_le(b: bytes, at: int) -> Result(u64, EndianErr):
+    if not _has(b, at, 8):
+        return Err(Short)
+    v := to_u64(b[at]) | (to_u64(b[at + 1]) << 8) | (to_u64(b[at + 2]) << 16) | (to_u64(b[at + 3]) << 24) |
+         (to_u64(b[at + 4]) << 32) | (to_u64(b[at + 5]) << 40) | (to_u64(b[at + 6]) << 48) | (to_u64(b[at + 7]) << 56)
+    return Ok(v)
+
+fn get_u64_be(b: bytes, at: int) -> Result(u64, EndianErr):
+    if not _has(b, at, 8):
+        return Err(Short)
+    v := (to_u64(b[at]) << 56) | (to_u64(b[at + 1]) << 48) | (to_u64(b[at + 2]) << 40) | (to_u64(b[at + 3]) << 32) |
+         (to_u64(b[at + 4]) << 24) | (to_u64(b[at + 5]) << 16) | (to_u64(b[at + 6]) << 8) | to_u64(b[at + 7])
+    return Ok(v)
+
+fn put_u16_le(v: u16) -> bytes:
+    n := to_int(v)
+    return to_bytes([n & 255, (n >> 8) & 255])
+
+fn put_u16_be(v: u16) -> bytes:
+    n := to_int(v)
+    return to_bytes([(n >> 8) & 255, n & 255])
+
+fn put_u32_le(v: u32) -> bytes:
+    n := to_int(v)
+    return to_bytes([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255])
+
+fn put_u32_be(v: u32) -> bytes:
+    n := to_int(v)
+    return to_bytes([(n >> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, n & 255])
+
+fn put_u64_le(v: u64) -> bytes:
+    n := to_u64(v)
+    return to_bytes([to_int(n & 255), to_int((n >> 8) & 255), to_int((n >> 16) & 255), to_int((n >> 24) & 255),
+                     to_int((n >> 32) & 255), to_int((n >> 40) & 255), to_int((n >> 48) & 255), to_int((n >> 56) & 255)])
+
+fn put_u64_be(v: u64) -> bytes:
+    n := to_u64(v)
+    return to_bytes([to_int((n >> 56) & 255), to_int((n >> 48) & 255), to_int((n >> 40) & 255), to_int((n >> 32) & 255),
+                     to_int((n >> 24) & 255), to_int((n >> 16) & 255), to_int((n >> 8) & 255), to_int(n & 255)])

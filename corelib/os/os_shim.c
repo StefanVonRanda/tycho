@@ -681,3 +681,80 @@ tycho_int osx_is_windows(void) {
     return 0;
 #endif
 }
+
+char *osx_env_get(const char *name) {
+    return getenv(name);
+}
+
+tycho_int osx_env_set(const char *name, const char *value) {
+#ifdef _WIN32
+    return _putenv_s(name, value) == 0 ? 0 : -1;
+#else
+    return setenv(name, value, 1) == 0 ? 0 : -1;
+#endif
+}
+
+tycho_int osx_env_unset(const char *name) {
+#ifdef _WIN32
+    return _putenv_s(name, "") == 0 ? 0 : -1;
+#else
+    return unsetenv(name) == 0 ? 0 : -1;
+#endif
+}
+
+/* Thread-local so concurrent cwd/hostname calls cannot overwrite each other.
+ * The Tycho boundary copies the answer immediately. */
+static _Thread_local char ty_os_cwd[8192];
+static _Thread_local char ty_os_host[1024];
+
+char *osx_cwd(void) {
+#ifdef _WIN32
+    DWORD n = GetCurrentDirectoryA((DWORD)sizeof ty_os_cwd, ty_os_cwd);
+    if (n == 0 || n >= sizeof ty_os_cwd) return NULL;
+#else
+    if (!getcwd(ty_os_cwd, sizeof ty_os_cwd)) return NULL;
+#endif
+    return ty_os_cwd;
+}
+
+tycho_int osx_chdir(const char *p) {
+#ifdef _WIN32
+    if (SetCurrentDirectoryA(p)) return 0;
+    switch (GetLastError()) {
+        case ERROR_FILE_NOT_FOUND:
+        case ERROR_PATH_NOT_FOUND: return 1;
+        case ERROR_ACCESS_DENIED:  return 2;
+        case ERROR_DIRECTORY:      return 3;
+        default:                   return 4;
+    }
+#else
+    if (chdir(p) == 0) return 0;
+    switch (errno) {
+        case ENOENT:  return 1;
+        case EACCES:
+        case EPERM:   return 2;
+        case ENOTDIR: return 3;
+        default:      return 4;
+    }
+#endif
+}
+
+tycho_int osx_pid(void) {
+#ifdef _WIN32
+    return (tycho_int)_getpid();
+#else
+    return (tycho_int)getpid();
+#endif
+}
+
+char *osx_hostname(void) {
+#ifdef _WIN32
+    DWORD n = (DWORD)sizeof ty_os_host;
+    if (!GetComputerNameA(ty_os_host, &n)) return NULL;
+    ty_os_host[n < sizeof ty_os_host ? n : sizeof ty_os_host - 1] = 0;
+#else
+    if (gethostname(ty_os_host, sizeof ty_os_host - 1) != 0) return NULL;
+    ty_os_host[sizeof ty_os_host - 1] = 0;
+#endif
+    return ty_os_host;
+}

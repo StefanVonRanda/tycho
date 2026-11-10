@@ -49,6 +49,8 @@ measurements, and they assume you already know the codebase.
 
 ## Active plans
 
+- [`corelib-parity.md`](corelib-parity.md) — Odin `core` capability map, the
+  explicit non-goals, and the staged order for closing the gaps.
 - [`plan-value-storage-places.md`](plan-value-storage-places.md) — storage reuse,
   the `inout` append fix, and follow-up evidence/documentation corrections.
 

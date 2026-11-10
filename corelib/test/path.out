@@ -21,3 +21,5 @@ real_checked ok=Ok missing=NotFound nul=BadPath real_missing_len=0
 resolve_under_checked ok=Ok missing=Ok escape=BadPath nul=BadPath badbase=NotFound
 quote space=['a b'] quote=['a'\''b'] empty=[''] tab=['a	b']
 quote newline_len=5 wrapped=1
+relative same=[.] child=[c] parent=[..] sibling=[../c] rel=[../c]
+relative root=[a] empty=[a] toempty=[..] mixed=[a] clean=[../d] dot=[.]

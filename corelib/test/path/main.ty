@@ -129,3 +129,18 @@ fn main():
     q5 := path.quote("a" + chr(10) + "b")
     println(f"quote space=[{q1}] quote=[{q2}] empty=[{q3}] tab=[{q4}]")
     println(f"quote newline_len={len(q5)} wrapped={b2i(q5[0] == 39 and q5[len(q5) - 1] == 39)}")
+
+    # ---- relative: lexical, common-prefix removal, ".." for the rest ----
+    rl1 := path.relative("/a/b", "/a/b")
+    rl2 := path.relative("/a/b", "/a/b/c")
+    rl3 := path.relative("/a/b/c", "/a/b")
+    rl4 := path.relative("/a/b", "/a/c")
+    rl5 := path.relative("a/b", "a/c")
+    rl6 := path.relative("/", "/a")
+    rl7 := path.relative("", "a")
+    rl8 := path.relative("a", "")
+    rl9 := path.relative("/a", "a")
+    rl10 := path.relative("/a/b/../c", "/a/d")
+    rl11 := path.relative("a/./b", "a/b")
+    println(f"relative same=[{rl1}] child=[{rl2}] parent=[{rl3}] sibling=[{rl4}] rel=[{rl5}]")
+    println(f"relative root=[{rl6}] empty=[{rl7}] toempty=[{rl8}] mixed=[{rl9}] clean=[{rl10}] dot=[{rl11}]")

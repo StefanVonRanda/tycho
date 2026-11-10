@@ -1,0 +1,160 @@
+package main
+
+import "core:container"
+import "core:strings"
+
+fn lt(a: int, b: int) -> bool:
+    return a < b
+
+fn gt(a: int, b: int) -> bool:
+    return a > b
+
+fn show_i(o: Option(int)) -> string:
+    match o:
+        Some(v):
+            return str(v)
+        None:
+            return "none"
+
+fn show_s(o: Option(string)) -> string:
+    match o:
+        Some(v):
+            return v
+        None:
+            return "none"
+
+fn joined(xs: [string]) -> string:
+    s := ""
+    for x in xs:
+        if len(s) > 0:
+            s = s + " "
+        s = s + x
+    return s
+
+fn main():
+    d := container.make_deque$(int)()
+    container.deque_push_back(&d, 2)
+    container.deque_push_back(&d, 3)
+    container.deque_push_front(&d, 1)
+    front := container.deque_peek_front(d)
+    back := container.deque_peek_back(d)
+    mid := container.deque_get(d, 1)
+    println("deque: len=" + str(container.deque_len(d)) + " front=" + show_i(front) + " back=" + show_i(back) + " at1=" + show_i(mid))
+    pf := container.deque_pop_front(&d)
+    pb := container.deque_pop_back(&d)
+    left := container.deque_peek_front(d)
+    println("deque pop front=" + show_i(pf) + " pop back=" + show_i(pb) + " left=" + show_i(left))
+    container.deque_push_front(&d, 0)
+    pb2 := container.deque_pop_back(&d)
+    pf2 := container.deque_pop_front(&d)
+    empty := container.deque_empty(d)
+    println("deque pop back=" + show_i(pb2) + " pop front=" + show_i(pf2) + " empty=" + str(empty))
+    oor := container.deque_get(d, 3)
+    println("deque out of range=" + show_i(oor))
+    container.deque_clear(&d)
+    println("deque cleared len=" + str(container.deque_len(d)))
+
+    q := container.make_queue$(int)()
+    container.queue_push(&q, 10)
+    container.queue_push(&q, 20)
+    qp := container.queue_pop(&q)
+    qk := container.queue_peek(q)
+    qn := container.queue_len(q)
+    println("queue: pop=" + show_i(qp) + " peek=" + show_i(qk) + " len=" + str(qn))
+    container.queue_clear(&q)
+    qp2 := container.queue_pop(&q)
+    println("queue: pop=" + show_i(qp2) + " empty=" + str(container.queue_empty(q)))
+
+    h := container.make_heap(lt)
+    for v in [5, 1, 3, 1, 4]:
+        container.heap_push(&h, v)
+    out := ""
+    for not container.heap_empty(h):
+        out = out + show_i(container.heap_pop(&h)) + " "
+    hp := container.heap_peek(h)
+    println("min-heap: " + strings.trim(out) + " peek=" + show_i(hp))
+    m := container.make_heap(gt)
+    for v in [5, 1, 3]:
+        container.heap_push(&m, v)
+    m1 := container.heap_pop(&m)
+    m2 := container.heap_pop(&m)
+    m3 := container.heap_pop(&m)
+    println("max-heap: " + show_i(m1) + " " + show_i(m2) + " " + show_i(m3))
+    h2 := container.heap_from([5, 1, 4, 2, 3], lt)
+    out = ""
+    for not container.heap_empty(h2):
+        out = out + show_i(container.heap_pop(&h2)) + " "
+    println("heapify: " + strings.trim(out))
+
+    b := container.make_bits(70)
+    for i in [0, 5, 63, 64, 69]:
+        container.bits_set(&b, i)
+    c0 := container.bits_count(b)
+    g5 := container.bits_get(b, 5)
+    g6 := container.bits_get(b, 6)
+    g64 := container.bits_get(b, 64)
+    println("bits: len=" + str(container.bits_len(b)) + " count=" + str(c0) + " get5=" + str(g5) + " get6=" + str(g6) + " get64=" + str(g64))
+    container.bits_toggle(&b, 5)
+    c1 := container.bits_count(b)
+    g5b := container.bits_get(b, 5)
+    println("bits toggle5: count=" + str(c1) + " get5=" + str(g5b))
+    container.bits_toggle(&b, 5)
+    container.bits_clear(&b, 0)
+    c2 := container.bits_count(b)
+    any2 := container.bits_any(b)
+    println("bits clear0: count=" + str(c2) + " any=" + str(any2))
+    container.bits_resize(&b, 64)
+    c3 := container.bits_count(b)
+    g63 := container.bits_get(b, 63)
+    println("bits resize64: len=" + str(container.bits_len(b)) + " count=" + str(c3) + " get63=" + str(g63))
+    container.bits_resize(&b, 70)
+    c4 := container.bits_count(b)
+    g64b := container.bits_get(b, 64)
+    println("bits resize70: len=" + str(container.bits_len(b)) + " count=" + str(c4) + " get64=" + str(g64b))
+    emptyb := container.make_bits(0)
+    println("bits empty: len=" + str(container.bits_len(emptyb)) + " none=" + str(container.bits_none(emptyb)))
+
+    l := container.make_lru$(string, int)(3)
+    container.lru_put(&l, "a", 1)
+    container.lru_put(&l, "b", 2)
+    container.lru_put(&l, "c", 3)
+    ka := container.lru_keys(l)
+    ga := container.lru_get(&l, "a")
+    println("lru: keys=" + joined(ka) + " a=" + show_i(ga))
+    ka2 := container.lru_keys(l)
+    println("lru after get a: keys=" + joined(ka2))
+    container.lru_put(&l, "d", 4)
+    ka3 := container.lru_keys(l)
+    has_b := container.lru_contains(l, "b")
+    ln := container.lru_len(l)
+    println("lru after put d: keys=" + joined(ka3) + " has_b=" + str(has_b) + " len=" + str(ln))
+    pc := container.lru_peek(l, "c")
+    ka4 := container.lru_keys(l)
+    println("lru peek c=" + show_i(pc) + " keys=" + joined(ka4))
+    container.lru_put(&l, "c", 30)
+    ka5 := container.lru_keys(l)
+    pc2 := container.lru_peek(l, "c")
+    println("lru update c: keys=" + joined(ka5) + " c=" + show_i(pc2))
+    rd := container.lru_remove(&l, "d")
+    rd2 := container.lru_remove(&l, "d")
+    ka6 := container.lru_keys(l)
+    println("lru remove d=" + str(rd) + " again=" + str(rd2) + " keys=" + joined(ka6))
+    container.lru_put(&l, "e", 5)
+    container.lru_put(&l, "f", 6)
+    ka7 := container.lru_keys(l)
+    println("lru refill: keys=" + joined(ka7) + " cap=" + str(container.lru_cap(l)))
+    container.lru_clear(&l)
+    ka8 := container.lru_keys(l)
+    println("lru clear: len=" + str(container.lru_len(l)) + " empty=" + str(container.lru_empty(l)) + " keys=" + joined(ka8))
+    container.lru_put(&l, "z", 26)
+    gz := container.lru_get(&l, "z")
+    println("lru after clear put: " + show_i(gz))
+
+    li := container.make_lru$(int, string)(1)
+    container.lru_put(&li, 7, "seven")
+    g7 := container.lru_get(&li, 7)
+    println("int-key lru: get7=" + show_s(g7))
+    container.lru_put(&li, 8, "eight")
+    h7 := container.lru_contains(li, 7)
+    g8 := container.lru_get(&li, 8)
+    println("int-key lru: has7=" + str(h7) + " get8=" + show_s(g8))

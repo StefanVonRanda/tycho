@@ -68,3 +68,6 @@ padR2B =[xabab] 5
 pad3B  =[abcx] 4
 padWide=[hello] 5
 padNone=[x] 1
+base fmt=ff,FF,-FF,101,0
+base parse=ok:255,ok:-255,ok:5,Garbage,Empty,OutOfRange
+float fmt=[3.14][-0.5][1][1234.50]

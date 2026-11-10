@@ -1,0 +1,39 @@
+package main
+
+import "core:endian"
+import "core:hex"
+
+fn show16(r: Result(u16, endian.EndianErr)) -> string:
+    match r:
+        Ok(v): return str(to_int(v))
+        Err(endian.Short): return "Short"
+
+fn show32(r: Result(u32, endian.EndianErr)) -> string:
+    match r:
+        Ok(v): return str(to_int(v))
+        Err(endian.Short): return "Short"
+
+fn show64(r: Result(u64, endian.EndianErr)) -> string:
+    match r:
+        Ok(v): return str(to_int(v))
+        Err(endian.Short): return "Short"
+
+fn main():
+    le16 := endian.put_u16_le(to_u16(0x1234))
+    be16 := endian.put_u16_be(to_u16(0x1234))
+    println("u16 le=" + hex.encode(to_str(le16)) + " be=" + hex.encode(to_str(be16)))
+    println("u16 get le=" + show16(endian.get_u16_le(le16, 0)) + " be=" + show16(endian.get_u16_be(be16, 0)))
+
+    le32 := endian.put_u32_le(to_u32(0x01020304))
+    be32 := endian.put_u32_be(to_u32(0x01020304))
+    println("u32 le=" + hex.encode(to_str(le32)) + " be=" + hex.encode(to_str(be32)))
+    println("u32 get le=" + show32(endian.get_u32_le(le32, 0)) + " be=" + show32(endian.get_u32_be(be32, 0)))
+
+    le64 := endian.put_u64_le(to_u64(0x0102030405060708))
+    be64 := endian.put_u64_be(to_u64(0x0102030405060708))
+    println("u64 le=" + hex.encode(to_str(le64)) + " be=" + hex.encode(to_str(be64)))
+    println("u64 get le=" + show64(endian.get_u64_le(le64, 0)) + " be=" + show64(endian.get_u64_be(be64, 0)))
+
+    padded := to_bytes([255]) + le16
+    println("offset get=" + show16(endian.get_u16_le(padded, 1)))
+    println("short u16=" + show16(endian.get_u16_le(to_bytes([1]), 0)) + " u32=" + show32(endian.get_u32_le(to_bytes([1, 2, 3]), 0)) + " u64=" + show64(endian.get_u64_le(to_bytes([1, 2, 3, 4, 5, 6, 7]), 0)))

@@ -121,6 +121,51 @@ fn clean(p: string) -> string:
         return "."
     return r
 
+fn _parts(p: string) -> [string]:
+    out := []string
+    if len(p) == 0 or p == ".":
+        return out
+    raw := split(p, "/")
+    for seg in raw:
+        if len(seg) > 0 and seg != ".":
+            push(out, seg)
+    return out
+
+# Lexical relative path from `base` to `target`: both are cleaned first, common
+# leading segments are dropped, and each remaining base segment becomes "..".
+# Pure string math -- it does not resolve symlinks and does not require either
+# path to exist. A mixed absolute/relative pair returns the cleaned target
+# unchanged, because no relative answer spans two roots.
+#   ("/a/b","/a/b/c")->"c"  ("/a/b/c","/a/b")->".."  ("/a/b","/a/c")->"../c"
+fn relative(base: string, target: string) -> string:
+    b := clean(base)
+    t := clean(target)
+    if b == t:
+        return "."
+    if is_abs(b) != is_abs(t):
+        return t
+    bp := _parts(b)
+    tp := _parts(t)
+    i := 0
+    for i < len(bp) and i < len(tp) and bp[i] == tp[i]:
+        i += 1
+    out := ""
+    j := i
+    for j < len(bp):
+        if len(out) > 0:
+            out = out + "/"
+        out = out + ".."
+        j += 1
+    j = i
+    for j < len(tp):
+        if len(out) > 0:
+            out = out + "/"
+        out = out + tp[j]
+        j += 1
+    if len(out) == 0:
+        return "."
+    return out
+
 # Safely join an UNTRUSTED relative segment `rel` under a trusted `base`.
 # safe_join returns the cleaned joined path when `rel` stays within `base`, or
 # "" when it is refused. safe_join_checked returns Ok(path) or Err(BadPath) for

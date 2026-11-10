@@ -1,0 +1,241 @@
+package sync
+
+import "core:time"
+
+# ---- shim externs (pthreads / Win32; defined in sync_shim.c) ----
+extern fn syncx_atomic_int_new(v: int) -> ptr
+extern fn syncx_atomic_int_free(p: ptr)
+extern fn syncx_atomic_int_load(p: ptr) -> int
+extern fn syncx_atomic_int_store(p: ptr, v: int)
+extern fn syncx_atomic_int_add(p: ptr, v: int) -> int
+extern fn syncx_atomic_int_sub(p: ptr, v: int) -> int
+extern fn syncx_atomic_int_swap(p: ptr, v: int) -> int
+extern fn syncx_atomic_int_cas(p: ptr, expected: int, desired: int) -> int
+extern fn syncx_atomic_int_compare_swap(p: ptr, expected: int, desired: int) -> int
+
+extern fn syncx_atomic_bool_new(v: int) -> ptr
+extern fn syncx_atomic_bool_free(p: ptr)
+extern fn syncx_atomic_bool_load(p: ptr) -> int
+extern fn syncx_atomic_bool_store(p: ptr, v: int)
+extern fn syncx_atomic_bool_swap(p: ptr, v: int) -> int
+extern fn syncx_atomic_bool_cas(p: ptr, expected: int, desired: int) -> int
+
+extern fn syncx_mutex_new() -> ptr
+extern fn syncx_mutex_free(m: ptr) -> int
+extern fn syncx_mutex_lock(m: ptr) -> int
+extern fn syncx_mutex_trylock(m: ptr) -> int
+extern fn syncx_mutex_unlock(m: ptr) -> int
+
+extern fn syncx_rwlock_new() -> ptr
+extern fn syncx_rwlock_free(r: ptr) -> int
+extern fn syncx_rwlock_read_lock(r: ptr) -> int
+extern fn syncx_rwlock_try_read_lock(r: ptr) -> int
+extern fn syncx_rwlock_read_unlock(r: ptr) -> int
+extern fn syncx_rwlock_write_lock(r: ptr) -> int
+extern fn syncx_rwlock_try_write_lock(r: ptr) -> int
+extern fn syncx_rwlock_write_unlock(r: ptr) -> int
+
+extern fn syncx_waitgroup_new() -> ptr
+extern fn syncx_waitgroup_free(w: ptr) -> int
+extern fn syncx_waitgroup_add(w: ptr, n: int) -> int
+extern fn syncx_waitgroup_done(w: ptr) -> int
+extern fn syncx_waitgroup_wait(w: ptr) -> int
+
+# All operations are sequentially consistent. Every object is a C-owned `ptr`
+# with an explicit `*_free`; free only after every task that uses it is joined.
+
+fn _need(p: ptr, who: string):
+    if is_null(p):
+        die("sync." + who + ": null handle (the constructor failed)")
+
+fn atomic_int_new(v: int) -> ptr:
+    return syncx_atomic_int_new(v)
+
+fn atomic_int_free(p: ptr):
+    syncx_atomic_int_free(p)
+
+fn atomic_int_load(p: ptr) -> int:
+    _need(p, "atomic_int_load")
+    return syncx_atomic_int_load(p)
+
+fn atomic_int_store(p: ptr, v: int):
+    _need(p, "atomic_int_store")
+    syncx_atomic_int_store(p, v)
+
+# Add and return the NEW value.
+fn atomic_int_add(p: ptr, v: int) -> int:
+    _need(p, "atomic_int_add")
+    return syncx_atomic_int_add(p, v)
+
+# Subtract and return the NEW value.
+fn atomic_int_sub(p: ptr, v: int) -> int:
+    _need(p, "atomic_int_sub")
+    return syncx_atomic_int_sub(p, v)
+
+# Replace and return the OLD value.
+fn atomic_int_swap(p: ptr, v: int) -> int:
+    _need(p, "atomic_int_swap")
+    return syncx_atomic_int_swap(p, v)
+
+# True when the value was `expected` and is now `desired`.
+fn atomic_int_cas(p: ptr, expected: int, desired: int) -> bool:
+    _need(p, "atomic_int_cas")
+    return syncx_atomic_int_cas(p, expected, desired) == 1
+
+# Store `desired` when the value is still `expected`; returns the value observed
+# at the exchange attempt. A CAS loop reads the old value whether it won or lost.
+fn atomic_int_compare_swap(p: ptr, expected: int, desired: int) -> int:
+    _need(p, "atomic_int_compare_swap")
+    return syncx_atomic_int_compare_swap(p, expected, desired)
+
+fn atomic_bool_new(v: bool) -> ptr:
+    if v:
+        return syncx_atomic_bool_new(1)
+    return syncx_atomic_bool_new(0)
+
+fn atomic_bool_free(p: ptr):
+    syncx_atomic_bool_free(p)
+
+fn atomic_bool_load(p: ptr) -> bool:
+    _need(p, "atomic_bool_load")
+    return syncx_atomic_bool_load(p) == 1
+
+fn atomic_bool_store(p: ptr, v: bool):
+    _need(p, "atomic_bool_store")
+    if v:
+        syncx_atomic_bool_store(p, 1)
+    else:
+        syncx_atomic_bool_store(p, 0)
+
+# Replace and return the OLD value.
+fn atomic_bool_swap(p: ptr, v: bool) -> bool:
+    _need(p, "atomic_bool_swap")
+    if v:
+        return syncx_atomic_bool_swap(p, 1) == 1
+    return syncx_atomic_bool_swap(p, 0) == 1
+
+fn atomic_bool_cas(p: ptr, expected: bool, desired: bool) -> bool:
+    _need(p, "atomic_bool_cas")
+    e := 0
+    if expected:
+        e = 1
+    d := 0
+    if desired:
+        d = 1
+    return syncx_atomic_bool_cas(p, e, d) == 1
+
+fn mutex_new() -> ptr:
+    return syncx_mutex_new()
+
+# Fails closed on a still-locked or still-borrowed mutex.
+fn mutex_free(m: ptr):
+    if is_null(m):
+        return
+    if syncx_mutex_free(m) != 0:
+        die("sync.mutex_free: mutex is locked; unlock it and join its users first")
+
+fn mutex_lock(m: ptr):
+    _need(m, "mutex_lock")
+    if syncx_mutex_lock(m) != 0:
+        die("sync.mutex_lock: the platform lock failed")
+
+fn mutex_try_lock(m: ptr) -> bool:
+    _need(m, "mutex_try_lock")
+    return syncx_mutex_trylock(m) == 1
+
+fn mutex_unlock(m: ptr):
+    _need(m, "mutex_unlock")
+    if syncx_mutex_unlock(m) != 0:
+        die("sync.mutex_unlock: the mutex is not held by this thread")
+
+fn rwlock_new() -> ptr:
+    return syncx_rwlock_new()
+
+fn rwlock_free(r: ptr):
+    if is_null(r):
+        return
+    if syncx_rwlock_free(r) != 0:
+        die("sync.rwlock_free: rwlock is held; unlock it and join its users first")
+
+fn rwlock_read_lock(r: ptr):
+    _need(r, "rwlock_read_lock")
+    if syncx_rwlock_read_lock(r) != 0:
+        die("sync.rwlock_read_lock: the platform lock failed")
+
+fn rwlock_try_read_lock(r: ptr) -> bool:
+    _need(r, "rwlock_try_read_lock")
+    return syncx_rwlock_try_read_lock(r) == 1
+
+fn rwlock_read_unlock(r: ptr):
+    _need(r, "rwlock_read_unlock")
+    if syncx_rwlock_read_unlock(r) != 0:
+        die("sync.rwlock_read_unlock: the read lock is not held")
+
+fn rwlock_write_lock(r: ptr):
+    _need(r, "rwlock_write_lock")
+    if syncx_rwlock_write_lock(r) != 0:
+        die("sync.rwlock_write_lock: the platform lock failed")
+
+fn rwlock_try_write_lock(r: ptr) -> bool:
+    _need(r, "rwlock_try_write_lock")
+    return syncx_rwlock_try_write_lock(r) == 1
+
+fn rwlock_write_unlock(r: ptr):
+    _need(r, "rwlock_write_unlock")
+    if syncx_rwlock_write_unlock(r) != 0:
+        die("sync.rwlock_write_unlock: the write lock is not held")
+
+fn waitgroup_new() -> ptr:
+    return syncx_waitgroup_new()
+
+fn waitgroup_free(w: ptr):
+    if is_null(w):
+        return
+    if syncx_waitgroup_free(w) != 0:
+        die("sync.waitgroup_free: waiters are still blocked")
+
+# Raise the counter. Negative is refused; a zero add is a no-op.
+fn waitgroup_add(w: ptr, n: int):
+    _need(w, "waitgroup_add")
+    if n < 0:
+        die("sync.waitgroup_add: negative count " + str(n))
+    if syncx_waitgroup_add(w, n) != 0:
+        die("sync.waitgroup_add: the platform wait group failed")
+
+# Lower the counter by one; the last done releases every waiter.
+fn waitgroup_done(w: ptr):
+    _need(w, "waitgroup_done")
+    if syncx_waitgroup_done(w) != 0:
+        die("sync.waitgroup_done: counter is already zero (more done than add)")
+
+fn waitgroup_wait(w: ptr):
+    _need(w, "waitgroup_wait")
+    if syncx_waitgroup_wait(w) != 0:
+        die("sync.waitgroup_wait: the platform wait failed")
+
+# A one-shot object: the first caller runs `f`, every later caller waits for it
+# to finish and returns without running `f` again.
+fn once_new() -> ptr:
+    return atomic_int_new(0)
+
+fn once_free(o: ptr):
+    atomic_int_free(o)
+
+fn once_done(o: ptr) -> bool:
+    if is_null(o):
+        return false
+    return atomic_int_load(o) == 2
+
+# Blocks while another task runs `f`; `f` must not call `once_do` on the same
+# object. The 1 ms park keeps a loser from burning a worker while it waits.
+fn once_do(o: ptr, f: fn()):
+    _need(o, "once_do")
+    for true:
+        state := atomic_int_load(o)
+        if state == 2:
+            return
+        if state == 0 and atomic_int_cas(o, 0, 1):
+            f()
+            atomic_int_store(o, 2)
+            return
+        time.sleep_ms(1)

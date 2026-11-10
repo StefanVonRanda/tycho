@@ -149,6 +149,26 @@ const char *strx_format_g17(double v) {
     return b;
 }
 
+const char *strx_format_fixed(double v, tycho_int digits) {
+    static _Thread_local char b[512];
+    int m;
+
+    if (digits < 0) digits = 0;
+    if (digits > 17) digits = 17;
+#ifdef TY_HAVE_STRTOD_L
+    pthread_once(&ty_c_numeric_once, ty_c_numeric_init);
+    if (ty_c_numeric) {
+        locale_t prev = uselocale(ty_c_numeric);
+        snprintf(b, sizeof b, "%.*f", (int)digits, v);
+        uselocale(prev);
+        return b;
+    }
+#endif
+    m = snprintf(b, sizeof b, "%.*f", (int)digits, v);
+    if (m > 0 && (size_t)m < sizeof b) ty_fix_decimal_point(b, m);
+    return b;
+}
+
 tycho_int strx_test_make_locale_hostile(void) {
     static const char *cands[] = { "", "da_DK.UTF-8", "da_DK.utf8", "da_DK",
                                    "de_DE.UTF-8", "fr_FR.UTF-8",

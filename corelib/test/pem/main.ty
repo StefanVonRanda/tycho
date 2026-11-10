@@ -1,0 +1,32 @@
+package main
+
+import "core:pem"
+
+fn show(r: Result(pem.Block, pem.PemErr)) -> string:
+    match r:
+        Ok(b): return b.label + ":" + to_str(b.data)
+        Err(pem.NoBlock): return "NoBlock"
+        Err(pem.Unterminated): return "Unterminated"
+        Err(pem.BadLabel): return "BadLabel"
+        Err(pem.BadBase64): return "BadBase64"
+
+fn main():
+    e := pem.encode("TEST", to_bytes("hello"))
+    println("encoded=[\n" + e + "]")
+    println("decoded=" + show(pem.decode(e)))
+    println("preamble=" + show(pem.decode("ignored text\n" + e + "trailing")))
+    println("empty=" + show(pem.decode(pem.encode("EMPTY", to_bytes("")))))
+    big := ""
+    i := 0
+    for i < 100:
+        big = big + chr(65 + (i % 26))
+        i += 1
+    println("big=" + show(pem.decode(pem.encode("BIG", to_bytes(big)))) + " len=" + str(len(pem.encode("BIG", to_bytes(big)))))
+    println("noblock=" + show(pem.decode("not a pem file")))
+    unterminated := "-----BEGIN X-----\nAAAA\n"
+    println("unterminated=" + show(pem.decode(unterminated)))
+    mismatched := "-----BEGIN X-----\nAAAA\n-----END Y-----\n"
+    println("mismatch=" + show(pem.decode(mismatched)))
+    bad := "-----BEGIN X-----\n!!!!\n-----END X-----\n"
+    println("badb64=" + show(pem.decode(bad)))
+    println("longlabel=" + show(pem.decode(pem.encode("A B", to_bytes("x")))))

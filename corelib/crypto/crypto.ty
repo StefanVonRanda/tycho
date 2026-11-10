@@ -10,7 +10,15 @@ extern fn cx_key_free(k: ptr)
 extern fn cx_random_hex(n: int) -> string
 extern fn cx_sha256_hex(msg_hex: string) -> string
 extern fn cx_sha512_hex(msg_hex: string) -> string
+extern fn cx_sha3_256_hex(msg_hex: string) -> string
+extern fn cx_sha3_512_hex(msg_hex: string) -> string
+extern fn cx_shake128_hex(msg_hex: string, outlen: int) -> string
+extern fn cx_shake256_hex(msg_hex: string, outlen: int) -> string
+extern fn cx_blake2b_hex(msg_hex: string) -> string
+extern fn cx_blake2s_hex(msg_hex: string) -> string
 extern fn cx_hmac_sha256_hex(k: ptr, msg_hex: string) -> string
+extern fn cx_hmac_sha512_hex(k: ptr, msg_hex: string) -> string
+extern fn cx_hkdf_sha256(ikm: ptr, salt_hex: string, info_hex: string, outlen: int) -> ptr
 extern fn cx_pbkdf2_sha256(password: string, pwlen: int, salt_hex: string, iters: int, dklen: int) -> ptr
 extern fn cx_ct_equal(a_hex: string, alen: int, b_hex: string, blen: int) -> int
 extern fn cx_aead_encrypt(k: ptr, nonce_hex: string, pt_hex: string, aad_hex: string) -> string
@@ -76,12 +84,55 @@ fn sha512(msg_hex: string) -> string:
         return "!err"
     return cx_sha512_hex(msg_hex)
 
+fn sha3_256(msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_sha3_256_hex(msg_hex)
+
+fn sha3_512(msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_sha3_512_hex(msg_hex)
+
+# SHAKE128 extendable-output hash; `outlen` bytes of output as hex.
+fn shake128(msg_hex: string, outlen: int) -> string:
+    if _has_nul_hex(msg_hex) or outlen < 1:
+        return "!err"
+    return cx_shake128_hex(msg_hex, outlen)
+
+fn shake256(msg_hex: string, outlen: int) -> string:
+    if _has_nul_hex(msg_hex) or outlen < 1:
+        return "!err"
+    return cx_shake256_hex(msg_hex, outlen)
+
+fn blake2b(msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_blake2b_hex(msg_hex)
+
+fn blake2s(msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_blake2s_hex(msg_hex)
+
 # ---- MAC / KDF / constant-time compare ----
 # HMAC-SHA256 under a key handle -> 32-byte tag (64 hex).
 fn hmac_sha256(key: ptr, msg_hex: string) -> string:
     if _has_nul_hex(msg_hex):
         return "!err"
     return cx_hmac_sha256_hex(key, msg_hex)
+
+fn hmac_sha512(key: ptr, msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_hmac_sha512_hex(key, msg_hex)
+
+# HKDF-SHA256 (RFC 5869) -> a derived KEY handle of `outlen` bytes. IKM is a
+# key handle; salt and info are hex (empty is allowed). Free the result when done.
+fn hkdf_sha256(ikm: ptr, salt_hex: string, info_hex: string, outlen: int) -> ptr:
+    if _has_nul_hex(salt_hex) or _has_nul_hex(info_hex) or outlen < 1:
+        return null
+    return cx_hkdf_sha256(ikm, salt_hex, info_hex, outlen)
 
 # PBKDF2-HMAC-SHA256 -> a derived KEY handle (dklen bytes). password is text;
 # salt is hex. Use a high iteration count (>= 600000) and a random salt. Free

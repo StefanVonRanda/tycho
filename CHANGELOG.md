@@ -15,6 +15,24 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ## [Unreleased]
 
+### Corelib
+
+- Added the Odin `core` parity map at
+  `docs/internals/corelib-parity.md`, with explicit non-goals and the staged
+  order for the remaining gaps.
+- Added `core:container`: `Deque`, `Queue`, binary-heap `PriorityQueue`,
+  `BitArray` and an LRU cache, all value-semantic and golden-tested.
+- Added `core:sync`: C11 atomics (`AtomicInt`/`AtomicBool` operations),
+  non-recursive `Mutex`, `RwLock`, `WaitGroup` and `Once` over pthreads/Win32.
+- Expanded `core:os` with environment, cwd/chdir, pid, hostname, home and temp
+  paths; added sorted, fail-closed `io.walk`; added `path.relative`.
+- Added `core:base32`, `core:varint`, `core:endian`, `core:pem`, `core:ini`,
+  `core:utf16` and `core:edit`; added base 2..36 integer parse/format and
+  fixed-point float formatting to `core:strings`.
+- Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512 and HKDF-SHA256.
+- Added uncompressed and RLE TGA codecs to `core:raster`.
+- The tree is now 57 corelib packages and 58 golden test trees.
+
 ## [0.9.1] — 2026-11-10
 
 ### Compiler
