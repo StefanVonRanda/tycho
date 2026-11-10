@@ -701,6 +701,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   is the one that matters: a zero-length datagram is `Ok([])`, distinct from
   `Err(Timeout)` and `Err(Failed)`, while the sentinel `udp_read` still returns
   empty bytes for all three.
+  `resolve(host) -> Result([string], NetErr)` returns the numeric IPv4/IPv6
+  addresses from `getaddrinfo`; an interior NUL is `BadAddr`, a lookup failure is
+  `Failed`. Socket options are plain booleans: `set_reuse_addr`, `set_nodelay`,
+  `set_keepalive`, `set_broadcast`, `set_nonblocking` (POSIX `fcntl`, Winsock
+  `ioctlsocket`).
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
   dependency — net is libc-only). The request/response plumbing is pure Tycho; the accept
   loop is the caller's. `parse_request(raw) -> Result(Request, httpd.ReqErr)`

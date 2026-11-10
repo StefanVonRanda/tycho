@@ -1,5 +1,7 @@
 package net
 
+import "core:strings"
+
 # Why a socket call failed. Every variant is payload-free so `==` works on it.
 enum NetErr:
     Eof                # the peer closed the connection cleanly (recv == 0)
@@ -7,6 +9,13 @@ enum NetErr:
     Failed             # the syscall failed (bad fd, refused, reset, ...)
     BadAddr            # `host` holds an interior NUL -- see has_nul. NOT Failed:
                        # no syscall was made, so retrying cannot help.
+
+extern fn netx_resolve(host: string) -> Option(string)
+extern fn netx_set_reuse_addr(fd: int, on: int) -> int
+extern fn netx_set_nodelay(fd: int, on: int) -> int
+extern fn netx_set_keepalive(fd: int, on: int) -> int
+extern fn netx_set_broadcast(fd: int, on: int) -> int
+extern fn netx_set_nonblocking(fd: int, on: int) -> int
 
 fn _has_nul(host: string) -> bool:
     for i := 0; i < len(host); i += 1:
@@ -207,3 +216,45 @@ fn wait_readable(fds: [int], ms: int) -> Result([int], NetErr):
     if st == PL_TMO:
         return Err(Timeout)
     return Err(Failed)
+
+# Numeric addresses for `host`, IPv4 and IPv6, as returned by getaddrinfo.
+fn resolve(host: string) -> Result([string], NetErr):
+    if _has_nul(host):
+        return Err(BadAddr)
+    match netx_resolve(host):
+        Some(s):
+            if len(s) == 0:
+                return Ok([]string)
+            return Ok(strings.lines(s))
+        None:
+            return Err(Failed)
+
+fn _b(on: bool) -> int:
+    if on:
+        return 1
+    return 0
+
+fn set_reuse_addr(fd: int, on: bool) -> bool:
+    if fd < 0:
+        return false
+    return netx_set_reuse_addr(fd, _b(on)) == 1
+
+fn set_nodelay(fd: int, on: bool) -> bool:
+    if fd < 0:
+        return false
+    return netx_set_nodelay(fd, _b(on)) == 1
+
+fn set_keepalive(fd: int, on: bool) -> bool:
+    if fd < 0:
+        return false
+    return netx_set_keepalive(fd, _b(on)) == 1
+
+fn set_broadcast(fd: int, on: bool) -> bool:
+    if fd < 0:
+        return false
+    return netx_set_broadcast(fd, _b(on)) == 1
+
+fn set_nonblocking(fd: int, on: bool) -> bool:
+    if fd < 0:
+        return false
+    return netx_set_nonblocking(fd, _b(on)) == 1

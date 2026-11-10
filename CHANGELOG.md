@@ -27,6 +27,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   over pthreads/Win32.
 - Expanded `core:os` with environment, cwd/chdir, pid, hostname, home and temp
   paths; added sorted, fail-closed `io.walk`; added `path.relative`.
+- Added `core:net` DNS resolution and socket options
+  (reuse-addr/nodelay/keepalive/broadcast/nonblocking).
 - Added `core:base32`, `core:varint`, `core:endian`, `core:pem`, `core:ini`,
   `core:utf16`, `core:edit`, `core:xml`, `core:cbor`, `core:asn1`,
   `core:diff`, `core:terminal`, `core:lz4` and `core:bufio`; added base 2..36

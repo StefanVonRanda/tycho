@@ -42,3 +42,12 @@ udp_checked_timeout_cleared=true
 udp_checked_err=Failed
 udp_checked_nul_bind=BadAddr
 udp_checked_nul_send=BadAddr
+resolve4 count=1 found=true
+resolve_bad=Failed
+resolve_nul=BadAddr
+resolve_localhost_nonempty=true
+opt_reuse=true
+opt_keepalive=true
+opt_nonblock=true,true
+opt_broadcast=true opt_udp_nonblock=true
+opt_badfd=false,false

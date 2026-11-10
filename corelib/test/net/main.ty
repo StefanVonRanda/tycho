@@ -248,3 +248,39 @@ fn main():
     net.close_fd(uc)
 
     net.close_fd(u)
+
+    # ---- DNS and socket options ----
+    r4 := net.resolve("127.0.0.1")
+    match r4:
+        Ok(xs):
+            found := false
+            for a in xs:
+                if a == "127.0.0.1":
+                    found = true
+            println("resolve4 count=" + str(len(xs)) + " found=" + str(found))
+        Err(_):
+            println("resolve4=ERR")
+    rbad := net.resolve("no-such-host.invalid")
+    match rbad:
+        Ok(_): println("resolve_bad=Ok")
+        Err(net.Failed): println("resolve_bad=Failed")
+        Err(_): println("resolve_bad=Other")
+    rnul := net.resolve("x" + chr(0))
+    match rnul:
+        Ok(_): println("resolve_nul=Ok")
+        Err(net.BadAddr): println("resolve_nul=BadAddr")
+        Err(_): println("resolve_nul=Other")
+    rlocal := net.resolve("localhost")
+    match rlocal:
+        Ok(xs): println("resolve_localhost_nonempty=" + str(len(xs) > 0))
+        Err(_): println("resolve_localhost_nonempty=false")
+
+    lfd := fd_of(net.listen("127.0.0.1", 0))
+    println("opt_reuse=" + str(net.set_reuse_addr(lfd, true)))
+    println("opt_keepalive=" + str(net.set_keepalive(lfd, true)))
+    println("opt_nonblock=" + str(net.set_nonblocking(lfd, true)) + "," + str(net.set_nonblocking(lfd, false)))
+    net.close_fd(lfd)
+    ufd := fd_of(net.udp_bind_checked("127.0.0.1", 0))
+    println("opt_broadcast=" + str(net.set_broadcast(ufd, true)) + " opt_udp_nonblock=" + str(net.set_nonblocking(ufd, true)))
+    println("opt_badfd=" + str(net.set_reuse_addr(0 - 1, true)) + "," + str(net.set_nonblocking(0 - 1, true)))
+    net.close_fd(ufd)

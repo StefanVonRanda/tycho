@@ -10,6 +10,7 @@
 #include <arpa/inet.h>          /* inet_ntop -- netx_peer_addr */
 #include <netdb.h>
 #include <unistd.h>
+#include <fcntl.h>              /* fcntl: O_NONBLOCK */
 #define TY_CLOSE close
 #define TY_INVALID (-1)
 #else
@@ -524,4 +525,85 @@ void netx_poll_readable(const tycho_int *fds, tycho_int nfds, tycho_int ms,
     *out = res;
     *outlen = k;
     *status = TY_PL_READY;
+}
+
+/* ---- DNS and socket options ---- */
+static __thread char *g_resolve = NULL;
+static __thread size_t g_resolve_cap = 0;
+
+char *netx_resolve(const char *host) {
+#ifdef _WIN32
+    ty_net_init();
+#endif
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *res = NULL;
+    if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) return NULL;
+    size_t len = 0;
+    if (g_resolve_cap < 256) {
+        char *p = realloc(g_resolve, 256);
+        if (!p) { freeaddrinfo(res); return NULL; }
+        g_resolve = p;
+        g_resolve_cap = 256;
+    }
+    g_resolve[0] = 0;
+    int seen = 0;
+    for (struct addrinfo *ai = res; ai; ai = ai->ai_next) {
+        char hb[1024];
+        if (getnameinfo(ai->ai_addr, (socklen_t)ai->ai_addrlen, hb, sizeof hb,
+                        NULL, 0, NI_NUMERICHOST) != 0) continue;
+        size_t n = strlen(hb);
+        size_t need = len + n + 2;
+        if (need > g_resolve_cap) {
+            size_t cap = g_resolve_cap;
+            while (cap < need) cap *= 2;
+            char *p = realloc(g_resolve, cap);
+            if (!p) { freeaddrinfo(res); return NULL; }
+            g_resolve = p;
+            g_resolve_cap = cap;
+        }
+        if (seen) g_resolve[len++] = '\n';
+        memcpy(g_resolve + len, hb, n);
+        len += n;
+        g_resolve[len] = 0;
+        seen = 1;
+    }
+    freeaddrinfo(res);
+    if (!seen) return NULL;
+    return g_resolve;
+}
+
+tycho_int netx_set_reuse_addr(tycho_int fd, tycho_int on) {
+    int v = on ? 1 : 0;
+    return setsockopt((int)fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&v, sizeof v) == 0 ? 1 : 0;
+}
+
+tycho_int netx_set_nodelay(tycho_int fd, tycho_int on) {
+    int v = on ? 1 : 0;
+    return setsockopt((int)fd, IPPROTO_TCP, TCP_NODELAY, (const char *)&v, sizeof v) == 0 ? 1 : 0;
+}
+
+tycho_int netx_set_keepalive(tycho_int fd, tycho_int on) {
+    int v = on ? 1 : 0;
+    return setsockopt((int)fd, SOL_SOCKET, SO_KEEPALIVE, (const char *)&v, sizeof v) == 0 ? 1 : 0;
+}
+
+tycho_int netx_set_broadcast(tycho_int fd, tycho_int on) {
+    int v = on ? 1 : 0;
+    return setsockopt((int)fd, SOL_SOCKET, SO_BROADCAST, (const char *)&v, sizeof v) == 0 ? 1 : 0;
+}
+
+tycho_int netx_set_nonblocking(tycho_int fd, tycho_int on) {
+#ifdef _WIN32
+    u_long mode = on ? 1 : 0;
+    return ioctlsocket((SOCKET)fd, FIONBIO, &mode) == 0 ? 1 : 0;
+#else
+    int flags = fcntl((int)fd, F_GETFL, 0);
+    if (flags < 0) return 0;
+    if (on) flags |= O_NONBLOCK;
+    else flags &= ~O_NONBLOCK;
+    return fcntl((int)fd, F_SETFL, flags) == 0 ? 1 : 0;
+#endif
 }
