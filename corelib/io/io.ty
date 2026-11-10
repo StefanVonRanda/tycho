@@ -122,6 +122,13 @@ fn write(p: string, s: string) -> bool:
         return false
     return write_file(p, s)
 
+# The checked sibling of write: Ok("") is a real empty write, Err says why the
+# path could not be opened. Same status space as write_bytes.
+fn write_text(p: string, s: string) -> Result(void, IoErr):
+    if _has_nul(p):
+        return Err(BadPath)
+    return write_bytes(p, to_bytes(s))
+
 # Append `s` to `p` (creating it if absent). O_APPEND, so nothing is read back
 # and the existing content is never held in memory.
 fn append(p: string, s: string) -> bool:
@@ -175,6 +182,16 @@ fn write_lines(p: string, lines: [string]) -> bool:
     for i := 0; i < len(lines); i += 1:
         out = out + lines[i] + "\n"
     return write_file(p, out)
+
+# The checked sibling of write_lines. Use this when a failed write must be
+# reported rather than silently collapsed into false.
+fn write_lines_checked(p: string, lines: [string]) -> Result(void, IoErr):
+    if _has_nul(p):
+        return Err(BadPath)
+    out := ""
+    for i := 0; i < len(lines); i += 1:
+        out = out + lines[i] + "\n"
+    return write_text(p, out)
 
 # Flush buffered stdout so a pipe reader sees a line printed before the process
 # exits. Returns false when the C stream refuses the flush.

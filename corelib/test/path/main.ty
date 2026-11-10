@@ -101,6 +101,12 @@ fn main():
     sj9 := path.safe_join("/srv/data", "C:/Windows/win.ini")
     println(f"safe_join bsdotdot=[{sj7}] bsplain=[{sj8}] drive=[{sj9}]")
 
+    sc1 := path.safe_join_checked("/srv/data", "user/report.txt")
+    sc2 := path.safe_join_checked("/srv/data", "../../etc/passwd")
+    sc3 := path.safe_join_checked("/srv/data", "/etc/passwd")
+    sc4 := path.safe_join_checked("/srv/data", "..\\..\\etc\\passwd")
+    println(f"safe_join_checked ok={prwhy(sc1)} escape={prwhy(sc2)} abs={prwhy(sc3)} bs={prwhy(sc4)}")
+
     # ---- real_checked: the reason real() used to collapse into "" ----
     rk := path.real_checked("corelib/test/path/main.ty")
     rmiss := path.real_checked("/tmp/tycho_corelib_path_absent.xyz")

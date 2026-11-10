@@ -16,6 +16,7 @@ clean ///=[/] ./x=[x]
 safe_join ok=[/srv/data/user/report.txt] dotdot=[] abs=[]
 safe_join inner=[/srv/data/b.txt] escape=[] dot=[/srv/data/x]
 safe_join bsdotdot=[] bsplain=[] drive=[]
+safe_join_checked ok=Ok escape=BadPath abs=BadPath bs=BadPath
 real_checked ok=Ok missing=NotFound nul=BadPath real_missing_len=0
 quote space=['a b'] quote=['a'\''b'] empty=[''] tab=['a	b']
 quote newline_len=5 wrapped=1

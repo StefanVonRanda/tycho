@@ -122,16 +122,18 @@ fn clean(p: string) -> string:
     return r
 
 # Safely join an UNTRUSTED relative segment `rel` under a trusted `base`.
-# Returns the cleaned joined path when `rel` stays within `base`, or "" when
-# `rel` is absolute or escapes `base` via "..". Use this for any path built
-# from external input (request params, upload names):
+# safe_join returns the cleaned joined path when `rel` stays within `base`, or
+# "" when it is refused. safe_join_checked returns Ok(path) or Err(BadPath) for
+# the same rule. Use this for any path built from external input (request
+# params, upload names):
 #   safe_join("/srv/data", "user/report.txt") -> "/srv/data/user/report.txt"
 #   safe_join("/srv/data", "../../etc/passwd") -> ""
 #   safe_join("/srv/data", "/etc/passwd")      -> ""
 #   safe_join("/srv/data", "..\\etc\\passwd")  -> ""   (backslash: see below)
-# Fail-closed: callers MUST treat "" as rejected before using the path. The
-# escape test is base-independent -- clean() leaves a leading ".." exactly
-# when the relative path climbs above its own start.
+# Fail-closed: callers of safe_join MUST treat "" as rejected before using the
+# path, or use safe_join_checked and handle Err(BadPath). The escape test is
+# base-independent -- clean() leaves a leading ".." exactly when the relative
+# path climbs above its own start.
 #
 # DESIGN CHOICE, backslash: `clean` stays POSIX-only -- `\` is a LEGAL byte in a
 # POSIX filename, and rewriting it to "/" there would silently open a different
@@ -142,20 +144,25 @@ fn clean(p: string) -> string:
 # the traversal, on POSIX it costs only an exotic filename that no caller of an
 # untrusted-input guard should be accepting anyway. The answer must NOT vary by
 # build -- a security rule that differs per target is one nobody can reason about.
-fn safe_join(base: string, rel: string) -> string:
+fn safe_join_checked(base: string, rel: string) -> Result(string, PathErr):
     if is_abs(rel):
-        return ""
+        return Err(BadPath)
     for i := 0; i < len(rel); i += 1:
         if rel[i] == 92:                       # '\' -- never interpreted, always refused
-            return ""
+            return Err(BadPath)
     if len(rel) >= 2 and rel[1] == 58:         # "X:" drive prefix, absolute on Windows
-        return ""
+        return Err(BadPath)
     cr := clean(rel)
     if cr == "..":
-        return ""
+        return Err(BadPath)
     if len(cr) >= 3 and cr[0] == 46 and cr[1] == 46 and cr[2] == 47:   # "../"
-        return ""
-    return clean(join(base, rel))
+        return Err(BadPath)
+    return Ok(clean(join(base, rel)))
+
+fn safe_join(base: string, rel: string) -> string:
+    match safe_join_checked(base, rel):
+        Ok(p): return p
+        Err(_): return ""
 
 # ---- the filesystem fence --------------------------------------------------
 #

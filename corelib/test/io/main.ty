@@ -216,6 +216,14 @@ fn main():
     rl := io.read_lines(tmp)
     println(f"wl={b2i(w3)} rl={len(rl)} " + jn(rl))
 
+    # checked writer siblings: Ok on a real write, Err(BadPath) on an interior NUL
+    wt := io.write_text(tmp, "checked\n")
+    wlc := io.write_lines_checked(tmp, ["one", "two"])
+    rlc := io.read_lines(tmp)
+    wtb := io.write_text(tmp + chr(0), "x")
+    println(f"write_text={vwhy(wt)} write_lines_checked={vwhy(wlc)} checked_lines={len(rlc)} " +
+            jn(rlc) + f" write_text_bad={vwhy(wtb)}")
+
     # streaming line reader: one line at a time (bounded memory), round-tripping
     # the content write_lines wrote. An empty middle line stays Some("").
     w4 := io.write_lines(tmp, ["one", "", "three"])

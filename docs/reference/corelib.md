@@ -136,7 +136,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   an arbitrary path as one unambiguous word. `safe_join(base, rel)` is the lexical containment
   prefilter: the cleaned join when an untrusted `rel` stays under `base`, `""`
   when it is absolute, escapes via `..`, or carries a backslash or an `X:` drive
-  prefix.
+  prefix. `safe_join_checked(base, rel) -> Result(string, PathErr)` is the same
+  rule with the cause: `Ok(path)` or `Err(BadPath)`.
 
   **The filesystem fence.** A lexical check cannot see a symlink, so four
   functions make a real syscall, and all fail closed — `""` is a refusal and
@@ -440,10 +441,13 @@ expression-bodied; pass a named function where you need a multi-line body.
   `read(p)` — **fail-open**: `""` for a missing file, an unreadable one and a genuinely
   empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` or `read_bytes(p)`
   when the difference matters —
-  `write(p, s)` (truncate, returns false if unopenable),
+  `write(p, s)` (truncate, returns false if unopenable) with checked sibling
+  `write_text(p, s) -> Result(void, IoErr)`,
   `append(p, s)` (no read-rewrite) and `append_text(p, s) -> Result(void, IoErr)`
   (the same, with the error channel), `read_lines(p)` / `write_lines(p, lines)`
-  (newline-terminated round-trip), `list(p)` (entry basenames) and `list_checked(p) ->
+  (newline-terminated round-trip) with checked sibling
+  `write_lines_checked(p, lines) -> Result(void, IoErr)`,
+  `list(p)` (entry basenames) and `list_checked(p) ->
   Result([string], IoErr)` (which distinguishes an empty directory from an unreadable
   one, where `list` cannot), `rename(src, dst) -> Result(void, IoErr)` (atomically
   replaces a destination on the same filesystem),
