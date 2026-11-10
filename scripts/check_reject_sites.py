@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
 """Every line cited by compiler/reject_class.tsv still holds its diagnostic.
 
-Column 3 of that table is a src/tychoc.c LINE NUMBER -- the diagnostic site the
-fixture's class was decided by -- and nothing gated it. Insertions above a site
-move it without touching the class or the message, so the column silently rots:
-measured 2026-09-03, 310 of 337 rows named a line that had moved and 301 named
-a line holding no diagnostic at all, while every row's CLASS was still correct.
-A classifier table whose evidence points at unrelated code cannot be audited.
+Column 3 of that table is an ARCHIVED C-compiler LINE NUMBER -- the diagnostic
+site the fixture's class was decided by -- and nothing gated it. Insertions
+above a site move it without touching the class or the message, so the column
+silently rots: measured 2026-09-03, 310 of 337 rows named a line that had moved
+and 301 named a line holding no diagnostic at all, while every row's CLASS was
+still correct. A classifier table whose evidence points at unrelated code
+cannot be audited.
 
-The check reuses classify_rejects.load_sites(), so it reads the same
-die_at/die/warn_at/diag_push sites the table was built from -- and needs no
-./tychoc run, which is what makes it cheap enough to be a leg.
+The check reuses classify_rejects.load_sites(), which now reads the frozen
+index `compiler/reject_sites.json` rather than a C source that no longer exists.
+The evidence is the archived compiler's diagnostic sites, matched against the
+fixture's actual message, and needs no ./tychoc run -- which is what makes it
+cheap enough to be a leg.
 
 Column 2, the CLASS, is checked the same way and for the same reason: the
 SYNTAX boundary was a typed line number until 2026-09-04, and when it went stale
 three fixtures moved SYNTAX -> SEMANTIC with every cited line still holding its
-own message -- invisible to the line leg above. The boundary is derived now
-(classify_rejects.find_parse_end), and [c4]/[c5]/[c6] are what say so.
+own message -- invisible to the line leg above. The production boundary is now
+frozen in the same index; find_parse_end still derives it for [c5]/[c6] on a
+synthetic file.
 
 --selfcheck runs six controls: the committed table clean on both legs, a line
 bumped by one caught, a moved boundary caught and restored, an insertion above
@@ -124,22 +128,25 @@ def main():
                   % (old, moved, len(drift)))
         if check_class(rows, sites):
             print("  selfcheck [c4] FAILED: the boundary was not restored"); rc = 1
-        # [c5] the boundary is derived, and the derivation follows an insertion
-        # above parse_program rather than needing a human to retype it.
-        src = open(C.SRC, encoding="utf-8", errors="replace").read().split("\n")
-        i = [k for k, ln in enumerate(src) if ln.startswith(C.PARSE_FN)][0]
+        # [c5] the derivation follows an insertion above parse_program rather
+        # than needing a human to retype it. The archived C source is gone, so
+        # the control owns a synthetic translation unit; the production
+        # boundary is the one frozen in compiler/reject_sites.json.
+        base = ["static ProcVec parse_program(", "  body", "}", "tail"]
         tmpdir = tempfile.mkdtemp(prefix="reject-sites-")
         tmp = tmpdir + "/shifted.c"
-        open(tmp, "w").write("\n".join(src[:i] + [""] * 23 + src[i:]))
+        open(tmp, "w").write("\n".join(base))
+        before = C.find_parse_end(tmp)
+        open(tmp, "w").write("\n".join([""] * 23 + base))
         got = C.find_parse_end(tmp)
-        if got != old + 23:
+        if got != before + 23:
             print("  selfcheck [c5] FAILED: 23 lines inserted above parse_program, "
-                  "boundary %d -> %d" % (old, got)); rc = 1
+                  "boundary %d -> %d" % (before, got)); rc = 1
         else:
             print("  selfcheck [c5] 23 lines above parse_program move the boundary %d -> %d"
-                  % (old, got))
+                  % (before, got))
         # [c6] and it fails loudly rather than guessing when the anchor is gone.
-        open(tmp, "w").write("\n".join(src).replace(C.PARSE_FN, "static ProcVec parse_prog2(", 1))
+        open(tmp, "w").write("\n".join(base).replace(C.PARSE_FN, "static ProcVec parse_prog2(", 1))
         try:
             C.find_parse_end(tmp)
             print("  selfcheck [c6] FAILED: parse_program renamed and a boundary came back anyway"); rc = 1
@@ -149,13 +156,13 @@ def main():
         return rc
     bad = check(rows, sites) + check_class(rows, sites)
     for p, n, why in bad[:20]:
-        print("  STALE %s cites src/tycho" "c.c:%d -- %s" % (p, n, why))
+        print("  STALE %s cites archived C line %d -- %s" % (p, n, why))
     if bad:
         print("reject-sites: %d of %d rows cite a line that moved or changed class -- "
               "rerun scripts/classify_rejects.py %s" % (len(bad), len(rows), TSV))
         return 1
     print("reject-sites: %d rows, every cited diagnostic site still holds its message "
-          "and its class (SYNTAX boundary: line %d, derived)" % (len(rows), C.PARSE_END))
+          "and its class (SYNTAX boundary: archived line %d, frozen)" % (len(rows), C.PARSE_END))
     return 0
 
 

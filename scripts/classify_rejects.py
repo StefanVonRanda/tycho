@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Classify tests/reject/*.ty as SYNTAX, NAME or SEMANTIC rejections.
 
-Grounded in src/tychoc.c, not in tychoc1's behaviour: every die_at/die/warn
-format string in that file is extracted with its LINE NUMBER, the fixture's
-actual tychoc message is matched back to the site that emitted it, and the site
-decides the class.
+Grounded in the archived C compiler, not in tychoc1's behaviour: every
+die_at/die/warn format string in that file was extracted with its LINE NUMBER,
+the fixture's actual tychoc message is matched back to the site that emitted it,
+and the site decides the class. The C source is deleted; the extracted index is
+frozen in `compiler/reject_sites.json` (the archive revision is recorded there),
+so the audit does not depend on keeping a dead compiler in the tree.
 
   SYNTAX   = the site sits in the lexer or in parse_program's reach
              (line < PARSE_END) and does not need a symbol table.
@@ -15,7 +17,7 @@ decides the class.
              decided by the SITE, never by what tychoc1 happens to do, or the
              leg would pass by construction. NAME splits SEMANTIC only: a rule
              the PARSER already decides stays SYNTAX, which is why
-             `upper_bind_param_used` (src line 2942, the five builtin
+             `upper_bind_param_used` (archived line 2942, the five builtin
              constructor names, no table) is not NAME even though its message is
              word-for-word a binding rule.
   SEMANTIC = anything else -- including the parse-region sites that DO need a
@@ -24,14 +26,18 @@ decides the class.
              ACCEPT those, and that is the leg that stops "reject everything"
              from scoring full marks.
 """
-import re, subprocess, sys, os
+import re, subprocess, sys, os, json
 
-SRC = "src/tycho" + "c.c"          # assembled: a literal path:line in a string is a citation
 PARSE_FN = "static ProcVec parse_program("
-DIE = ("die_at", "die", "warn_at", "diag_push")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+INDEX = os.path.join(ROOT, "compiler", "reject_sites.json")
+
+with open(INDEX, encoding="utf-8") as _fh:
+    _INDEX = json.load(_fh)
+PARSE_END = int(_INDEX["parse_end"])
 
 
-def find_parse_end(path=SRC):
+def find_parse_end(path):
     """Line of parse_program's closing brace -- the end of the parse region.
 
     DERIVED, never typed. It was a hard-coded 5245 until 2026-09-04; an edit
@@ -40,6 +46,10 @@ def find_parse_end(path=SRC):
     the tree could see it (a bare Python integer is not a `path:line`, so the
     citation gate never looks at it). Bumping the literal by 23 restored those
     three and left the boundary 81 lines short of the function it names.
+
+    The production boundary now comes from the frozen index; this function is
+    kept because check_reject_sites.py [c5]/[c6] still proves it follows an
+    insertion and fails loudly on a rename, using a synthetic translation unit.
     """
     lines = open(path, encoding="utf-8", errors="replace").read().split("\n")
     starts = [i for i, ln in enumerate(lines) if ln.startswith(PARSE_FN)]
@@ -49,12 +59,6 @@ def find_parse_end(path=SRC):
         if lines[j] == "}":            # column 0: the function's own closing brace
             return j + 1
     raise LookupError("parse_program has no closing brace in %s" % path)
-
-
-try:
-    PARSE_END = find_parse_end()
-except LookupError as e:
-    sys.exit("classify_rejects: " + str(e))
 
 # Parse-region sites that consult a table tychoc1 has not built yet. Matched as
 # substrings of the FORMAT string, so each names a rule rather than a line.
@@ -262,6 +266,11 @@ FALLBACK = [
     # at compiler/verdict_diff.py@main. Measured 2026-09-03 on both fixtures.
     ("but has no `package` declaration", "NAME"),
     ("but is in package `", "NAME"),
+    # Diagnostics added by the self-hosted compiler after the archived C index
+    # was frozen: there is no C site to anchor them, so the message decides the
+    # class. Both are checks that need a concrete type.
+    ("comparison needs concrete operand types", "TYPE"),
+    ("consumed by a `sink` parameter inside a loop, where", "SEMANTIC"),
 ]
 
 
@@ -303,97 +312,9 @@ def fmt_to_re(f):
     return re.compile("^" + "".join(out) + "$", re.S)
 
 
-def scan(text):
-    """Offsets of real code, with string/char literals and comments blanked out.
-
-    A `die("cannot bind")` written inside a C comment as a Tycho EXAMPLE was read
-    as a live diagnostic site until 2026-09-04 (src/tychoc.c:4147).
-    """
-    out, i, n = [], 0, len(text)
-    while i < n:
-        c = text[i]
-        if c == '"' or c == "'":
-            q, j = c, i + 1
-            while j < n and text[j] != q:
-                j += 2 if text[j] == "\\" else 1
-            out.append(" " * (j - i + 1)); i = j + 1; continue
-        if text.startswith("/*", i):
-            j = text.find("*/", i + 2); j = n if j < 0 else j + 2
-            out.append("".join(ch if ch == "\n" else " " for ch in text[i:j])); i = j; continue
-        out.append(c); i += 1
-    return "".join(out)
-
-
-def unescape(f):
-    """One left-to-right pass. A chain of str.replace() unescapes `\\n` TWICE --
-    the `\\` collapses and the surviving backslash then eats the `n` -- so every
-    message ABOUT escapes failed to match its own output (five sites)."""
-    out, i = [], 0
-    m = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"', "'": "'"}
-    while i < len(f):
-        if f[i] == "\\" and i + 1 < len(f):
-            out.append(m.get(f[i + 1], f[i:i + 2])); i += 2; continue
-        out.append(f[i]); i += 1
-    return "".join(out)
-
-
-# die_at is handed its location; a driver-level die() and an fprintf write their
-# own. Stripped so every family is matched against what the user sees.
-PREFIX = ("%s:%d: error: ", "%s: error: ", "%s:%d: warning: ", "tychoc: ")
-
-
-def literals(text, start):
-    """Format strings in the argument list opening at start.
-
-    C concatenates ADJACENT string literals, so a run separated only by
-    whitespace is one format -- but a ternary (`cond ? "a" : "b"`, which is how
-    the hex and binary literal rules are written at src/tychoc.c:682) puts two
-    RULES in one call, and joining them invents a message no user ever sees.
-    """
-    i, depth, out, cur, gap = start, 1, [], [], ""
-    while i < len(text) and depth:
-        ch = text[i]
-        if ch == '"':
-            if cur and gap.strip():
-                out.append("".join(cur)); cur = []
-            j, buf = i + 1, []
-            while j < len(text) and text[j] != '"':
-                if text[j] == "\\":
-                    buf.append(text[j:j + 2]); j += 2; continue
-                buf.append(text[j]); j += 1
-            cur.append("".join(buf)); gap = ""; i = j + 1
-            continue
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-        elif ch == "," and depth == 1 and cur:
-            break
-        gap += ch
-        i += 1
-    if cur:
-        out.append("".join(cur))
-    res = []
-    for f in out:
-        f = unescape(f).rstrip("\n")
-        for p in PREFIX:
-            if f.startswith(p):
-                f = f[len(p):]
-        if f:
-            res.append(f)
-    return res
-
-
 def load_sites():
-    """(line, format string, compiled regex) for every diagnostic in the C source."""
-    text = open(SRC, encoding="utf-8", errors="replace").read()
-    code = scan(text)
-    sites = []
-    for m in re.finditer(r"\b(%s)\s*\(" % "|".join(DIE), code):
-        line = code.count("\n", 0, m.start()) + 1
-        for f in literals(text, m.end()):
-            sites.append((line, f, fmt_to_re(f)))
-    return sites
+    """(line, format string, compiled regex) from the frozen diagnostic index."""
+    return [(int(l), f, fmt_to_re(f)) for l, f in _INDEX["sites"]]
 
 
 USAGE = "usage: classify_rejects.py <out.tsv>   (regenerates compiler/reject_class.tsv)"

@@ -25,6 +25,8 @@ measurements, and they assume you already know the codebase.
 
 ## Records
 
+- [`archived-c-compiler.md`](archived-c-compiler.md) — the deleted C compiler,
+  the revision its citations resolve against, and the frozen reject-site index.
 - [`FRICTION.md`](FRICTION.md) — the running log of what fought back while
   writing real programs against this language. The primary source for what is
   actually hard here.

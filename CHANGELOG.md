@@ -2,8 +2,8 @@
 
 All notable changes are recorded here against the version that shipped them.
 
-The version constant lives in `src/tychoc.c` (`TYCHO_VERSION`, printed by
-`tychoc --version`); bump both together. Per-release publishing notes stay in
+The version constant lives in `compiler/main.ty` (`VERSION`, printed by
+`tychoc --version`). Per-release publishing notes stay in
 `RELEASE_NOTES.md`; this file is the accumulating record.
 
 Names used below: `surface.lock` is the frozen record of keywords, builtins and
@@ -27,6 +27,11 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - **`tycho-debug bt` is source-aware.** Frames show demangled `pkg.name`
   symbols and `.ty` file:line; runtime glue and native frames are tagged
   `[runtime]` / `[native]` instead of being presented as user code.
+- **The archived C compiler is deleted from the tree.** It is preserved in git
+  history at commit `c7d46528ac6efcf9dc93359d14d98bedcb7ddbad`; historical
+  citations resolve against that revision, and the reject classifier reads the
+  frozen `compiler/reject_sites.json` instead of the C source. See
+  [`docs/internals/archived-c-compiler.md`](docs/internals/archived-c-compiler.md).
 
 ### Runtime
 

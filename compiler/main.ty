@@ -4,7 +4,7 @@ import "core:strings"
 import "core:os"
 import "driver"
 
-# Kept in step with src/tychoc.c's TYCHO_VERSION by hand; --version must agree.
+# Kept in step with the version claims in the status docs by hand; --version must agree.
 fn VERSION() -> string:
     return "0.9.0"
 

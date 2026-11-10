@@ -1,0 +1,2576 @@
+{
+ "source": "src/tychoc.c",
+ "source_commit": "c7d46528ac6efcf9dc93359d14d98bedcb7ddbad",
+ "note": "Frozen diagnostic-site index from the archived C compiler; line numbers are C-source lines. See docs/internals/archived-c-compiler.md.",
+ "parse_end": 6090,
+ "sites": [
+  [
+   159,
+   "%s"
+  ],
+  [
+   603,
+   "mixed tabs and spaces in indentation; use one consistently"
+  ],
+  [
+   645,
+   "indentation too deep"
+  ],
+  [
+   654,
+   "inconsistent indentation"
+  ],
+  [
+   682,
+   "a hex literal needs at least one digit after `0x`"
+  ],
+  [
+   682,
+   "a binary literal needs digits 0 or 1 after `0b`"
+  ],
+  [
+   714,
+   "float literal out of range: `%.*s` exceeds the largest float (IEEE-754 binary64); write 1.0/0.0 for an infinity"
+  ],
+  [
+   725,
+   "integer literal out of range"
+  ],
+  [
+   737,
+   "identifier prefix 'Ztycho_' is reserved for compiler temporaries"
+  ],
+  [
+   753,
+   "unterminated string literal"
+  ],
+  [
+   755,
+   "string too long"
+  ],
+  [
+   759,
+   "string too long"
+  ],
+  [
+   763,
+   "string too long"
+  ],
+  [
+   767,
+   "string too long"
+  ],
+  [
+   771,
+   "string too long"
+  ],
+  [
+   774,
+   "unterminated string literal"
+  ],
+  [
+   776,
+   "string too long"
+  ],
+  [
+   778,
+   "unterminated string literal"
+  ],
+  [
+   781,
+   "string too long"
+  ],
+  [
+   785,
+   "unterminated string literal"
+  ],
+  [
+   786,
+   "string too long"
+  ],
+  [
+   791,
+   "string too long"
+  ],
+  [
+   793,
+   "unterminated string literal"
+  ],
+  [
+   796,
+   "unsupported escape \\%c (use \\n \\t \\r \\\\ \\\")"
+  ],
+  [
+   805,
+   "raw control byte in string literal (use an escape such as \\n or \\t)"
+  ],
+  [
+   806,
+   "string too long"
+  ],
+  [
+   810,
+   "unterminated string literal"
+  ],
+  [
+   849,
+   "raw control byte in string literal (use an escape such as \\n or \\t)"
+  ],
+  [
+   851,
+   "string too long"
+  ],
+  [
+   854,
+   "string too long"
+  ],
+  [
+   858,
+   "unterminated raw string literal"
+  ],
+  [
+   878,
+   "\\x takes exactly two hex digits (e.g. '\\x41')"
+  ],
+  [
+   880,
+   "unsupported char escape (use \\n \\t \\r \\0 \\xNN \\\\ \\')"
+  ],
+  [
+   884,
+   "empty or unterminated char literal"
+  ],
+  [
+   885,
+   "char literal must be exactly one character"
+  ],
+  [
+   894,
+   "'//' is not valid in Tycho -- use '#' for comments, or '/' for division"
+  ],
+  [
+   928,
+   "unexpected character '%c'"
+  ],
+  [
+   1475,
+   "'%s' is a variant of %s, but a variant of another package's enum must be written qualified -- write '%.*s.%s'"
+  ],
+  [
+   1478,
+   "'%s' is not a variant of %s"
+  ],
+  [
+   2437,
+   "'%s' is a reserved keyword and cannot be used as %s"
+  ],
+  [
+   2438,
+   "expected %s"
+  ],
+  [
+   2609,
+   "%s cannot be a %s -- '%s' was instantiated at one"
+  ],
+  [
+   2637,
+   "too many structs"
+  ],
+  [
+   2682,
+   "too many enums"
+  ],
+  [
+   2741,
+   "type nesting too deep"
+  ],
+  [
+   2764,
+   "too many type parameters (max 16)"
+  ],
+  [
+   2774,
+   "soa requires a struct element type, e.g. soa [Point]"
+  ],
+  [
+   2785,
+   "a bounded capacity must be an integer literal or an int `const` -- '%s' is not"
+  ],
+  [
+   2787,
+   "bounded needs a capacity: bounded[N]T"
+  ],
+  [
+   2788,
+   "a bounded capacity must be positive"
+  ],
+  [
+   2792,
+   "a bounded element cannot be bool or void"
+  ],
+  [
+   2803,
+   "a vector count must be an integer literal or an int `const` -- '%s' is not"
+  ],
+  [
+   2805,
+   "vector needs a count: vector[N]T"
+  ],
+  [
+   2812,
+   "a vector count must be a power of two between 2 and 64 -- %lld is not"
+  ],
+  [
+   2820,
+   "a vector element must be int, float or f32 -- %s is not"
+  ],
+  [
+   2842,
+   "`vector[%lld]%s` is %lld bytes but %s holds %d, so every operation on it splits -- use a narrower vector, or on x86-64 build with `--target %s`"
+  ],
+  [
+   2857,
+   "a function type has at most 8 parameters"
+  ],
+  [
+   2865,
+   "a function-type parameter cannot be void"
+  ],
+  [
+   2873,
+   "a tuple has at most 8 elements"
+  ],
+  [
+   2878,
+   "a tuple type needs at least two elements; parentheses do not group a type, so write it bare"
+  ],
+  [
+   2881,
+   "a tuple element cannot be void"
+  ],
+  [
+   2908,
+   "too many size parameters (max 16)"
+  ],
+  [
+   2915,
+   "a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal"
+  ],
+  [
+   2927,
+   "a fixed-size array length cannot be an imported const ('%s.%s') -- its value is not known at parse time. Use an unqualified `const` declared in this file, or a dynamic [T]"
+  ],
+  [
+   2949,
+   "a fixed-size array length must be an integer literal or an int `const` -- '%s' is not"
+  ],
+  [
+   2952,
+   "a fixed-size array length must be positive"
+  ],
+  [
+   2956,
+   "a fixed-size array element cannot be bool or void -- a dynamic [bool] is legal"
+  ],
+  [
+   2968,
+   "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array"
+  ],
+  [
+   2973,
+   "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option"
+  ],
+  [
+   2978,
+   "'void' is a type only as a Result's ok payload, as in Result(void, string)"
+  ],
+  [
+   2987,
+   "Option(void) is not a type"
+  ],
+  [
+   2995,
+   "Channel(void) is not a type"
+  ],
+  [
+   3006,
+   "a Result's error type cannot be void -- Err always carries a value"
+  ],
+  [
+   3050,
+   "generic struct '%s': its type arguments must be EITHER exactly its own parameters, in order (a recursive reference), OR all concrete -- a list mixing the two is not supported, even where each argument alone would be legal"
+  ],
+  [
+   3079,
+   "generic enum '%s': its type arguments must be EITHER exactly its own parameters, in order (a recursive reference), OR all concrete -- a list mixing the two is not supported, even where each argument alone would be legal"
+  ],
+  [
+   3094,
+   "unknown type '%s'; did you mean '%s'?"
+  ],
+  [
+   3095,
+   "unknown type '%s'"
+  ],
+  [
+   3113,
+   "expected a type (int, float, bool, string, [int], or a struct)"
+  ],
+  [
+   3141,
+   "unmatched '}' in an interpolated string (use '}}' for a literal brace)"
+  ],
+  [
+   3151,
+   "a `\\\"` inside an f-string hole: the hole is Tycho source, not string text, so a string in it takes plain quotes -- f\"{g(\"x\")}\", not f\"{g(\\\"x\\\")}\""
+  ],
+  [
+   3156,
+   "unterminated literal in an interpolated hole"
+  ],
+  [
+   3163,
+   "unterminated '{' in an interpolated string"
+  ],
+  [
+   3167,
+   "empty '{}' in an interpolated string"
+  ],
+  [
+   3185,
+   "unexpected token after expression in an interpolated-string hole"
+  ],
+  [
+   3208,
+   "a named function cannot be declared inside another -- declare '%s' at the top level, or use a lambda 'fn(x): expr'"
+  ],
+  [
+   3279,
+   "a tuple has at most 8 elements"
+  ],
+  [
+   3294,
+   "`[%s]` is the TYPE, not a value -- for an empty array write `[]%s`, or annotate the declaration: `xs : [%s] = []`"
+  ],
+  [
+   3309,
+   "`[%s: %s]` is the TYPE, not a value -- for an empty map write `[]%s: %s`, or annotate the declaration: `m : [%s: %s] = []`"
+  ],
+  [
+   3343,
+   "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array"
+  ],
+  [
+   3348,
+   "an array element type cannot be void -- every other type is allowed, including bytes, a tuple, a map and Option"
+  ],
+  [
+   3387,
+   "spawn requires a direct call: spawn f(args)"
+  ],
+  [
+   3398,
+   "soa requires a struct element type, e.g. soa []Point"
+  ],
+  [
+   3416,
+   "'%s' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'; as a value it is a constructor: %s(x)"
+  ],
+  [
+   3428,
+   "Err() carries no value -- a Result's error type cannot be void"
+  ],
+  [
+   3446,
+   "at most 16 explicit type arguments"
+  ],
+  [
+   3451,
+   "'%s$()' needs at least one explicit type argument"
+  ],
+  [
+   3472,
+   "map_set was removed; use `m[k] = v`"
+  ],
+  [
+   3473,
+   "map_has was removed; use `k in m`"
+  ],
+  [
+   3474,
+   "map_del was removed; use `delete m[k]`"
+  ],
+  [
+   3475,
+   "map_get was removed; use `m.get(k, default)`"
+  ],
+  [
+   3513,
+   "expected an expression -- a value `if`/`match` may only be the whole right-hand side of `:=`, `=` or `return`; bind it to a variable first"
+  ],
+  [
+   3515,
+   "unexpected indentation: this line is indented further than the block it belongs to, and nothing above it opens a new block"
+  ],
+  [
+   3518,
+   "expected an expression"
+  ],
+  [
+   3580,
+   "a swizzle applies to a variable or a field of one, not to this expression"
+  ],
+  [
+   3602,
+   "a swizzle names at least two components -- write `v.x` for one"
+  ],
+  [
+   3603,
+   "a tuple has at most 8 elements"
+  ],
+  [
+   3631,
+   "at most 16 explicit type arguments"
+  ],
+  [
+   3636,
+   "'%s.%s$()' needs at least one explicit type argument"
+  ],
+  [
+   3686,
+   "expected a binding after `or_else` -- a name for the error, or `_` (e.g. `or_else e: Err(Wrap(e))`)"
+  ],
+  [
+   3691,
+   "`or_else` takes one expression on the same line, not a block -- write the value to return after the ':'"
+  ],
+  [
+   3712,
+   "expression nesting too deep"
+  ],
+  [
+   3787,
+   "`is` does not chain -- write `a is X and a is Y`"
+  ],
+  [
+   3917,
+   "a value branch must end in a value expression"
+  ],
+  [
+   3937,
+   "a value branch must end in a value expression"
+  ],
+  [
+   3947,
+   "a value `if` puts each branch on its own line -- `x := if c:`, then the value indented on the next line, then `else:` and its value indented below it; a one-line `if c: a else: b` is not a form"
+  ],
+  [
+   3969,
+   "an `if` used as a value must have an `else` — every path must produce a value"
+  ],
+  [
+   4001,
+   "too many values in one match arm (max 8)"
+  ],
+  [
+   4009,
+   "a match arm must be a variant name, a scalar literal, a range, or `_`"
+  ],
+  [
+   4010,
+   "'-' is only valid before an int literal in a match arm"
+  ],
+  [
+   4024,
+   "expected a value after '..' in the match arm"
+  ],
+  [
+   4025,
+   "'-' is only valid before an int literal in a match arm"
+  ],
+  [
+   4026,
+   "a range's two ends must be the same kind of value"
+  ],
+  [
+   4036,
+   "`match` does not take a string arm -- int, char, bool, a range and a const name do; for strings use an if/elif chain on `==`"
+  ],
+  [
+   4074,
+   "too many bindings (max 8)"
+  ],
+  [
+   4082,
+   "too many bindings (max 8)"
+  ],
+  [
+   4098,
+   "match needs at least one arm"
+  ],
+  [
+   4108,
+   "expected `if` or `match`"
+  ],
+  [
+   4246,
+   "too many hoisted index expressions in one statement (max 64)"
+  ],
+  [
+   4273,
+   "assignment place too deeply nested (max 32 indices)"
+  ],
+  [
+   4304,
+   "assignment place too deeply nested (max 32 indices)"
+  ],
+  [
+   4358,
+   "'%s' is a reserved keyword and cannot be used as a variable name"
+  ],
+  [
+   4371,
+   "a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression"
+  ],
+  [
+   4394,
+   "`delete` removes a map element: `delete m[k]`"
+  ],
+  [
+   4411,
+   "cannot `delete` from this expression"
+  ],
+  [
+   4432,
+   "a tuple has at most 8 elements"
+  ],
+  [
+   4473,
+   "a select arm is `recv(ch, x):`, `default:`, or `closed:`"
+  ],
+  [
+   4482,
+   "select needs at least one arm"
+  ],
+  [
+   4501,
+   "a `parallel` width is 1..64, got %lld -- 64 is the fan-out cap, and a width below 1 has no meaning"
+  ],
+  [
+   4504,
+   "expected 'for' after 'parallel'"
+  ],
+  [
+   4508,
+   "parallel supports `for i in 0..<N` and `for x in collection` loops only"
+  ],
+  [
+   4540,
+   "a three-clause `for` has exactly three clauses: `for init; cond; post:`"
+  ],
+  [
+   4545,
+   "a three-clause `for` is `for init; cond; post:` -- two ';' separating three clauses"
+  ],
+  [
+   4547,
+   "expected ':' before the block"
+  ],
+  [
+   4549,
+   "the init clause is required -- write `for:` for an infinite loop"
+  ],
+  [
+   4551,
+   "the condition clause is required -- write `for:` for an infinite loop"
+  ],
+  [
+   4553,
+   "the post clause is required -- write `for cond:` for a loop that advances in its body"
+  ],
+  [
+   4564,
+   "the init clause of a three-clause `for` is a declaration or an assignment"
+  ],
+  [
+   4569,
+   "a multi-assign is not a `for` clause -- write it as its own statement"
+  ],
+  [
+   4574,
+   "a multi-assign is not a `for` clause -- write it as its own statement"
+  ],
+  [
+   4576,
+   "the post clause of a three-clause `for` is an assignment to a variable (`i += 1`)"
+  ],
+  [
+   4594,
+   "a `for` binds one name -- write `for p in COLL:` then `%s, %s := p` in the body"
+  ],
+  [
+   4612,
+   "`0..<N` counts only in a `parallel for` -- write `for %s := 0; %s < N; %s += 1:` for a sequential count"
+  ],
+  [
+   4615,
+   "`parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound"
+  ],
+  [
+   4628,
+   "`range()` was removed: write `for %s := 0; %s < N; %s += 1:` to count, or `parallel for %s in 0..<N:` to count in parallel"
+  ],
+  [
+   4650,
+   "parallel for over a collection or channel must name a variable (bind it first)"
+  ],
+  [
+   4677,
+   "too many nested foreach loops in one block"
+  ],
+  [
+   4697,
+   "at most 8 destructuring targets"
+  ],
+  [
+   4775,
+   "cannot assign to this expression -- every target of a multi-assign must be a variable, a field, or an array/map element"
+  ],
+  [
+   4781,
+   "duplicate target '%s' in a multi-assign -- every right side is evaluated before any write, so two writes to one place have no order"
+  ],
+  [
+   4791,
+   "too many queued statements in one block (max 64)"
+  ],
+  [
+   4808,
+   "cannot assign to this expression"
+  ],
+  [
+   4846,
+   "cannot compound-assign to this expression"
+  ],
+  [
+   4849,
+   "Tycho has no `while` -- use `for cond:` for a conditional loop (e.g. `for i < 3:`)"
+  ],
+  [
+   4856,
+   "a `spawn` must be bound to a task handle -- write `t := spawn f(args)`, because the implicit join at scope exit needs a handle to wait on (a Task cannot be discarded)"
+  ],
+  [
+   4863,
+   "a statement must be a declaration, assignment, or call -- a bare expression has no effect"
+  ],
+  [
+   4946,
+   "'%s' is already defined"
+  ],
+  [
+   4949,
+   "`%s` collides with the builtin of the same name -- unqualified calls in this package select this procedure. Rename it if this package needs the BUILTIN; external callers can use `pkg.%s(...)`."
+  ],
+  [
+   4952,
+   "`%s` collides with the builtin of the same name -- every unqualified `%s(...)` calls the BUILTIN, so this procedure is unreachable by that name (§3.7). `package main` has no package prefix to qualify with, so rename it."
+  ],
+  [
+   4978,
+   "a variadic parameter cannot also be inout or sink"
+  ],
+  [
+   4981,
+   "'%s' is %s, which an affine type cannot be -- it has one owner and is freed at that scope's exit, so there is nothing to consume or copy back. Pass it plainly: that is already a borrow"
+  ],
+  [
+   4996,
+   "a variadic parameter must be the last parameter of '%s'"
+  ],
+  [
+   5001,
+   "a Tycho fn cannot return a handle -- only an `extern fn` opener may; a handle is freed at the end of its scope and cannot escape it"
+  ],
+  [
+   5011,
+   "`where` constraints require a generic function (one with a `$T` parameter)"
+  ],
+  [
+   5014,
+   "at most 8 `where` constraints per function"
+  ],
+  [
+   5019,
+   "`where %s: ...`: '%s' is not a type parameter of this function"
+  ],
+  [
+   5026,
+   "at most 16 types in a `where` type set"
+  ],
+  [
+   5032,
+   "unknown `where` predicate '%s' (known: numeric, comparable, has_str, hashable, defaultable -- or use a type set, `T: int | float`)"
+  ],
+  [
+   5037,
+   "`where` refers to '%s', which is not a type parameter of this function"
+  ],
+  [
+   5110,
+   "a subscript receiver may not be generic ('%s'): declare the subscript on a concrete instance"
+  ],
+  [
+   5114,
+   "a subscript must yield an inout projection: `-> inout <type>`"
+  ],
+  [
+   5121,
+   "a subscript body must be a single `yield &<place>`"
+  ],
+  [
+   5125,
+   "a subscript must yield a place: `yield &<place>` (e.g. `yield &g.nodes[i]`)"
+  ],
+  [
+   5134,
+   "a subscript must yield a place rooted in one of its parameters (else the projection would dangle)"
+  ],
+  [
+   5138,
+   "subscript parameter '%s' is used more than once in the yielded place (v1: at most once)"
+  ],
+  [
+   5276,
+   "extern fn '%s': an `inout` (out) parameter '%s' must be int/char/float/bool/ptr or a plain scalar-field struct — string/bytes/handle/map/array have no trivial out-param ABI"
+  ],
+  [
+   5279,
+   "extern fn '%s': parameter '%s' must be int/char/float/bool/string/ptr/bytes, [int]/[float]/[string]/[POD struct], a POD struct, or a handle (no other composites across the C boundary)"
+  ],
+  [
+   5307,
+   "extern fn '%s': return type must be int/char/float/bool/string/ptr/bytes, [int]/[float], a POD struct, Option(string), a handle, or omitted"
+  ],
+  [
+   5330,
+   "'%s' is already defined"
+  ],
+  [
+   5331,
+   "too many handle types (max 256)"
+  ],
+  [
+   5336,
+   "a handle body is exactly 'free: <c_free_fn>'"
+  ],
+  [
+   5409,
+   "'packed' may be written only once"
+  ],
+  [
+   5413,
+   "'align' may be written only once"
+  ],
+  [
+   5415,
+   "align needs an alignment: align(N) struct"
+  ],
+  [
+   5419,
+   "an alignment must be a power of two -- %lld is not"
+  ],
+  [
+   5421,
+   "align(%lld): the arena guarantees 8-byte alignment and nothing above it, so this cannot be honoured"
+  ],
+  [
+   5427,
+   "a struct cannot be both 'packed' and 'align(N)'"
+  ],
+  [
+   5428,
+   "'packed' may only be applied to a struct"
+  ],
+  [
+   5429,
+   "'align' may only be applied to a struct"
+  ],
+  [
+   5437,
+   "a struct type parameter must be written `$Name`"
+  ],
+  [
+   5438,
+   "too many struct type parameters (max 16)"
+  ],
+  [
+   5446,
+   "'%s' is already defined"
+  ],
+  [
+   5447,
+   "too many structs"
+  ],
+  [
+   5472,
+   "duplicate field '%s'"
+  ],
+  [
+   5477,
+   "field '%s' of a packed struct must be a fixed-width value type"
+  ],
+  [
+   5486,
+   "a struct needs at least one field"
+  ],
+  [
+   5498,
+   "an enum type parameter must be written `$Name`"
+  ],
+  [
+   5499,
+   "too many enum type parameters (max 16)"
+  ],
+  [
+   5509,
+   "'%s' is already defined"
+  ],
+  [
+   5510,
+   "too many enums"
+  ],
+  [
+   5532,
+   "'%s' is already defined"
+  ],
+  [
+   5532,
+   "variant name '%s' is already used in this package"
+  ],
+  [
+   5539,
+   "too many payload fields (max 8)"
+  ],
+  [
+   5552,
+   "an enum needs at least one variant"
+  ],
+  [
+   5564,
+   "'%s' is already defined"
+  ],
+  [
+   5565,
+   "too many newtypes"
+  ],
+  [
+   5571,
+   "a newtype's underlying type must be int, float, string, bool, an array, a map, or a struct (got %s)"
+  ],
+  [
+   5874,
+   "package '%s' is used here but this file does not `import` it (another file in the build does; imports are per-file)"
+  ],
+  [
+   5916,
+   "'%s.%s' is package-private: a leading-underscore name is not accessible from another package"
+  ],
+  [
+   5986,
+   "const expression divides by zero"
+  ],
+  [
+   5987,
+   "const expression overflows: the smallest int divided by -1 has no int value"
+  ],
+  [
+   5989,
+   "const expression divides by zero"
+  ],
+  [
+   5994,
+   "const expression shifts by a negative count"
+  ],
+  [
+   5996,
+   "const expression shifts by a negative count"
+  ],
+  [
+   6015,
+   "a `const` must be a single scalar literal -- an int, float, string, bool or char. Arrays, maps and struct literals are not allowed, and neither is an expression"
+  ],
+  [
+   6020,
+   "'%s' is already defined"
+  ],
+  [
+   6424,
+   "'%s' cannot name a binding -- a local, parameter or pattern binding must start with a lowercase letter or '_'"
+  ],
+  [
+   6722,
+   "cannot infer the type of '%s' from this use"
+  ],
+  [
+   6729,
+   "'%s' was declared with [] but its first use makes it %s"
+  ],
+  [
+   6733,
+   "'%s' was declared with None but its first use makes it %s"
+  ],
+  [
+   6802,
+   "f32 literal out of range: `%g` exceeds the largest f32 (IEEE-754 binary32); write to_f32(1.0/0.0) for an infinity"
+  ],
+  [
+   6813,
+   "%lld does not fit %s (its range is %lld..%lld) -- write to_%s(x) to convert with wraparound"
+  ],
+  [
+   6848,
+   "expression too deeply nested to type-check (max %d)"
+  ],
+  [
+   6849,
+   "expression too deeply nested to type-check (max %d)"
+  ],
+  [
+   6861,
+   "spread `...` is only valid as the argument to a variadic parameter"
+  ],
+  [
+   6870,
+   "spawn requires a direct call to a named function (closures/constructors cannot be spawned yet)"
+  ],
+  [
+   6873,
+   "spawn requires a user-defined function ('%s' is not one)"
+  ],
+  [
+   6875,
+   "cannot spawn an extern (FFI) function"
+  ],
+  [
+   6877,
+   "a spawned function must return a value (wait(t) yields it)"
+  ],
+  [
+   6880,
+   "cannot spawn a function with inout parameters (no shared state across threads)"
+  ],
+  [
+   6891,
+   "a lambda has at most 8 parameters"
+  ],
+  [
+   6894,
+   "lambda parameter '%s' needs a type here -- no expected fn type supplies it (annotate: fn(%s: T))"
+  ],
+  [
+   6905,
+   "a closure cannot capture a task handle -- wait it first"
+  ],
+  [
+   6906,
+   "a closure cannot capture a handle -- it is freed at the end of its scope"
+  ],
+  [
+   6907,
+   "a closure cannot capture a channel handle -- take it as a parameter instead"
+  ],
+  [
+   6908,
+   "a lambda captures at most 16 variables"
+  ],
+  [
+   6944,
+   "Some(...) needs a concrete value"
+  ],
+  [
+   6952,
+   "%s(...) needs a concrete value"
+  ],
+  [
+   6956,
+   "a tuple needs at least two elements"
+  ],
+  [
+   6957,
+   "a tuple has at most 8 elements"
+  ],
+  [
+   6962,
+   "tuple element %d needs a concrete value"
+  ],
+  [
+   6971,
+   "tuple index .%lld on a non-tuple value (%s)"
+  ],
+  [
+   6973,
+   "tuple index %lld out of range (the tuple has %d elements)"
+  ],
+  [
+   6982,
+   "or_else on an Option binds nothing -- None carries no value; write `or_else _: ...`"
+  ],
+  [
+   6987,
+   "or_else applies to a Result or Option value, got %s"
+  ],
+  [
+   6992,
+   "or_else returns its value from the enclosing function, which returns nothing -- use `or_return` or a `match` here"
+  ],
+  [
+   7001,
+   "or_else returns its value from the enclosing function, which returns %s, but this value is %s"
+  ],
+  [
+   7007,
+   "or_return on an Option requires the enclosing function to return an Option, but it returns %s"
+  ],
+  [
+   7012,
+   "or_return applies to a Result or Option value, got %s"
+  ],
+  [
+   7014,
+   "or_return requires the enclosing function to return a Result, but it returns %s"
+  ],
+  [
+   7017,
+   "or_return propagates a %s error, but the function's error type is %s"
+  ],
+  [
+   7033,
+   "'%s' is used before its type can be inferred -- assign/push/pass it first, or annotate the declaration"
+  ],
+  [
+   7052,
+   "%s carries a payload — write %s(...)"
+  ],
+  [
+   7054,
+   "%s is a variant of generic enum %s; supply the type explicitly, e.g. %s$(int)"
+  ],
+  [
+   7066,
+   "a function value supports at most 8 parameters"
+  ],
+  [
+   7068,
+   "'%s' has an inout parameter, so it can't be a function value"
+  ],
+  [
+   7073,
+   "`%s` is deprecated: %s"
+  ],
+  [
+   7083,
+   "'%s' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: %s(a, b)"
+  ],
+  [
+   7089,
+   "`pass` is a statement and produces no value -- a value if/match needs one in every branch, so write this as a plain statement"
+  ],
+  [
+   7090,
+   "unknown variable '%s'; did you mean '%s'?"
+  ],
+  [
+   7091,
+   "unknown variable '%s'"
+  ],
+  [
+   7107,
+   "map keys must be string, int (directly or through a newtype), a fieldless enum, or a hashable struct/tuple/array"
+  ],
+  [
+   7110,
+   "map keys must all have the same type"
+  ],
+  [
+   7112,
+   "map values must all have the same type"
+  ],
+  [
+   7118,
+   "cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)"
+  ],
+  [
+   7124,
+   "an array element cannot be void -- this element produces no value (a call to a procedure that returns nothing?)"
+  ],
+  [
+   7126,
+   "cannot infer the array's element type from None — put a Some(...) first"
+  ],
+  [
+   7129,
+   "array elements must all have the same type"
+  ],
+  [
+   7148,
+   "a map is not directly iterable -- `for k in m` indexes it by position. Loop over `keys(m)` instead: `for k in keys(m):` (the keys come back as %s, wrapped)"
+  ],
+  [
+   7149,
+   "map key must be %s, got %s"
+  ],
+  [
+   7172,
+   "index must be int"
+  ],
+  [
+   7185,
+   "a tuple element is named `.0`, `.1`, ... not `[i]` -- the index must be a constant position, so it is not a subscript"
+  ],
+  [
+   7187,
+   "can only index an array, a string, bytes, or a map (as a place)"
+  ],
+  [
+   7197,
+   "slice start must be int"
+  ],
+  [
+   7199,
+   "slice end must be int"
+  ],
+  [
+   7203,
+   "cannot slice a bounded[...] value; copy it into a [%s] first"
+  ],
+  [
+   7205,
+   "cannot slice a %s value; copy it into a [%s] first"
+  ],
+  [
+   7208,
+   "can only slice an array, soa, a string, or bytes"
+  ],
+  [
+   7240,
+   "a function value supports at most 8 parameters"
+  ],
+  [
+   7242,
+   "'%s.%s' has an inout parameter, so it can't be a function value"
+  ],
+  [
+   7248,
+   "'%s.%s' is generic, so it has no single function value -- there is no instantiation to take. Wrap it in a lambda that fixes the types, e.g. fn(a: int, b: int) -> int: %s.%s(a, b)"
+  ],
+  [
+   7251,
+   "package '%s' has no variant, const or function '%s'; did you mean '%s'?"
+  ],
+  [
+   7252,
+   "package '%s' has no variant, const or function '%s'"
+  ],
+  [
+   7255,
+   "%s.%s carries a payload — write %s.%s(...)"
+  ],
+  [
+   7258,
+   "%s.%s is a variant of a generic enum; supply the type explicitly, e.g. %s.%s$(int)"
+  ],
+  [
+   7285,
+   "'.%s' is a lane name, and lane names stop at 4 lanes -- this value has %lld, so index it: [%d]"
+  ],
+  [
+   7288,
+   "'.%s' names lane %d, and this value has only %lld lanes"
+  ],
+  [
+   7294,
+   "'.%s' on a non-struct value"
+  ],
+  [
+   7301,
+   "struct %s has no field '%s'; did you mean '%s'?"
+  ],
+  [
+   7302,
+   "struct %s has no field '%s'"
+  ],
+  [
+   7310,
+   "'&' is only valid as the argument to an inout parameter, e.g. f(&x)"
+  ],
+  [
+   7324,
+   "zero$(T) takes no value arguments"
+  ],
+  [
+   7325,
+   "zero$(T) takes exactly one type argument"
+  ],
+  [
+   7328,
+   "zero$(%s): only int, float, bool, and string are defaultable"
+  ],
+  [
+   7342,
+   "from_bytes$(T)(b) takes one value argument"
+  ],
+  [
+   7343,
+   "from_bytes$(T)(b) takes exactly one type argument"
+  ],
+  [
+   7346,
+   "from_bytes$(%s): only a packed struct can be read from bytes"
+  ],
+  [
+   7348,
+   "from_bytes$(T)(b) takes bytes"
+  ],
+  [
+   7352,
+   "size_of$(T) takes no value arguments"
+  ],
+  [
+   7353,
+   "size_of$(T) takes exactly one type argument"
+  ],
+  [
+   7356,
+   "size_of$(%s): only a packed or an align(N) struct has a byte size"
+  ],
+  [
+   7386,
+   "m.get(key) or m.get(key, default) takes one or two arguments (got %d)"
+  ],
+  [
+   7411,
+   "subscript '%s' is declared `-> inout %s` but yields a place of type %s"
+  ],
+  [
+   7479,
+   "m.get(key) or m.get(key, default) takes one or two arguments (got %d)"
+  ],
+  [
+   7500,
+   "subscript '%s' is declared `-> inout %s` but yields a place of type %s"
+  ],
+  [
+   7545,
+   "calling a value that isn't a function (%s)"
+  ],
+  [
+   7547,
+   "this function value expects %d argument(s), got %d"
+  ],
+  [
+   7552,
+   "argument %d must be %s"
+  ],
+  [
+   7560,
+   "'%s' expects %d argument(s), got %d"
+  ],
+  [
+   7565,
+   "argument %d to '%s' must be %s"
+  ],
+  [
+   7580,
+   "package '%s' is used here but this file does not `import` it (another file in the build does; imports are per-file)"
+  ],
+  [
+   7607,
+   "'%s' is a builtin, not a member of package '%s' -- call it directly: %s(...)"
+  ],
+  [
+   7616,
+   "'%s' is a variant of enum %s, not a package member -- variant names are global, write %s(...)"
+  ],
+  [
+   7619,
+   "package '%s' has no symbol '%s'; did you mean '%s'?%s"
+  ],
+  [
+   7620,
+   "package '%s' has no symbol '%s'%s"
+  ],
+  [
+   7636,
+   "%s(x) takes one %s"
+  ],
+  [
+   7639,
+   "%s(x) needs a %s, got %s"
+  ],
+  [
+   7655,
+   "named arguments are only valid for struct construction"
+  ],
+  [
+   7659,
+   "%s: cannot mix named and positional fields"
+  ],
+  [
+   7664,
+   "%s has no field '%s'"
+  ],
+  [
+   7667,
+   "%s: named construction must give all %d field(s), got %d"
+  ],
+  [
+   7674,
+   "%s: field '%s' given more than once"
+  ],
+  [
+   7688,
+   "%s takes %d field value(s), got %d"
+  ],
+  [
+   7697,
+   "field '%s' of %s does not fit a %s argument"
+  ],
+  [
+   7702,
+   "type parameter $%s of %s is not fixed by any field value"
+  ],
+  [
+   7709,
+   "%s takes %d field value(s), got %d"
+  ],
+  [
+   7720,
+   "field type mismatch: field '%s' of %s is %s, got %s"
+  ],
+  [
+   7737,
+   "%s expects %d type argument(s), got %d"
+  ],
+  [
+   7743,
+   "%s takes %d payload value(s), got %d"
+  ],
+  [
+   7749,
+   "%s payload %d does not fit a %s argument"
+  ],
+  [
+   7754,
+   "type parameter $%s of %s is not fixed by any payload value; supply it explicitly, e.g. %s$(int)"
+  ],
+  [
+   7761,
+   "%s takes %d payload value(s), got %d"
+  ],
+  [
+   7770,
+   "payload type mismatch: %s payload %d is %s, got %s"
+  ],
+  [
+   7781,
+   "wait(t) takes one task"
+  ],
+  [
+   7783,
+   "wait(t) takes a task from spawn, got %s"
+  ],
+  [
+   7785,
+   "wait takes a task variable or a spawn expression"
+  ],
+  [
+   7793,
+   "a channel must be created directly in a declaration: ch := channel(T, cap)"
+  ],
+  [
+   7796,
+   "channel(T, cap) needs an int capacity"
+  ],
+  [
+   7800,
+   "send(ch, v) takes a channel and a value"
+  ],
+  [
+   7802,
+   "send(ch, v) takes a channel, got %s"
+  ],
+  [
+   7805,
+   "send on %s needs a %s value"
+  ],
+  [
+   7809,
+   "recv(ch) takes one channel"
+  ],
+  [
+   7811,
+   "recv(ch) takes a channel, got %s"
+  ],
+  [
+   7815,
+   "close takes one channel or handle"
+  ],
+  [
+   7825,
+   "close(h) takes a handle variable"
+  ],
+  [
+   7828,
+   "close takes a channel or a handle, got %s"
+  ],
+  [
+   7835,
+   "str(x) takes one argument"
+  ],
+  [
+   7845,
+   "str(x) can't stringify a %s"
+  ],
+  [
+   7857,
+   "hash(x) takes one argument"
+  ],
+  [
+   7863,
+   "hash(x) can't hash a %s (hashable = the map-key types: int, string, their newtypes, fieldless enums, and composites of those)"
+  ],
+  [
+   7869,
+   "to_float(n) takes one argument"
+  ],
+  [
+   7872,
+   "to_float(n) takes an int, a sized int, f32, or a float newtype"
+  ],
+  [
+   7876,
+   "to_int(x) takes one argument"
+  ],
+  [
+   7879,
+   "to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string"
+  ],
+  [
+   7881,
+   "to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype"
+  ],
+  [
+   7885,
+   "%s(x) takes one argument"
+  ],
+  [
+   7888,
+   "%s(x) takes a numeric value"
+  ],
+  [
+   7892,
+   "to_str(x) takes one argument"
+  ],
+  [
+   7895,
+   "to_str(x) takes bytes or a string newtype"
+  ],
+  [
+   7899,
+   "to_ptr(n) takes one argument"
+  ],
+  [
+   7901,
+   "to_ptr(n) takes an int"
+  ],
+  [
+   7905,
+   "to_bytes(s) takes one argument"
+  ],
+  [
+   7909,
+   "to_bytes(x) takes a string, [int] or a packed struct"
+  ],
+  [
+   7913,
+   "to_bool(x) takes one argument"
+  ],
+  [
+   7916,
+   "to_bool(x) takes a bool newtype"
+  ],
+  [
+   7920,
+   "to_under(x) takes one argument"
+  ],
+  [
+   7923,
+   "to_under(x) takes a newtype value, got %s"
+  ],
+  [
+   7928,
+   "len(...) takes one argument"
+  ],
+  [
+   7931,
+   "len(...) takes an array, a string, bytes, a map, or a soa"
+  ],
+  [
+   7939,
+   "map_set(m, key, value) takes three arguments"
+  ],
+  [
+   7945,
+   "map keys must be string or int"
+  ],
+  [
+   7950,
+   "map_set's first argument must be a map"
+  ],
+  [
+   7951,
+   "map_set key must be %s"
+  ],
+  [
+   7953,
+   "map_set value must be %s"
+  ],
+  [
+   7957,
+   "map_get(m, key, default) takes three arguments"
+  ],
+  [
+   7959,
+   "map_get's first argument must be a map"
+  ],
+  [
+   7960,
+   "map_get key must be %s"
+  ],
+  [
+   7962,
+   "map_get default must be %s"
+  ],
+  [
+   7966,
+   "map_has(m, key) takes two arguments"
+  ],
+  [
+   7969,
+   "map_has's first argument must be a map"
+  ],
+  [
+   7970,
+   "map_has key must be %s"
+  ],
+  [
+   7976,
+   "map_del(m, key) takes two arguments"
+  ],
+  [
+   7978,
+   "map_del's first argument must be a map"
+  ],
+  [
+   7979,
+   "map_del key must be %s"
+  ],
+  [
+   7984,
+   "keys(m) takes one argument"
+  ],
+  [
+   7987,
+   "keys's argument must be a map"
+  ],
+  [
+   7991,
+   "push(arr, value) takes two arguments"
+  ],
+  [
+   7999,
+   "push's first argument must be an array variable or field"
+  ],
+  [
+   8009,
+   "push's first argument must be an array or soa"
+  ],
+  [
+   8011,
+   "cannot push to a %s -- its length is fixed; use a bounded[%lld]%s or a [%s]"
+  ],
+  [
+   8015,
+   "cannot push through this expression — the array must be a variable, field, or composite-array element"
+  ],
+  [
+   8022,
+   "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)"
+  ],
+  [
+   8026,
+   "push's value must be %s"
+  ],
+  [
+   8030,
+   "pop(arr) takes one argument"
+  ],
+  [
+   8034,
+   "pop's first argument must be an array variable or field"
+  ],
+  [
+   8039,
+   "pop's first argument must be an array or soa"
+  ],
+  [
+   8041,
+   "pop is not supported on a bounded[...] yet; read the last element via len()-1 and rebuild"
+  ],
+  [
+   8043,
+   "pop does not apply to a %s — its length is fixed"
+  ],
+  [
+   8045,
+   "cannot pop through this expression — the array must be a variable, field, or composite-array element"
+  ],
+  [
+   8048,
+   "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)"
+  ],
+  [
+   8053,
+   "reserve(arr, n) takes two arguments"
+  ],
+  [
+   8057,
+   "reserve's first argument must be an array variable or field"
+  ],
+  [
+   8062,
+   "reserve's first argument must be an array or a map"
+  ],
+  [
+   8064,
+   "reserve does not apply to a bounded[...] — its capacity is fixed"
+  ],
+  [
+   8066,
+   "reserve does not apply to a %s — its length is fixed"
+  ],
+  [
+   8074,
+   "reserve only supports arrays of scalars, structs, tuples, or nested arrays, and maps"
+  ],
+  [
+   8076,
+   "cannot reserve through this expression"
+  ],
+  [
+   8078,
+   "cannot mutate parameter '%s' (it is borrowed read-only)"
+  ],
+  [
+   8080,
+   "reserve's capacity must be int"
+  ],
+  [
+   8098,
+   "'%s' takes at least %d argument(s), got %d"
+  ],
+  [
+   8104,
+   "a spread argument `x...` must be the only variadic argument to '%s'"
+  ],
+  [
+   8122,
+   "cannot infer the element type of an empty variadic call to generic '%s'; pass at least one argument, or name the type: %s$(<type>)()"
+  ],
+  [
+   8138,
+   "`%s` is deprecated: %s"
+  ],
+  [
+   8142,
+   "explicit type arguments given, but '%s' is not a generic function"
+  ],
+  [
+   8151,
+   "'%s' has type %s, not a procedure -- it cannot be called"
+  ],
+  [
+   8155,
+   "unknown procedure '%s' -- %s"
+  ],
+  [
+   8157,
+   "unknown procedure '%s'; did you mean '%s'?"
+  ],
+  [
+   8158,
+   "unknown procedure '%s' -- %s"
+  ],
+  [
+   8159,
+   "unknown procedure '%s'"
+  ],
+  [
+   8162,
+   "'%s' takes %d argument(s), got %d"
+  ],
+  [
+   8175,
+   "argument %d of '%s' is inout; pass it as '&variable'"
+  ],
+  [
+   8181,
+   "inout argument %d of '%s' must name a variable"
+  ],
+  [
+   8183,
+   "cannot pass borrowed parameter '%s' as inout (it is read-only; copy it first)"
+  ],
+  [
+   8185,
+   "argument %d of '%s' is not inout; remove the '&'"
+  ],
+  [
+   8205,
+   "argument type mismatch: argument %d of '%s' is %s, expected string -- wrap it with str(...), e.g. %s(str(x))"
+  ],
+  [
+   8218,
+   "argument type mismatch: argument %d of '%s' is %s, expected %s"
+  ],
+  [
+   8235,
+   "variable '%s' passed to two inout parameters of '%s' (overlapping mutable access)"
+  ],
+  [
+   8253,
+   "variable '%s' is passed to an inout parameter and also by value in the same call to '%s' (overlapping access — the by-value copy would alias the inout'd value)"
+  ],
+  [
+   8269,
+   "cannot pass a slice of '%s' and an inout of '%s' in one call (the inout may reallocate the buffer the slice views)"
+  ],
+  [
+   8290,
+   "the result of '%s' is a handle and must be bound to a variable (d := %s(...)) -- a handle is freed when its owning variable's scope exits, so one that is never bound is never freed"
+  ],
+  [
+   8301,
+   "`not` needs a bool operand"
+  ],
+  [
+   8307,
+   "unary `-` needs an int or a float"
+  ],
+  [
+   8313,
+   "unary `~` needs an integer"
+  ],
+  [
+   8325,
+   "'%s' is not a variant of %s; write `%s` or `%s`"
+  ],
+  [
+   8330,
+   "`is` asks an enum, Option or Result value which variant it holds; %s is none of those"
+  ],
+  [
+   8342,
+   "`%s` needs bool operands"
+  ],
+  [
+   8347,
+   "`in` tests membership in a map; the right operand must be a map"
+  ],
+  [
+   8349,
+   "`in` key must be %s"
+  ],
+  [
+   8372,
+   "cannot compare %s with %s"
+  ],
+  [
+   8373,
+   "cannot compare void"
+  ],
+  [
+   8379,
+   "functions are not comparable -- closures have no structural equality; compare the values they produce instead"
+  ],
+  [
+   8395,
+   "ordering compares two ints, two floats, two chars, two strings, two of one sized type (u8..u64, i8..i64, f32), or two of the same newtype over one of these"
+  ],
+  [
+   8402,
+   "cannot concatenate string with %s"
+  ],
+  [
+   8410,
+   "cannot concatenate bytes with %s -- to_bytes(x) to widen, or to_str(b) to work in strings"
+  ],
+  [
+   8418,
+   "division by zero"
+  ],
+  [
+   8426,
+   "shift operators require integer operands (got %s, %s)"
+  ],
+  [
+   8451,
+   "element-wise `%s` is defined for [T] and [N]T only (got %s, %s)"
+  ],
+  [
+   8458,
+   "cannot mix a vector and an array in element-wise `%s` (got %s, %s) -- copy one side into the other's kind first"
+  ],
+  [
+   8462,
+   "element-wise `%s` requires two arrays with the same element type (got %s, %s)"
+  ],
+  [
+   8468,
+   "cannot mix a fixed array and a growable array in element-wise `%s` (got %s, %s) -- copy one side into the other's kind first"
+  ],
+  [
+   8476,
+   "element-wise `%s` on a fixed array requires the same static length (got %s and %s)"
+  ],
+  [
+   8479,
+   "`%s` is not defined element-wise on %s -- there is no element-wise `%s` for %s%s"
+  ],
+  [
+   8520,
+   "element-wise `%s` is defined for [T] and [N]T only (got %s, %s)"
+  ],
+  [
+   8530,
+   "element-wise `%s` requires the scalar to have the array's element type (got %s and %s) -- a literal adapts, but a variable never widens"
+  ],
+  [
+   8534,
+   "`%s` is not defined element-wise on %s -- there is no element-wise `%s` for %s%s"
+  ],
+  [
+   8543,
+   "modulo / bitwise operators require two matching integers (got %s, %s)"
+  ],
+  [
+   8577,
+   "bytes has no arithmetic (got %s, %s) -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)"
+  ],
+  [
+   8584,
+   "arithmetic on two different newtypes: '%s' and '%s' are distinct types even though both are over %s -- unwrap one with to_under(x), or make both sides the same newtype"
+  ],
+  [
+   8587,
+   "arithmetic requires two ints or two floats (got %s, %s) -- convert one side, e.g. to_float(x) to compute in floats, or to_int(x) in ints"
+  ],
+  [
+   8601,
+   "or_else returns its value from the enclosing function, which returns %s, but this value is %s"
+  ],
+  [
+   8642,
+   "a fixed-size array of length %lld needs %lld elements, got %d"
+  ],
+  [
+   8646,
+   "element %d of a %s array is the wrong type"
+  ],
+  [
+   8654,
+   "a bounded[%lld] holds at most %lld elements, got %d"
+  ],
+  [
+   8658,
+   "element %d of a %s literal is the wrong type"
+  ],
+  [
+   8693,
+   "declared type %s but value is Some(%s)"
+  ],
+  [
+   8701,
+   "declared type %s but value is Ok(); Ok() is only a Result(void, E)"
+  ],
+  [
+   8705,
+   "%s carries no ok value -- write Ok(), not Ok(x)"
+  ],
+  [
+   8709,
+   "declared type %s but value is %s(%s)"
+  ],
+  [
+   8720,
+   "tuple element %d needs a concrete value"
+  ],
+  [
+   8800,
+   "parallel for captures at most 14 outer variables"
+  ],
+  [
+   8811,
+   "a parallel for cannot capture a task handle -- wait it first"
+  ],
+  [
+   8812,
+   "a parallel for cannot capture a handle -- it is freed at the end of its scope"
+  ],
+  [
+   8820,
+   "%s cannot cross a parallel for (no early exit from a chunk)"
+  ],
+  [
+   8826,
+   "parallel for cannot pass a captured variable as inout (no shared mutation across chunks)"
+  ],
+  [
+   8848,
+   "parallel for cannot mutate captured variable '%s' in place"
+  ],
+  [
+   8862,
+   "a parallel for cannot capture a task handle -- wait it first"
+  ],
+  [
+   8863,
+   "a parallel for cannot capture a handle -- it is freed at the end of its scope"
+  ],
+  [
+   8897,
+   "return cannot cross a parallel for"
+  ],
+  [
+   8900,
+   "break cannot apply to a parallel for (chunks cannot stop each other)"
+  ],
+  [
+   8916,
+   "parallel for cannot assign to captured variable '%s'"
+  ],
+  [
+   8922,
+   "assignment to unknown variable '%s'"
+  ],
+  [
+   8929,
+   "parallel for may update an outer variable only as a reduction: %s = %s + e or %s = %s * e (int/float)"
+  ],
+  [
+   8934,
+   "parallel for supports at most 4 reduction accumulators"
+  ],
+  [
+   8939,
+   "accumulator '%s' must use one reduction op consistently"
+  ],
+  [
+   8951,
+   "parallel for cannot mutate captured variable '%s' in place"
+  ],
+  [
+   9080,
+   "parallel for expects an array, string, or channel"
+  ],
+  [
+   9084,
+   "parallel for needs an int range"
+  ],
+  [
+   9085,
+   "too many parallel for loops (max 64)"
+  ],
+  [
+   9095,
+   "reduction accumulator '%s' may only be updated, not read, inside parallel for"
+  ],
+  [
+   9097,
+   "reduction accumulator '%s' may only be updated, not read, inside parallel for"
+  ],
+  [
+   9286,
+   "loop condition never changes; this `for` may run forever (forgot to advance a variable? consider `for i := 0; i < n; i += 1:`)"
+  ],
+  [
+   9331,
+   "non-exhaustive match: missing variant %s of %s"
+  ],
+  [
+   9336,
+   "duplicate %s arm"
+  ],
+  [
+   9339,
+   "%s carries no value here -- write a bare `%s:` arm"
+  ],
+  [
+   9346,
+   "%s(x) binds exactly one value"
+  ],
+  [
+   9355,
+   "'%s' is a variant of %s that carries a payload -- write %s(%s(x)) to match it, or rename the binding"
+  ],
+  [
+   9361,
+   "a nested pattern needs an enum payload, but %s here carries %s"
+  ],
+  [
+   9365,
+   "'%s' is not a variant of %s"
+  ],
+  [
+   9369,
+   "%s binds %d value(s), got %d"
+  ],
+  [
+   9374,
+   "duplicate %s(%s) arm"
+  ],
+  [
+   9390,
+   "cannot assign to this expression"
+  ],
+  [
+   9408,
+   "every branch of this value if/match diverges, so there is no value to bind to '%s' -- write the if/match as a plain statement"
+  ],
+  [
+   9413,
+   "cannot infer the type of this branch — a bare Ok/Err/None is fixed only by a destination type, and neither := nor x : T = flows one in; write the branch with a concrete type, or bind it via an assignment/return"
+  ],
+  [
+   9415,
+   "a value if/match branch must produce a value, not void"
+  ],
+  [
+   9418,
+   "if/match branches produce different types (%s and %s)"
+  ],
+  [
+   9423,
+   "declared type %s but value is %s"
+  ],
+  [
+   9427,
+   "a value if/match cannot produce a task handle"
+  ],
+  [
+   9450,
+   "too many pending declarations in one function"
+  ],
+  [
+   9458,
+   "cannot bind a void value"
+  ],
+  [
+   9461,
+   "declared type %s but value is %s"
+  ],
+  [
+   9465,
+   "cannot infer the type of None — annotate it (x : Option(T) = None)"
+  ],
+  [
+   9467,
+   "cannot infer the Result type of %s — annotate it (x : Result(T, E) = %s)"
+  ],
+  [
+   9475,
+   "a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))"
+  ],
+  [
+   9484,
+   "a handle cannot be copied -- it is freed once, at the end of its scope, and a second name would free it twice; bind the opener directly (f := open(...)), or pass this one as an argument, which borrows it"
+  ],
+  [
+   9487,
+   "a channel cannot be copied -- it is freed once, when its creating scope exits, and a second name hides every send and receive from the compiler's analysis; bind the channel(...) directly, or pass this one as an argument"
+  ],
+  [
+   9496,
+   "the right side of a destructuring must be a tuple, got %s"
+  ],
+  [
+   9499,
+   "destructuring %d target(s) from a %d-element tuple"
+  ],
+  [
+   9504,
+   "duplicate name '%s' in the destructuring list"
+  ],
+  [
+   9513,
+   "the right side of a multi-assign must be a tuple, got %s"
+  ],
+  [
+   9515,
+   "assigning %d name(s) from a %d-element tuple"
+  ],
+  [
+   9520,
+   "`_` is not a discard -- it is an ordinary variable, and this one was never declared. Name every element, or declare `_` once with `:=` and reuse it"
+  ],
+  [
+   9523,
+   "assignment to unknown variable '%s' (use ':=' to declare); did you mean '%s'?"
+  ],
+  [
+   9524,
+   "assignment to unknown variable '%s' (use ':=' to declare)"
+  ],
+  [
+   9528,
+   "assignment type mismatch: cannot assign %s to '%s' of type %s"
+  ],
+  [
+   9536,
+   "cannot assign to constant '%s'"
+  ],
+  [
+   9540,
+   "`_` is not a discard -- it is an ordinary variable, and this one was never declared. To drop a result, call it as a statement (`f(x)`); to keep it, name it (`x := f(x)`)"
+  ],
+  [
+   9543,
+   "assignment to unknown variable '%s'; did you mean '%s'?"
+  ],
+  [
+   9544,
+   "assignment to unknown variable '%s'"
+  ],
+  [
+   9547,
+   "a task variable cannot be reassigned -- each task is waited exactly once"
+  ],
+  [
+   9549,
+   "a channel variable cannot be reassigned"
+  ],
+  [
+   9551,
+   "a handle variable cannot be reassigned -- it is freed once, at the end of its scope"
+  ],
+  [
+   9559,
+   "assignment type mismatch: cannot assign %s to '%s' of type %s"
+  ],
+  [
+   9566,
+   "this proc returns nothing"
+  ],
+  [
+   9568,
+   "returning %s but proc returns %s"
+  ],
+  [
+   9575,
+   "missing return value (proc returns %s)"
+  ],
+  [
+   9585,
+   "if condition must be bool"
+  ],
+  [
+   9597,
+   "a `_` wildcard must be the last match arm"
+  ],
+  [
+   9598,
+   "a `_` wildcard binds nothing"
+  ],
+  [
+   9612,
+   "duplicate None arm"
+  ],
+  [
+   9613,
+   "None binds nothing"
+  ],
+  [
+   9616,
+   "an Option's arms are Some(x), None, and _, not '%s'"
+  ],
+  [
+   9624,
+   "match on an Option must cover both Some and None"
+  ],
+  [
+   9641,
+   "a Result's arms are Ok(x), Err(e), and _, not '%s'"
+  ],
+  [
+   9650,
+   "match on a Result must cover both Ok and Err"
+  ],
+  [
+   9668,
+   "duplicate arm for %s"
+  ],
+  [
+   9672,
+   "%s binds %d value(s), got %d"
+  ],
+  [
+   9677,
+   "a nested pattern is only supported inside Ok(...), Err(...) or Some(...) -- match %s's payload in its own match"
+  ],
+  [
+   9682,
+   "'%s' is a variant of %s, not a binding name -- match it in its own match, or rename the binding"
+  ],
+  [
+   9694,
+   "non-exhaustive match: missing variant %s of %s"
+  ],
+  [
+   9712,
+   "'%s' is not an int constant (match arms for %s are literals)"
+  ],
+  [
+   9734,
+   "'%s' is not an int constant"
+  ],
+  [
+   9742,
+   "'%s' is not an int constant"
+  ],
+  [
+   9748,
+   "a match on an int takes int literal arms, not a %s"
+  ],
+  [
+   9751,
+   "a match on a char takes char literal arms"
+  ],
+  [
+   9753,
+   "a match on a bool takes true/false arms"
+  ],
+  [
+   9755,
+   "a range starts at %lld and ends at %lld (the start must not exceed the end)"
+  ],
+  [
+   9771,
+   "duplicate or overlapping match arm: [%lld..%lld] overlaps [%lld..%lld] from line %d"
+  ],
+  [
+   9776,
+   "a match on %s must carry a `_` arm (the domain is unbounded)"
+  ],
+  [
+   9785,
+   "a match on a bool must cover both true and false, or carry a `_` arm"
+  ],
+  [
+   9790,
+   "match on %s is refused: nothing in the tree dispatches on it -- use if/elif (see docs/internals/design-scalar-match.md D1)"
+  ],
+  [
+   9793,
+   "match expects an Option, Result, or enum value, or an int/char/bool, got %s"
+  ],
+  [
+   9799,
+   "for condition must be bool"
+  ],
+  [
+   9820,
+   "for condition must be bool"
+  ],
+  [
+   9834,
+   "select recv needs a channel, got %s"
+  ],
+  [
+   9844,
+   "select needs at least one recv arm"
+  ],
+  [
+   9845,
+   "select takes at most one default and one closed arm"
+  ],
+  [
+   9853,
+   "a counting `for` needs int bounds"
+  ],
+  [
+   9866,
+   "can only index-assign an array or map variable or field"
+  ],
+  [
+   9868,
+   "cannot mutate parameter '%s' (it is borrowed read-only; copy it with `y := %s` first)"
+  ],
+  [
+   9874,
+   "cannot index-assign through this expression (only a variable, field, composite-array element, or map value is a place)"
+  ],
+  [
+   9883,
+   "compound assignment `m[k] op= ...` is only supported for int/float/char map values; for a composite value use push(m[k], ...) or `m[k] = <expr>`"
+  ],
+  [
+   9887,
+   "cannot compound-assign %s to a %s map value"
+  ],
+  [
+   9892,
+   "assignment type mismatch: cannot assign %s to a %s map value"
+  ],
+  [
+   9897,
+   "cannot index-assign an element of %s (it is immutable)"
+  ],
+  [
+   9900,
+   "assignment type mismatch: cannot assign %s to a %s element"
+  ],
+  [
+   9908,
+   "cannot mutate parameter '%s' (it is borrowed read-only)"
+  ],
+  [
+   9913,
+   "cannot assign to a field of a temporary (only variables, fields, and composite-array elements are places)"
+  ],
+  [
+   9916,
+   "assignment type mismatch: cannot assign %s to a %s field"
+  ],
+  [
+   9928,
+   "result of `%s` is discarded; it has no side effects, so this statement does nothing (to change a map, use `m[k] = v` or `delete m[k]`)"
+  ],
+  [
+   9935,
+   "`%s` here produces %s, which this statement discards -- bind it (x := ... %s)"
+  ],
+  [
+   9938,
+   "a spawned task must be bound and waited (t := spawn f(...); ... wait(t))"
+  ],
+  [
+   9942,
+   "this Result is discarded, so its error is silently ignored; handle it with `match`, propagate with `or_return`, or bind it (x := ...)"
+  ],
+  [
+   9965,
+   "'%s' is already declared in this scope"
+  ],
+  [
+   9988,
+   "could not infer the type of '%s' -- no grounding use in its block (annotate: %s : [T] = [] / Option(T) = None)"
+  ],
+  [
+   10086,
+   "a channel parameter cannot be inout (the handle is already shared)"
+  ],
+  [
+   10088,
+   "inout parameter '%s': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)"
+  ],
+  [
+   10095,
+   "'%s' takes %d argument(s), got %d"
+  ],
+  [
+   10101,
+   "'%s' has %d type parameter(s), but %d explicit type argument(s) were given"
+  ],
+  [
+   10113,
+   "argument %d of '%s' is %s, which does not fit the parameter pattern"
+  ],
+  [
+   10119,
+   "no argument fixes '%s''s type parameter $%s -- it appears only in the return type. Give it explicitly: %s$(<the type for $%s>)(...)"
+  ],
+  [
+   10135,
+   "'%s' instantiated with %s = %s, which is not in the type set { %s }"
+  ],
+  [
+   10139,
+   "'%s' instantiated with %s = %s, which does not satisfy `%s(%s)`"
+  ],
+  [
+   10150,
+   "'%s' is %s, which an affine type cannot be -- '%s' was instantiated at one. Pass it plainly: that is already a borrow"
+  ],
+  [
+   10166,
+   "a Tycho fn cannot return a handle -- '%s' was instantiated at one; only an `extern fn` opener may, because a handle is freed at the end of its scope"
+  ],
+  [
+   10169,
+   "the return type of '%s' has a type parameter not fixed by any argument; pass it explicitly, e.g. %s$(int)"
+  ],
+  [
+   10171,
+   "a function cannot return a channel -- create it in the owning scope and pass it down"
+  ],
+  [
+   10209,
+   "too many generic instantiations (> 1024) -- a recursive generic at a growing type?"
+  ],
+  [
+   10318,
+   "nothing ever sends on channel '%s', so a receive on it parks forever"
+  ],
+  [
+   10320,
+   "nothing ever receives from channel '%s', so a send parks once its buffer fills"
+  ],
+  [
+   10322,
+   "close(%s) is never called, so this `closed:` arm can never run (a `parallel for` over a channel ends only when it is closed)"
+  ],
+  [
+   10358,
+   "'%s' is already defined -- also at %s, a DIFFERENT file in the same package: tychoc compiles every .ty beside the entry file, so two unrelated programs cannot share one directory"
+  ],
+  [
+   10362,
+   "'%s' is already defined"
+  ],
+  [
+   10372,
+   "a struct field cannot be a channel"
+  ],
+  [
+   10377,
+   "an enum payload cannot be a channel"
+  ],
+  [
+   10380,
+   "a newtype cannot wrap a channel"
+  ],
+  [
+   10387,
+   "a struct field cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`"
+  ],
+  [
+   10392,
+   "an enum payload cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`"
+  ],
+  [
+   10395,
+   "a newtype cannot wrap a `[$N]T` size-parameterized array"
+  ],
+  [
+   10400,
+   "too many parameters (max 16)"
+  ],
+  [
+   10402,
+   "a function cannot return a channel -- create it in the owning scope and pass it down"
+  ],
+  [
+   10457,
+   "the destructor '%s' of handle '%s' is not a declared `extern fn` -- add `extern fn %s(h: %s)`; without it the scope-exit free reaches cc with no prototype and the error names the generated C, not this line"
+  ],
+  [
+   10464,
+   "the destructor '%s' of handle '%s' must take exactly one parameter of type %s -- that is what the scope-exit free passes it"
+  ],
+  [
+   10469,
+   "the destructor '%s' of handle '%s' cannot return bytes or a scalar array -- scope-exit frees pass only the handle argument"
+  ],
+  [
+   10510,
+   "duplicate parameter '%s'"
+  ],
+  [
+   10519,
+   "'main' takes no parameters -- the command line arrives through the `args()` builtin"
+  ],
+  [
+   10522,
+   "'main' returns nothing or Result(void, string), not %s -- an Err reaching the entry point is printed, so the error type is the message. For a status other than 0 or 1 (diff(1)'s 0/1/2, say), call the `exit(code)` builtin"
+  ],
+  [
+   10534,
+   "not all paths of '%s' return a value (a fall-off-the-end yields a zero value)"
+  ],
+  [
+   10554,
+   "'%s' is never called"
+  ],
+  [
+   11929,
+   "'%s' is copied into this aggregate because it is still live afterwards; if you do not need it after this, make this its last use and the copy goes away"
+  ],
+  [
+   11975,
+   "'%s' is a `sink` parameter and cannot be handed to another `sink` parameter: a parameter's buffer is never adopted, however it was declared. Copy it first (`y := %s`) and consume `y`"
+  ],
+  [
+   11979,
+   "'%s' is consumed by a `sink` parameter inside a loop but was declared outside it, so the next iteration would consume the same buffer again. Lift the call out of the loop, declare the value inside the loop, or pass a fresh value (a literal, or a call's result)"
+  ],
+  [
+   11984,
+   "'%s' is consumed by a `sink` parameter but is mentioned %d times in this function: a sink argument must be the variable's ONLY mention. One textual mention is how the compiler proves the consume is the last use on every path, with no dataflow analysis -- so `len(%s)`, `%s[0]`, `%s[0] = ...` and passing `%s` anywhere else all disqualify it, even before this line. Copy it first (`y := %s`) and consume `y`"
+  ],
+  [
+   11992,
+   "'%s' cannot be consumed by a `sink` parameter here; copy it first (`y := %s`) and consume `y`"
+  ],
+  [
+   13119,
+   "internal: spread `...` reached codegen"
+  ],
+  [
+   14898,
+   "'%s' outside a loop"
+  ],
+  [
+   15363,
+   "infinite type: %s contains itself by value — use a dynamic array ([%s]) for indirection"
+  ],
+  [
+   15401,
+   "infinite type: %s contains itself by value — use an array ([%s]) or Option([%s]) for indirection"
+  ],
+  [
+   15430,
+   "infinite type: an Option contains itself by value — use Option([T]) for indirection"
+  ],
+  [
+   15441,
+   "infinite type: a Result contains itself by value — use indirection (e.g. Result([T], E))"
+  ],
+  [
+   15457,
+   "infinite type: a tuple contains itself by value"
+  ],
+  [
+   15523,
+   "expression too deeply nested to instantiate (max %d)"
+  ],
+  [
+   17749,
+   "'%s' is used after `close(%s)` closed it, on every path to here -- a closed handle is null. Close it after its last use, or let scope exit free it"
+  ],
+  [
+   17760,
+   "'%s' is a handle parameter -- the caller owns it and frees it at its scope exit; `close` it there, not in the callee"
+  ]
+ ]
+}

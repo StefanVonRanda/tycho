@@ -31,8 +31,10 @@ generated cold-start artifact, not a second implementation.
   `make bootstrap-check` and `make fixpoint-check`.
 - **Decided 2026-11-09: one maintained compiler.** The self-hosted compiler is
   the reference implementation; the spec is normative. `src/tychoc.c` is
-  archived: not built, not tested, not updated. Historical defect records still
-  cite it.
+  deleted; its source remains in git history at commit
+  `c7d46528ac6efcf9dc93359d14d98bedcb7ddbad`, and historical records cite it
+  through
+  [`docs/internals/archived-c-compiler.md`](docs/internals/archived-c-compiler.md).
 
 ## The language surface moved once, deliberately
 

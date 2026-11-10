@@ -46,6 +46,14 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Files deleted from the tree whose historical citations are still evidence.
+# They are resolved against the pinned revision, so the citation stays checked
+# without keeping a dead compiler in the build. See
+# docs/internals/archived-c-compiler.md.
+ARCHIVED = {
+    "src/tychoc.c": "c7d46528ac6efcf9dc93359d14d98bedcb7ddbad",
+}
+
 SRC_PREFIX = ("docs/", "src/", "compiler/", "runtime/", "corelib/", "tests/",
               "scripts/", "tools/", "examples/", "server/", "bench/", "fuzz/",
               "editors/", ".githooks/",
@@ -250,8 +258,16 @@ def lines_of(path):
     """-> list of lines, or None if the file does not exist"""
     if path not in _cache:
         fp = os.path.join(ROOT, path)
-        _cache[path] = (open(fp, errors="replace").read().split("\n")
-                        if os.path.exists(fp) else None)
+        if os.path.exists(fp):
+            _cache[path] = open(fp, errors="replace").read().split("\n")
+        elif path in ARCHIVED:
+            pr = subprocess.run(
+                ["git", "show", "%s:%s" % (ARCHIVED[path], path)],
+                cwd=ROOT, capture_output=True, text=True)
+            _cache[path] = (pr.stdout.split("\n")
+                            if pr.returncode == 0 else None)
+        else:
+            _cache[path] = None
     return _cache[path]
 
 
@@ -597,7 +613,9 @@ def main():
     # --- the second and third directions: SOURCE -> DOC and SOURCE -> SOURCE --
     srcs = subprocess.run(["git", "ls-files"], cwd=ROOT,
                           capture_output=True, text=True, check=True).stdout.split()
-    tracked = set(srcs)
+    # Archived paths are not in `git ls-files`, but citations to them are still
+    # checked (against the pinned revision), so they join the tracked set here.
+    tracked = set(srcs) | set(ARCHIVED)
     n_doc, n_src, n_src_anch = 0, 0, 0
     for sf in srcs:
         if sf.endswith(".md") or not sf.startswith(DOC_SCAN_PREFIX):

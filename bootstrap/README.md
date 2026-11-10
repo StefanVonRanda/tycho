@@ -16,6 +16,7 @@ dialect, then run `make bootstrap-check` and commit the new file:
 ./tychoc1 --emit-c compiler/main.ty -o bootstrap/tycho_compiler
 ```
 
-The historical C compiler is `src/tychoc.c`. It is archived: not built, not
-tested, and not updated. It remains in the tree only because earlier design and
-defect records cite it.
+The historical C compiler is `src/tychoc.c`. It is deleted from the tree; its
+source remains in git history at commit
+`c7d46528ac6efcf9dc93359d14d98bedcb7ddbad`, and historical records cite it
+through [`docs/internals/archived-c-compiler.md`](../docs/internals/archived-c-compiler.md).

@@ -57,8 +57,9 @@
 #        which this pass answers `?`: the size of what Phase 6a defers.
 #
 # The split in compiler/reject_class.tsv is COMMITTED, not recomputed: it is
-# grounded in src/tychoc.c's diagnostic sites (see scripts/classify_rejects.py),
-# costs a full ./tychoc run over every tests/reject/*.ty to rebuild, and is
+# grounded in the archived C compiler's diagnostic sites, frozen in
+# compiler/reject_sites.json (see scripts/classify_rejects.py), costs a full
+# ./tychoc run over every tests/reject/*.ty to rebuild, and is
 # the half of
 # this evidence that is expensive and auditable rather than cheap and derived.
 #
@@ -104,10 +105,11 @@ n_new=$(find tools examples server bench -name '*.ty' | wc -l | tr -d ' ')
 python3 scripts/check_corpus_counts.py || rc=1
 python3 scripts/check_corpus_counts.py --selfcheck >/dev/null || { echo "parse-check: corpus-counts selfcheck failed -- run it directly"; rc=1; }
 
-# [0] -- the classifier table's own evidence. Column 3 is a src/tychoc.c line and
-# nothing gated it, so it rotted silently: 310 of 337 rows cited a line that had
-# moved (2026-09-03) while every class was still right. Cheap -- it re-reads the
-# diagnostic sites, it does not run ./tychoc.
+# [0] -- the classifier table's own evidence. Column 3 is an archived C line,
+# frozen in compiler/reject_sites.json, and nothing gated it, so it rotted
+# silently: 310 of 337 rows cited a line that had moved (2026-09-03) while every
+# class was still right. Cheap -- it reads the frozen index, it does not run
+# ./tychoc.
 # Column 2, the CLASS, is checked alongside it since 2026-09-04: the SYNTAX
 # boundary was a typed line and its drift reclassified three fixtures in silence.
 # The selfcheck is the proof both legs can still fail; it runs no ./tychoc either.

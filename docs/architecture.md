@@ -20,8 +20,11 @@ it (`tests/run.sh:175@TYCHOC`).
 `bootstrap/tycho_compiler.c` is a generated cold-start artifact: the compiler
 source emitted as C by the last known-good compiler. It is not a second
 implementation and is not edited by hand. The historical C compiler,
-`src/tychoc.c`, is archived — not built, not tested, not updated — and remains
-only because earlier design and defect records cite it.
+`src/tychoc.c`, has been deleted; its final source is at commit
+`c7d46528ac6efcf9dc93359d14d98bedcb7ddbad` in git history. Historical design
+and defect records still cite it, and `scripts/check_citations.py` resolves
+those citations against that revision. See
+[the archive note](internals/archived-c-compiler.md).
 
 ### Which compiler is right
 

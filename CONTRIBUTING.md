@@ -179,10 +179,10 @@ double-shifts.
 
 **Given no target it re-anchors every file your diff moved** that something
 else cites, and names the changed files it skipped because nothing cites them —
-so one invocation covers a commit touching `src/tychoc.c` and
+so one invocation covers a commit touching `compiler/emit/emit.ty` and
 `runtime/tycho_rt.c` at once. Name files explicitly only to narrow it. It used
-to default to `src/tychoc.c` alone and left the other file's refs stale under a
-green-looking report.
+to default to the old C compiler alone and left the other file's refs stale under
+a green-looking report.
 
 **A commit hash is a citation too, and the gate resolves it.** Write it
 backticked at git's default seven characters (`` `e96d6fc` ``) or introduced by

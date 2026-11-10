@@ -12,8 +12,8 @@ EMBED   := build/tycho_rt_embed.h
 RUNTIME := runtime/tycho_rt.c
 
 # The cold-start artifact: compiler/main.ty emitted as C by the last good
-# self-hosted compiler. It is generated, not maintained; src/tychoc.c is the
-# archived historical compiler and is not built.
+# self-hosted compiler. It is generated, not maintained; the historical C
+# compiler has been deleted (see docs/internals/archived-c-compiler.md).
 BOOTSTRAP_C     := bootstrap/tycho_compiler.c
 BOOTSTRAP_SHIMS := corelib/strings/strings_shim.c corelib/os/os_shim.c corelib/io/io_shim.c
 
@@ -82,12 +82,16 @@ tychoc: tychoc1
 bootstrap-check:
 	@sh scripts/bootstrap_check.sh
 
-# No lane may build the archived C compiler.
+# No lane may build the archived C compiler, and it must not reappear in the
+# tree: historical citations resolve against git history instead.
 single-compiler-check:
+	@if [ -e src/tychoc.c ]; then \
+		echo "single-compiler-check: src/tychoc.c is back in the tree" >&2; exit 1; \
+	fi
 	@if git grep -nE '(^|[^A-Za-z])(cc|gcc|clang|MINGWCC)[[:space:]].*src/tychoc\.c|src/tychoc\.c.*-o' -- Makefile scripts .githooks fuzz; then \
 		echo "single-compiler-check: a lane still builds src/tychoc.c" >&2; exit 1; \
 	fi
-	@echo "single-compiler-check: ok (no lane builds src/tychoc.c)"
+	@echo "single-compiler-check: ok (src/tychoc.c is deleted; no lane builds it)"
 
 # The three tools SHIP in the release archive beside tychoc, and until 2026-09-06
 # they were the only shipped binaries linked dynamically -- so they carried this
