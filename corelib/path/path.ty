@@ -246,6 +246,10 @@ fn under(root: string, p: string) -> bool:
 #   resolve_under("/srv/www", "link.txt")  -> ""   if link.txt leaves the root
 #   resolve_under("/srv/www", "link.txt")  -> the target, if it stays inside
 #
+# resolve_under_checked keeps the same answer space with the reason attached:
+# Ok(join) also covers a missing leaf, Err(BadPath) is a refusal, and a base
+# that cannot be resolved keeps its own PathErr.
+#
 # A path that does not exist is NOT a refusal: the longest existing ancestor is
 # resolved instead and checked, and the lexical join comes back so the caller can
 # report its own "not found" rather than a spurious "forbidden". A dangling
@@ -258,31 +262,49 @@ fn under(root: string, p: string) -> bool:
 # with O_NOFOLLOW per component. This narrows an unconditional escape to a race
 # an outside attacker cannot reach; it does not remove it.
 fn resolve_under(base: string, rel: string) -> string:
+    match resolve_under_checked(base, rel):
+        Ok(p): return p
+        Err(_): return ""
+
+# The checked sibling: Err(BadPath) means refused, while a merely missing leaf
+# is Ok(lexical join) so the caller can report its own not-found. A base that
+# cannot be resolved keeps that failure's cause (NotFound, Denied, ...).
+fn resolve_under_checked(base: string, rel: string) -> Result(string, PathErr):
     for i := 0; i < len(base); i += 1:
         if base[i] == 0:
-            return ""
+            return Err(BadPath)
     for i := 0; i < len(rel); i += 1:
         if rel[i] == 0:
-            return ""
-    j := safe_join(base, rel)
-    if j == "":
-        return ""
-    rb := real(base)
-    if rb == "":
-        return ""                              # no usable root: refuse everything
+            return Err(BadPath)
+    jr := safe_join_checked(base, rel)
+    j := ""
+    match jr:
+        Ok(v): j = v
+        Err(e): return Err(e)
+    rb := ""
+    match real_checked(base):
+        Ok(v): rb = v
+        Err(e): return Err(e)                  # no usable root: nothing can be proven
     p := j
     for len(p) > 0:
-        rp := real(p)
-        if rp == "" and pathx_is_symlink(p):
-            return ""                              # dangling link: do not skip to its parent
-        if rp != "":
+        rp := ""
+        resolved := false
+        match real_checked(p):
+            Ok(v):
+                rp = v
+                resolved = true
+            Err(_):
+                resolved = false
+        if not resolved and pathx_is_symlink(p):
+            return Err(BadPath)                # dangling link: do not skip to its parent
+        if resolved:
             if not under(rb, rp):
-                return ""                      # resolved outside the root
+                return Err(BadPath)            # resolved outside the root
             if p == j:
-                return rp                      # fully resolved: hand back the real path
-            return j                           # a missing leaf under a real ancestor
+                return Ok(rp)                  # fully resolved: hand back the real path
+            return Ok(j)                       # a missing leaf under a real ancestor
         up := dir(p)
         if up == p:
-            return ""                          # walked off the top without a hit
+            return Err(BadPath)                # walked off the top without a hit
         p = up
-    return ""
+    return Err(BadPath)

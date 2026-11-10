@@ -157,7 +157,10 @@ expression-bodied; pass a named function where you need a multi-line body.
     does not resolve. A path that **does not exist is not a refusal**: the longest
     existing ancestor is resolved and checked instead, so the caller reports its
     own "not found" rather than a spurious "forbidden". A dangling symlink is
-    refused.
+    refused. `resolve_under_checked` keeps the same answers with the reason:
+    `Ok(path)` for a resolved path *or a missing leaf*, `Err(BadPath)` for a
+    refusal, and the base's own `PathErr` (`NotFound`, `Denied`, …) when the root
+    itself cannot be resolved.
 
   One caution: a check followed by a separate open can race if an attacker can
   write inside the root. `resolve_under` narrows that window to an attacker with
@@ -495,7 +498,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   inode (volume + file index on Windows), so two names of one hard link answer `true`.
   `flush_stdout() -> bool` flushes the runtime's buffered stdout; use it when a
   pipe reader must see a startup line before the process exits (`print`/`println`
-  are block-buffered when stdout is not a terminal). Nothing aborts.
+  are block-buffered when stdout is not a terminal). Its checked sibling
+  `flush_stdout_checked() -> Result(void, IoErr)` reports the refusal. Nothing aborts.
 - **`os`** — `is_windows()` reports the host family at runtime — run external commands via
   a **libc-only FFI shim** (no `deps`, nothing to install). `os.system(cmd)` runs `cmd`
   through the shell with stdout/stderr inherited, returning its exit code (0..255,
@@ -540,9 +544,12 @@ expression-bodied; pass a named function where you need a multi-line body.
   a plain `bool` — one failure, one cause; `ms <= 0` restores the blocking default and
   `false` means the option could not be set (the socket keeps blocking). The send-side
   `set_write_timeout_ms(fd, ms)` has the same contract and makes a stalled `write`
-  answer `Err(Timeout)`. The **UDP** calls
-  (`udp_bind`/`udp_send`/`udp_read`) are still sentinel-based on purpose: a zero-length
-  datagram is legal, so `udp_read`'s empty result is a real success value.
+  answer `Err(Timeout)`. The **UDP** calls keep their sentinel forms
+  (`udp_bind`/`udp_send`/`udp_read`) and gain checked siblings
+  `udp_bind_checked` / `udp_send_checked` / `udp_read_checked`. The checked read
+  is the one that matters: a zero-length datagram is `Ok([])`, distinct from
+  `Err(Timeout)` and `Err(Failed)`, while the sentinel `udp_read` still returns
+  empty bytes for all three.
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
   dependency — net is libc-only). The request/response plumbing is pure Tycho; the accept
   loop is the caller's. `parse_request(raw) -> Result(Request, httpd.ReqErr)`

@@ -198,6 +198,12 @@ fn write_lines_checked(p: string, lines: [string]) -> Result(void, IoErr):
 fn flush_stdout() -> bool:
     return iox_flush_stdout() != 0
 
+# The checked sibling of flush_stdout: Err(Failed) when the C stream refuses.
+fn flush_stdout_checked() -> Result(void, IoErr):
+    if iox_flush_stdout() == 0:
+        return Err(Failed)
+    return Ok()
+
 # ---- streaming line reader (shim: libc getline, in io_shim.c) ---------------
 # read_lines() above slurps the WHOLE file into an array, so peak memory tracks
 # the file size. This reader pulls ONE line at a time into a single reused

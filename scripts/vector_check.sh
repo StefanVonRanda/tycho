@@ -309,10 +309,16 @@ fn main():
     println(str(v_dot(a, b)))
 TY
 n_op() { objdump -d "$1" | grep -cE "\\b$2\\b" || true; }
+# This leg reads MACHINE INSTRUCTIONS, so it must see the code the compiler
+# emitted, not what a link-time optimiser makes of it. With -flto=auto the
+# constant probe below is inlined and folded, and the split multiply disappears
+# from the binary -- the lane then reports 0 mulpd for a working compiler. LTO
+# is a link-time decision and out of scope for a --target codegen leg, so the
+# probe builds with it off. The default cc line elsewhere is still LTO.
 for CC in ./tychoc ./tychoc1; do
     ABS="$PWD/${CC#./}"
-    "$CC" "$D/t/t.ty" -o "$D/t/base" > /dev/null || fail "$CC: the --target probe does not build at the default"
-    "$CC" "$D/t/t.ty" --target x86-64-v3 -o "$D/t/v3" > /dev/null || fail "$CC: the --target probe does not build under --target x86-64-v3"
+    TYCHO_CFLAGS=-fno-lto "$CC" "$D/t/t.ty" -o "$D/t/base" > /dev/null || fail "$CC: the --target probe does not build at the default"
+    TYCHO_CFLAGS=-fno-lto "$CC" "$D/t/t.ty" --target x86-64-v3 -o "$D/t/v3" > /dev/null || fail "$CC: the --target probe does not build under --target x86-64-v3"
     # [7a] the default is SPLIT: two 16-byte SSE multiplies, no AVX form at all
     sp=$(n_op "$D/t/base" mulpd); av=$(n_op "$D/t/base" vmulpd)
     [ "$sp" -ge 2 ] || fail "$CC: at the default the probe emits $sp mulpd -- expected the 32-byte multiply SPLIT into at least 2"
@@ -329,8 +335,8 @@ for CC in ./tychoc ./tychoc1; do
     # differ for that reason alone and prove nothing.
     rm -rf "$D/t/d0" "$D/t/d1"; mkdir -p "$D/t/d0" "$D/t/d1"
     cp "$D/t/t.ty" "$D/t/d0/t.ty"; cp "$D/t/t.ty" "$D/t/d1/t.ty"
-    ( cd "$D/t/d0" && "$ABS" t.ty -o t ) > /dev/null || fail "$CC: the byte-identity probe does not build at the default"
-    ( cd "$D/t/d1" && "$ABS" t.ty --target baseline -o t ) > /dev/null || fail "$CC: --target baseline does not build"
+    ( cd "$D/t/d0" && TYCHO_CFLAGS=-fno-lto "$ABS" t.ty -o t ) > /dev/null || fail "$CC: the byte-identity probe does not build at the default"
+    ( cd "$D/t/d1" && TYCHO_CFLAGS=-fno-lto "$ABS" t.ty --target baseline -o t ) > /dev/null || fail "$CC: --target baseline does not build"
     cmp -s "$D/t/d0/t" "$D/t/d1/t" || fail "$CC: --target baseline is not byte-identical to no flag -- the DEFAULT cc line moved"
     # [7e] fail closed: an unknown or missing level must be REFUSED by name
     for bad in bogus x86-64-v9 EMPTY; do

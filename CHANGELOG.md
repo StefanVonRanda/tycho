@@ -15,6 +15,19 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ## [Unreleased]
 
+### Compiler
+
+- **Optimized user-program builds use LTO.** The emitted C carries the whole
+  runtime in one translation unit, so plain `-O3` optimized every unused runtime
+  function before the linker could drop it. `-flto=auto` cuts `hello.ty` from
+  ~1.6s to ~0.53s and `compiler/main.ty` from ~26.6s to ~6.3s on gcc 16.2.1.
+  Generated units under 1 MiB use `-flto=2`; the test harness builds many of
+  them in parallel, where all-core LTRANS per fixture bought no wall time and
+  only added contention. `-O0 -g` debug builds keep the plain path.
+- **`tycho-debug bt` is source-aware.** Frames show demangled `pkg.name`
+  symbols and `.ty` file:line; runtime glue and native frames are tagged
+  `[runtime]` / `[native]` instead of being presented as user code.
+
 ### Runtime
 
 - **String-map insertion is race-free across tasks.** The process-global intern
@@ -24,6 +37,12 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ### Corelib
 
+- **Checked siblings for the last sentinel APIs.** `io.write_text`,
+  `io.write_lines_checked`, `io.flush_stdout_checked`,
+  `net.udp_{bind,send,read}_checked` and `path.safe_join_checked` /
+  `path.resolve_under_checked` preserve the error cause instead of collapsing
+  it into `""` or `-1`. The UDP read shim separates a legal zero-length
+  datagram (`Ok([])`) from timeout and failure.
 - **`io.flush_stdout()`** flushes the runtime's buffered stdout, for a CLI whose
   pipe reader must see a startup line while the process is still running. The
   cold binary-protocol probe found `print`/`println` block-buffered on a pipe;

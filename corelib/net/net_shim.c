@@ -327,19 +327,34 @@ tycho_int netx_udp_send(tycho_int fd, const char *host, tycho_int port, const un
     return n < 0 ? -1 : n;
 }
 
-/* Receive one datagram (up to `max` bytes); the sender address is discarded in
- * v1. Same out-param bytes contract as netx_read. */
-void netx_udp_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *outlen) {
+/* Receive one datagram (up to `max` bytes) with the netx_read classification:
+ * TY_RD_DATA (including a legal 0-length datagram), TY_RD_TMO, or TY_RD_ERR.
+ * The sender address is discarded in v1. Same out-param bytes contract. */
+void netx_udp_read_status(tycho_int fd, tycho_int max, tycho_int *status,
+                          unsigned char **out, tycho_int *outlen) {
     *out = NULL;
     *outlen = 0;
+    *status = TY_RD_ERR;
     if (!netx_fd_ok(fd) || max <= 0) return;
     unsigned char *buf = (unsigned char *)malloc((size_t)max);
     if (!buf) return;
+    errno = 0;
     tycho_int n = (tycho_int)recvfrom((int)fd, (char *)buf, (size_t)max, 0, NULL, NULL);
-    if (n < 0) { free(buf); return; }       /* receive error */
-    if (n == 0) { free(buf); return; }      /* legal 0-length datagram, reported the same way */
+    if (n < 0) {
+        free(buf);
+        *status = ty_recv_timed_out() ? TY_RD_TMO : TY_RD_ERR;
+        return;
+    }
     *out = buf;
     *outlen = n;
+    *status = TY_RD_DATA;                   /* n == 0 is a real datagram */
+}
+
+/* The sentinel form kept for compatibility: an empty result still means
+ * "nothing to hand back", which cannot tell the three outcomes apart. */
+void netx_udp_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *outlen) {
+    tycho_int st;
+    netx_udp_read_status(fd, max, &st, out, outlen);
 }
 
 /* Wait up to `ms` for one connection. The listener is made nonblocking before

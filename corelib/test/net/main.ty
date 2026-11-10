@@ -34,6 +34,16 @@ fn nerr(r: Result(int, net.NetErr)) -> string:
         Err(net.Eof): return "Eof"
         _: return "Failed"
 
+# The payload is part of the answer for UDP: Ok[] is a legal zero-length
+# datagram and must not read like Err(Failed).
+fn dwhy(r: Result(bytes, net.NetErr)) -> string:
+    match r:
+        Ok(b): return "Ok[" + to_str(b) + "]"
+        Err(net.Timeout): return "Timeout"
+        Err(net.Eof): return "Eof"
+        Err(net.BadAddr): return "BadAddr"
+        _: return "Failed"
+
 
 # Render a ready-set as the LABELS of the sockets it names, in the order the set
 # came back, so the golden pins WHICH sockets were reported -- a count would pass
@@ -215,5 +225,26 @@ fn main():
     println("nul_connect=" + nerr(net.connect(nh, uport)))
     println("nul_udp_bind=" + str(net.udp_bind(nh, 0)))
     println("nul_udp_send=" + str(net.udp_send(u, nh, uport, to_bytes("x"))))
+
+    # Checked UDP: a zero-length datagram is Ok([]), not an error. The status
+    # shim is what makes that distinguishable from timeout and failure.
+    ucb := net.udp_bind_checked("127.0.0.1", 0)
+    println("udp_checked_bind=" + nerr(ucb))
+    uc := fd_of(ucb)
+    ucp := fd_of(net.port_of(uc))
+    println("udp_checked_send=" + nerr(net.udp_send_checked(uc, "127.0.0.1", ucp, to_bytes("chk"))))
+    println("udp_checked_read=" + dwhy(net.udp_read_checked(uc, 64)))
+    zs := net.udp_send_checked(uc, "127.0.0.1", ucp, to_bytes(""))
+    println("udp_checked_zero_send=" + nerr(zs))
+    println("udp_checked_zero=" + dwhy(net.udp_read_checked(uc, 64)))
+    uarmed := net.set_read_timeout_ms(uc, 100)
+    println("udp_checked_timeout_armed=" + str(uarmed))
+    println("udp_checked_timeout=" + dwhy(net.udp_read_checked(uc, 64)))
+    ucleared := net.set_read_timeout_ms(uc, 0)
+    println("udp_checked_timeout_cleared=" + str(ucleared))
+    println("udp_checked_err=" + dwhy(net.udp_read_checked(0 - 1, 64)))
+    println("udp_checked_nul_bind=" + nerr(net.udp_bind_checked(nh, 0)))
+    println("udp_checked_nul_send=" + nerr(net.udp_send_checked(uc, nh, ucp, to_bytes("x"))))
+    net.close_fd(uc)
 
     net.close_fd(u)

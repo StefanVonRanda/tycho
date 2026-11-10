@@ -35,11 +35,15 @@ extern fn netx_close(fd: int)
 extern fn netx_udp_bind(host: string, port: int) -> int
 extern fn netx_udp_send(fd: int, host: string, port: int, data: bytes) -> int
 extern fn netx_udp_read(fd: int, max: int) -> bytes
+# Same status/out-param contract as netx_read (see net_shim.c): 1 DATA -- which
+# includes a legal zero-length datagram -- 2 timeout, 3 error.
+extern fn netx_udp_read_status(fd: int, max: int, status: inout int) -> bytes
 
 # The shim's read-status codes, named once so net.read reads as prose.
 const RD_EOF  = 0
 const RD_DATA = 1
 const RD_TMO  = 2
+const RD_ERR  = 3
 
 # The shim's write-status codes, likewise.
 const WR_OK  = 1
@@ -135,6 +139,33 @@ fn udp_send(fd: int, host: string, port: int, data: bytes) -> int:
 
 fn udp_read(fd: int, max: int) -> bytes:
     return netx_udp_read(fd, max)
+
+# The checked siblings. udp_read's empty bytes cannot distinguish a timeout,
+# an error and a legal zero-length datagram; these preserve the distinction.
+fn udp_bind_checked(host: string, port: int) -> Result(int, NetErr):
+    if _has_nul(host):
+        return Err(BadAddr)
+    fd := netx_udp_bind(host, port)
+    if fd < 0:
+        return Err(Failed)
+    return Ok(fd)
+
+fn udp_send_checked(fd: int, host: string, port: int, data: bytes) -> Result(int, NetErr):
+    if _has_nul(host):
+        return Err(BadAddr)
+    n := netx_udp_send(fd, host, port, data)
+    if n < 0:
+        return Err(Failed)
+    return Ok(n)
+
+fn udp_read_checked(fd: int, max: int) -> Result(bytes, NetErr):
+    st := 0
+    b := netx_udp_read_status(fd, max, &st)
+    if st == RD_DATA:
+        return Ok(b)
+    if st == RD_TMO:
+        return Err(Timeout)
+    return Err(Failed)
 
 # Wait at most `ms` for one connection. Timeout is not a listener failure.
 # Existing accept() stays blocking; servers that need bounded shutdown use this.

@@ -136,6 +136,7 @@ fn addlen(acc: int, line: string) -> int:      # a fold_lines reducer
 fn main():
     tmp := "/tmp/tycho_corelib_io_selftest.txt"
     println(f"flush_stdout={b2i(io.flush_stdout())}")
+    println(f"flush_stdout_checked={vwhy(io.flush_stdout_checked())}")
 
     # write_bytes: the binary write side of read_bytes. Interior NULs survive
     # (chr(0) is a real byte in a string -- the sha256 padding relies on it),

@@ -113,6 +113,14 @@ fn main():
     rnul := path.real_checked("x" + chr(0))
     println(f"real_checked ok={prwhy(rk)} missing={prwhy(rmiss)} nul={prwhy(rnul)} real_missing_len={len(path.real("/tmp/tycho_corelib_path_absent.xyz"))}")
 
+    # ---- resolve_under_checked: refusal vs a merely missing leaf ----
+    rc1 := path.resolve_under_checked("corelib", "test/path/main.ty")
+    rc2 := path.resolve_under_checked("corelib", "test/path/absent.xyz")
+    rc3 := path.resolve_under_checked("corelib", "../Makefile")
+    rc4 := path.resolve_under_checked("corelib", "x" + chr(0))
+    rc5 := path.resolve_under_checked("/tmp/tycho_corelib_path_absent.xyz", "a")
+    println(f"resolve_under_checked ok={prwhy(rc1)} missing={prwhy(rc2)} escape={prwhy(rc3)} nul={prwhy(rc4)} badbase={prwhy(rc5)}")
+
     # ---- quote: a path is arbitrary bytes; text output needs one shell word ----
     q1 := path.quote("a b")
     q2 := path.quote("a'b")

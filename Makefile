@@ -54,9 +54,9 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 # relative to the binary.
 #
 # TYCHOC1_CFLAGS picks the COMPILER BINARY's own cc flags. It is not the default
-# for user programs: driver.ty stays -O3, because inline-unit-growth costs
-# bench/transient 3-5%. On this one translation unit it is worth
-# 1051.3e6 -> 864.2e6 Ir.
+# for user programs: driver.ty stays -O3 and adds -flto=auto for optimized
+# builds, because inline-unit-growth costs bench/transient 3-5%. On this one
+# translation unit inline-unit-growth is worth 1051.3e6 -> 864.2e6 Ir.
 # -static-pie, not -static: a plain static link leaves the .eh_frame table
 # unsorted, so the first unwind runs classify_object_over_fdes over the whole
 # thing -- 201,604 Ir on EVERY compile regardless of input size (48% of a

@@ -162,7 +162,17 @@ if echo "$out" | grep -q 'breakpoint 1 at lib.ty:4' \
     echo "  [8] package build: break/list/function name ok"
 else echo "FAIL [8] package build"; echo "$out" | sed 's/^/    /' | head -20; fail=1; fi
 
+# [9] bt: .ty frames keep their file:line and demangled package.name, while the
+# generated C main is tagged as runtime glue instead of looking like user code.
+out=$(printf 'b %s:4\nr\nbt\nq\n' "$FIX/pkg/lib/lib.ty" | TYCHOC="$PWD/tychoc" "$TD" "$FIX/pkg/main.ty" 2>&1); rc=$?
+if echo "$out" | grep -q '#0  lib.ty:4  (lib.hi)' \
+   && echo "$out" | grep -q '#1  main.ty:' \
+   && echo "$out" | grep -q '(main)  \[runtime\]' \
+   && [ "$rc" -eq 0 ]; then
+    echo "  [9] bt: .ty frames, demangled names, runtime glue ok"
+else echo "FAIL [9] bt"; echo "$out" | sed 's/^/    /' | head -20; fail=1; fi
+
 [ "$fail" -ne 0 ] && { echo "tycho-debug: FAIL"; exit 1; }
-[ "$skipped" -eq 0 ] && echo "tycho-debug: all green (8 legs)" \
-                     || echo "tycho-debug: green ($((8 - skipped)) legs, $skipped skipped -- see the SKIP line above)"
+[ "$skipped" -eq 0 ] && echo "tycho-debug: all green (9 legs)" \
+                     || echo "tycho-debug: green ($((9 - skipped)) legs, $skipped skipped -- see the SKIP line above)"
 exit 0

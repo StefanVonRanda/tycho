@@ -256,7 +256,7 @@ fn help():
     println("  c          continue")
     println("  p <expr>   print a C expression (locals are h_x; inout are *h_x)")
     println("  loc        show the current function's locals (h_ stripped)")
-    println("  bt         backtrace")
+    println("  bt         backtrace (demangled, .ty file:line)")
     println("  l          show source around the current line")
     println("  $ <cmd>    pass a command straight to gdb")
     println("  q          quit  (Ctrl-D also quits; Ctrl-C interrupts the program)")
@@ -431,6 +431,54 @@ fn cmd_locals(s: inout Sess):
     if shown == 0:
         println("(no user locals)")
 
+# A non-.ty frame is either Tycho runtime glue (generated main, tycho_*) or the
+# C library underneath it. Both are worth showing, but never as if they were
+# user code: the tag says which is which.
+fn is_runtime_fn(fn_: string) -> bool:
+    return fn_ == "main" or fn_ == "_start" or strings.starts_with(fn_, "tycho_")
+
+fn cmd_bt(s: inout Sess):
+    payload := mi(&s, "-stack-list-frames", false)
+    if payload == "":
+        return
+    stack := field(rec_fields(payload), "stack")
+    if stack == "":
+        println("(no stack)")
+        return
+    body := stack
+    if len(body) >= 2 and body[0] == 91:       # '['
+        body = substr(body, 1, len(body) - 1)
+    frames := split_top(body, 44)              # ','
+    shown := 0
+    for fr in frames:
+        if fr == "":
+            continue
+        eq := find(fr, "=")
+        if eq < 0:
+            continue
+        fp := blob_fields(substr(fr, eq + 1, len(fr)))
+        lvl := field(fp, "level")
+        fn_ := field(fp, "func")
+        f := field(fp, "file")
+        if f == "":
+            f = field(fp, "fullname")
+        ln := field(fp, "line")
+        if is_runtime_fn(fn_):
+            println("  #" + lvl + "  runtime  (" + display_fn(fn_) + ")  [runtime]")
+        elif f != "" and strings.ends_with(f, ".ty"):
+            where := base_name(f) + ":" + ln
+            println("  #" + lvl + "  " + where + "  (" + display_fn(fn_) + ")")
+        else:
+            where := "native"
+            if f != "":
+                where = base_name(f)
+                if ln != "":
+                    where = where + ":" + ln
+            println("  #" + lvl + "  " + where + "  (" + display_fn(fn_) + ")  [native]")
+        shown = shown + 1
+    if shown == 0:
+        println("(no stack)")
+
 fn source_lines(s: inout Sess, file: string) -> [string]:
     if file == "":
         file = s.src
@@ -529,7 +577,7 @@ fn repl(s: inout Sess):
         elif cmd == "loc" or cmd == "locals":
             cmd_locals(&s)
         elif cmd == "bt" or cmd == "backtrace":
-            mi(&s, "-interpreter-exec console \"bt\"", false)
+            cmd_bt(&s)
         elif cmd == "l" or cmd == "list":
             cmd_list(&s)
         elif cmd == "$":

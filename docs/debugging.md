@@ -89,10 +89,20 @@ tycho-debug> n
 ```
 
 Commands: `b <line>` break, `r` run, `n` next, `s` step, `c` continue,
-`p <expr>` print a C expression, `loc` locals, `bt` backtrace, `l` source
-around the current line, `$ <gdb cmd>` raw gdb passthrough, `q` quit. Ctrl-C
-interrupts the running program (the tool forwards SIGINT to the inferior);
-Ctrl-D quits.
+`p <expr>` print a C expression, `loc` locals, `bt` a backtrace
+with demangled `pkg.name` symbols and `.ty` file:line, `l` source around the
+current line, `$ <gdb cmd>` raw gdb passthrough, `q` quit. Ctrl-C interrupts
+the running program (the tool forwards SIGINT to the inferior); Ctrl-D quits.
+
+```text
+tycho-debug> bt
+  #0  program.ty:7  (main)
+  #1  runtime  (main)  [runtime]
+```
+
+Frames whose source is not a `.ty` file are tagged `[runtime]` for Tycho glue
+or `[native]` for the C library underneath, so they cannot be mistaken for
+user code.
 
 It is a gdb adapter, not a re-implementation: expressions are the emitted C
 names (`h_x`, `*h_x` for an `inout`), and `$` hands anything gdb understands

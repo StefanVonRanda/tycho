@@ -11,7 +11,7 @@ for a full accounting of where the model wins and loses see
 
 ## The pieces
 
-**One compiler ships.** `compiler/` is 25,642 lines of Tycho across 13 files,
+**One compiler ships.** `compiler/` is 25,679 lines of Tycho across 13 files,
 built as `tychoc1` and installed as `tychoc`. Six packages: `lex`, `parse`,
 `ast`, `types`, `emit`, `driver`. The [spec](spec/) is normative; the compiler
 is the reference implementation in practice, and every suite here defaults to

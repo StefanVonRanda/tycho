@@ -252,6 +252,16 @@ fn target_known(t: string) -> bool:
             return true
     return false
 
+# Does this cc accept -flto=auto? GCC and Clang both spell it, but an older or
+# vendor compiler may not, and a build must not fail on the spelling. One tiny
+# preprocess, not a cache: the answer is re-derived every compile.
+fn cc_has_flto_auto(cc9: string) -> bool:
+    dev := "/dev/null"
+    if os.is_windows():
+        dev = "nul"
+    pr := os.run(cc9 + " -flto=auto -E -x c " + dev + " -o " + dev + " 2>" + dev)
+    return pr.code == 0
+
 # `cc9` is the C compiler to drive (--cc), `xtra` the -L/-I/-l/pkg-config flags
 # (--link, --pkg, -L, -I), `shim9` the extra shim sources (--shim), `nat`
 # is --native and `tgt` is --target. src/tychoc.c takes all six; tychoc1 took
@@ -302,10 +312,37 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     # "same checksum computed by every binary" cannot let the C compiler choose
     # how many times to round. The cost is giving up FMA in hot float loops;
     # the alternative is float results that depend on the host.
+    # -flto=auto is the user-program compile-speed flag. The emitted C is ONE
+    # translation unit that carries the whole runtime, and a program touches a
+    # fraction of it: plain -O3 optimizes every runtime function in the unit
+    # before the linker can drop any. LTO defers that work, drops unreachable
+    # functions, and partitions what remains across jobs. Measured on gcc
+    # 16.2.1: hello.ty 1.6s -> 0.5s, compiler/main.ty 26.6s -> 6.3s. It is not
+    # a cache -- every build still parses, optimizes and links from source.
+    # A -g build keeps the plain -O0 path: faithful stepping is worth more than
+    # compile speed there. Probe the spelling instead of assuming it: an
+    # unsupported -flto=auto must fall back, not redden every build.
+    use_lto := false
+    if not dbg:
+        use_lto = cc_has_flto_auto(cc9)
     opt := "-O3"
     if dbg:
         opt = "-O0"
     argv := [cc9, opt, "-fwrapv", "-ffp-contract=off", "-pthread"]
+    if use_lto:
+        # A small generated unit gets no wall-clock benefit from all-core
+        # LTRANS (measured: hello.ty 520ms at -flto=2, 517ms at -flto=auto).
+        # `make test` runs many such builds at once, so auto there multiplies
+        # jobs without buying anything. The 3.4 MB compiler unit still gets
+        # auto, where the 6.3s -> 13.8s difference at two jobs is real.
+        lto := "-flto=auto"
+        match io.size(c_path):
+            Ok(n):
+                if n < 1048576:
+                    lto = "-flto=2"
+            Err(_):
+                pass
+        push(argv, lto)
     if nat:
         push(argv, "-march=native")
     # A --target the host cc cannot honour must FAIL, not vanish: a silently
