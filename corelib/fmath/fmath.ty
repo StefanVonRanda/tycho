@@ -1,14 +1,80 @@
 # corelib: float math. Import with `import "core:fmath"`. The scalar comparators
-# (min/max/clamp/sign) are generic in core:math now; these are the float-specific
-# pieces. sqrt/pow/floor/fabs are float builtins, so these build on them. No trig
-# (the language has no libm sin/cos builtin).
+# (min/max/clamp/sign) are generic in core:math; these are the float-specific
+# pieces. sqrt/pow/floor/fabs are float builtins; trig/exp/log go through libm.
 package fmath
+
+extern fn fmx_sin(v: float) -> float
+extern fn fmx_cos(v: float) -> float
+extern fn fmx_tan(v: float) -> float
+extern fn fmx_asin(v: float) -> float
+extern fn fmx_acos(v: float) -> float
+extern fn fmx_atan(v: float) -> float
+extern fn fmx_atan2(y: float, x: float) -> float
+extern fn fmx_sinh(v: float) -> float
+extern fn fmx_cosh(v: float) -> float
+extern fn fmx_tanh(v: float) -> float
+extern fn fmx_exp(v: float) -> float
+extern fn fmx_log(v: float) -> float
+extern fn fmx_log2(v: float) -> float
+extern fn fmx_log10(v: float) -> float
+extern fn fmx_hypot(a: float, b: float) -> float
 
 fn pi() -> float:
     return 3.141592653589793
 
 fn e() -> float:
     return 2.718281828459045
+
+fn sin(x: float) -> float:
+    return fmx_sin(x)
+
+fn cos(x: float) -> float:
+    return fmx_cos(x)
+
+fn tan(x: float) -> float:
+    return fmx_tan(x)
+
+fn asin(x: float) -> float:
+    return fmx_asin(x)
+
+fn acos(x: float) -> float:
+    return fmx_acos(x)
+
+fn atan(x: float) -> float:
+    return fmx_atan(x)
+
+fn atan2(y: float, x: float) -> float:
+    return fmx_atan2(y, x)
+
+fn sinh(x: float) -> float:
+    return fmx_sinh(x)
+
+fn cosh(x: float) -> float:
+    return fmx_cosh(x)
+
+fn tanh(x: float) -> float:
+    return fmx_tanh(x)
+
+fn exp(x: float) -> float:
+    return fmx_exp(x)
+
+fn log(x: float) -> float:
+    return fmx_log(x)
+
+fn log2(x: float) -> float:
+    return fmx_log2(x)
+
+fn log10(x: float) -> float:
+    return fmx_log10(x)
+
+fn hypot(a: float, b: float) -> float:
+    return fmx_hypot(a, b)
+
+fn degrees(rad: float) -> float:
+    return rad * 57.29577951308232
+
+fn radians(deg: float) -> float:
+    return deg * 0.017453292519943295
 
 fn trunc(x: float) -> float:                 # toward zero
     if x < 0.0:

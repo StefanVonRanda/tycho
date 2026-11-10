@@ -34,6 +34,7 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `core:diff`, `core:terminal`, `core:lz4` and `core:bufio`; added base 2..36
   integer parse/format and fixed-point float formatting to `core:strings`.
 - Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF-SHA256, AES-GCM, AES-CTR and RSA PKCS#1 v1.5/SHA-256.
+- Added the libm trig/exp/log surface to `core:fmath`.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM codecs to `core:raster`.
 - The tree is now 64 corelib packages and 65 golden test trees.
 

@@ -54,7 +54,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   specific. (`sqrt`/`pow`/`floor`/`fabs` are float builtins.)
 - **`fmath`** — float-only helpers (scalar `min`/`max`/`clamp`/`sign` live in `math`):
   `pi`, `e`, `round` (half away from zero), `trunc`, `lerp(a, b, t)`,
-  `approx_eq(a, b, eps)`. (No trig — the language has no libm sin/cos builtin.)
+  `approx_eq(a, b, eps)`, `degrees`/`radians`, and a libm bridge:
+  `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2(y, x)`, `sinh`, `cosh`,
+  `tanh`, `exp`, `log`, `log2`, `log10`, `hypot(a, b)`.
 - **`gfx`** — an SDL3-backed window, 2D renderer and stream-audio shim
   (`deps: sdl3`). Handles `Window`, `Audio` and `TexSet`; types `Event`, `FRect`,
   `IRect`, `FVec`, `View`, `AssetSpec`, `Controls`, `Clock`, `Sprite`, `Anim`,

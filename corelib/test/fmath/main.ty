@@ -11,3 +11,18 @@ fn main():
     println(f"lerp={fmath.lerp(0.0, 10.0, 0.25)}")                                      # 2.5
     println(f"approx={fmath.approx_eq(0.1, 0.1, 0.0001)},{fmath.approx_eq(0.1, 0.2, 0.0001)}")
     println(f"consts={fmath.pi() > 3.0},{fmath.e() > 2.0}")
+    # ---- libm bridge: compare with approx_eq, never print raw transcendentals ----
+    println("sin0=" + str(fmath.approx_eq(fmath.sin(0.0), 0.0, 0.0000001)))
+    println("cos0=" + str(fmath.approx_eq(fmath.cos(0.0), 1.0, 0.0000001)))
+    println("sin90=" + str(fmath.approx_eq(fmath.sin(fmath.pi() / 2.0), 1.0, 0.0000001)))
+    println("tan45=" + str(fmath.approx_eq(fmath.tan(fmath.pi() / 4.0), 1.0, 0.0000001)))
+    println("atan2=" + str(fmath.approx_eq(fmath.atan2(1.0, 1.0), fmath.pi() / 4.0, 0.0000001)))
+    println("asin1=" + str(fmath.approx_eq(fmath.asin(1.0), fmath.pi() / 2.0, 0.0000001)))
+    println("exp0=" + str(fmath.approx_eq(fmath.exp(0.0), 1.0, 0.0000001)))
+    println("logE=" + str(fmath.approx_eq(fmath.log(fmath.e()), 1.0, 0.0000001)))
+    println("log2=" + str(fmath.approx_eq(fmath.log2(8.0), 3.0, 0.0000001)))
+    println("log10=" + str(fmath.approx_eq(fmath.log10(1000.0), 3.0, 0.0000001)))
+    println("hypot=" + str(fmath.approx_eq(fmath.hypot(3.0, 4.0), 5.0, 0.0000001)))
+    println("degrees=" + str(fmath.approx_eq(fmath.degrees(fmath.pi()), 180.0, 0.0000001)))
+    println("radians=" + str(fmath.approx_eq(fmath.radians(180.0), fmath.pi(), 0.0000001)))
+    println("sinh0=" + str(fmath.approx_eq(fmath.sinh(0.0), 0.0, 0.0000001)) + " cosh0=" + str(fmath.approx_eq(fmath.cosh(0.0), 1.0, 0.0000001)))

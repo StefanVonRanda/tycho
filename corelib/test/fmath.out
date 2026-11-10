@@ -6,3 +6,17 @@ trunc=2.0,-2.0
 lerp=2.5
 approx=true,false
 consts=true,true
+sin0=true
+cos0=true
+sin90=true
+tan45=true
+atan2=true
+asin1=true
+exp0=true
+logE=true
+log2=true
+log10=true
+hypot=true
+degrees=true
+radians=true
+sinh0=true cosh0=true
