@@ -60831,7 +60831,7 @@ void h_driver__emit_symbols(Arena *_parent, char *h_src_path, char *h_argv0) {
 }
 
 char *h_VERSION(Arena *_parent) {
-    { char *_ret = TYCHO_LIT("0.9.0"); return _ret; }
+    { char *_ret = TYCHO_LIT("0.9.1"); return _ret; }
 }
 
 char *h__strip_ext(Arena *_parent, char *h_p) {

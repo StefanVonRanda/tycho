@@ -15,6 +15,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-11-10
+
 ### Compiler
 
 - **Optimized user-program builds use LTO.** The emitted C carries the whole
