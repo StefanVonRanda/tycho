@@ -335,11 +335,13 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
         # `make test` runs many such builds at once, so auto there multiplies
         # jobs without buying anything. The 3.4 MB compiler unit still gets
         # auto, where the 6.3s -> 13.8s difference at two jobs is real.
+        # Bare -flto, not -flto=2: clang accepts the bare spelling and auto but
+        # rejects a numeric job count, and this branch runs for --cc clang too.
         lto := "-flto=auto"
         match io.size(c_path):
             Ok(n):
                 if n < 1048576:
-                    lto = "-flto=2"
+                    lto = "-flto"
             Err(_):
                 pass
         push(argv, lto)

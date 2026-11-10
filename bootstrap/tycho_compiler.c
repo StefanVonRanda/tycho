@@ -58486,7 +58486,7 @@ void h_driver__build(Arena *_parent, char *h_src_path, char *h_runtime_path, cha
             if (_m7810->tag == 0) {
                 tycho_int h_n = _m7810->u.V_Ok.f0;
                 if (h_n < 1048576LL) {
-                    h_lto = TYCHO_LIT("-flto=2");
+                    h_lto = TYCHO_LIT("-flto");
                 }
             }
             else if (_m7810->tag == 1) {

@@ -2150,7 +2150,6 @@ which arms actually use their payloads.
 
 ### 6. ~~Two error types cannot share an `or_return` chain~~ — **WRONG MECHANISM, corrected 2026-08-11; CLOSED by `result.map_err_with` the same day**
 
-> Pinned-by: test -f src/tychoc.c
 > Pinned-by: make test
 
 > **Triage 2026-08-11.** The load-bearing sentence below — "**no function can
@@ -3215,7 +3214,6 @@ lane. Stashing the fix and rebuilding reddens it on every spelling
 
 ### 17. `Item($A)` is rejected where `Item($T)` is accepted — **verdict: deliberate and permanent, now documented**
 
-> Pinned-by: test -f src/tychoc.c
 > Pinned-by: make test
 
 A generic aggregate may be applied only to its own declared parameter *names*:
@@ -3937,7 +3935,6 @@ started the server on the default port with nothing said. It now reports
 
 ### 30. ~~`[string] + [string]` is refused with a reason that is false~~ — **FIXED 2026-08-13 (`c46952de`), both sites; see the banner below**
 
-> Pinned-by: test -f src/tychoc.c
 > Pinned-by: make test
 
 `out = out + [s]` on a `[string]` — the append every Go and Python habit reaches
@@ -7532,7 +7529,6 @@ bill, so it stays a decision rather than a diff.
 ### 107. `strings.len(...)` sent the reader looking for a symbol that was never going to exist — **FIXED 2026-09-19**
 
 > Pinned-by: sh scripts/builtin_qualified.sh
-> Pinned-by: grep -q 'is_builtin_name(nominal_name' src/tychoc.c
 
 The divergence [106](#106-parse-check-is-red-has-been-all-day-and-is-in-neither-make-ci-nor-the-hook--drift-cleared-and-corpus-check-gated-2026-09-19-the-divergence-closed-2026-09-22-the-lanes-absence-from-the-sweep-is-still-the-owners-call)
 left standing. `make parse-check` leg15 scores the two compilers' diagnostics
@@ -7826,7 +7822,6 @@ knows what `hostile` means.
 
 ### 112. The C compiler decided how many times to round, and the answer changed with the architecture — **FIXED 2026-09-19**
 
-> Pinned-by: grep -q 'ffp-contract=off' src/tychoc.c
 > Pinned-by: grep -q 'ffp-contract=off' compiler/driver/driver.ty
 
 The first `make ci` on aarch64 Linux ([110](#110-aarch64-linux-was-compile-only-for-a-month-a-vm-on-the-mac-closed-it-in-an-hour-and-caught-me-repeating-100--fixed-2026-09-19))
@@ -8512,7 +8507,6 @@ planned its walker around reassignment and backed it out.
 
 ### 124. The over-wide vector lint named an ISA the host is not, and prescribed a flag `cc` rejects — **FIXED 2026-09-21**
 
-> Pinned-by: grep -q 'the baseline vector register' src/tychoc.c
 > Pinned-by: grep -q 'use a narrower vector, or on x86-64 build' compiler/types/zsema.ty
 > Pinned-by: make vector-check
 
@@ -8639,7 +8633,6 @@ whose own author had tested it.
 
 ### 127. A probe measured its own transcription error and filed it as a layout defect — **CLOSED 2026-09-22: refuted by measurement**
 
-> Pinned-by: grep -q '__attribute__((packed))' src/tychoc.c
 > Pinned-by: grep -q '__attribute__((packed))' compiler/emit/emit.ty
 > Pinned-by: make test
 
