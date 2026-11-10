@@ -1,0 +1,21 @@
+package main
+
+import "core:ease"
+import "core:fmath"
+
+fn main():
+    fs := [ease.linear, ease.in_quad, ease.out_quad, ease.in_out_quad, ease.in_cubic, ease.out_cubic, ease.in_out_cubic, ease.in_quart, ease.out_quart, ease.in_out_quart, ease.in_sine, ease.out_sine, ease.in_out_sine, ease.in_expo, ease.out_expo, ease.in_out_expo, ease.in_circ, ease.out_circ, ease.in_out_circ, ease.in_back, ease.out_back, ease.in_out_back, ease.in_elastic, ease.out_elastic, ease.in_out_elastic, ease.in_bounce, ease.out_bounce, ease.in_out_bounce]
+    zero_ok := true
+    one_ok := true
+    for f in fs:
+        if not fmath.approx_eq(f(0.0), 0.0, 0.000001):
+            zero_ok = false
+        if not fmath.approx_eq(f(1.0), 1.0, 0.000001):
+            one_ok = false
+    println("endpoints zero=" + str(zero_ok) + " one=" + str(one_ok) + " count=" + str(len(fs)))
+    println("quad=" + str(fmath.approx_eq(ease.in_quad(0.5), 0.25, 0.000001)) + "," + str(fmath.approx_eq(ease.out_quad(0.5), 0.75, 0.000001)) + "," + str(fmath.approx_eq(ease.in_out_quad(0.5), 0.5, 0.000001)))
+    println("cubic=" + str(fmath.approx_eq(ease.in_cubic(0.5), 0.125, 0.000001)) + "," + str(fmath.approx_eq(ease.out_cubic(0.5), 0.875, 0.000001)))
+    println("sine=" + str(fmath.approx_eq(ease.in_sine(0.5), 1.0 - fmath.cos(fmath.pi() / 4.0), 0.000001)) + "," + str(fmath.approx_eq(ease.out_sine(0.5), fmath.sin(fmath.pi() / 4.0), 0.000001)) + "," + str(fmath.approx_eq(ease.in_out_sine(0.5), 0.5, 0.000001)))
+    println("circ=" + str(fmath.approx_eq(ease.in_circ(0.5), 1.0 - sqrt(0.75), 0.000001)) + "," + str(fmath.approx_eq(ease.out_circ(0.5), sqrt(0.75), 0.000001)))
+    println("bounce=" + str(fmath.approx_eq(ease.out_bounce(0.5), 0.765625, 0.000001)) + "," + str(fmath.approx_eq(ease.in_bounce(0.5), 0.234375, 0.000001)))
+    println("back=" + str(ease.in_back(0.25) < 0.25) + " expo=" + str(fmath.approx_eq(ease.in_expo(0.5), 0.03125, 0.000001)))

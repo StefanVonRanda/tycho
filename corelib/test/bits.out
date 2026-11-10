@@ -1,0 +1,14 @@
+rotl32=true
+rotr32=true
+rotl64=true
+rotr64=true
+pop32=true
+pop64=true
+clz=true,true,true,true
+ctz=true,true,true,true
+bswap16=true
+bswap32=true
+bswap64=true
+rev32=true
+rev64=true
+rot0=true rotneg=true

@@ -1,0 +1,7 @@
+endpoints zero=true one=true count=28
+quad=true,true,true
+cubic=true,true
+sine=true,true,true
+circ=true,true
+bounce=true,true
+back=true expo=true

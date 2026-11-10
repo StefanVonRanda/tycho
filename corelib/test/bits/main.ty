@@ -1,0 +1,19 @@
+package main
+
+import "core:bits"
+
+fn main():
+    println("rotl32=" + str(bits.rotl32(to_u32(0x80000001), 1) == to_u32(0x00000003)))
+    println("rotr32=" + str(bits.rotr32(to_u32(0x00000003), 1) == to_u32(0x80000001)))
+    println("rotl64=" + str(bits.rotl64(((to_u64(1) << 63) | to_u64(1)), 1) == to_u64(0x0000000000000003)))
+    println("rotr64=" + str(bits.rotr64(to_u64(0x0000000000000003), 1) == ((to_u64(1) << 63) | to_u64(1))))
+    println("pop32=" + str(bits.popcount32(to_u32(0xF0F0)) == 8))
+    println("pop64=" + str(bits.popcount64(to_u64(-1)) == 64))
+    println("clz=" + str(bits.clz32(to_u32(1)) == 31) + "," + str(bits.clz32(to_u32(0)) == 32) + "," + str(bits.clz64(to_u64(1)) == 63) + "," + str(bits.clz64(to_u64(0)) == 64))
+    println("ctz=" + str(bits.ctz32(to_u32(0x80000000)) == 31) + "," + str(bits.ctz32(to_u32(0)) == 32) + "," + str(bits.ctz64(to_u64(1)) == 0) + "," + str(bits.ctz64(to_u64(0)) == 64))
+    println("bswap16=" + str(bits.bswap16(to_u16(0x1234)) == to_u16(0x3412)))
+    println("bswap32=" + str(bits.bswap32(to_u32(0x01020304)) == to_u32(0x04030201)))
+    println("bswap64=" + str(bits.bswap64(to_u64(0x0102030405060708)) == to_u64(0x0807060504030201)))
+    println("rev32=" + str(bits.reverse32(to_u32(1)) == to_u32(0x80000000)))
+    println("rev64=" + str(bits.reverse64(to_u64(1)) == (to_u64(1) << 63)))
+    println("rot0=" + str(bits.rotl32(to_u32(0x12345678), 0) == to_u32(0x12345678)) + " rotneg=" + str(bits.rotr32(to_u32(0x00000001), 0 - 1) == to_u32(0x00000002)))

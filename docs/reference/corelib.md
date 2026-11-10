@@ -183,6 +183,18 @@ expression-bodied; pass a named function where you need a multi-line body.
   write inside the root. `resolve_under` narrows that window to an attacker with
   write access inside the root; a fully race-free form would need the open done
   inside the check.
+- **`bits`** — fixed-width bit operations: `rotl32`/`rotr32`/`rotl64`/`rotr64`
+  (negative counts rotate the other way), `popcount32`/`popcount64`,
+  `clz32`/`clz64` and `ctz32`/`ctz64` (return 32/64 for zero),
+  `bswap16`/`bswap32`/`bswap64`, and `reverse32`/`reverse64`.
+- **`ease`** — standard easing curves over `t` in `[0, 1]`: `linear`, quad,
+  cubic and quart in/out/in-out (`in_quad`, `out_quad`, `in_out_quad`,
+  `in_cubic`, `out_cubic`, `in_out_cubic`, `in_quart`, `out_quart`,
+  `in_out_quart`),
+  `in_sine`/`out_sine`/`in_out_sine`, `in_expo`/`out_expo`/`in_out_expo`,
+  `in_circ`/`out_circ`/`in_out_circ`, `in_back`/`out_back`/`in_out_back`,
+  `in_elastic`/`out_elastic`/`in_out_elastic`, and
+  `in_bounce`/`out_bounce`/`in_out_bounce`.
 - **`arrays`** — generic utilities over any element type `[T]`: `contains`, `index_of`
   (−1 if absent), `count`, `reverse`, `take(xs, n)`, `drop(xs, n)`, `concat(a, b)`,
   `fill(n, v)`, `dedup` (consecutive — sort first for a full dedup); `sort` (ascending),

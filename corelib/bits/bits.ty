@@ -1,0 +1,120 @@
+package bits
+
+fn rotl32(x: u32, n: int) -> u32:
+    k := n % 32
+    if k < 0:
+        k += 32
+    if k == 0:
+        return x
+    return (x << k) | (x >> (32 - k))
+
+fn rotr32(x: u32, n: int) -> u32:
+    k := n % 32
+    if k < 0:
+        k += 32
+    if k == 0:
+        return x
+    return (x >> k) | (x << (32 - k))
+
+fn rotl64(x: u64, n: int) -> u64:
+    k := n % 64
+    if k < 0:
+        k += 64
+    if k == 0:
+        return x
+    return (x << k) | (x >> (64 - k))
+
+fn rotr64(x: u64, n: int) -> u64:
+    k := n % 64
+    if k < 0:
+        k += 64
+    if k == 0:
+        return x
+    return (x >> k) | (x << (64 - k))
+
+fn popcount32(x: u32) -> int:
+    n := 0
+    v := x
+    for v != 0:
+        v = v & (v - 1)
+        n += 1
+    return n
+
+fn popcount64(x: u64) -> int:
+    n := 0
+    v := x
+    for v != 0:
+        v = v & (v - 1)
+        n += 1
+    return n
+
+fn clz32(x: u32) -> int:
+    if x == 0:
+        return 32
+    n := 0
+    mask := to_u32(1) << 31
+    for (x & mask) == 0:
+        n += 1
+        mask = mask >> 1
+    return n
+
+fn clz64(x: u64) -> int:
+    if x == 0:
+        return 64
+    n := 0
+    mask := to_u64(1) << 63
+    for (x & mask) == 0:
+        n += 1
+        mask = mask >> 1
+    return n
+
+fn ctz32(x: u32) -> int:
+    if x == 0:
+        return 32
+    n := 0
+    v := x
+    for (v & 1) == 0:
+        n += 1
+        v = v >> 1
+    return n
+
+fn ctz64(x: u64) -> int:
+    if x == 0:
+        return 64
+    n := 0
+    v := x
+    for (v & 1) == 0:
+        n += 1
+        v = v >> 1
+    return n
+
+fn bswap16(x: u16) -> u16:
+    return (x >> 8) | (x << 8)
+
+fn bswap32(x: u32) -> u32:
+    return (x >> 24) | ((x >> 8) & to_u32(0xFF00)) | ((x << 8) & to_u32(0xFF0000)) | (x << 24)
+
+fn bswap64(x: u64) -> u64:
+    lo := bswap32(to_u32(x & to_u64(4294967295)))
+    hi := bswap32(to_u32(x >> 32))
+    return (to_u64(lo) << 32) | to_u64(hi)
+
+fn reverse32(x: u32) -> u32:
+    v := x
+    out := to_u32(0)
+    i := 0
+    for i < 32:
+        out = (out << 1) | (v & 1)
+        v = v >> 1
+        i += 1
+    return out
+
+fn reverse64(x: u64) -> u64:
+    v := x
+    out := to_u64(0)
+    i := 0
+    for i < 64:
+        out = (out << 1) | (v & 1)
+        v = v >> 1
+        i += 1
+    return out

@@ -1,0 +1,150 @@
+package ease
+
+import "core:fmath"
+
+fn linear(t: float) -> float:
+    return t
+
+fn in_quad(t: float) -> float:
+    return t * t
+
+fn out_quad(t: float) -> float:
+    u := 1.0 - t
+    return 1.0 - u * u
+
+fn in_out_quad(t: float) -> float:
+    if t < 0.5:
+        return 2.0 * t * t
+    u := 0.0 - 2.0 * t + 2.0
+    return 1.0 - u * u / 2.0
+
+fn in_cubic(t: float) -> float:
+    return t * t * t
+
+fn out_cubic(t: float) -> float:
+    u := 1.0 - t
+    return 1.0 - u * u * u
+
+fn in_out_cubic(t: float) -> float:
+    if t < 0.5:
+        return 4.0 * t * t * t
+    u := 0.0 - 2.0 * t + 2.0
+    return 1.0 - u * u * u / 2.0
+
+fn in_quart(t: float) -> float:
+    return t * t * t * t
+
+fn out_quart(t: float) -> float:
+    u := 1.0 - t
+    return 1.0 - u * u * u * u
+
+fn in_out_quart(t: float) -> float:
+    if t < 0.5:
+        return 8.0 * t * t * t * t
+    u := 0.0 - 2.0 * t + 2.0
+    return 1.0 - u * u * u * u / 2.0
+
+fn in_sine(t: float) -> float:
+    return 1.0 - fmath.cos(t * fmath.pi() / 2.0)
+
+fn out_sine(t: float) -> float:
+    return fmath.sin(t * fmath.pi() / 2.0)
+
+fn in_out_sine(t: float) -> float:
+    return 0.0 - (fmath.cos(fmath.pi() * t) - 1.0) / 2.0
+
+fn in_expo(t: float) -> float:
+    if t == 0.0:
+        return 0.0
+    return pow(2.0, 10.0 * t - 10.0)
+
+fn out_expo(t: float) -> float:
+    if t == 1.0:
+        return 1.0
+    return 1.0 - pow(2.0, 0.0 - 10.0 * t)
+
+fn in_out_expo(t: float) -> float:
+    if t == 0.0:
+        return 0.0
+    if t == 1.0:
+        return 1.0
+    if t < 0.5:
+        return pow(2.0, 20.0 * t - 10.0) / 2.0
+    return (2.0 - pow(2.0, 0.0 - 20.0 * t + 10.0)) / 2.0
+
+fn in_circ(t: float) -> float:
+    return 1.0 - sqrt(1.0 - t * t)
+
+fn out_circ(t: float) -> float:
+    u := t - 1.0
+    return sqrt(1.0 - u * u)
+
+fn in_out_circ(t: float) -> float:
+    if t < 0.5:
+        return (1.0 - sqrt(1.0 - 4.0 * t * t)) / 2.0
+    u := 0.0 - 2.0 * t + 2.0
+    return (sqrt(1.0 - u * u) + 1.0) / 2.0
+
+const BACK_C1 = 1.70158
+const BACK_C3 = 2.70158
+
+fn in_back(t: float) -> float:
+    return BACK_C3 * t * t * t - BACK_C1 * t * t
+
+fn out_back(t: float) -> float:
+    u := t - 1.0
+    return 1.0 + BACK_C3 * u * u * u + BACK_C1 * u * u
+
+fn in_out_back(t: float) -> float:
+    c2 := BACK_C1 * 1.525
+    if t < 0.5:
+        u := 2.0 * t
+        return u * u * ((c2 + 1.0) * u - c2) / 2.0
+    u := 2.0 * t - 2.0
+    return (u * u * ((c2 + 1.0) * u + c2) + 2.0) / 2.0
+
+fn in_elastic(t: float) -> float:
+    if t == 0.0:
+        return 0.0
+    if t == 1.0:
+        return 1.0
+    c4 := 2.0 * fmath.pi() / 3.0
+    return 0.0 - pow(2.0, 10.0 * t - 10.0) * fmath.sin((10.0 * t - 10.75) * c4)
+
+fn out_elastic(t: float) -> float:
+    if t == 0.0:
+        return 0.0
+    if t == 1.0:
+        return 1.0
+    c4 := 2.0 * fmath.pi() / 3.0
+    return pow(2.0, 0.0 - 10.0 * t) * fmath.sin((10.0 * t - 0.75) * c4) + 1.0
+
+fn in_out_elastic(t: float) -> float:
+    if t == 0.0:
+        return 0.0
+    if t == 1.0:
+        return 1.0
+    c5 := 2.0 * fmath.pi() / 4.5
+    if t < 0.5:
+        return 0.0 - (pow(2.0, 20.0 * t - 10.0) * fmath.sin((20.0 * t - 11.125) * c5)) / 2.0
+    return (pow(2.0, 0.0 - 20.0 * t + 10.0) * fmath.sin((20.0 * t - 11.125) * c5)) / 2.0 + 1.0
+
+fn out_bounce(t: float) -> float:
+    if t < 1.0 / 2.75:
+        return 7.5625 * t * t
+    if t < 2.0 / 2.75:
+        u := t - 1.5 / 2.75
+        return 7.5625 * u * u + 0.75
+    if t < 2.5 / 2.75:
+        u := t - 2.25 / 2.75
+        return 7.5625 * u * u + 0.9375
+    u := t - 2.625 / 2.75
+    return 7.5625 * u * u + 0.984375
+
+fn in_bounce(t: float) -> float:
+    return 1.0 - out_bounce(1.0 - t)
+
+fn in_out_bounce(t: float) -> float:
+    if t < 0.5:
+        return (1.0 - out_bounce(1.0 - 2.0 * t)) / 2.0
+    return (1.0 + out_bounce(2.0 * t - 1.0)) / 2.0
