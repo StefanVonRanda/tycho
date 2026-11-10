@@ -1,0 +1,226 @@
+package linalg
+
+import "core:fmath"
+
+struct Vec2:
+    x: float
+    y: float
+
+struct Vec3:
+    x: float
+    y: float
+    z: float
+
+struct Vec4:
+    x: float
+    y: float
+    z: float
+    w: float
+
+# Column-major, 4x4: m[column * 4 + row], matching the OpenGL convention.
+struct Mat4:
+    m: [16]float
+
+fn vec2(x: float, y: float) -> Vec2:
+    return Vec2(x, y)
+
+fn vec3(x: float, y: float, z: float) -> Vec3:
+    return Vec3(x, y, z)
+
+fn vec4(x: float, y: float, z: float, w: float) -> Vec4:
+    return Vec4(x, y, z, w)
+
+fn add2(a: Vec2, b: Vec2) -> Vec2:
+    return Vec2(a.x + b.x, a.y + b.y)
+
+fn add3(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+
+fn add4(a: Vec4, b: Vec4) -> Vec4:
+    return Vec4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w)
+
+fn sub2(a: Vec2, b: Vec2) -> Vec2:
+    return Vec2(a.x - b.x, a.y - b.y)
+
+fn sub3(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+
+fn sub4(a: Vec4, b: Vec4) -> Vec4:
+    return Vec4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w)
+
+fn scale2(v: Vec2, s: float) -> Vec2:
+    return Vec2(v.x * s, v.y * s)
+
+fn scale3(v: Vec3, s: float) -> Vec3:
+    return Vec3(v.x * s, v.y * s, v.z * s)
+
+fn scale4(v: Vec4, s: float) -> Vec4:
+    return Vec4(v.x * s, v.y * s, v.z * s, v.w * s)
+
+fn dot2(a: Vec2, b: Vec2) -> float:
+    return a.x * b.x + a.y * b.y
+
+fn dot3(a: Vec3, b: Vec3) -> float:
+    return a.x * b.x + a.y * b.y + a.z * b.z
+
+fn dot4(a: Vec4, b: Vec4) -> float:
+    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
+
+fn length2(v: Vec2) -> float:
+    return sqrt(dot2(v, v))
+
+fn length3(v: Vec3) -> float:
+    return sqrt(dot3(v, v))
+
+fn length4(v: Vec4) -> float:
+    return sqrt(dot4(v, v))
+
+fn normalize2(v: Vec2) -> Vec2:
+    n := length2(v)
+    if n == 0.0:
+        return Vec2(0.0, 0.0)
+    return scale2(v, 1.0 / n)
+
+fn normalize3(v: Vec3) -> Vec3:
+    n := length3(v)
+    if n == 0.0:
+        return Vec3(0.0, 0.0, 0.0)
+    return scale3(v, 1.0 / n)
+
+fn normalize4(v: Vec4) -> Vec4:
+    n := length4(v)
+    if n == 0.0:
+        return Vec4(0.0, 0.0, 0.0, 0.0)
+    return scale4(v, 1.0 / n)
+
+fn lerp2(a: Vec2, b: Vec2, t: float) -> Vec2:
+    return Vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+
+fn lerp3(a: Vec3, b: Vec3, t: float) -> Vec3:
+    return Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
+
+fn lerp4(a: Vec4, b: Vec4, t: float) -> Vec4:
+    return Vec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t)
+
+fn cross3(a: Vec3, b: Vec3) -> Vec3:
+    return Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
+
+fn _zero_mat() -> Mat4:
+    return Mat4([0.0, 0.0, 0.0, 0.0,
+                 0.0, 0.0, 0.0, 0.0,
+                 0.0, 0.0, 0.0, 0.0,
+                 0.0, 0.0, 0.0, 0.0])
+
+fn mat4_identity() -> Mat4:
+    return Mat4([1.0, 0.0, 0.0, 0.0,
+                 0.0, 1.0, 0.0, 0.0,
+                 0.0, 0.0, 1.0, 0.0,
+                 0.0, 0.0, 0.0, 1.0])
+
+fn mat4_mul(a: Mat4, b: Mat4) -> Mat4:
+    out := _zero_mat()
+    c := 0
+    for c < 4:
+        r := 0
+        for r < 4:
+            s := a.m[0 * 4 + r] * b.m[c * 4 + 0] +
+                 a.m[1 * 4 + r] * b.m[c * 4 + 1] +
+                 a.m[2 * 4 + r] * b.m[c * 4 + 2] +
+                 a.m[3 * 4 + r] * b.m[c * 4 + 3]
+            out.m[c * 4 + r] = s
+            r += 1
+        c += 1
+    return out
+
+fn mat4_transform(m: Mat4, v: Vec4) -> Vec4:
+    return Vec4(
+        m.m[0] * v.x + m.m[4] * v.y + m.m[8] * v.z + m.m[12] * v.w,
+        m.m[1] * v.x + m.m[5] * v.y + m.m[9] * v.z + m.m[13] * v.w,
+        m.m[2] * v.x + m.m[6] * v.y + m.m[10] * v.z + m.m[14] * v.w,
+        m.m[3] * v.x + m.m[7] * v.y + m.m[11] * v.z + m.m[15] * v.w)
+
+fn mat4_translate(x: float, y: float, z: float) -> Mat4:
+    m := mat4_identity()
+    m.m[12] = x
+    m.m[13] = y
+    m.m[14] = z
+    return m
+
+fn mat4_scale(x: float, y: float, z: float) -> Mat4:
+    m := mat4_identity()
+    m.m[0] = x
+    m.m[5] = y
+    m.m[10] = z
+    return m
+
+fn mat4_rotate_x(rad: float) -> Mat4:
+    c := fmath.cos(rad)
+    s := fmath.sin(rad)
+    m := mat4_identity()
+    m.m[5] = c
+    m.m[6] = s
+    m.m[9] = 0.0 - s
+    m.m[10] = c
+    return m
+
+fn mat4_rotate_y(rad: float) -> Mat4:
+    c := fmath.cos(rad)
+    s := fmath.sin(rad)
+    m := mat4_identity()
+    m.m[0] = c
+    m.m[2] = 0.0 - s
+    m.m[8] = s
+    m.m[10] = c
+    return m
+
+fn mat4_rotate_z(rad: float) -> Mat4:
+    c := fmath.cos(rad)
+    s := fmath.sin(rad)
+    m := mat4_identity()
+    m.m[0] = c
+    m.m[1] = s
+    m.m[4] = 0.0 - s
+    m.m[5] = c
+    return m
+
+fn mat4_transpose(m: Mat4) -> Mat4:
+    out := _zero_mat()
+    c := 0
+    for c < 4:
+        r := 0
+        for r < 4:
+            out.m[c * 4 + r] = m.m[r * 4 + c]
+            r += 1
+        c += 1
+    return out
+
+# Right-handed perspective, OpenGL depth range [-1, 1].
+fn mat4_perspective(fovy_rad: float, aspect: float, near: float, far: float) -> Mat4:
+    f := 1.0 / fmath.tan(fovy_rad / 2.0)
+    out := _zero_mat()
+    out.m[0] = f / aspect
+    out.m[5] = f
+    out.m[10] = (far + near) / (near - far)
+    out.m[11] = 0.0 - 1.0
+    out.m[14] = (2.0 * far * near) / (near - far)
+    return out
+
+fn mat4_look_at(eye: Vec3, center: Vec3, up: Vec3) -> Mat4:
+    f := normalize3(sub3(center, eye))
+    s := normalize3(cross3(f, up))
+    u := cross3(s, f)
+    out := _zero_mat()
+    out.m[0] = s.x
+    out.m[4] = s.y
+    out.m[8] = s.z
+    out.m[1] = u.x
+    out.m[5] = u.y
+    out.m[9] = u.z
+    out.m[2] = 0.0 - f.x
+    out.m[6] = 0.0 - f.y
+    out.m[10] = 0.0 - f.z
+    out.m[12] = 0.0 - dot3(s, eye)
+    out.m[13] = 0.0 - dot3(u, eye)
+    out.m[14] = dot3(f, eye)
+    out.m[15] = 1.0
+    return out

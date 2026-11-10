@@ -1,0 +1,12 @@
+add=true
+dot=true cross=true
+norm=true zero=true
+lerp=true
+translate=true
+scale=true
+rotx=true
+roty=true
+mulid=true
+transpose=true
+persp=true
+look=true

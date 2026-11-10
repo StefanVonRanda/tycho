@@ -31,13 +31,13 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   (reuse-addr/nodelay/keepalive/broadcast/nonblocking).
 - Added `core:base32`, `core:varint`, `core:endian`, `core:pem`, `core:ini`,
   `core:utf16`, `core:edit`, `core:xml`, `core:cbor`, `core:asn1`,
-  `core:diff`, `core:terminal`, `core:lz4`, `core:bufio`, `core:bits` and
-  `core:ease`; added base 2..36 integer parse/format and fixed-point float
-  formatting to `core:strings`.
+  `core:diff`, `core:terminal`, `core:lz4`, `core:bufio`, `core:bits`,
+  `core:ease` and `core:linalg`; added base 2..36 integer parse/format and
+  fixed-point float formatting to `core:strings`.
 - Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF-SHA256, AES-GCM, AES-CTR and RSA PKCS#1 v1.5/SHA-256.
 - Added the libm trig/exp/log surface to `core:fmath`.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM codecs to `core:raster`.
-- The tree is now 66 corelib packages and 67 golden test trees.
+- The tree is now 67 corelib packages and 68 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

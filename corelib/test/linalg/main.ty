@@ -1,0 +1,37 @@
+package main
+
+import "core:fmath"
+import "core:linalg"
+
+fn near(a: float, b: float) -> bool:
+    return fmath.approx_eq(a, b, 0.000001)
+
+fn main():
+    a := linalg.vec3(1.0, 2.0, 3.0)
+    b := linalg.vec3(4.0, 5.0, 6.0)
+    println("add=" + str(near(linalg.add3(a, b).x, 5.0) and near(linalg.add3(a, b).z, 9.0)))
+    println("dot=" + str(near(linalg.dot3(a, b), 32.0)) + " cross=" + str(near(linalg.cross3(linalg.vec3(1.0, 0.0, 0.0), linalg.vec3(0.0, 1.0, 0.0)).z, 1.0)))
+    println("norm=" + str(near(linalg.length3(linalg.normalize3(a)), 1.0)) + " zero=" + str(near(linalg.length3(linalg.normalize3(linalg.vec3(0.0, 0.0, 0.0))), 0.0)))
+    println("lerp=" + str(near(linalg.lerp3(a, b, 0.5).y, 3.5)))
+
+    id := linalg.mat4_identity()
+    t := linalg.mat4_translate(1.0, 2.0, 3.0)
+    v := linalg.mat4_transform(t, linalg.vec4(1.0, 1.0, 1.0, 1.0))
+    println("translate=" + str(near(v.x, 2.0) and near(v.y, 3.0) and near(v.z, 4.0) and near(v.w, 1.0)))
+    s := linalg.mat4_scale(2.0, 3.0, 4.0)
+    sv := linalg.mat4_transform(s, linalg.vec4(1.0, 1.0, 1.0, 1.0))
+    println("scale=" + str(near(sv.x, 2.0) and near(sv.y, 3.0) and near(sv.z, 4.0)))
+    rx := linalg.mat4_rotate_x(fmath.pi() / 2.0)
+    rv := linalg.mat4_transform(rx, linalg.vec4(0.0, 1.0, 0.0, 1.0))
+    println("rotx=" + str(near(rv.y, 0.0) and near(rv.z, 1.0)))
+    ry := linalg.mat4_rotate_y(fmath.pi() / 2.0)
+    rv2 := linalg.mat4_transform(ry, linalg.vec4(1.0, 0.0, 0.0, 1.0))
+    println("roty=" + str(near(rv2.x, 0.0) and near(rv2.z, 0.0 - 1.0)))
+    println("mulid=" + str(near(linalg.mat4_transform(linalg.mat4_mul(id, t), linalg.vec4(1.0, 1.0, 1.0, 1.0)).x, 2.0)))
+    tr := linalg.mat4_transpose(t)
+    println("transpose=" + str(near(tr.m[3], 1.0) and near(tr.m[12], 0.0)))
+    p := linalg.mat4_perspective(fmath.pi() / 2.0, 1.0, 0.1, 100.0)
+    println("persp=" + str(near(p.m[0], 1.0) and near(p.m[5], 1.0) and near(p.m[11], 0.0 - 1.0)))
+    look := linalg.mat4_look_at(linalg.vec3(0.0, 0.0, 5.0), linalg.vec3(0.0, 0.0, 0.0), linalg.vec3(0.0, 1.0, 0.0))
+    lv := linalg.mat4_transform(look, linalg.vec4(0.0, 0.0, 0.0, 1.0))
+    println("look=" + str(near(lv.z, 0.0 - 5.0)))

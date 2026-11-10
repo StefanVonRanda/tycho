@@ -183,6 +183,13 @@ expression-bodied; pass a named function where you need a multi-line body.
   write inside the root. `resolve_under` narrows that window to an attacker with
   write access inside the root; a fully race-free form would need the open done
   inside the check.
+- **`linalg`** — float vectors and 4×4 matrices. `Vec2`/`Vec3`/`Vec4` with
+  `vec2`/`vec3`/`vec4`, `add2`/`add3`/`add4`, `sub2`/`sub3`/`sub4`,
+  `scale2`/`scale3`/`scale4`, `dot2`/`dot3`/`dot4`, `length2`/`length3`/`length4`,
+  `normalize2`/`normalize3`/`normalize4`, `lerp2`/`lerp3`/`lerp4`, `cross3`.
+  `Mat4` is column-major (`m[column * 4 + row]`): `mat4_identity`, `mat4_mul`,
+  `mat4_transform`, `mat4_translate`, `mat4_scale`, `mat4_rotate_x`, `mat4_rotate_y`, `mat4_rotate_z`,
+  `mat4_transpose`, `mat4_perspective` (OpenGL depth range) and `mat4_look_at`.
 - **`bits`** — fixed-width bit operations: `rotl32`/`rotr32`/`rotl64`/`rotr64`
   (negative counts rotate the other way), `popcount32`/`popcount64`,
   `clz32`/`clz64` and `ctz32`/`ctz64` (return 32/64 for zero),
