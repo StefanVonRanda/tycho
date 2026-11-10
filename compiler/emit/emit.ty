@@ -178,9 +178,10 @@ struct C:
     destvi: [int]                      # persistent: variable indices whose buffer may move there
     destva: [string]
     thin: bool                         # no lambdas and no externs: function values are bare (Arena*, args...) pointers
+    nul: bool                          # nullable recursive enums are safe: no nested pattern anywhere
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []string, []int, []string, false)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []string, []int, []string, false, true)
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -287,6 +288,8 @@ fn _tname(t: string) -> string:
 # arena's node size. Restricted to recursive enums so Option/Result and scalar
 # enums keep their dedicated lowering.
 fn _nul_enum(cs: inout C, en: string) -> bool:
+    if not cs.nul:
+        return false
     ei := _eidx(&cs, en)
     if ei < 0 or _inline_enum(&cs, en):
         return false
@@ -11484,6 +11487,63 @@ fn _has_lambda_unit(u: ast.Unit) -> bool:
             return true
     return false
 
+fn _nested_arm(a: ast.Arm, vs: [string: bool]) -> bool:
+    if len(a.sub) > 0:
+        return true
+    for b in a.binds:
+        if b in vs:
+            return true
+    return _nested_stmts(a.body, vs)
+
+fn _nested_stmts(ss: [ast.Stmt], vs: [string: bool]) -> bool:
+    for s in ss:
+        if _nested_stmt(s, vs):
+            return true
+    return false
+
+fn _nested_stmt(s: ast.Stmt, vs: [string: bool]) -> bool:
+    match s:
+        ast.Decl(l, n, t, r, v):
+            if _nested_stmts(v, vs):
+                    return true
+        ast.IfS(l, arms, e):
+            for a in arms:
+                if _nested_stmts(a.body, vs):
+                    return true
+            if _nested_stmts(e, vs):
+                    return true
+        ast.WhileS(l, c, b):
+            if _nested_stmts(b, vs):
+                    return true
+        ast.For3(l, ip, c, b):
+            if _nested_stmts(ip, vs) or _nested_stmts(b, vs):
+                    return true
+        ast.ForIn(l, n, c, b, p):
+            if _nested_stmts(b, vs):
+                    return true
+        ast.ForRange(l, n, c, b):
+            if _nested_stmts(b, vs):
+                    return true
+        ast.ParallelS(l, w, b):
+            if _nested_stmts(b, vs):
+                    return true
+        ast.MatchS(l, c, arms):
+            for a in arms:
+                if _nested_arm(a, vs):
+                    return true
+        ast.SelectS(l, arms):
+            for a in arms:
+                if _nested_arm(a, vs):
+                    return true
+        _: pass
+    return false
+
+fn _nested_unit(u: ast.Unit, vs: [string: bool]) -> bool:
+    for f in u.fns:
+        if _nested_stmts(f.body, vs):
+            return true
+    return false
+
 fn program_in(program: types.Program, dbgf: string) -> string:
     cs := _new()
     cs.dbgfile = dbgf
@@ -11502,6 +11562,14 @@ fn program_in(program: types.Program, dbgf: string) -> string:
         if _has_lambda_unit(file.unit):
             thin = false
     cs.thin = thin
+    vs := []string: bool
+    for file in program.files:
+        for ed in file.unit.enums:
+            for v in ed.variants:
+                vs[v.name] = true
+    for file in program.files:
+        if _nested_unit(file.unit, vs):
+            cs.nul = false
     for file in program.files:
         push(cs.fpath, file.path)
         push(cs.fsrc, file.src)

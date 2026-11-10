@@ -56,7 +56,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   pointer is a 16-byte payload. The node drops 24 -> 16 bytes (C's size), and
   `binary/arena` large goes 423 -> 377 ms GCC (C 292) and 516 ms clang (C 504),
   with peak RSS 34 MB against C's 98 MB. Restricted to recursive enums so
-  Option/Result and scalar enums keep their existing lowering.
+  Option/Result and scalar enums keep their existing lowering; a program with a
+  nested pattern falls back to the tagged representation.
 - **Maps compact at 1/8 dead, not 1/2.** A churn-heavy map reaches its reserved
   entry capacity while nearly all entries are live, so the old rule did not
   fire before it grew, and the old arrays stayed in the arena. `bench/lru`'s
