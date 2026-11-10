@@ -1,0 +1,242 @@
+/* Frozen surface tables extracted from the archived C compiler.
+ * Read by scripts/surface_lock.py only; never compiled. */
+
+static TokKind keyword(const char *s) {
+    if (!strcmp(s, "fn"))     return TK_FN;
+    if (!strcmp(s, "return")) return TK_RETURN;
+    if (!strcmp(s, "if"))     return TK_IF;
+    if (!strcmp(s, "elif"))   return TK_ELIF;
+    if (!strcmp(s, "else"))   return TK_ELSE;
+    if (!strcmp(s, "and"))    return TK_AND;
+    if (!strcmp(s, "or_return")) return TK_ORRETURN;   /* before "or": longer match wins anyway, but explicit */
+    if (!strcmp(s, "or_else"))   return TK_ORELSE;
+    if (!strcmp(s, "or"))     return TK_OR;
+    if (!strcmp(s, "not"))    return TK_NOT;
+    if (!strcmp(s, "match"))  return TK_MATCH;
+    if (!strcmp(s, "break"))    return TK_BREAK;
+    if (!strcmp(s, "continue")) return TK_CONTINUE;
+    if (!strcmp(s, "spawn"))    return TK_SPAWN;
+    if (!strcmp(s, "parallel")) return TK_PARALLEL;
+    if (!strcmp(s, "select"))   return TK_SELECT;
+    if (!strcmp(s, "for"))    return TK_FOR;
+    if (!strcmp(s, "in"))     return TK_IN;
+    if (!strcmp(s, "is"))     return TK_IS;
+    if (!strcmp(s, "struct")) return TK_STRUCT;
+    if (!strcmp(s, "enum"))   return TK_ENUM;
+    if (!strcmp(s, "handle")) return TK_HANDLE;
+    if (!strcmp(s, "type"))   return TK_TYPE;
+    if (!strcmp(s, "inout"))  return TK_INOUT;
+    if (!strcmp(s, "true"))   return TK_TRUE;
+    if (!strcmp(s, "false"))  return TK_FALSE;
+    if (!strcmp(s, "null"))   return TK_NULL;
+    if (!strcmp(s, "int"))    return TK_KW_INT;
+    if (!strcmp(s, "bool"))   return TK_KW_BOOL;
+    if (!strcmp(s, "string")) return TK_KW_STRING;
+    if (!strcmp(s, "float"))  return TK_KW_FLOAT;
+    if (!strcmp(s, "ptr"))    return TK_KW_PTR;
+    if (!strcmp(s, "bytes"))  return TK_KW_BYTES;
+    if (!strcmp(s, "u32"))    return TK_KW_U32;
+    if (!strcmp(s, "u64"))    return TK_KW_U64;
+    if (!strcmp(s, "f32"))    return TK_KW_F32;
+    if (!strcmp(s, "u8"))     return TK_KW_U8;
+    if (!strcmp(s, "u16"))    return TK_KW_U16;
+    if (!strcmp(s, "i8"))     return TK_KW_I8;
+    if (!strcmp(s, "i16"))    return TK_KW_I16;
+    if (!strcmp(s, "i32"))    return TK_KW_I32;
+    if (!strcmp(s, "i64"))    return TK_KW_I64;
+    return TK_IDENT;
+}
+
+static int is_builtin_name(const char *n) {
+    if (!n) return 0;
+    static const char *bs[] = {
+        "args", "channel", "char_at", "chr", "clock", "close",
+        "die", "eprint", "eprintln", "exit", "find", "get", "getenv",
+        "hash", "input", "is_null", "len", "list_dir", "ncpu",
+        "now", "pop", "print", "println", "push", "read_all",
+        "read_file", "recv", "reserve", "send", "split", "sqrt",
+        "str", "substr", "to_bytes", "to_char", "to_float", "to_i32",
+        "to_int", "to_ptr", "to_u32", "wait", "write_file",
+        0 };
+    for (int i = 0; bs[i]; i++) if (!strcmp(n, bs[i])) return 1;
+    return 0;
+}
+
+    if (strncmp(m, "deprecated:", 11)) return;
+    if (!strcmp(s, "fn"))     return TK_FN;
+    if (!strcmp(s, "return")) return TK_RETURN;
+    if (!strcmp(s, "if"))     return TK_IF;
+    if (!strcmp(s, "elif"))   return TK_ELIF;
+    if (!strcmp(s, "else"))   return TK_ELSE;
+    if (!strcmp(s, "and"))    return TK_AND;
+    if (!strcmp(s, "or_return")) return TK_ORRETURN;   /* before "or": longer match wins anyway, but explicit */
+    if (!strcmp(s, "or_else"))   return TK_ORELSE;
+    if (!strcmp(s, "or"))     return TK_OR;
+    if (!strcmp(s, "not"))    return TK_NOT;
+    if (!strcmp(s, "match"))  return TK_MATCH;
+    if (!strcmp(s, "break"))    return TK_BREAK;
+    if (!strcmp(s, "continue")) return TK_CONTINUE;
+    if (!strcmp(s, "spawn"))    return TK_SPAWN;
+    if (!strcmp(s, "parallel")) return TK_PARALLEL;
+    if (!strcmp(s, "select"))   return TK_SELECT;
+    if (!strcmp(s, "for"))    return TK_FOR;
+    if (!strcmp(s, "in"))     return TK_IN;
+    if (!strcmp(s, "is"))     return TK_IS;
+    if (!strcmp(s, "struct")) return TK_STRUCT;
+    if (!strcmp(s, "enum"))   return TK_ENUM;
+    if (!strcmp(s, "handle")) return TK_HANDLE;
+    if (!strcmp(s, "type"))   return TK_TYPE;
+    if (!strcmp(s, "inout"))  return TK_INOUT;
+    if (!strcmp(s, "true"))   return TK_TRUE;
+    if (!strcmp(s, "false"))  return TK_FALSE;
+    if (!strcmp(s, "null"))   return TK_NULL;
+    if (!strcmp(s, "int"))    return TK_KW_INT;
+    if (!strcmp(s, "bool"))   return TK_KW_BOOL;
+    if (!strcmp(s, "string")) return TK_KW_STRING;
+    if (!strcmp(s, "float"))  return TK_KW_FLOAT;
+    if (!strcmp(s, "ptr"))    return TK_KW_PTR;
+    if (!strcmp(s, "bytes"))  return TK_KW_BYTES;
+    if (!strcmp(s, "u32"))    return TK_KW_U32;
+    if (!strcmp(s, "u64"))    return TK_KW_U64;
+    if (!strcmp(s, "f32"))    return TK_KW_F32;
+    if (!strcmp(s, "u8"))     return TK_KW_U8;
+    if (!strcmp(s, "u16"))    return TK_KW_U16;
+    if (!strcmp(s, "i8"))     return TK_KW_I8;
+    if (!strcmp(s, "i16"))    return TK_KW_I16;
+    if (!strcmp(s, "i32"))    return TK_KW_I32;
+    if (!strcmp(s, "i64"))    return TK_KW_I64;
+    if (t->kind == TK_IDENT && !strcmp(t->text, "soa")) {   /* soa [Struct] */
+    if (t->kind == TK_IDENT && !strcmp(t->text, "bounded")) {   /* bounded[N]T: inline fixed-cap, variable-count */
+    if (t->kind == TK_IDENT && !strcmp(t->text, "vector")) {   /* vector[N]T: a fixed array that lowers to one machine vector */
+            !(peek(ps, 3)->kind == TK_IDENT && !strcmp(peek(ps, 3)->text, "where"))) {
+    if (t->kind == TK_IDENT && !strcmp(t->text, "void")) {   /* the type with no values; see g_void_ok */
+        if (!strcmp(t->text, "soa")) {     /* soa []Struct : an empty SOA literal */
+        if (!strcmp(t->text, "channel") && at(ps, TK_LPAREN)) {   /* channel(T, cap): create a bounded queue (CC-4) */
+            if (!strcmp(t->text, "map_set")) die_at(t->line, "map_set was removed; use `m[k] = v`");
+            if (!strcmp(t->text, "map_has")) die_at(t->line, "map_has was removed; use `k in m`");
+            if (!strcmp(t->text, "map_del")) die_at(t->line, "map_del was removed; use `delete m[k]`");
+            if (!strcmp(t->text, "map_get")) die_at(t->line, "map_get was removed; use `m.get(k, default)`");
+           (!strcmp(e->sval, "die") || !strcmp(e->sval, "exit"));
+    if (t->kind == TK_IDENT && !strcmp(t->text, "const") && peek(ps, 1)->kind == TK_IDENT) {
+    if (t->kind == TK_IDENT && !strcmp(t->text, "pass")
+    if (t->kind == TK_IDENT && !strcmp(t->text, "delete") && peek(ps, 1)->kind == TK_IDENT) {
+            if (!strcmp(an->text, "recv")) {
+            if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "range") && peek(ps, 1)->kind == TK_LPAREN)
+    if (e->kind == E_IDENT && !strcmp(e->sval, "while"))   /* F9: `while cond:` — Tycho has no while keyword */
+        if (!is_inout && at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "sink")) { ps->p++; is_sink = 1; }
+    if (cur(ps)->kind == TK_IDENT && !strcmp(cur(ps)->text, "where")) {
+    if (!(at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "yield")))
+        if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "packed")) {
+        if (at(ps, TK_IDENT) && !strcmp(cur(ps)->text, "align") && peek(ps, 1)->kind == TK_LPAREN) {
+        && (!strcmp(cur(ps)->text, "packed") || !strcmp(cur(ps)->text, "align"))) { parse_struct(ps); return; }
+    if (!strncmp(p, "core:", 5)) p += 5;        /* "core:text/utf8" -> "utf8" */
+    if (!strncmp(path, "core:", 5)) {
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "package")) { parse_package_decl(&ps); continue; }
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "import"))  { parse_import_decl(&ps);  continue; }
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "extern") && peek(&ps, 1)->kind != TK_LPAREN) {
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "const")) { parse_const(&ps); continue; }
+        if (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "subscript")) { parse_subscript(&ps); continue; }
+            || (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "packed"))
+            || (at(&ps, TK_IDENT) && !strcmp(cur(&ps)->text, "align") && peek(&ps, 1)->kind == TK_LPAREN)) {   /* parse_struct owns the non-struct refusal */
+            if (!strcmp(e->sval, "pass"))
+            if (e->sval && !strcmp(e->sval, "zero") && e->ntypeargs > 0) {
+            if (e->sval && !strcmp(e->sval, "from_bytes") && e->ntypeargs > 0) {
+            if (e->sval && !strcmp(e->sval, "size_of") && e->ntypeargs > 0) {
+              int _cm = e->sval && (!strcmp(e->sval, "wait") || !strcmp(e->sval, "send")
+                     || !strcmp(e->sval, "recv") || !strcmp(e->sval, "close"));   /* sval is NULL for a call-on-expression */
+                  if (is_map(_qvt) && !strcmp(e->sval, "get")) {
+                if (is_map(bt) && !strcmp(fld->sval, "get")) {
+            if (!strcmp(e->sval, "wait")) {
+            if (!strcmp(e->sval, "channel") && e->ival) {
+            if (!strcmp(e->sval, "send")) {   /* send(ch, v): deep-copy v into the channel; blocks when full */
+            if (!strcmp(e->sval, "recv")) {   /* recv(ch) -> Option(T): blocks; None = closed and drained */
+            if (!strcmp(e->sval, "close")) {  /* close(ch): receivers drain then see None; close(h): free a handle early */
+            if (!strcmp(e->sval, "str")) {
+            if (!strcmp(e->sval, "hash")) {
+            if (!strcmp(e->sval, "to_float")) {   /* int/u32/u64/f32 -> float, or unwrap a float newtype */
+            if (!strcmp(e->sval, "to_int")) {   /* float/u32/u64/f32 -> int (truncate), or unwrap an int newtype */
+            if (!strcmp(e->sval, "to_str")) {   /* unwrap a string newtype, OR reinterpret bytes -> string */
+            if (!strcmp(e->sval, "to_ptr")) {   /* int -> opaque ptr: a sentinel pointer for C (e.g. SQLITE_TRANSIENT = (void*)-1). tycho never derefs it. */
+            if (!strcmp(e->sval, "to_bytes")) {   /* string -> bytes (same byte buffer); or [int] -> bytes (each elem & 0xFF: build a binary buffer a string can't hold) */
+            if (!strcmp(e->sval, "to_bool")) {   /* unwrap a bool newtype -> bool */
+            if (!strcmp(e->sval, "to_under")) {   /* generic newtype unwrap -> its underlying type */
+            if (!strcmp(e->sval, "len")) {
+            if (!strcmp(e->sval, "map_set")) {
+            if (!strcmp(e->sval, "map_get")) {
+            if (!strcmp(e->sval, "map_has")) {
+            if (!strcmp(e->sval, "map_del")) {
+            if (!strcmp(e->sval, "keys")) {
+            if (!strcmp(e->sval, "push")) {
+            if (!strcmp(e->sval, "pop")) {   /* pop(arr): remove + return the last element */
+            if (!strcmp(e->sval, "reserve")) {
+                        && !strcmp(e->sval, "is_null"))
+        (!strcmp(e->sval, "push") || !strcmp(e->sval, "pop"))) {
+        if (!strcmp(e->sval, "die")) *exit = 1;
+        if ((!strcmp(e->sval, "push") || !strcmp(e->sval, "pop")) && e->nargs >= 1)
+            if (s->expr->kind == E_CALL && s->expr->sval && !strcmp(s->expr->sval, "channel") && !s->expr->qual)
+                                && !strcmp(s->expr->sval, "channel") && !s->expr->qual))
+        if (!strcmp(e->sval, "send"))  { u->send  = 1; return; }
+        if (!strcmp(e->sval, "recv"))  { u->recv  = 1; u->recv_block = 1; return; }
+        if (!strcmp(e->sval, "close")) { u->close = 1; return; }
+    int c = (e->kind == E_CALL && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1
+        if (e && e->kind == E_CALL && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1
+    if (e->kind == E_CALL && e->sval && !strcmp(e->sval, "push")
+        && e->sval && !strcmp(e->sval, "push") && e->nargs >= 1) {
+        && !strcmp(s->expr->sval, "map_set")
+        && !strcmp(s->expr->sval, "map_del")
+    if (!strcmp(e->sval, "to_bytes") && base_of(e->args[0]->type) == T_ARRAY_INT) return 0;   /* a real conversion */
+    if (!strcmp(e->sval, "to_bytes") && IS_STRUCT(base_of(e->args[0]->type))) return 0;      /* a packed struct: a real conversion too */
+    if (!strcmp(e->sval, "len")) {
+    if (!strcmp(e->sval, "map_set")) {
+    if (!strcmp(e->sval, "map_get")) {
+    if (!strcmp(e->sval, "map_has")) {
+    if (!strcmp(e->sval, "map_del")) {
+    if (!strcmp(e->sval, "keys")) {
+    if (!strcmp(e->sval, "substr")) {
+    if (!strcmp(e->sval, "find")) {
+    if (!strcmp(e->sval, "char_at")) {
+    if (!strcmp(e->sval, "push")) {
+    if (!strcmp(e->sval, "pop")) {
+    if (!strcmp(e->sval, "reserve")) {           /* preallocate exact capacity (same shape as push) */
+    if (!strcmp(e->sval, "split")) {
+    if (!strcmp(e->sval, "print")) {
+    if (!strcmp(e->sval, "eprint")) return sfmt("tycho_eprint(%s)", gen_expr(e->args[0], arena));   /* stderr, no newline, no exit */
+    if (!strcmp(e->sval, "eprintln")) return sfmt("(tycho_eprint(%s), tycho_eprint(\"\\n\"))", gen_expr(e->args[0], arena));   /* stderr + newline */
+    if (!strcmp(e->sval, "println")) {   /* print + a trailing newline */
+    if (!strcmp(e->sval, "input")) {
+    if (!strcmp(e->sval, "read_all")) {
+    if (!strcmp(e->sval, "clock")) return "tycho_clock()";   /* monotonic ns; no arena (scalar) */
+    if (!strcmp(e->sval, "now"))   return "tycho_now()";     /* wall-clock seconds */
+    if (!strcmp(e->sval, "ncpu"))  return "((tycho_int)tycho_ncpu())";   /* parallel-for fan-out width */
+    if (!strcmp(e->sval, "read_file")) {
+    if (!strcmp(e->sval, "getenv")) {   /* env var value, or "" if unset */
+    if (!strcmp(e->sval, "is_null")) {   /* FFI: opaque-handle NULL test */
+    if (!strcmp(e->sval, "wait") && e->nargs == 1 && IS_TASK(e->args[0]->type)) {
+    if (!strcmp(e->sval, "channel") && IS_CHAN(e->type))   /* CC-4 */
+    if (!strcmp(e->sval, "send") && e->nargs == 2 && IS_CHAN(e->args[0]->type)) {
+    if (!strcmp(e->sval, "recv") && e->nargs == 1 && IS_CHAN(e->args[0]->type)) {
+    if (!strcmp(e->sval, "close") && e->nargs == 1 && IS_CHAN(e->args[0]->type))
+    if (!strcmp(e->sval, "close") && e->nargs == 1 && IS_HANDLE(e->args[0]->type)) {
+    if (!strcmp(e->sval, "write_file")) {   /* (path, contents) -> bool; no arena (no alloc) */
+    if (!strcmp(e->sval, "list_dir")) {
+    if (!strcmp(e->sval, "args")) {
+    if (!strcmp(e->sval, "chr") || !strcmp(e->sval, "to_char")) {   /* int -> byte. Both route through tycho_chr so both inherit its 0..255 ABORT (`runtime/tycho_rt.c:1456`) rather than masking -- the established answer for an out-of-range conversion here, the same one to_int(float) takes at `runtime/tycho_rt.c:242-244`. to_char then reads the byte back out; the sized to_u8 family wraps instead, but those are documented as total reinterpretations (docs/spec/06-conversions.md:40), not conversions with a domain. */
+    if (!strcmp(e->sval, "die")) {   /* print to stderr and exit(1); never returns */
+    if (!strcmp(e->sval, "exit")) {
+    if (!strcmp(e->sval, "str")) {
+    if (!strcmp(e->sval, "hash")) {   /* generic hash (see resolve): DETERMINISTIC (cross-run stable), 64-bit as signed int */
+    if (!strcmp(e->sval, "to_float"))    /* int -> double */
+    if (!strcmp(e->sval, "to_int")) {    /* float -> long via the range/NaN guard (traps out-of-range); sized/u32/u64 -> long is defined, plain cast */
+    if (!strcmp(e->sval, "to_ptr"))      /* int -> void* (FFI sentinel pointer; tycho never derefs it) */
+    if (!strcmp(e->sval, "to_bytes") && base_of(e->args[0]->type) == T_ARRAY_INT)   /* [int] -> bytes: real conversion (each elem & 0xFF into a fresh binary buffer) */
+    if (!strcmp(e->sval, "to_bytes") && IS_STRUCT(base_of(e->args[0]->type))) {   /* packed struct -> bytes: little-endian, field-wise */
+    if (!strcmp(e->sval, "size_of"))   /* the struct's stated byte size, as C sees it */
+    if (!strcmp(e->sval, "from_bytes")) {   /* bytes -> packed struct; the runtime refuses any other length */
+    if (!strcmp(e->sval, "to_str") || !strcmp(e->sval, "to_bool") || !strcmp(e->sval, "to_under") || !strcmp(e->sval, "to_bytes"))   /* zero-cost newtype unwrap / bytes<->string reinterpret (identical char* repr) */
+    if (!strcmp(e->sval, "sqrt") || !strcmp(e->sval, "floor") || !strcmp(e->sval, "fabs"))   /* libm, 1 float arg */
+    if (!strcmp(e->sval, "pow"))   /* libm, 2 float args */
+            return !(e->sval && !strcmp(e->sval, "len") && e->nargs == 1);
+                && s->expr->sval && !strcmp(s->expr->sval, "channel"))
+                !strcmp(s->r_stop->sval, "len") && s->r_stop->nargs == 1 &&
+    if (e->kind == E_CALL && e->sval && !strcmp(e->sval, "channel") && has_typaram((Type)e->ival))   /* `channel($T, n)`: ival is the written element type, resolved straight to chan_of */
+    if (e && e->kind == E_CALL && e->sval && !strcmp(e->sval, "close") && e->nargs == 1

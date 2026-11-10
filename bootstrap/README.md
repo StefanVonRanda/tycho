@@ -5,6 +5,9 @@ last known-good self-hosted compiler. `make` compiles it with `cc` to
 `bootstrap-tychoc`, uses that to build `compiler/main.ty`, and then uses the
 result to rebuild itself.
 
+`surface_tables.txt` is a frozen extraction of the archived compiler's keyword
+and builtin tables, read only by `scripts/surface_lock.py`; it is never compiled.
+
 It is not a second compiler source. Do not edit it by hand. Regenerate it only
 when the compiler source stops being expressible in the existing bootstrap
 dialect, then run `make bootstrap-check` and commit the new file:

@@ -8,8 +8,8 @@ which is why surface.lock is a machine-readable file and not a paragraph.
 
 Three surfaces, two policies:
 
-  keywords  (src/tychoc.c's lexer)          FROZEN HARD -- no additions, no removals
-  builtins  (src/tychoc.c's is_builtin_name) FROZEN HARD -- same
+  keywords  (bootstrap/surface_tables.txt, frozen)          FROZEN HARD -- no additions, no removals
+  builtins  (bootstrap/surface_tables.txt, frozen) FROZEN HARD -- same
   corelib   (every exported `fn` in corelib/) ADDITIONS ALLOWED but RECORDED; a
             removal or a CHANGED SIGNATURE reddens, because that is what breaks
             a program somebody already wrote
@@ -71,7 +71,7 @@ FN = re.compile(r"^fn\s+([a-z_0-9]+)\s*\((.*?)\)\s*(->.*?)?:\s*(#.*)?$")
 KWMARK = re.compile(r'strncmp\(\w+,\s*"([a-z_0-9]+):",')
 
 
-def keywords(src="src/tychoc.c"):
+def keywords(src="bootstrap/surface_tables.txt"):
     t = open(src).read()
     return sorted(set(KW.findall(t)) | set(KWCTX.findall(t)) | set(KWMARK.findall(t)))
 
@@ -86,13 +86,13 @@ KWFN = re.compile(r"static TokKind keyword\(const char \*s\) \{(.*?)\n\}", re.S)
 LIT = re.compile(r'"([^"\\]+)"')
 
 
-def lexer_table(src="src/tychoc.c"):
+def lexer_table(src="bootstrap/surface_tables.txt"):
     """Every literal in the lexer's keyword() body, or None if it is not there."""
     m = KWFN.search(open(src).read())
     return None if not m else sorted(set(LIT.findall(m.group(1))))
 
 
-def unreachable(kws, src="src/tychoc.c"):
+def unreachable(kws, src="bootstrap/surface_tables.txt"):
     tbl = lexer_table(src)
     if tbl is None:
         return ["lexer keyword() NOT FOUND in %s -- this leg cannot run" % src]
@@ -100,7 +100,7 @@ def unreachable(kws, src="src/tychoc.c"):
             "and no pattern above reaches it" % w for w in tbl if w not in kws]
 
 
-def builtins(src="src/tychoc.c"):
+def builtins(src="bootstrap/surface_tables.txt"):
     """The string literals in is_builtin_name's table, in source order."""
     text = open(src).read()
     i = text.find("static int is_builtin_name(")
@@ -237,7 +237,7 @@ def selfcheck():
     # 2026-09-04 held no digit, so `u32` and eight siblings were reserved by the
     # compiler and in NEITHER surface list. A pre-fix extractor must redden.
     narrow = re.compile(r'!strcmp\(s,\s*"([a-z_]+)"\)\s*\)\s*return\s+TK_')
-    t = open("src/tychoc.c").read()
+    t = open("bootstrap/surface_tables.txt").read()
     pre = sorted(set(narrow.findall(t)) | set(KWCTX.findall(t)) | set(KWMARK.findall(t)))
     leg("[13] the pre-fix extractor is caught, naming 9 sized types",
         len(unreachable(pre)), 9)
