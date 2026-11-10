@@ -1,0 +1,103 @@
+package terminal
+
+extern fn termx_is_tty(fd: int) -> int
+extern fn termx_cols(fd: int) -> int
+extern fn termx_rows(fd: int) -> int
+extern fn termx_ansi(fd: int) -> int
+extern fn termx_raw_enter(fd: int) -> ptr
+extern fn termx_raw_leave(h: ptr)
+extern fn termx_read_byte(fd: int) -> int
+
+fn _esc(body: string) -> string:
+    return chr(27) + body
+
+fn reset() -> string:
+    return _esc("[0m")
+
+fn bold() -> string:
+    return _esc("[1m")
+
+fn dim() -> string:
+    return _esc("[2m")
+
+fn italic() -> string:
+    return _esc("[3m")
+
+fn underline() -> string:
+    return _esc("[4m")
+
+fn reverse() -> string:
+    return _esc("[7m")
+
+fn fg(n: int) -> string:
+    if n < 0 or n > 255:
+        die("terminal.fg: colour must be 0..255, got " + str(n))
+    return _esc("[38;5;" + str(n) + "m")
+
+fn bg(n: int) -> string:
+    if n < 0 or n > 255:
+        die("terminal.bg: colour must be 0..255, got " + str(n))
+    return _esc("[48;5;" + str(n) + "m")
+
+fn fg_rgb(r: int, g: int, b: int) -> string:
+    if r < 0 or r > 255 or g < 0 or g > 255 or b < 0 or b > 255:
+        die("terminal.fg_rgb: components must be 0..255")
+    return _esc("[38;2;" + str(r) + ";" + str(g) + ";" + str(b) + "m")
+
+fn bg_rgb(r: int, g: int, b: int) -> string:
+    if r < 0 or r > 255 or g < 0 or g > 255 or b < 0 or b > 255:
+        die("terminal.bg_rgb: components must be 0..255")
+    return _esc("[48;2;" + str(r) + ";" + str(g) + ";" + str(b) + "m")
+
+fn clear_screen() -> string:
+    return _esc("[2J")
+
+fn clear_line() -> string:
+    return _esc("[2K")
+
+# 1-based cursor position.
+fn move(row: int, col: int) -> string:
+    r := row
+    c := col
+    if r < 1:
+        r = 1
+    if c < 1:
+        c = 1
+    return _esc("[" + str(r) + ";" + str(c) + "H")
+
+fn hide_cursor() -> string:
+    return _esc("[?25l")
+
+fn show_cursor() -> string:
+    return _esc("[?25h")
+
+fn is_tty(fd: int) -> bool:
+    return termx_is_tty(fd) == 1
+
+# Columns and rows, or None when the descriptor is not a terminal or the
+# platform cannot answer.
+fn size(fd: int) -> Option((int, int)):
+    c := termx_cols(fd)
+    r := termx_rows(fd)
+    if c <= 0 or r <= 0:
+        return None
+    return Some((c, r))
+
+fn supports_ansi(fd: int) -> bool:
+    return termx_ansi(fd) == 1
+
+# Put a terminal into cbreak/raw mode. Returns null on a non-terminal or a
+# failed ioctl; pair every non-null handle with raw_leave.
+fn raw_enter(fd: int) -> ptr:
+    return termx_raw_enter(fd)
+
+# Restore the saved mode and free the handle. Leaving twice is a use-after-free.
+fn raw_leave(h: ptr):
+    termx_raw_leave(h)
+
+# One byte from fd, or None at EOF/error.
+fn read_byte(fd: int) -> Option(int):
+    b := termx_read_byte(fd)
+    if b < 0:
+        return None
+    return Some(b)

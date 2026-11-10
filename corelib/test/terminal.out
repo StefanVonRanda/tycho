@@ -1,0 +1,10 @@
+reset=1b5b306d bold=1b5b316d dim=1b5b326d
+underline=1b5b346d reverse=1b5b376d italic=1b5b336d
+fg=1b5b33383b353b3139366d bg=1b5b34383b353b32316d
+rgb=1b5b33383b323b313b323b336d bgrgb=1b5b34383b323b343b353b366d
+screen=1b5b324a line=1b5b324b
+move=1b5b323b3348 hid=1b5b3f32356c show=1b5b3f323568
+tty999=false ansi999=false
+size999=true
+raw999=true
+byte999=true

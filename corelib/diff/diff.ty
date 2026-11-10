@@ -1,0 +1,205 @@
+package diff
+
+import "core:strings"
+
+enum Op:
+    Same(string)
+    Delete(string)
+    Insert(string)
+
+const MAX_CELLS = 2000000        # above this the middle becomes delete-all/insert-all
+
+fn _middle(a: [string], b: [string], out: inout [Op]):
+    n := len(a)
+    m := len(b)
+    if n == 0:
+        for x in b:
+            push(out, Insert(x))
+        return
+    if m == 0:
+        for x in a:
+            push(out, Delete(x))
+        return
+    if n * m > MAX_CELLS:
+        for x in a:
+            push(out, Delete(x))
+        for x in b:
+            push(out, Insert(x))
+        return
+    w := m + 1
+    dp := []int
+    i := 0
+    for i < (n + 1) * w:
+        push(dp, 0)
+        i += 1
+    i = n - 1
+    for i >= 0:
+        j := m - 1
+        for j >= 0:
+            if a[i] == b[j]:
+                dp[i * w + j] = dp[(i + 1) * w + (j + 1)] + 1
+            else:
+                x := dp[(i + 1) * w + j]
+                y := dp[i * w + (j + 1)]
+                if y > x:
+                    x = y
+                dp[i * w + j] = x
+            j -= 1
+        i -= 1
+    i = 0
+    j := 0
+    for i < n and j < m:
+        if a[i] == b[j]:
+            push(out, Same(a[i]))
+            i += 1
+            j += 1
+        elif dp[(i + 1) * w + j] >= dp[i * w + (j + 1)]:
+            push(out, Delete(a[i]))
+            i += 1
+        else:
+            push(out, Insert(b[j]))
+            j += 1
+    for i < n:
+        push(out, Delete(a[i]))
+        i += 1
+    for j < m:
+        push(out, Insert(b[j]))
+        j += 1
+
+# Line diff. The linear middle is trimmed first, so the quadratic table only
+# covers what actually changed; above MAX_CELLS it degrades to delete-all /
+# insert-all rather than allocating without bound.
+fn lines(a: string, b: string) -> [Op]:
+    la := strings.lines(a)
+    lb := strings.lines(b)
+    if len(a) == 0:
+        la = []string
+    if len(b) == 0:
+        lb = []string
+    pre := 0
+    for pre < len(la) and pre < len(lb) and la[pre] == lb[pre]:
+        pre += 1
+    sa := len(la)
+    sb := len(lb)
+    for sa > pre and sb > pre and la[sa - 1] == lb[sb - 1]:
+        sa -= 1
+        sb -= 1
+    out := []Op
+    i := 0
+    for i < pre:
+        push(out, Same(la[i]))
+        i += 1
+    _middle(la[pre:sa], lb[pre:sb], &out)
+    i = sa
+    for i < len(la):
+        push(out, Same(la[i]))
+        i += 1
+    return out
+
+fn _line_counts(ops: [Op]) -> ([int], [int]):
+    old_at := []int
+    new_at := []int
+    o := 1
+    n := 1
+    for op in ops:
+        push(old_at, o)
+        push(new_at, n)
+        match op:
+            Same(x):
+                o += 1
+                n += 1
+            Delete(x):
+                o += 1
+            Insert(x):
+                n += 1
+    push(old_at, o)
+    push(new_at, n)
+    return (old_at, new_at)
+
+fn _range_old(ops: [Op], start: int, end: int) -> int:
+    c := 0
+    i := start
+    for i < end:
+        match ops[i]:
+            Same(x): c += 1
+            Delete(x): c += 1
+            Insert(x): pass
+        i += 1
+    return c
+
+fn _range_new(ops: [Op], start: int, end: int) -> int:
+    c := 0
+    i := start
+    for i < end:
+        match ops[i]:
+            Same(x): c += 1
+            Delete(x): pass
+            Insert(x): c += 1
+        i += 1
+    return c
+
+fn _header(out: inout string, old_start: int, old_count: int, new_start: int, new_count: int):
+    out = out + "@@ -" + str(old_start) + "," + str(old_count) + " +" + str(new_start) + "," + str(new_count) + " @@\n"
+
+# Unified diff with `context` unchanged lines around each hunk. Returns "" when
+# the inputs are equal. Header names are the literal `a` and `b`; hunk ranges
+# always carry an explicit count (`-1,1` not `-1`).
+fn unified(a: string, b: string, context: int) -> string:
+    ops := lines(a, b)
+    ctx := context
+    if ctx < 0:
+        ctx = 0
+    changed := false
+    for op in ops:
+        match op:
+            Same(x): pass
+            Delete(x): changed = true
+            Insert(x): changed = true
+    if not changed:
+        return ""
+    old_at, new_at := _line_counts(ops)
+    ranges := []int             # flat start,end pairs
+    i := 0
+    for i < len(ops):
+        is_change := false
+        match ops[i]:
+            Same(x): pass
+            Delete(x): is_change = true
+            Insert(x): is_change = true
+        if is_change:
+            s := i - ctx
+            if s < 0:
+                s = 0
+            e := i + ctx + 1
+            if e > len(ops):
+                e = len(ops)
+            if len(ranges) > 0 and s <= ranges[len(ranges) - 1]:
+                if e > ranges[len(ranges) - 1]:
+                    ranges[len(ranges) - 1] = e
+            else:
+                push(ranges, s)
+                push(ranges, e)
+        i += 1
+    out := "--- a\n+++ b\n"
+    r := 0
+    for r < len(ranges):
+        s := ranges[r]
+        e := ranges[r + 1]
+        oc := _range_old(ops, s, e)
+        nc := _range_new(ops, s, e)
+        os := old_at[s]
+        ns := new_at[s]
+        if oc == 0:
+            os = old_at[s] - 1
+        if nc == 0:
+            ns = new_at[s] - 1
+        _header(&out, os, oc, ns, nc)
+        i = s
+        for i < e:
+            match ops[i]:
+                Same(x): out = out + " " + x + "\n"
+                Delete(x): out = out + "-" + x + "\n"
+                Insert(x): out = out + "+" + x + "\n"
+            i += 1
+        r += 2
+    return out

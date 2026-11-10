@@ -1,0 +1,28 @@
+package main
+
+import "core:diff"
+
+fn show(op: diff.Op) -> string:
+    match op:
+        diff.Same(s): return " = " + s
+        diff.Delete(s): return " - " + s
+        diff.Insert(s): return " + " + s
+
+fn dump(ops: [diff.Op]):
+    for op in ops:
+        println(show(op))
+
+fn main():
+    a := "one\ntwo\nthree\nfour"
+    b := "one\n2\nthree\nfour\nfive"
+    ops := diff.lines(a, b)
+    dump(ops)
+    println("same-lines=" + str(len(diff.lines(a, a))))
+    println("same-unified=[" + diff.unified(a, a, 1) + "]")
+    println("replace=[\n" + diff.unified(a, b, 1) + "]")
+    println("ctx0=[\n" + diff.unified(a, b, 0) + "]")
+    println("empty-add=[\n" + diff.unified("", "x\ny", 1) + "]")
+    println("empty-del=[\n" + diff.unified("x\ny", "", 1) + "]")
+    println("prepend=[\n" + diff.unified("a\nb", "z\na\nb", 0) + "]")
+    println("append=[\n" + diff.unified("a\nb", "a\nb\nz", 0) + "]")
+    println("delete=[\n" + diff.unified("a\nb\nc", "a\nc", 1) + "]")

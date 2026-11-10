@@ -203,6 +203,11 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`edit`** — byte-oriented edit distance: `levenshtein(a, b)` (two-row, O(min)
   memory), `damerau(a, b)` (unrestricted adjacent transposition) and
   `similarity(a, b) -> float` (`1 - distance / max(len)`; both empty is `1.0`).
+- **`diff`** — line diff: `lines(a, b) -> [Op]` where `Op` is `Same`,
+  `Delete` or `Insert`. Common prefixes/suffixes are trimmed first; the middle
+  uses a bounded LCS table, falling back to delete-all/insert-all above two
+  million cells. `unified(a, b, context) -> string` emits `--- a` / `+++ b`
+  hunks with explicit ranges, or `""` when the inputs are equal.
 - **`pool`** — a generational node pool for pointer-shaped data (graphs, trees,
   doubly-linked structures). Hold every node in one array and link by integer
   index; `pool` packages that idiom. Generic over the element type `Pool($T)`:
@@ -354,6 +359,18 @@ expression-bodied; pass a named function where you need a multi-line body.
   decoder is depth-limited to 128 and reports `Truncated`, `BadPrefix`,
   `TooDeep`, `Unsupported`, `OutOfRange` or `Trailing`; integer values outside
   signed 64-bit are `OutOfRange`.
+- **`asn1`** — DER/BER TLV for certificates, keys and protocol blobs. A `Node`
+  is a `Tag{cls, constructed, number}` plus `Primitive(bytes)` or
+  `Constructed([Node])`; `parse(bytes) -> Result(Node, Asn1Err)` accepts
+  definite and BER indefinite constructed lengths, and `encode(node)` emits
+  definite DER. Constructors: `universal`, `sequence`, `set`, `make_bool`,
+  `make_null`, `make_integer`, `make_octets`, `make_bit_string`, `make_oid`,
+  `make_utf8`, `make_printable`, `make_ia5`, `make_utc_time`,
+  `make_generalized_time`, `context_primitive`, `context_constructed`.
+  Readers: `primitive`, `children`, `bool_value`, `int_value` (signed 64-bit),
+  `octets`, `bit_string`, `text_value`, `oid`. Errors are payload-free:
+  `Truncated`, `BadTag`, `BadLength`, `BadIndefinite`, `BadValue`, `BadOid`,
+  `OutOfRange`, `TooDeep` (128 levels) and `Trailing`.
 - **`csv`** — an RFC 4180 CSV parser + serializer. A document is rows of fields,
   `[[string]]`. `parse(s) -> [[string]]` handles quoted fields, the `""` escape,
   embedded delimiters/newlines inside quotes, and LF / CRLF / lone-CR line endings;
@@ -751,6 +768,14 @@ expression-bodied; pass a named function where you need a multi-line body.
   malformed / truncated / wrong-format input (check `width > 0`). `too_big(w, h)` is
   the decode guard in front of every codec here: it answers whether a declared width
   and height would allocate past the ceiling.
+- **`terminal`** — ANSI output and terminal state. Pure escape builders:
+  `reset`, `bold`, `dim`, `italic`, `underline`, `reverse`, `fg`/`bg` (256
+  colours), `fg_rgb`/`bg_rgb`, `clear_screen`, `clear_line`, `move(row, col)`,
+  `hide_cursor`, `show_cursor`. Host queries: `is_tty(fd)`,
+  `size(fd) -> Option((cols, rows))`, `supports_ansi(fd)`. `raw_enter(fd)`
+  saves the terminal mode and returns an opaque handle (null on a non-terminal),
+  `raw_leave(h)` restores and frees it, and `read_byte(fd) -> Option(int)` reads
+  one byte from a raw descriptor.
 - **`signal`** — **clean shutdown on SIGTERM/SIGINT, and nothing else**: a libc-only shim
   with nothing to install and nothing to link.
   `on_shutdown(fd) -> bool` installs one handler for both signals whose **only** action is

@@ -1,0 +1,27 @@
+int 0=020100
+int 127=02017f
+int 128=02020080
+int 256=02020100
+int -1=0201ff
+int -128=020180
+int -129=0202ff7f
+bool=0101ff,010100 null=0500
+octets=0402aabb
+bits=030200ab
+oid=06062a864886f70d arcs=1.2.840.113549
+utf8=0c026869 printable=130141
+seq=30060201010101ff
+ctxp=800178
+ctxc=a003020101
+parsed tag=0,true,16
+parsed kids=2 int=1 bool=true
+parsed int=-129? -129
+bits unused=3 data=b8
+octets parsed=0102
+text=hé
+indef=3003020101
+truncated=Truncated
+badlen=BadLength
+indefprim=BadIndefinite
+trailing=Trailing
+bigint=OutOfRange

@@ -27,11 +27,12 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Expanded `core:os` with environment, cwd/chdir, pid, hostname, home and temp
   paths; added sorted, fail-closed `io.walk`; added `path.relative`.
 - Added `core:base32`, `core:varint`, `core:endian`, `core:pem`, `core:ini`,
-  `core:utf16`, `core:edit`, `core:xml` and `core:cbor`; added base 2..36
-  integer parse/format and fixed-point float formatting to `core:strings`.
+  `core:utf16`, `core:edit`, `core:xml`, `core:cbor`, `core:asn1`,
+  `core:diff` and `core:terminal`; added base 2..36 integer parse/format and
+  fixed-point float formatting to `core:strings`.
 - Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512 and HKDF-SHA256.
 - Added uncompressed and RLE TGA codecs to `core:raster`.
-- The tree is now 59 corelib packages and 60 golden test trees.
+- The tree is now 62 corelib packages and 63 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

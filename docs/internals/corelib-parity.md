@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 59 packages, ~11.8k lines, 653 locked
+lines). The current Tycho corelib is 62 packages, ~12.5k lines, 702 locked
 public functions.
 
 Status values:
@@ -24,11 +24,11 @@ Status values:
 | `c` | non-goal | `extern fn` FFI plus internal `*_shim.c` files | none |
 | `compress` | partial | gzip/zlib via zlib: `compress`, `decompress`, `raw_compress`, `raw_decompress` | split gzip/zlib framing, add LZ4 and a streaming API |
 | `container` | partial | `Deque`/`Queue`, `PriorityQueue`, `BitArray`, `Lru`; `pool` covers generational handles | ordered map/tree, small array, topological sort |
-| `crypto` | partial | OpenSSL shims: ChaCha20-Poly1305 AEAD, Ed25519, X25519, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, CSPRNG | AES modes, RSA, ECDSA/ECDH, Argon2id, X.509; post-quantum only if dependency policy allows |
+| `crypto` | partial | OpenSSL shims: ChaCha20-Poly1305 AEAD, Ed25519, X25519, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, CSPRNG; ASN.1 DER/BER in its own package | AES modes, RSA, ECDSA/ECDH, Argon2id, X.509; post-quantum only if dependency policy allows |
 | `debug` | partial | runtime traps and `tycho-debug bt`; no library API | `trace`, stack-trace capture, assertion helpers |
-| `diff` | missing | none | Myers text diff in the text stage |
+| `diff` | covered | `diff.lines` and `diff.unified` (LCS, bounded fallback) | none |
 | `dynlib` | missing | none | `dlopen`/`LoadLibrary` shim |
-| `encoding` | partial | `base64`, `base32`, `hex`, `json`, `csv`, `uuid`, `pem`, `ini`, `varint`, `endian` | XML, CBOR, ASN.1, entity decoding, hxa |
+| `encoding` | partial | `base64`, `base32`, `hex`, `json`, `csv`, `uuid`, `pem`, `ini`, `varint`, `endian`, `xml`, `cbor`, `asn1` | entity tables, hxa |
 | `flags` | partial | `cli` parses argv, but with no declarative flag set | decide whether to extend `cli` or add `flags` |
 | `fmt` | partial | `str`, `f"..."` interpolation, `strings.format_g17`; no general format-spec API | add width/base/precision formatting where interpolation is not enough |
 | `hash` | partial | FNV-1a, djb2, sdbm, CRC32 | add xxHash (Odin's only `core:hash` package) |
@@ -53,7 +53,7 @@ Status values:
 | `strings` | covered | case, trim, split, find, replace, pad, reverse, escapes, parsing | add a builder if measured concatenation cost demands it |
 | `sync` | partial | C11 atomics, `Mutex`, `RwLock`, `WaitGroup`, `Once`; channels are language builtins | `Cond`, `Semaphore`, `Barrier`, recursive/ticket mutexes, atomic pointers |
 | `sys` | non-goal | libc and shims are the portability boundary | none |
-| `terminal` | missing | none | ANSI, size, cursor, raw mode |
+| `terminal` | partial | ANSI escapes, tty/size, raw mode, byte read | key decoding, cursor queries, non-console Windows fallbacks |
 | `testing` | partial | `T`, `check`, `eq`, `report`; no subtests, benchmarks or fuzz hooks | expand after `container`/`sync` |
 | `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `edit` | scanner, i18n, table, pattern matching |
 | `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; no raw thread handle or TLS | keep tasks as the model; add `Cond`/`Semaphore` before raw threads |

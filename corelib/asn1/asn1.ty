@@ -1,0 +1,390 @@
+package asn1
+
+enum Asn1Err:
+    Truncated
+    BadTag
+    BadLength
+    BadIndefinite
+    BadValue
+    BadOid
+    OutOfRange
+    TooDeep
+    Trailing
+
+struct Tag:
+    cls: int               # 0 universal, 1 application, 2 context, 3 private
+    constructed: bool
+    number: int
+
+enum Content:
+    Primitive(bytes)
+    Constructed([Node])
+
+struct Node:
+    tag: Tag
+    content: Content
+
+const MAX_DEPTH = 128
+
+fn _tag(cls: int, constructed: bool, number: int, content: Content) -> Node:
+    return Node(Tag(cls, constructed, number), content)
+
+fn universal(number: int, constructed: bool, content: Content) -> Node:
+    return _tag(0, constructed, number, content)
+
+fn sequence(kids: [Node]) -> Node:
+    return universal(16, true, Constructed(kids))
+
+fn set(kids: [Node]) -> Node:
+    return universal(17, true, Constructed(kids))
+
+fn make_bool(v: bool) -> Node:
+    if v:
+        return universal(1, false, Primitive(to_bytes([255])))
+    return universal(1, false, Primitive(to_bytes([0])))
+
+fn make_null() -> Node:
+    return universal(5, false, Primitive(to_bytes([]int)))
+
+fn _trim_int(raw: [int], negative: bool) -> bytes:
+    start := 0
+    if negative:
+        for start < 7 and raw[start] == 255 and (raw[start + 1] & 128) != 0:
+            start += 1
+    else:
+        for start < 7 and raw[start] == 0 and (raw[start + 1] & 128) == 0:
+            start += 1
+    out := []int
+    i := start
+    for i < 8:
+        push(out, raw[i])
+        i += 1
+    return to_bytes(out)
+
+fn make_integer(v: int) -> Node:
+    raw := []int
+    u := to_u64(v)
+    i := 56
+    for i >= 0:
+        push(raw, to_int((u >> i) & 255))
+        i -= 8
+    return universal(2, false, Primitive(_trim_int(raw, v < 0)))
+
+fn make_octets(b: bytes) -> Node:
+    return universal(4, false, Primitive(b))
+
+fn make_bit_string(unused: int, b: bytes) -> Node:
+    if unused < 0 or unused > 7:
+        die("asn1.make_bit_string: unused bits must be 0..7")
+    out := []int
+    push(out, unused)
+    i := 0
+    for i < len(b):
+        push(out, b[i])
+        i += 1
+    return universal(3, false, Primitive(to_bytes(out)))
+
+fn _base128(out: inout [int], v: int):
+    if v < 0:
+        die("asn1: negative base-128 value")
+    if v == 0:
+        push(out, 0)
+        return
+    tmp := []int
+    for v > 0:
+        push(tmp, v & 127)
+        v = v >> 7
+    i := len(tmp) - 1
+    for i >= 0:
+        x := tmp[i]
+        if i > 0:
+            x = x | 128
+        push(out, x)
+        i -= 1
+
+fn make_oid(arcs: [int]) -> Node:
+    if len(arcs) < 2:
+        die("asn1.make_oid: need at least two arcs")
+    a := arcs[0]
+    b := arcs[1]
+    if a < 0 or a > 2 or b < 0 or (a < 2 and b > 39):
+        die("asn1.make_oid: invalid first two arcs")
+    out := []int
+    _base128(&out, a * 40 + b)
+    i := 2
+    for i < len(arcs):
+        _base128(&out, arcs[i])
+        i += 1
+    return universal(6, false, Primitive(to_bytes(out)))
+
+fn _text(number: int, s: string) -> Node:
+    return universal(number, false, Primitive(to_bytes(s)))
+
+fn make_utf8(s: string) -> Node:
+    return _text(12, s)
+
+fn make_printable(s: string) -> Node:
+    return _text(19, s)
+
+fn make_ia5(s: string) -> Node:
+    return _text(22, s)
+
+fn make_utc_time(s: string) -> Node:
+    return _text(23, s)
+
+fn make_generalized_time(s: string) -> Node:
+    return _text(24, s)
+
+fn context_primitive(number: int, b: bytes) -> Node:
+    return _tag(2, false, number, Primitive(b))
+
+fn context_constructed(number: int, kids: [Node]) -> Node:
+    return _tag(2, true, number, Constructed(kids))
+
+fn _read_u(s: string, pos: inout int, n: int) -> Result(int, Asn1Err):
+    if pos + n > len(s):
+        return Err(Truncated)
+    v := 0
+    i := 0
+    for i < n:
+        v = v * 256 + s[pos + i]
+        i += 1
+    pos += n
+    return Ok(v)
+
+fn _parse_tag(s: string, pos: inout int) -> Result(Tag, Asn1Err):
+    if pos >= len(s):
+        return Err(Truncated)
+    b := s[pos]
+    pos += 1
+    cls := b / 64
+    constructed := (b & 32) != 0
+    number := b & 31
+    if number == 31:
+        number = 0
+        for true:
+            if pos >= len(s):
+                return Err(Truncated)
+            c := s[pos]
+            pos += 1
+            if number > 134217727:
+                return Err(BadTag)
+            number = number * 128 + (c & 127)
+            if (c & 128) == 0:
+                break
+    return Ok(Tag(cls, constructed, number))
+
+fn _parse_length(s: string, pos: inout int) -> Result((int, bool), Asn1Err):
+    if pos >= len(s):
+        return Err(Truncated)
+    b := s[pos]
+    pos += 1
+    if b < 128:
+        return Ok((b, false))
+    if b == 128:
+        return Ok((0, true))
+    n := b & 127
+    if n == 0 or n > 8:
+        return Err(BadLength)
+    if pos + n > len(s):
+        return Err(Truncated)
+    v := 0
+    i := 0
+    for i < n:
+        v = v * 256 + s[pos + i]
+        if v > len(s):
+            return Err(BadLength)
+        i += 1
+    pos += n
+    return Ok((v, false))
+
+fn _parse_node(s: string, pos: inout int, depth: int) -> Result(Node, Asn1Err):
+    if depth > MAX_DEPTH:
+        return Err(TooDeep)
+    tag := _parse_tag(s, &pos) or_return
+    lr := _parse_length(s, &pos) or_return
+    length := lr.0
+    indefinite := lr.1
+    if indefinite:
+        if not tag.constructed:
+            return Err(BadIndefinite)
+        kids := []Node
+        for true:
+            if pos + 1 < len(s) and s[pos] == 0 and s[pos + 1] == 0:
+                pos += 2
+                return Ok(Node(tag, Constructed(kids)))
+            if pos >= len(s):
+                return Err(Truncated)
+            push(kids, _parse_node(s, &pos, depth + 1) or_return)
+    if pos + length > len(s):
+        return Err(Truncated)
+    if tag.constructed:
+        end := pos + length
+        kids := []Node
+        for pos < end:
+            push(kids, _parse_node(s, &pos, depth + 1) or_return)
+        if pos != end:
+            return Err(BadLength)
+        return Ok(Node(tag, Constructed(kids)))
+    out := []int
+    i := 0
+    for i < length:
+        push(out, s[pos + i])
+        i += 1
+    pos += length
+    return Ok(Node(tag, Primitive(to_bytes(out))))
+
+fn parse(data: bytes) -> Result(Node, Asn1Err):
+    s := to_str(data)
+    pos := 0
+    n := _parse_node(s, &pos, 0) or_return
+    if pos != len(s):
+        return Err(Trailing)
+    return Ok(n)
+
+fn _enc_len(out: inout [int], n: int):
+    if n < 128:
+        push(out, n)
+        return
+    tmp := []int
+    v := n
+    for v > 0:
+        push(tmp, v & 255)
+        v = v >> 8
+    push(out, 128 | len(tmp))
+    i := len(tmp) - 1
+    for i >= 0:
+        push(out, tmp[i])
+        i -= 1
+
+fn _enc_node(n: Node, out: inout [int]):
+    b := n.tag.cls * 64
+    if n.tag.constructed:
+        b = b | 32
+    if n.tag.number < 31:
+        push(out, b | n.tag.number)
+    else:
+        push(out, b | 31)
+        _base128(&out, n.tag.number)
+    body := []int
+    match n.content:
+        Primitive(bts):
+            i := 0
+            for i < len(bts):
+                push(body, bts[i])
+                i += 1
+        Constructed(kids):
+            for k in kids:
+                _enc_node(k, &body)
+    _enc_len(&out, len(body))
+    for x in body:
+        push(out, x)
+
+fn encode(n: Node) -> bytes:
+    out := []int
+    _enc_node(n, &out)
+    return to_bytes(out)
+
+fn _primitive(n: Node) -> Result(bytes, Asn1Err):
+    match n.content:
+        Primitive(b):
+            return Ok(b)
+        Constructed(kids):
+            return Err(BadValue)
+
+fn primitive(n: Node) -> Result(bytes, Asn1Err):
+    return _primitive(n)
+
+fn children(n: Node) -> Result([Node], Asn1Err):
+    match n.content:
+        Constructed(kids):
+            return Ok(kids)
+        Primitive(b):
+            return Err(BadValue)
+
+fn _universal(n: Node, number: int) -> bool:
+    return n.tag.cls == 0 and n.tag.number == number and not n.tag.constructed
+
+fn bool_value(n: Node) -> Result(bool, Asn1Err):
+    if not _universal(n, 1):
+        return Err(BadValue)
+    b := _primitive(n) or_return
+    if len(b) != 1:
+        return Err(BadValue)
+    return Ok(b[0] != 0)
+
+fn int_value(n: Node) -> Result(int, Asn1Err):
+    if not _universal(n, 2):
+        return Err(BadValue)
+    b := _primitive(n) or_return
+    if len(b) == 0 or len(b) > 8:
+        return Err(OutOfRange)
+    u := to_u64(0)
+    i := 0
+    for i < len(b):
+        u = (u << 8) | to_u64(b[i])
+        i += 1
+    if (b[0] & 128) != 0:
+        if len(b) < 8:
+            u = u | (to_u64(-1) << (8 * len(b)))
+        return Ok(to_int(u))
+    if u > 9223372036854775807:
+        return Err(OutOfRange)
+    return Ok(to_int(u))
+
+fn octets(n: Node) -> Result(bytes, Asn1Err):
+    if not _universal(n, 4):
+        return Err(BadValue)
+    return _primitive(n)
+
+fn bit_string(n: Node) -> Result((int, bytes), Asn1Err):
+    if not _universal(n, 3):
+        return Err(BadValue)
+    b := _primitive(n) or_return
+    if len(b) == 0 or b[0] > 7:
+        return Err(BadValue)
+    out := []int
+    i := 1
+    for i < len(b):
+        push(out, b[i])
+        i += 1
+    return Ok((b[0], to_bytes(out)))
+
+fn text_value(n: Node) -> Result(string, Asn1Err):
+    if n.tag.cls != 0 or n.tag.constructed:
+        return Err(BadValue)
+    if n.tag.number != 12 and n.tag.number != 19 and n.tag.number != 22 and n.tag.number != 23 and n.tag.number != 24:
+        return Err(BadValue)
+    b := _primitive(n) or_return
+    return Ok(to_str(b))
+
+fn _read_base128(b: bytes, pos: inout int) -> Result(int, Asn1Err):
+    v := 0
+    for true:
+        if pos >= len(b):
+            return Err(BadOid)
+        c := b[pos]
+        pos += 1
+        if v > 134217727:
+            return Err(BadOid)
+        v = v * 128 + (c & 127)
+        if (c & 128) == 0:
+            return Ok(v)
+    return Err(BadOid)
+
+fn oid(n: Node) -> Result([int], Asn1Err):
+    if not _universal(n, 6):
+        return Err(BadValue)
+    b := _primitive(n) or_return
+    pos := 0
+    first := _read_base128(b, &pos) or_return
+    arcs := []int
+    if first < 80:
+        push(arcs, first / 40)
+        push(arcs, first % 40)
+    else:
+        push(arcs, 2)
+        push(arcs, first - 80)
+    for pos < len(b):
+        push(arcs, _read_base128(b, &pos) or_return)
+    return Ok(arcs)

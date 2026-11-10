@@ -1,0 +1,113 @@
+package main
+
+import "core:asn1"
+import "core:hex"
+
+fn hx(n: asn1.Node) -> string:
+    return hex.encode(to_str(asn1.encode(n)))
+
+fn join(xs: [int]) -> string:
+    out := ""
+    for x in xs:
+        if len(out) > 0:
+            out = out + "."
+        out = out + str(x)
+    return out
+
+fn show_int(r: Result(int, asn1.Asn1Err)) -> string:
+    match r:
+        Ok(v): return str(v)
+        Err(asn1.OutOfRange): return "OutOfRange"
+        Err(_): return "Err"
+
+fn show_bool(r: Result(bool, asn1.Asn1Err)) -> string:
+    match r:
+        Ok(v): return str(v)
+        Err(_): return "Err"
+
+fn show_oid(r: Result([int], asn1.Asn1Err)) -> string:
+    match r:
+        Ok(v): return join(v)
+        Err(_): return "Err"
+
+fn node_or(r: Result(asn1.Node, asn1.Asn1Err)) -> asn1.Node:
+    match r:
+        Ok(n): return n
+        Err(_): return asn1.make_null()
+
+fn kids_or(r: Result([asn1.Node], asn1.Asn1Err)) -> [asn1.Node]:
+    match r:
+        Ok(v): return v
+        Err(_): return []asn1.Node
+
+fn bytes_or(r: Result(bytes, asn1.Asn1Err)) -> bytes:
+    match r:
+        Ok(v): return v
+        Err(_): return to_bytes([]int)
+
+fn show_err(r: Result(asn1.Node, asn1.Asn1Err)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(asn1.Truncated): return "Truncated"
+        Err(asn1.BadTag): return "BadTag"
+        Err(asn1.BadLength): return "BadLength"
+        Err(asn1.BadIndefinite): return "BadIndefinite"
+        Err(asn1.BadValue): return "BadValue"
+        Err(asn1.BadOid): return "BadOid"
+        Err(asn1.OutOfRange): return "OutOfRange"
+        Err(asn1.TooDeep): return "TooDeep"
+        Err(asn1.Trailing): return "Trailing"
+
+fn show_text(r: Result(string, asn1.Asn1Err)) -> string:
+    match r:
+        Ok(v): return v
+        Err(_): return "Err"
+
+fn main():
+    for v in [0, 127, 128, 256, -1, -128, -129]:
+        println("int " + str(v) + "=" + hx(asn1.make_integer(v)))
+    println("bool=" + hx(asn1.make_bool(true)) + "," + hx(asn1.make_bool(false)) + " null=" + hx(asn1.make_null()))
+    println("octets=" + hx(asn1.make_octets(to_bytes([170, 187]))))
+    println("bits=" + hx(asn1.make_bit_string(0, to_bytes([171]))))
+    o := asn1.make_oid([1, 2, 840, 113549])
+    println("oid=" + hx(o) + " arcs=" + show_oid(asn1.oid(o)))
+    println("utf8=" + hx(asn1.make_utf8("hi")) + " printable=" + hx(asn1.make_printable("A")))
+    seq := asn1.sequence([asn1.make_integer(1), asn1.make_bool(true)])
+    println("seq=" + hx(seq))
+    println("ctxp=" + hx(asn1.context_primitive(0, to_bytes([120]))))
+    println("ctxc=" + hx(asn1.context_constructed(0, [asn1.make_integer(1)])))
+
+    match asn1.parse(asn1.encode(seq)):
+        Ok(n):
+            println("parsed tag=" + str(n.tag.cls) + "," + str(n.tag.constructed) + "," + str(n.tag.number))
+            kids := kids_or(asn1.children(n))
+            println("parsed kids=" + str(len(kids)) + " int=" + show_int(asn1.int_value(kids[0])) + " bool=" + show_bool(asn1.bool_value(kids[1])))
+        Err(_):
+            println("parsed=ERR")
+    one := node_or(asn1.parse(asn1.encode(asn1.make_integer(-129))))
+    println("parsed int=-129? " + show_int(asn1.int_value(one)))
+    bits := node_or(asn1.parse(asn1.encode(asn1.make_bit_string(3, to_bytes([184])))))
+    bu := 0
+    bb := to_bytes([]int)
+    match asn1.bit_string(bits):
+        Ok(pair):
+            bu = pair.0
+            bb = pair.1
+        Err(_):
+            pass
+    println("bits unused=" + str(bu) + " data=" + hex.encode(to_str(bb)))
+    oct := node_or(asn1.parse(asn1.encode(asn1.make_octets(to_bytes([1, 2])))))
+    println("octets parsed=" + hex.encode(to_str(bytes_or(asn1.octets(oct)))))
+    txt := node_or(asn1.parse(asn1.encode(asn1.make_utf8("hé"))))
+    println("text=" + show_text(asn1.text_value(txt)))
+
+    indef := asn1.parse(to_bytes([48, 128, 2, 1, 1, 0, 0]))
+    match indef:
+        Ok(n): println("indef=" + hx(n))
+        Err(_): println("indef=ERR")
+    println("truncated=" + show_err(asn1.parse(to_bytes([48]))))
+    println("badlen=" + show_err(asn1.parse(to_bytes([4, 137]))))
+    println("indefprim=" + show_err(asn1.parse(to_bytes([4, 128, 0, 0]))))
+    println("trailing=" + show_err(asn1.parse(to_bytes([5, 0, 0]))))
+    big := node_or(asn1.parse(to_bytes([2, 9, 1, 2, 3, 4, 5, 6, 7, 8, 9])))
+    println("bigint=" + show_int(asn1.int_value(big)))

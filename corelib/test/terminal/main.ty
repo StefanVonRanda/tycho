@@ -1,0 +1,30 @@
+package main
+
+import "core:hex"
+import "core:terminal"
+
+fn size_none(o: Option((int, int))) -> bool:
+    match o:
+        None: return true
+        Some(_): return false
+
+fn byte_none(o: Option(int)) -> bool:
+    match o:
+        None: return true
+        Some(_): return false
+
+fn hx(s: string) -> string:
+    return hex.encode(s)
+
+fn main():
+    println("reset=" + hx(terminal.reset()) + " bold=" + hx(terminal.bold()) + " dim=" + hx(terminal.dim()))
+    println("underline=" + hx(terminal.underline()) + " reverse=" + hx(terminal.reverse()) + " italic=" + hx(terminal.italic()))
+    println("fg=" + hx(terminal.fg(196)) + " bg=" + hx(terminal.bg(21)))
+    println("rgb=" + hx(terminal.fg_rgb(1, 2, 3)) + " bgrgb=" + hx(terminal.bg_rgb(4, 5, 6)))
+    println("screen=" + hx(terminal.clear_screen()) + " line=" + hx(terminal.clear_line()))
+    println("move=" + hx(terminal.move(2, 3)) + " hid=" + hx(terminal.hide_cursor()) + " show=" + hx(terminal.show_cursor()))
+    println("tty999=" + str(terminal.is_tty(999)) + " ansi999=" + str(terminal.supports_ansi(999)))
+    println("size999=" + str(size_none(terminal.size(999))))
+    println("raw999=" + str(is_null(terminal.raw_enter(999))))
+    terminal.raw_leave(null)
+    println("byte999=" + str(byte_none(terminal.read_byte(999))))
