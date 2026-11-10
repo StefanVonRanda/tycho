@@ -125,6 +125,9 @@ if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { 
     # the sweep is a thing you run when you want it.
     # cheap, and it guards the shape that reached a push on 2026-08-17: a
     # sweep deleted a branch header and python ran the orphaned body silently
+    # parse-check is deliberately not here: it needs both built compilers, and
+    # this half may be gating a detached worktree with no binaries. `make ci`
+    # runs it (13s) now that the census and reject table are green again.
     gate "make script-check (.py/.sh parse, no unreachable code)" script-check
     gate "make check-links (links + path:line citations)" check-links
     # 0.15s, and the moment it exists for is a push: the 0.6->0.7 bump left five

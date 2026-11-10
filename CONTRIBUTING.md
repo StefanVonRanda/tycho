@@ -275,14 +275,19 @@ reach for first.
 | a `bench/` benchmark, or a language change that could break one | `sh scripts/entrypoints.sh` | ~0.22s. **The only lane that compiles anything under `bench/`.** `bench/guard.sh` checks one wall-time ratio and nothing else, so before 2026-08-11 the ~51 benchmarks could stop compiling in silence. Compile-only (`--emit-c`) — it never runs a benchmark, so it stays milliseconds. `make bench` depends on it |
 | `tools/tychofmt.ty`, `tools/lsp.ty` | `sh scripts/tools_check.sh` | ~12s |
 
-`make test-fast` runs the same fixtures over a worker pool. It used to be much
-quicker; ** — it is not** — 104s against `make test`'s 113s on a
-16-core box, because `tests/run.sh` parallelises too now. **Just run `make
-test`.** The reason `test-fast` was never the gate is unchanged and is why the
-nine seconds are not worth it: it is compiled by the compiler it tests,
-so a single `tychoc` regression can land inside the judge and turn every verdict
+### The fast loop
+
+`make check-fast` (~3 min) is the per-change loop: `test-fast`, `parse-check`,
+`check-links`, `corelib`, `debug-check`, `surface-check`, `docs-counts-check`.
+Use it after ordinary corelib, runtime or docs changes.
+
+`test-fast` runs the same fixtures as `make test` over a worker pool, but the
+pool is driven by `tools/prunner`, which is compiled by the compiler it tests.
+A `tychoc` regression can therefore land inside the judge and turn every verdict
 green at once. `tests/run.sh` scores with `cmp`, `grep` and `test`, which nothing
-in this repo can break; when the two disagree, it is right by definition.
+in this repo can break; when the two disagree, it is right by definition. So
+changes to the compiler, emitter or bootstrap still get `make test`, and a merge
+gets `make ci`.
 
 ## Two rules that will surprise you
 

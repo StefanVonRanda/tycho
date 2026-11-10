@@ -121,6 +121,9 @@ make -s friction-check-light
 step "[1d3/13] make corpus-check  (the corpus COUNTS the suites assert -- compiler/run.sh n_acc and leg1/leg1c, verdict_diff EXPECT, the leg15 refused and accepted totals, the SYNTAX/NAME/TYPE/SEMANTIC split and the classified reject rows. Every one is a hand-written literal, and adding a fixture moves the tree out from under all of them at once. This is the sub-second predictor of make parse-check opening counts, by its own Makefile comment -- and parse-check is in NEITHER this sweep nor the pre-push hook, so on 2026-09-19 a single fixture added to close FRICTION 94 left it RED for a day while five commits each recorded a green sweep, truthfully (FRICTION 106). 0.04s. It cannot see what parse-check sees; it sees the one thing that broke it, for nothing)"
 make -s corpus-check
 
+step "[1d3b/13] make parse-check  (the parser/resolver/typechecker sweep: 1,540 corpus files, 670 reject fixtures, whole-tree verdicts and the AST/resolution/type censuses. It lived only in compiler/run.sh and no sweep called it -- parse-check was in neither this gate nor the pre-push hook, so reject-table and census drift could sit red for days. 13s, and the census it scores is the shape of the corpus, not a re-recordable opinion)"
+make -s parse-check
+
 step "[1d4/13] make builtin-qualified  (a QUALIFIED builtin -- strings.len(...) -- must name the builtin and the cure for every builtin the freeze records. The set is read out of surface.lock, so a builtin added without being listed reddens here. The control requires a NON-builtin to still get has-no-symbol, without which the script would pass by answering every input the same way)"
 make -s builtin-qualified
 

@@ -40,6 +40,14 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   intern is freed instead of leaked. `tests/conc/intern_map_race.ty` runs in
   the TSan lane.
 
+### Tooling
+
+- **`make check-fast`** is the per-change loop (~3 min): `test-fast`,
+  `parse-check`, `check-links`, `corelib`, `debug-check`, `surface-check` and
+  `docs-counts-check`. `make parse-check` is now a real Make target, and
+  `make ci` runs it, so the reject table and the AST/resolution/type censuses
+  cannot drift unnoticed again.
+
 ### Corelib
 
 - **Checked siblings for the last sentinel APIs.** `io.write_text`,
