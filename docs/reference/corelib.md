@@ -311,6 +311,17 @@ expression-bodied; pass a named function where you need a multi-line body.
   `post(url, body, content_type)` takes a `string` body and stops at the first interior
   `0x00`; `post_bytes(url, body, content_type)` is its binary-safe sibling, taking
   `bytes` and sending the whole length. Tests are skipped where libcurl is absent.
+- **`xml`** — a self-contained XML parser and serializer. `Node` is
+  `Element(name, [Attr], [Node])` or `Text(string)`; `parse(s) -> Result(Node,
+  XmlErr)` accepts an XML declaration, comments, processing instructions, a
+  DOCTYPE (skipped textually), attributes in either quote style, nested and
+  self-closing elements, CDATA, and the five predefined entities plus decimal
+  and hex character references. `stringify(node)` re-emits compact XML, escaping
+  `& < >` in text and `& < "` plus tab/CR/LF in attributes. Queries are `tag`,
+  `attrs`, `attr(node, name) -> Option(string)`, `children`, `text` (a Text
+  node) and `text_content` (all descendant text). Errors carry a byte offset:
+  `BadSyntax`, `Mismatch`, `BadEntity`, `TooDeep` (256 levels) and `Trailing`.
+  DTD-defined entities and namespace resolution are not implemented.
 - **`json`** — a recursive-descent JSON parser + serializer. The document is a
   value-semantic tree, the `Json` enum (`JNull`/`JBool`/`JNum`/`JFloat`/`JStr`/`JArr`/
   `JObj`, objects as parallel key/value arrays). **`parse_checked(s) ->
@@ -334,6 +345,15 @@ expression-bodied; pass a named function where you need a multi-line body.
   a null-valued member and an absent one — walk `keys` to tell those apart.
   `err_at(code, off)` builds a `JsonErr` for a given code and byte offset, for a caller
   layering its own parse step on top of this one.
+- **`cbor`** — CBOR (RFC 8949) encode/decode. `Value` is `UInt(u64)`,
+  `Neg(int)`, `Bytes`, `Text`, `Array`, `Map([Pair])`, `Tag(int, Value)`,
+  `Bool`, `Null`, `Undefined` or `Float`; `encode(value) -> bytes` writes
+  definite lengths, and `decode(bytes) -> Result(Value, CborErr)` accepts
+  definite and indefinite strings/arrays/maps plus half, single and double
+  floats. Tags are preserved but their contents are not interpreted. The
+  decoder is depth-limited to 128 and reports `Truncated`, `BadPrefix`,
+  `TooDeep`, `Unsupported`, `OutOfRange` or `Trailing`; integer values outside
+  signed 64-bit are `OutOfRange`.
 - **`csv`** — an RFC 4180 CSV parser + serializer. A document is rows of fields,
   `[[string]]`. `parse(s) -> [[string]]` handles quoted fields, the `""` escape,
   embedded delimiters/newlines inside quotes, and LF / CRLF / lone-CR line endings;

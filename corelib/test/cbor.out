@@ -1,0 +1,27 @@
+uint u0=00
+uint u23=17
+uint u24=1818
+uint u255=18ff
+uint u1000=1903e8
+uint u1000000=1a000f4240
+neg n-1=20
+neg n-10=29
+neg n-100=3863
+neg n-1000=3903e7
+bytes=4401020304 -> Ok:b01020304
+text=6449455446 -> Ok:tIETF
+array=83010203 -> Ok:[u1,u2,u3]
+map=a26161016162820203 -> Ok:{ta:u1,tb:[u2,u3]}
+bool=f5 -> Ok:true,f4 -> Ok:false
+null=f6 -> Ok:null undefined=f7 -> Ok:undefined
+float=fb3ff8000000000000 -> Ok:f1.5
+tag=c11a514b67b0 -> Ok:tag1(u1363896240)
+big=1bffffffffffffffff
+truncated=Truncated
+badprefix=BadPrefix
+trailing=Trailing
+break=BadPrefix
+indef-array=Ok:[u1,u2]
+indef-text=Ok:tab
+half=Ok:f1.5
+f32=Ok:f1.5

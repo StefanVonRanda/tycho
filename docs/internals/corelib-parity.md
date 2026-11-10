@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 57 packages, ~11.2k lines, 643 locked
+lines). The current Tycho corelib is 59 packages, ~11.8k lines, 653 locked
 public functions.
 
 Status values:
@@ -36,7 +36,7 @@ Status values:
 | `io` | covered | file read/write/append/copy/stat/dirs, checked variants, stdin/stdout, line reader | no generic `Reader`/`Writer` interface; concrete values are the design |
 | `log` | covered | leveled logger, stderr/file choice, `new`/`line` | none |
 | `math` | partial | `math`, `fmath`, `decimal`, `bignum`, `rand` | linear algebra, complex, fixed-point, easing, noise, bit operations |
-| `mem` | partial | implicit arenas; no public allocator API | arena-aware temporary scopes, reset and statistics; no general allocator interface |
+| `mem` | non-goal | implicit arenas; no public allocator API | none — explicit allocators, virtual memory and TLSF are a different memory model |
 | `nbio` | missing | `net.wait_readable`/`accept_wait` cover small poll loops | epoll/kqueue/IOCP wrapper |
 | `net` | partial | TCP/UDP, timeouts, TLS, HTTP/HTTPD | DNS resolution, interface enumeration, socket options, Unix sockets |
 | `odin` | non-goal | Tycho has its own compiler packages | none |
@@ -62,7 +62,8 @@ Status values:
 
 ## What parity does not mean
 
-- No general allocator parameter on corelib APIs. Arenas stay implicit.
+- No general allocator parameter on corelib APIs. Arenas stay implicit, so
+  Odin's `mem` allocator/virtual/TLSF surface is a non-goal rather than a gap.
 - No references, `defer`, or manual `free` contract introduced to mirror Odin.
 - No raw syscall surface. Platform depth arrives through shims with a
   documented portable API.
@@ -74,10 +75,8 @@ Status values:
 
 1. **Parity matrix** — done; this page is the record.
 2. **Foundations** — done: `core:container` and `core:sync` with atomics.
-3. **Memory and platform** — partial: `os` gained environment, cwd, temp,
-   identity and `io.walk`; `path` gained `relative`. Arena-aware `mem` helpers
-   need runtime hooks (arena mark/reset/stat access), so they are deferred
-   rather than faked with a general allocator.
+3. **Platform** — partial: `os` gained environment, cwd, temp, identity and
+   `io.walk`; `path` gained `relative`. `mem` is a non-goal, not deferred work.
 4. **Data and text** — partial: `base32`, `varint`, `endian`, `pem`, `ini`,
    `utf16`, `edit`, and `strings` base/fixed-float formatting landed. XML,
    CBOR, ASN.1, a scanner, `fmt`, `bufio`, `diff`, and Unicode tables remain.

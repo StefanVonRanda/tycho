@@ -1,0 +1,314 @@
+package cbor
+
+struct Pair:
+    key: Value
+    value: Value
+
+enum Value:
+    UInt(u64)
+    Neg(int)
+    Bytes(bytes)
+    Text(string)
+    Array([Value])
+    Map([Pair])
+    Tag(int, Value)
+    Bool(bool)
+    Null
+    Undefined
+    Float(float)
+
+enum CborErr:
+    Truncated
+    BadPrefix
+    TooDeep
+    Unsupported
+    OutOfRange
+    Trailing
+
+const MAX_DEPTH = 128
+
+extern fn cbx_f64_bits(v: float) -> u64
+extern fn cbx_f64_from_bits(u: u64) -> float
+extern fn cbx_f32_bits(v: float) -> u32
+extern fn cbx_f32_from_bits(u: u32) -> float
+
+fn _head(out: inout [int], major: int, n: u64):
+    m := major * 32
+    if n < 24:
+        push(out, m + to_int(n))
+    elif n <= 255:
+        push(out, m + 24)
+        push(out, to_int(n))
+    elif n <= 65535:
+        push(out, m + 25)
+        push(out, to_int((n >> 8) & 255))
+        push(out, to_int(n & 255))
+    elif n <= 4294967295:
+        push(out, m + 26)
+        push(out, to_int((n >> 24) & 255))
+        push(out, to_int((n >> 16) & 255))
+        push(out, to_int((n >> 8) & 255))
+        push(out, to_int(n & 255))
+    else:
+        push(out, m + 27)
+        i := 56
+        for i >= 0:
+            push(out, to_int((n >> i) & 255))
+            i -= 8
+
+fn _enc(v: Value, out: inout [int]):
+    match v:
+        UInt(n):
+            _head(&out, 0, n)
+        Neg(n):
+            _head(&out, 1, to_u64(-(n + 1)))
+        Bytes(b):
+            _head(&out, 2, to_u64(len(b)))
+            i := 0
+            for i < len(b):
+                push(out, b[i])
+                i += 1
+        Text(t):
+            _head(&out, 3, to_u64(len(t)))
+            i := 0
+            for i < len(t):
+                push(out, t[i])
+                i += 1
+        Array(xs):
+            _head(&out, 4, to_u64(len(xs)))
+            for x in xs:
+                _enc(x, &out)
+        Map(ps):
+            _head(&out, 5, to_u64(len(ps)))
+            for p in ps:
+                _enc(p.key, &out)
+                _enc(p.value, &out)
+        Tag(t, x):
+            _head(&out, 6, to_u64(t))
+            _enc(x, &out)
+        Bool(b):
+            if b:
+                push(out, 245)
+            else:
+                push(out, 244)
+        Null:
+            push(out, 246)
+        Undefined:
+            push(out, 247)
+        Float(f):
+            push(out, 251)                 # f64, big-endian
+            bits := cbx_f64_bits(f)
+            i := 56
+            for i >= 0:
+                push(out, to_int((bits >> i) & 255))
+                i -= 8
+
+fn encode(v: Value) -> bytes:
+    out := []int
+    _enc(v, &out)
+    return to_bytes(out)
+
+fn _read_u(s: string, pos: inout int, n: int) -> Result(u64, CborErr):
+    if pos + n > len(s):
+        return Err(Truncated)
+    v := to_u64(0)
+    i := 0
+    for i < n:
+        v = (v << 8) | to_u64(s[pos + i])
+        i += 1
+    pos += n
+    return Ok(v)
+
+fn _read_len(s: string, pos: inout int, ai: int) -> Result((u64, bool), CborErr):
+    if ai < 24:
+        return Ok((to_u64(ai), false))
+    if ai == 31:
+        return Ok((to_u64(0), true))
+    if ai == 24:
+        n := _read_u(s, &pos, 1) or_return
+        return Ok((n, false))
+    if ai == 25:
+        n := _read_u(s, &pos, 2) or_return
+        return Ok((n, false))
+    if ai == 26:
+        n := _read_u(s, &pos, 4) or_return
+        return Ok((n, false))
+    if ai == 27:
+        n := _read_u(s, &pos, 8) or_return
+        return Ok((n, false))
+    return Err(BadPrefix)
+
+fn _read_bytes(s: string, pos: inout int, n: int) -> Result(bytes, CborErr):
+    if n < 0 or pos + n > len(s):
+        return Err(Truncated)
+    out := []int
+    i := 0
+    for i < n:
+        push(out, s[pos + i])
+        i += 1
+    pos += n
+    return Ok(to_bytes(out))
+
+fn _half(u: u64) -> Result(float, CborErr):
+    sign := to_float(1)
+    if (u & 32768) != 0:
+        sign = 0 - 1.0
+    exp := to_int((u >> 10) & 31)
+    frac := to_int(u & 1023)
+    if exp == 31:
+        return Err(Unsupported)            # infinity / NaN
+    if exp == 0:
+        if frac == 0:
+            return Ok(sign * 0.0)
+        return Ok(sign * pow(2.0, to_float(0 - 14)) * (to_float(frac) / 1024.0))
+    return Ok(sign * pow(2.0, to_float(exp - 15)) * (1.0 + to_float(frac) / 1024.0))
+
+fn _read_value(s: string, pos: inout int, depth: int) -> Result(Value, CborErr):
+    if depth > MAX_DEPTH:
+        return Err(TooDeep)
+    if pos >= len(s):
+        return Err(Truncated)
+    b := s[pos]
+    pos += 1
+    major := b / 32
+    ai := b & 31
+    if major == 0:
+        n := _read_len(s, &pos, ai) or_return
+        if n.1:
+            return Err(BadPrefix)
+        return Ok(UInt(n.0))
+    if major == 1:
+        n := _read_len(s, &pos, ai) or_return
+        if n.1 or n.0 > 9223372036854775807:
+            return Err(OutOfRange)
+        return Ok(Neg(-1 - to_int(n.0)))
+    if major == 2:
+        n := _read_len(s, &pos, ai) or_return
+        if n.1:
+            out := []int
+            for true:
+                if pos >= len(s):
+                    return Err(Truncated)
+                if s[pos] == 255:
+                    pos += 1
+                    return Ok(Bytes(to_bytes(out)))
+                x := _read_value(s, &pos, depth + 1) or_return
+                match x:
+                    Bytes(chunk):
+                        i := 0
+                        for i < len(chunk):
+                            push(out, chunk[i])
+                            i += 1
+                    _:
+                        return Err(BadPrefix)
+        if n.0 > 9223372036854775807:
+            return Err(OutOfRange)
+        return Ok(Bytes(_read_bytes(s, &pos, to_int(n.0)) or_return))
+    if major == 3:
+        n := _read_len(s, &pos, ai) or_return
+        if n.1:
+            out := ""
+            for true:
+                if pos >= len(s):
+                    return Err(Truncated)
+                if s[pos] == 255:
+                    pos += 1
+                    return Ok(Text(out))
+                x := _read_value(s, &pos, depth + 1) or_return
+                match x:
+                    Text(chunk):
+                        out = out + chunk
+                    _:
+                        return Err(BadPrefix)
+        if n.0 > 9223372036854775807:
+            return Err(OutOfRange)
+        raw := _read_bytes(s, &pos, to_int(n.0)) or_return
+        return Ok(Text(to_str(raw)))
+    if major == 4:
+        n := _read_len(s, &pos, ai) or_return
+        xs := []Value
+        if n.1:
+            for true:
+                if pos >= len(s):
+                    return Err(Truncated)
+                if s[pos] == 255:
+                    pos += 1
+                    return Ok(Array(xs))
+                push(xs, _read_value(s, &pos, depth + 1) or_return)
+        if n.0 > 9223372036854775807:
+            return Err(OutOfRange)
+        count := to_int(n.0)
+        i := 0
+        for i < count:
+            push(xs, _read_value(s, &pos, depth + 1) or_return)
+            i += 1
+        return Ok(Array(xs))
+    if major == 5:
+        n := _read_len(s, &pos, ai) or_return
+        ps := []Pair
+        if n.1:
+            for true:
+                if pos >= len(s):
+                    return Err(Truncated)
+                if s[pos] == 255:
+                    pos += 1
+                    return Ok(Map(ps))
+                k := _read_value(s, &pos, depth + 1) or_return
+                if pos >= len(s) or s[pos] == 255:
+                    return Err(Truncated)
+                v := _read_value(s, &pos, depth + 1) or_return
+                push(ps, Pair(k, v))
+        if n.0 > 9223372036854775807:
+            return Err(OutOfRange)
+        count := to_int(n.0)
+        i := 0
+        for i < count:
+            k := _read_value(s, &pos, depth + 1) or_return
+            v := _read_value(s, &pos, depth + 1) or_return
+            push(ps, Pair(k, v))
+            i += 1
+        return Ok(Map(ps))
+    if major == 6:
+        n := _read_len(s, &pos, ai) or_return
+        if n.1 or n.0 > 9223372036854775807:
+            return Err(Unsupported)
+        return Ok(Tag(to_int(n.0), _read_value(s, &pos, depth + 1) or_return))
+    if major == 7:
+        if ai == 20:
+            return Ok(Bool(false))
+        if ai == 21:
+            return Ok(Bool(true))
+        if ai == 22:
+            return Ok(Null)
+        if ai == 23:
+            return Ok(Undefined)
+        if ai == 25:
+            u := _read_u(s, &pos, 2) or_return
+            return Ok(Float(_half(u) or_return))
+        if ai == 26:
+            u := _read_u(s, &pos, 4) or_return
+            return Ok(Float(cbx_f32_from_bits(to_u32(u))))
+        if ai == 27:
+            u := _read_u(s, &pos, 8) or_return
+            return Ok(Float(cbx_f64_from_bits(u)))
+        if ai == 24:
+            simple := _read_u(s, &pos, 1) or_return
+            if simple == 20:
+                return Ok(Bool(false))
+            if simple == 21:
+                return Ok(Bool(true))
+            if simple == 22:
+                return Ok(Null)
+            if simple == 23:
+                return Ok(Undefined)
+            return Err(Unsupported)
+        return Err(BadPrefix)
+    return Err(BadPrefix)
+
+fn decode(data: bytes) -> Result(Value, CborErr):
+    s := to_str(data)
+    pos := 0
+    v := _read_value(s, &pos, 0) or_return
+    if pos != len(s):
+        return Err(Trailing)
+    return Ok(v)

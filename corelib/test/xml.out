@@ -1,0 +1,19 @@
+parse=Ok:root:hello & world<raw>
+tag=root id=1 ok=yes missing=none
+children=4 text=hello & world<raw>
+  child tag=[] text=[hello & ]
+  child tag=[b] text=[]
+  child tag=[] text=[<raw>]
+  child tag=[empty] text=[]
+roundtrip=<root id="1" ok="yes">hello &amp; <b>world</b>&lt;raw&gt;<empty/></root>
+numeric=Ok:a:AB😀
+selfclose=<a><b/><c/></a>
+attrs=<a x="1&amp;2" y="q&quot;r"/>
+unclosed=Mismatch(10)
+eof=BadSyntax(6)
+entity=BadEntity(3)
+trailing=Trailing(4)
+no-root=BadSyntax(0)
+bad-attr=BadSyntax(5)
+dup-attr=BadSyntax(14)
+deep=TooDeep(771)

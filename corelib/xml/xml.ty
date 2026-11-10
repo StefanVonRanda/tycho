@@ -1,0 +1,356 @@
+package xml
+
+import "core:utf8"
+
+struct Attr:
+    name: string
+    value: string
+
+enum Node:
+    Element(string, [Attr], [Node])
+    Text(string)
+
+enum XmlErr:
+    BadSyntax(int)          # byte offset
+    Mismatch(int)           # closing tag disagrees with the opener
+    BadEntity(int)
+    TooDeep(int)
+    Trailing(int)
+
+const MAX_DEPTH = 256
+
+fn _is_ws(c: int) -> bool:
+    return c == 32 or c == 9 or c == 10 or c == 13
+
+fn _skip_ws(s: string, pos: inout int):
+    for pos < len(s) and _is_ws(s[pos]):
+        pos += 1
+
+fn _starts(s: string, pos: int, lit: string) -> bool:
+    return pos + len(lit) <= len(s) and s[pos:pos + len(lit)] == lit
+
+fn _skip_through(s: string, pos: inout int, end: string) -> bool:
+    j := find(s[pos:len(s)], end)
+    if j < 0:
+        return false
+    pos = pos + j + len(end)
+    return true
+
+fn _skip_comment(s: string, pos: inout int) -> bool:
+    if not _starts(s, pos, "<!--"):
+        return false
+    pos += 4
+    return _skip_through(s, &pos, "-->")
+
+fn _skip_pi(s: string, pos: inout int) -> bool:
+    if not _starts(s, pos, "<?"):
+        return false
+    pos += 2
+    return _skip_through(s, &pos, "?>")
+
+fn _skip_doctype(s: string, pos: inout int) -> bool:
+    if not _starts(s, pos, "<!DOCTYPE"):
+        return false
+    pos += 9
+    depth := 0
+    for pos < len(s):
+        c := s[pos]
+        if c == 91:                        # '['
+            depth += 1
+        elif c == 93:                      # ']'
+            if depth > 0:
+                depth -= 1
+        elif c == 62 and depth == 0:       # '>'
+            pos += 1
+            return true
+        pos += 1
+    return false
+
+fn _hexval(c: int) -> int:
+    if c >= 48 and c <= 57:
+        return c - 48
+    if c >= 97 and c <= 102:
+        return c - 97 + 10
+    if c >= 65 and c <= 70:
+        return c - 65 + 10
+    return -1
+
+fn _read_entity(s: string, pos: inout int) -> Result(string, XmlErr):
+    at := pos
+    pos += 1
+    j := find(s[pos:len(s)], ";")
+    if j < 0 or j > 32:
+        return Err(BadEntity(at))
+    name := s[pos:pos + j]
+    pos = pos + j + 1
+    if name == "amp":
+        return Ok("&")
+    if name == "lt":
+        return Ok("<")
+    if name == "gt":
+        return Ok(">")
+    if name == "quot":
+        return Ok("\"")
+    if name == "apos":
+        return Ok("'")
+    cp := -1
+    if len(name) > 2 and name[0] == 35 and (name[1] == 120 or name[1] == 88):   # '#x' / '#X'
+        cp = 0
+        for i := 2; i < len(name); i += 1:
+            d := _hexval(name[i])
+            if d < 0 or cp > 1114111:
+                return Err(BadEntity(at))
+            cp = cp * 16 + d
+    elif len(name) > 1 and name[0] == 35:  # '#'
+        cp = 0
+        for i := 1; i < len(name); i += 1:
+            c := name[i]
+            if c < 48 or c > 57 or cp > 1114111:
+                return Err(BadEntity(at))
+            cp = cp * 10 + (c - 48)
+    if cp < 1 or cp > 1114111 or (cp >= 55296 and cp <= 57343):
+        return Err(BadEntity(at))
+    return Ok(utf8.encode(cp))
+
+fn _decode_text(s: string, start: int, stop: int) -> Result(string, XmlErr):
+    out := ""
+    p := start
+    for p < stop:
+        if s[p] == 38:                     # '&'
+            at := p
+            e := _read_entity(s, &p) or_return
+            if p > stop:
+                return Err(BadEntity(at))
+            out = out + e
+        else:
+            out = out + chr(s[p])
+            p += 1
+    return Ok(out)
+
+fn _parse_name(s: string, pos: inout int) -> string:
+    start := pos
+    for pos < len(s):
+        c := s[pos]
+        if _is_ws(c) or c == 62 or c == 47 or c == 61:   # '>' '/' '='
+            break
+        pos += 1
+    return s[start:pos]
+
+fn _parse_attrs(s: string, pos: inout int) -> Result(([Attr], bool), XmlErr):
+    attrs := []Attr
+    for true:
+        _skip_ws(s, &pos)
+        if pos >= len(s):
+            return Err(BadSyntax(pos))
+        if s[pos] == 62:                   # '>'
+            pos += 1
+            return Ok((attrs, false))
+        if s[pos] == 47:                   # '/'
+            pos += 1
+            if pos < len(s) and s[pos] == 62:
+                pos += 1
+                return Ok((attrs, true))
+            return Err(BadSyntax(pos))
+        name := _parse_name(s, &pos)
+        if len(name) == 0:
+            return Err(BadSyntax(pos))
+        _skip_ws(s, &pos)
+        if pos >= len(s) or s[pos] != 61:  # '='
+            return Err(BadSyntax(pos))
+        pos += 1
+        _skip_ws(s, &pos)
+        if pos >= len(s) or (s[pos] != 34 and s[pos] != 39):
+            return Err(BadSyntax(pos))
+        quote := s[pos]
+        pos += 1
+        j := find(s[pos:len(s)], chr(quote))
+        if j < 0:
+            return Err(BadSyntax(pos))
+        raw := s[pos:pos + j]
+        val := _decode_text(s, pos, pos + j) or_return
+        pos = pos + j + 1
+        for a in attrs:
+            if a.name == name:
+                return Err(BadSyntax(pos))
+        push(attrs, Attr(name, val))
+    return Err(BadSyntax(pos))
+
+fn _parse_element(s: string, pos: inout int, depth: int) -> Result(Node, XmlErr):
+    if depth > MAX_DEPTH:
+        return Err(TooDeep(pos))
+    if pos >= len(s) or s[pos] != 60:      # '<'
+        return Err(BadSyntax(pos))
+    pos += 1
+    name := _parse_name(s, &pos)
+    if len(name) == 0:
+        return Err(BadSyntax(pos))
+    pair := _parse_attrs(s, &pos) or_return
+    attrs := pair.0
+    if pair.1:
+        return Ok(Element(name, attrs, []Node))
+    kids := []Node
+    for true:
+        if pos >= len(s):
+            return Err(BadSyntax(pos))
+        if _starts(s, pos, "</"):
+            pos += 2
+            close := _parse_name(s, &pos)
+            _skip_ws(s, &pos)
+            if pos >= len(s) or s[pos] != 62:
+                return Err(BadSyntax(pos))
+            pos += 1
+            if close != name:
+                return Err(Mismatch(pos))
+            return Ok(Element(name, attrs, kids))
+        if _skip_comment(s, &pos):
+            pass
+        elif _skip_pi(s, &pos):
+            pass
+        elif _starts(s, pos, "<![CDATA["):
+            pos += 9
+            j := find(s[pos:len(s)], "]]>")
+            if j < 0:
+                return Err(BadSyntax(pos))
+            push(kids, Text(s[pos:pos + j]))
+            pos = pos + j + 3
+        elif s[pos] == 60:                 # '<'
+            child := _parse_element(s, &pos, depth + 1) or_return
+            push(kids, child)
+        else:
+            j := find(s[pos:len(s)], "<")
+            if j < 0:
+                return Err(BadSyntax(pos))
+            t := _decode_text(s, pos, pos + j) or_return
+            if len(t) > 0:
+                push(kids, Text(t))
+            pos += j
+    return Err(BadSyntax(pos))
+
+# Parse one root element. A declaration, comments and a DOCTYPE may precede it;
+# trailing whitespace, comments and processing instructions are allowed. A DTD's
+# internal subset is skipped textually (no custom entities are defined).
+fn parse(s: string) -> Result(Node, XmlErr):
+    pos := 0
+    if len(s) >= 3 and s[0] == 239 and s[1] == 187 and s[2] == 191:
+        pos = 3
+    for true:
+        _skip_ws(s, &pos)
+        if _skip_pi(s, &pos):
+            pass
+        elif _skip_comment(s, &pos):
+            pass
+        elif _skip_doctype(s, &pos):
+            pass
+        else:
+            break
+    if pos >= len(s) or s[pos] != 60:
+        return Err(BadSyntax(pos))
+    root := _parse_element(s, &pos, 0) or_return
+    for true:
+        _skip_ws(s, &pos)
+        if _skip_pi(s, &pos):
+            pass
+        elif _skip_comment(s, &pos):
+            pass
+        else:
+            break
+    if pos != len(s):
+        return Err(Trailing(pos))
+    return Ok(root)
+
+fn _esc_text(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 38:
+            out = out + "&amp;"
+        elif c == 60:
+            out = out + "&lt;"
+        elif c == 62:
+            out = out + "&gt;"
+        else:
+            out = out + chr(c)
+    return out
+
+fn _esc_attr(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 38:
+            out = out + "&amp;"
+        elif c == 60:
+            out = out + "&lt;"
+        elif c == 34:
+            out = out + "&quot;"
+        elif c == 9:
+            out = out + "&#9;"
+        elif c == 10:
+            out = out + "&#10;"
+        elif c == 13:
+            out = out + "&#13;"
+        else:
+            out = out + chr(c)
+    return out
+
+fn stringify(n: Node) -> string:
+    match n:
+        Text(t):
+            return _esc_text(t)
+        Element(name, attrs, kids):
+            out := "<" + name
+            for a in attrs:
+                out = out + " " + a.name + "=\"" + _esc_attr(a.value) + "\""
+            if len(kids) == 0:
+                return out + "/>"
+            out = out + ">"
+            for k in kids:
+                out = out + stringify(k)
+            return out + "</" + name + ">"
+
+fn tag(n: Node) -> string:
+    match n:
+        Element(name, attrs, kids):
+            return name
+        Text(t):
+            return ""
+
+fn attrs(n: Node) -> [Attr]:
+    match n:
+        Element(name, a, kids):
+            return a
+        Text(t):
+            return []Attr
+
+fn attr(n: Node, name: string) -> Option(string):
+    match n:
+        Element(tag, a, kids):
+            for x in a:
+                if x.name == name:
+                    return Some(x.value)
+            return None
+        Text(t):
+            return None
+
+fn children(n: Node) -> [Node]:
+    match n:
+        Element(name, attrs, kids):
+            return kids
+        Text(t):
+            return []Node
+
+fn text(n: Node) -> string:
+    match n:
+        Text(t):
+            return t
+        Element(name, attrs, kids):
+            return ""
+
+fn text_content(n: Node) -> string:
+    match n:
+        Text(t):
+            return t
+        Element(name, attrs, kids):
+            out := ""
+            for k in kids:
+                out = out + text_content(k)
+            return out

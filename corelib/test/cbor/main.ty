@@ -1,0 +1,76 @@
+package main
+
+import "core:cbor"
+import "core:hex"
+
+fn show(r: Result(cbor.Value, cbor.CborErr)) -> string:
+    match r:
+        Ok(v): return "Ok:" + desc(v)
+        Err(cbor.Truncated): return "Truncated"
+        Err(cbor.BadPrefix): return "BadPrefix"
+        Err(cbor.TooDeep): return "TooDeep"
+        Err(cbor.Unsupported): return "Unsupported"
+        Err(cbor.OutOfRange): return "OutOfRange"
+        Err(cbor.Trailing): return "Trailing"
+
+fn hx(b: bytes) -> string:
+    return hex.encode(to_str(b))
+
+fn join(xs: [string]) -> string:
+    out := ""
+    for x in xs:
+        if len(out) > 0:
+            out = out + ","
+        out = out + x
+    return out
+
+fn desc(v: cbor.Value) -> string:
+    match v:
+        cbor.UInt(n): return "u" + str(to_int(n))
+        cbor.Neg(n): return "n" + str(n)
+        cbor.Bytes(b): return "b" + hx(b)
+        cbor.Text(t): return "t" + t
+        cbor.Array(xs):
+            parts := []string
+            for x in xs:
+                push(parts, desc(x))
+            return "[" + join(parts) + "]"
+        cbor.Map(ps):
+            parts := []string
+            for p in ps:
+                push(parts, desc(p.key) + ":" + desc(p.value))
+            return "{" + join(parts) + "}"
+        cbor.Tag(t, x): return "tag" + str(t) + "(" + desc(x) + ")"
+        cbor.Bool(b): return str(b)
+        cbor.Null: return "null"
+        cbor.Undefined: return "undefined"
+        cbor.Float(f): return "f" + str(f)
+
+fn rt(v: cbor.Value) -> string:
+    return hx(cbor.encode(v)) + " -> " + show(cbor.decode(cbor.encode(v)))
+
+fn main():
+    for v in [cbor.UInt(to_u64(0)), cbor.UInt(to_u64(23)), cbor.UInt(to_u64(24)), cbor.UInt(to_u64(255)), cbor.UInt(to_u64(1000)), cbor.UInt(to_u64(1000000))]:
+        println("uint " + desc(v) + "=" + hx(cbor.encode(v)))
+    for v in [cbor.Neg(-1), cbor.Neg(-10), cbor.Neg(-100), cbor.Neg(-1000)]:
+        println("neg " + desc(v) + "=" + hx(cbor.encode(v)))
+    println("bytes=" + rt(cbor.Bytes(to_bytes([1, 2, 3, 4]))))
+    println("text=" + rt(cbor.Text("IETF")))
+    println("array=" + rt(cbor.Array([cbor.UInt(to_u64(1)), cbor.UInt(to_u64(2)), cbor.UInt(to_u64(3))])))
+    m := cbor.Map([cbor.Pair(cbor.Text("a"), cbor.UInt(to_u64(1))), cbor.Pair(cbor.Text("b"), cbor.Array([cbor.UInt(to_u64(2)), cbor.UInt(to_u64(3))]))])
+    println("map=" + rt(m))
+    println("bool=" + rt(cbor.Bool(true)) + "," + rt(cbor.Bool(false)))
+    println("null=" + rt(cbor.Null) + " undefined=" + rt(cbor.Undefined))
+    println("float=" + rt(cbor.Float(1.5)))
+    println("tag=" + rt(cbor.Tag(1, cbor.UInt(to_u64(1363896240)))))
+    println("big=" + hx(cbor.encode(cbor.UInt(to_u64(-1)))))
+    println("truncated=" + show(cbor.decode(to_bytes([24]))))
+    println("badprefix=" + show(cbor.decode(to_bytes([28]))))
+    println("trailing=" + show(cbor.decode(to_bytes([0, 0]))))
+    println("break=" + show(cbor.decode(to_bytes([255]))))
+    println("indef-array=" + show(cbor.decode(to_bytes([159, 1, 2, 255]))))
+    println("indef-text=" + show(cbor.decode(to_bytes([127, 97, 97, 97, 98, 255]))))
+    half := to_bytes([249, 62, 0])       # half 1.5
+    println("half=" + show(cbor.decode(half)))
+    float32 := to_bytes([250, 63, 192, 0, 0])
+    println("f32=" + show(cbor.decode(float32)))

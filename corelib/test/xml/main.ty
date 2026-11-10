@@ -1,0 +1,53 @@
+package main
+
+import "core:xml"
+
+fn show(r: Result(xml.Node, xml.XmlErr)) -> string:
+    match r:
+        Ok(n): return "Ok:" + xml.tag(n) + ":" + xml.text_content(n)
+        Err(xml.BadSyntax(p)): return "BadSyntax(" + str(p) + ")"
+        Err(xml.Mismatch(p)): return "Mismatch(" + str(p) + ")"
+        Err(xml.BadEntity(p)): return "BadEntity(" + str(p) + ")"
+        Err(xml.TooDeep(p)): return "TooDeep(" + str(p) + ")"
+        Err(xml.Trailing(p)): return "Trailing(" + str(p) + ")"
+
+fn node_of(r: Result(xml.Node, xml.XmlErr)) -> xml.Node:
+    match r:
+        Ok(n): return n
+        Err(_): return xml.Text("err")
+
+fn showv(o: Option(string)) -> string:
+    match o:
+        Some(v): return v
+        None: return "none"
+
+fn main():
+    src := "<?xml version=\"1.0\"?><!-- top --><!DOCTYPE root [<!ELEMENT root ANY>]>\n<root id=\"1\" ok='yes'>hello &amp; <b>world</b><![CDATA[<raw>]]><empty/></root>\n<!-- tail -->"
+    r := xml.parse(src)
+    println("parse=" + show(r))
+    match r:
+        Ok(n):
+            println("tag=" + xml.tag(n) + " id=" + showv(xml.attr(n, "id")) + " ok=" + showv(xml.attr(n, "ok")) + " missing=" + showv(xml.attr(n, "nope")))
+            kids := xml.children(n)
+            println("children=" + str(len(kids)) + " text=" + xml.text_content(n))
+            for k in kids:
+                println("  child tag=[" + xml.tag(k) + "] text=[" + xml.text(k) + "]")
+            println("roundtrip=" + xml.stringify(n))
+        Err(_):
+            pass
+    println("numeric=" + show(xml.parse("<a>&#65;&#x42;&#x1F600;</a>")))
+    println("selfclose=" + xml.stringify(node_of(xml.parse("<a><b/><c></c></a>"))))
+    println("attrs=" + xml.stringify(node_of(xml.parse("<a x=\"1&amp;2\" y='q&quot;r'/>"))))
+    println("unclosed=" + show(xml.parse("<a><b></a>")))
+    println("eof=" + show(xml.parse("<a><b>")))
+    println("entity=" + show(xml.parse("<a>&bogus;</a>")))
+    println("trailing=" + show(xml.parse("<a/>junk")))
+    println("no-root=" + show(xml.parse("just text")))
+    println("bad-attr=" + show(xml.parse("<a x=1/>")))
+    println("dup-attr=" + show(xml.parse("<a x=\"1\" x=\"2\"/>")))
+    deep := ""
+    for i := 0; i < 258; i += 1:
+        deep = deep + "<d>"
+    for i := 0; i < 258; i += 1:
+        deep = deep + "</d>"
+    println("deep=" + show(xml.parse(deep)))
