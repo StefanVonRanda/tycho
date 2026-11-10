@@ -467,7 +467,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   outlen)`, `blake2b`/`blake2s`, `hmac_sha256`/`hmac_sha512`, `pbkdf2_sha256`,
   `hkdf_sha256(ikm, salt_hex, info_hex, outlen) -> ptr` (derived key handle),
   constant-time `ct_equal`, ChaCha20-Poly1305 AEAD
-  (`aead_encrypt`/`aead_decrypt`, `"!err"` on auth failure), Ed25519
+  (`aead_encrypt`/`aead_decrypt`, `"!err"` on auth failure), AES-GCM
+  (`aes_gcm_encrypt`/`aes_gcm_decrypt`, 16/24/32-byte keys, 12-byte nonce,
+  ciphertext plus 16-byte tag), AES-CTR (`aes_ctr`, 16-byte counter block),
+  Ed25519
   (`ed25519_pubkey`/`sign`/`verify`), and X25519 (`x25519_pubkey`/`shared`). Pure Tycho
   arithmetic cannot promise constant-time behavior, so these primitives bind OpenSSL
   rather than reimplementing them. Every value (keys, nonces, ciphertext, signatures,

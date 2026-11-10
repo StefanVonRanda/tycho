@@ -298,6 +298,132 @@ tycho_int cx_ct_equal(const char *a_hex, tycho_int alen, const char *b_hex, tych
     return eq;
 }
 
+static const EVP_CIPHER *aes_gcm_cipher(size_t klen) {
+    if (klen == 16) return EVP_aes_128_gcm();
+    if (klen == 24) return EVP_aes_192_gcm();
+    if (klen == 32) return EVP_aes_256_gcm();
+    return NULL;
+}
+
+static const EVP_CIPHER *aes_ctr_cipher(size_t klen) {
+    if (klen == 16) return EVP_aes_128_ctr();
+    if (klen == 24) return EVP_aes_192_ctr();
+    if (klen == 32) return EVP_aes_256_ctr();
+    return NULL;
+}
+
+/* AES-GCM (key handle 16/24/32 bytes, 12-byte nonce; out = ct||16B tag). */
+const char *cx_aes_gcm_encrypt(void *kp, const char *nonce_hex,
+                               const char *pt_hex, const char *aad_hex) {
+    CxKey *k = kp;
+    cxk_live(k, 0);
+    size_t nlen = 0, plen = 0, alen = 0;
+    unsigned char *nonce = hexdec(nonce_hex, &nlen);
+    unsigned char *pt = hexdec(pt_hex, &plen);
+    unsigned char *aad = hexdec(aad_hex, &alen);
+    const char *res = ERRTAG;
+    EVP_CIPHER_CTX *ctx = NULL;
+    unsigned char *ct = NULL;
+    const EVP_CIPHER *cipher = NULL;
+    int len = 0, ctlen = 0;
+    if (!k || !nonce || !pt || !aad || nlen != 12) goto done;
+    if (plen > (size_t)INT_MAX || alen > (size_t)INT_MAX) goto done;
+    cipher = aes_gcm_cipher(k->len);
+    if (!cipher) goto done;
+    ct = malloc(plen + 16);
+    if (!ct) goto done;
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) goto done;
+    if (EVP_EncryptInit_ex(ctx, cipher, NULL, NULL, NULL) != 1) goto done;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, NULL) != 1) goto done;
+    if (EVP_EncryptInit_ex(ctx, NULL, NULL, k->buf, nonce) != 1) goto done;
+    if (alen > 0 && EVP_EncryptUpdate(ctx, NULL, &len, aad, (int)alen) != 1) goto done;
+    if (EVP_EncryptUpdate(ctx, ct, &len, pt, (int)plen) != 1) goto done;
+    ctlen = len;
+    if (EVP_EncryptFinal_ex(ctx, ct + ctlen, &len) != 1) goto done;
+    ctlen += len;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, 16, ct + ctlen) != 1) goto done;
+    ctlen += 16;
+    res = out_hex(ct, (size_t)ctlen);
+done:
+    if (ctx) EVP_CIPHER_CTX_free(ctx);
+    if (pt) OPENSSL_cleanse(pt, plen);
+    free(nonce); free(pt); free(aad); free(ct);
+    return res;
+}
+
+const char *cx_aes_gcm_decrypt(void *kp, const char *nonce_hex,
+                               const char *ct_hex, const char *aad_hex) {
+    CxKey *k = kp;
+    cxk_live(k, 0);
+    size_t nlen = 0, clen = 0, alen = 0;
+    unsigned char *nonce = hexdec(nonce_hex, &nlen);
+    unsigned char *ctt = hexdec(ct_hex, &clen);
+    unsigned char *aad = hexdec(aad_hex, &alen);
+    const char *res = ERRTAG;
+    EVP_CIPHER_CTX *ctx = NULL;
+    unsigned char *pt = NULL;
+    const EVP_CIPHER *cipher = NULL;
+    size_t ctlen = 0;
+    int len = 0, ptlen = 0;
+    if (!k || !nonce || !ctt || !aad || nlen != 12 || clen < 16) goto done;
+    if (alen > (size_t)INT_MAX) goto done;
+    cipher = aes_gcm_cipher(k->len);
+    if (!cipher) goto done;
+    ctlen = clen - 16;
+    pt = malloc(ctlen ? ctlen : 1);
+    if (!pt) goto done;
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) goto done;
+    if (EVP_DecryptInit_ex(ctx, cipher, NULL, NULL, NULL) != 1) goto done;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_IVLEN, 12, NULL) != 1) goto done;
+    if (EVP_DecryptInit_ex(ctx, NULL, NULL, k->buf, nonce) != 1) goto done;
+    if (alen > 0 && EVP_DecryptUpdate(ctx, NULL, &len, aad, (int)alen) != 1) goto done;
+    if (EVP_DecryptUpdate(ctx, pt, &len, ctt, (int)ctlen) != 1) goto done;
+    ptlen = len;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, 16, ctt + ctlen) != 1) goto done;
+    if (EVP_DecryptFinal_ex(ctx, pt + ptlen, &len) <= 0) goto done;
+    ptlen += len;
+    res = out_hex(pt, (size_t)ptlen);
+done:
+    if (ctx) EVP_CIPHER_CTX_free(ctx);
+    if (pt) OPENSSL_cleanse(pt, ctlen);
+    free(nonce); free(ctt); free(aad); free(pt);
+    return res;
+}
+
+/* AES-CTR (key handle 16/24/32 bytes, 16-byte counter block). */
+const char *cx_aes_ctr_hex(void *kp, const char *iv_hex, const char *data_hex) {
+    CxKey *k = kp;
+    cxk_live(k, 0);
+    size_t ivlen = 0, dlen = 0;
+    unsigned char *iv = hexdec(iv_hex, &ivlen);
+    unsigned char *data = hexdec(data_hex, &dlen);
+    const char *res = ERRTAG;
+    EVP_CIPHER_CTX *ctx = NULL;
+    unsigned char *out = NULL;
+    const EVP_CIPHER *cipher = NULL;
+    int len = 0, outlen = 0;
+    if (!k || !iv || !data || ivlen != 16 || dlen > (size_t)INT_MAX) goto done;
+    cipher = aes_ctr_cipher(k->len);
+    if (!cipher) goto done;
+    out = malloc(dlen ? dlen : 1);
+    if (!out) goto done;
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) goto done;
+    if (EVP_EncryptInit_ex(ctx, cipher, NULL, k->buf, iv) != 1) goto done;
+    if (EVP_EncryptUpdate(ctx, out, &len, data, (int)dlen) != 1) goto done;
+    outlen = len;
+    if (EVP_EncryptFinal_ex(ctx, out + outlen, &len) != 1) goto done;
+    outlen += len;
+    res = out_hex(out, (size_t)outlen);
+done:
+    if (ctx) EVP_CIPHER_CTX_free(ctx);
+    if (data) OPENSSL_cleanse(data, dlen);
+    free(iv); free(data); free(out);
+    return res;
+}
+
 /* =====================================================================
  * AEAD: ChaCha20-Poly1305 (key handle = 32 bytes, nonce 12 bytes; out = ct||16B tag)
  * ===================================================================== */

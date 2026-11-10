@@ -23,6 +23,9 @@ extern fn cx_pbkdf2_sha256(password: string, pwlen: int, salt_hex: string, iters
 extern fn cx_ct_equal(a_hex: string, alen: int, b_hex: string, blen: int) -> int
 extern fn cx_aead_encrypt(k: ptr, nonce_hex: string, pt_hex: string, aad_hex: string) -> string
 extern fn cx_aead_decrypt(k: ptr, nonce_hex: string, ct_hex: string, aad_hex: string) -> string
+extern fn cx_aes_gcm_encrypt(k: ptr, nonce_hex: string, pt_hex: string, aad_hex: string) -> string
+extern fn cx_aes_gcm_decrypt(k: ptr, nonce_hex: string, ct_hex: string, aad_hex: string) -> string
+extern fn cx_aes_ctr_hex(k: ptr, iv_hex: string, data_hex: string) -> string
 extern fn cx_ed25519_key_random() -> ptr
 extern fn cx_ed25519_key_from_seed(seed_hex: string) -> ptr
 extern fn cx_ed25519_pubkey_hex(k: ptr) -> string
@@ -166,6 +169,26 @@ fn aead_decrypt(key: ptr, nonce_hex: string, ciphertext_hex: string, aad_hex: st
     if _has_nul_hex(nonce_hex) or _has_nul_hex(ciphertext_hex) or _has_nul_hex(aad_hex):
         return "!err"
     return cx_aead_decrypt(key, nonce_hex, ciphertext_hex, aad_hex)
+
+# AES-GCM with a 16/24/32-byte key handle and a 12-byte nonce. The result is
+# ciphertext concatenated with the 16-byte tag, as hex; decrypt returns "!err"
+# on authentication failure. Same contract as the ChaCha20-Poly1305 pair.
+fn aes_gcm_encrypt(key: ptr, nonce_hex: string, plaintext_hex: string, aad_hex: string) -> string:
+    if _has_nul_hex(nonce_hex) or _has_nul_hex(plaintext_hex) or _has_nul_hex(aad_hex):
+        return "!err"
+    return cx_aes_gcm_encrypt(key, nonce_hex, plaintext_hex, aad_hex)
+
+fn aes_gcm_decrypt(key: ptr, nonce_hex: string, ciphertext_hex: string, aad_hex: string) -> string:
+    if _has_nul_hex(nonce_hex) or _has_nul_hex(ciphertext_hex) or _has_nul_hex(aad_hex):
+        return "!err"
+    return cx_aes_gcm_decrypt(key, nonce_hex, ciphertext_hex, aad_hex)
+
+# AES-CTR keystream (encrypt and decrypt are the same call). 16/24/32-byte key,
+# 16-byte counter block; output length equals input length.
+fn aes_ctr(key: ptr, iv_hex: string, data_hex: string) -> string:
+    if _has_nul_hex(iv_hex) or _has_nul_hex(data_hex):
+        return "!err"
+    return cx_aes_ctr_hex(key, iv_hex, data_hex)
 
 fn _ed25519_key_random() -> ptr:
     return cx_ed25519_key_random()
