@@ -1,0 +1,17 @@
+peek=32 peek2=104 eof=false
+after ws pos=2 peek=104
+line=[hi]
+int1=42 int2=-7
+rest=[
+rest of it] remaining=12
+line2=[]
+line3=[rest of it]
+eof2=true
+unread ok=true bytes=97,97,98 eof=true
+until=[a] rest=[b c]
+empty: eof=true byte=none line=none
+badint=none pos=0
+negint=-12 rest=[-12x]
+writer=[aBc
+]
+reset=[]

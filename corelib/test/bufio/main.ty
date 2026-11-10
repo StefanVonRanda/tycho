@@ -1,0 +1,54 @@
+package main
+
+import "core:bufio"
+
+fn showb(o: Option(int)) -> string:
+    match o:
+        Some(v): return str(v)
+        None: return "none"
+
+fn shows(o: Option(string)) -> string:
+    match o:
+        Some(v): return "[" + v + "]"
+        None: return "none"
+
+fn main():
+    r := bufio.new_reader("  hi\n42 -7\r\nrest of it")
+    println("peek=" + showb(bufio.peek(r)) + " peek2=" + showb(bufio.peek_at(r, 2)) + " eof=" + str(bufio.eof(r)))
+    bufio.skip_ws(&r)
+    println("after ws pos=" + str(bufio.pos(r)) + " peek=" + showb(bufio.peek(r)))
+    println("line=" + shows(bufio.read_line(&r)))
+    i1 := bufio.read_int(&r)
+    bufio.skip_ws(&r)
+    i2 := bufio.read_int(&r)
+    println("int1=" + showb(i1) + " int2=" + showb(i2))
+    println("rest=[" + bufio.rest(r) + "] remaining=" + str(bufio.remaining(r)))
+    println("line2=" + shows(bufio.read_line(&r)))
+    println("line3=" + shows(bufio.read_line(&r)))
+    println("eof2=" + str(bufio.eof(r)))
+
+    u := bufio.new_reader("ab")
+    b1 := bufio.read_byte(&u)
+    ok := bufio.unread(&u)
+    b2 := bufio.read_byte(&u)
+    b3 := bufio.read_byte(&u)
+    println("unread ok=" + str(ok) + " bytes=" + showb(b1) + "," + showb(b2) + "," + showb(b3) + " eof=" + str(bufio.eof(u)))
+
+    t := bufio.new_reader("a b c")
+    u1 := bufio.read_until(&t, 32)
+    println("until=[" + u1 + "] rest=[" + bufio.rest(t) + "]")
+
+    e := bufio.new_reader("")
+    println("empty: eof=" + str(bufio.eof(e)) + " byte=" + showb(bufio.read_byte(&e)) + " line=" + shows(bufio.read_line(&e)))
+    bad := bufio.new_reader("x12")
+    println("badint=" + showb(bufio.read_int(&bad)) + " pos=" + str(bufio.pos(bad)))
+    neg := bufio.new_reader("-12x")
+    println("negint=" + showb(bufio.read_int(&neg)) + " rest=[" + bufio.rest(neg) + "]")
+
+    w := bufio.new_writer()
+    bufio.write(&w, "a")
+    bufio.write_byte(&w, 66)
+    bufio.write_line(&w, "c")
+    println("writer=[" + bufio.text(w) + "]")
+    bufio.reset(&w)
+    println("reset=[" + bufio.text(w) + "]")

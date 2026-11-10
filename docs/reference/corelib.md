@@ -126,6 +126,13 @@ expression-bodied; pass a named function where you need a multi-line body.
   and keeps trailing zeros. `format_int_base(n, base, upper)` and
   `parse_int_base(s, base)` cover bases 2..36 (`parse_int_base` is fail-closed
   like the decimal parser; `format_int_base` handles the minimum int).
+- **`bufio`** — an in-memory reader/writer for parsers and small protocols.
+  `Reader` tracks a byte position: `new_reader(s)`, `peek`, `peek_at(r, n)`,
+  `read_byte`, `unread`, `skip_ws`, `read_until(r, sep)`, `read_line`
+  (LF/CRLF, `Some("")` for an empty line), `read_int` (optional sign plus at
+  least one digit; advances only on success), `rest`, `remaining`, `pos`, `eof`.
+  `Writer` accumulates text: `new_writer`, `write`, `write_byte`, `write_line`,
+  `text`, `reset`. This is a string buffer, not an fd-buffering layer.
 - **`path`** — POSIX path utilities (separator `/`). The pure functions below are
   string math only (no filesystem access, every function returns a fresh value):
   `base` (final element, trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir`

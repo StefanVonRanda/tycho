@@ -1,0 +1,111 @@
+package bufio
+
+struct Reader:
+    s: string
+    pos: int
+
+struct Writer:
+    s: string
+
+fn new_reader(s: string) -> Reader:
+    return Reader(s, 0)
+
+fn new_writer() -> Writer:
+    return Writer("")
+
+fn remaining(r: Reader) -> int:
+    return len(r.s) - r.pos
+
+fn eof(r: Reader) -> bool:
+    return r.pos >= len(r.s)
+
+fn pos(r: Reader) -> int:
+    return r.pos
+
+fn peek(r: Reader) -> Option(int):
+    if r.pos >= len(r.s):
+        return None
+    return Some(r.s[r.pos])
+
+fn peek_at(r: Reader, n: int) -> Option(int):
+    if n < 0 or r.pos + n >= len(r.s):
+        return None
+    return Some(r.s[r.pos + n])
+
+fn read_byte(r: inout Reader) -> Option(int):
+    if r.pos >= len(r.s):
+        return None
+    b := r.s[r.pos]
+    r.pos += 1
+    return Some(b)
+
+fn unread(r: inout Reader) -> bool:
+    if r.pos <= 0:
+        return false
+    r.pos -= 1
+    return true
+
+fn _ws(c: int) -> bool:
+    return c == 32 or c == 9 or c == 10 or c == 13
+
+fn skip_ws(r: inout Reader):
+    for r.pos < len(r.s) and _ws(r.s[r.pos]):
+        r.pos += 1
+
+# Bytes up to `sep`, which is consumed. At EOF the rest is returned unchanged.
+fn read_until(r: inout Reader, sep: int) -> string:
+    start := r.pos
+    for r.pos < len(r.s) and r.s[r.pos] != sep:
+        r.pos += 1
+    out := r.s[start:r.pos]
+    if r.pos < len(r.s):
+        r.pos += 1
+    return out
+
+# One line without its LF or CRLF; Some("") for an empty line, None at EOF.
+fn read_line(r: inout Reader) -> Option(string):
+    if r.pos >= len(r.s):
+        return None
+    line := read_until(&r, 10)
+    if len(line) > 0 and line[len(line) - 1] == 13:
+        line = line[0:len(line) - 1]
+    return Some(line)
+
+# Optional sign followed by at least one decimal digit. The reader advances only
+# when a complete integer was scanned.
+fn read_int(r: inout Reader) -> Option(int):
+    p := r.pos
+    neg := false
+    if p < len(r.s) and r.s[p] == 45:
+        neg = true
+        p += 1
+    if p >= len(r.s) or r.s[p] < 48 or r.s[p] > 57:
+        return None
+    v := 0
+    for p < len(r.s) and r.s[p] >= 48 and r.s[p] <= 57:
+        v = v * 10 + (r.s[p] - 48)
+        p += 1
+    r.pos = p
+    if neg:
+        return Some(-v)
+    return Some(v)
+
+fn rest(r: Reader) -> string:
+    return r.s[r.pos:len(r.s)]
+
+fn write(w: inout Writer, s: string):
+    w.s = w.s + s
+
+fn write_byte(w: inout Writer, b: int):
+    if b < 0 or b > 255:
+        die("bufio.write_byte: byte must be 0..255")
+    w.s = w.s + chr(b)
+
+fn write_line(w: inout Writer, s: string):
+    w.s = w.s + s + "\n"
+
+fn text(w: Writer) -> string:
+    return w.s
+
+fn reset(w: inout Writer):
+    w.s = ""
