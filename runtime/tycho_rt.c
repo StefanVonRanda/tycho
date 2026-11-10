@@ -1726,8 +1726,17 @@ char *tycho_str_cstr(Arena *a, const char *s) {
 /* EQUALITY, which is most of what a compiler asks: the lengths settle it
  * without touching the bytes, and unequal lengths are the common case (every
  * `k == "op"` against a keyword of a different size). tycho_str_cmp has to
- * memcmp the common prefix even then, because it must return an ORDER. */
-int tycho_str_eq(const char *a, const char *b) {
+ * memcmp the common prefix even then, because it must return an ORDER.
+ *
+ * The short path is inline: a map key compare is two loads and a loop over at
+ * most eight bytes, and the exported call made it a function call at every
+ * lookup. The >8-byte memcmp stays out of line so the inline body stays small. */
+static __attribute__((noinline)) int tycho_str_eq_long(const char *a, const char *b,
+                                                       const char *ad, const char *bd,
+                                                       tycho_int la) {
+    return memcmp(ad + 1, bd + 1, (size_t)(la - 1)) == 0;
+}
+static inline __attribute__((always_inline)) int tycho_str_eq_i(const char *a, const char *b) {
     /* Byte 0 BEFORE the lengths, mirroring tycho_str_cmp (983a5fad): it settles
      * 75% of a compile's compares off one load pair, while the length headers
      * sit at a negative offset and cost two. Measured: length-first here was
@@ -1742,8 +1751,10 @@ int tycho_str_eq(const char *a, const char *b) {
         for (tycho_int i = 1; i < la; i++) if (ad[i] != bd[i]) return 0;
         return 1;
     }
-    return memcmp(ad + 1, bd + 1, (size_t)(la - 1)) == 0;
+    return tycho_str_eq_long(a, b, ad, bd, la);
 }
+int tycho_str_eq(const char *a, const char *b) { return tycho_str_eq_i(a, b); }
+#define tycho_str_eq(a, b) tycho_str_eq_i((a), (b))
 int tycho_str_cmp(const char *a, const char *b) {
     /* 75% of the 6.3M compares compiling compiler/main.ty are settled by byte 0
      * (measured), and byte 0 is readable even when empty: a NUL there orders an
