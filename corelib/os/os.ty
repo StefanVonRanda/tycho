@@ -50,6 +50,10 @@ extern fn osx_platform() -> int
 extern fn osx_temp_file(prefix: string) -> Option(string)
 extern fn osx_temp_dir(prefix: string) -> Option(string)
 extern fn osx_user_name() -> Option(string)
+extern fn osx_pipe(rfd: inout int, wfd: inout int) -> int
+extern fn osx_read_fd(fd: int, max: int, status: inout int) -> bytes
+extern fn osx_write_fd(fd: int, data: bytes, status: inout int) -> int
+extern fn osx_close_fd(fd: int)
 
 enum Platform:
     Linux
@@ -364,3 +368,36 @@ fn create_temp_dir(prefix: string) -> Option(string):
 # The current account's login name, or None where the OS cannot answer.
 fn user_name() -> Option(string):
     return osx_user_name()
+
+# A one-way byte pipe: (read_fd, write_fd). Both ends are close-on-exec on
+# POSIX and non-inheritable on Windows.
+fn pipe() -> Result((int, int), OsErr):
+    r := 0
+    w := 0
+    if osx_pipe(&r, &w) == 0:
+        return Ok((r, w))
+    return Err(Failed)
+
+# Read up to `max` bytes. Ok with length 0 is EOF, not an error.
+fn read_fd(fd: int, max: int) -> Result(bytes, OsErr):
+    if fd < 0 or max <= 0:
+        return Err(BadValue)
+    st := 0
+    b := osx_read_fd(fd, max, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(Failed)
+
+# Write some bytes; the result is the count written, which may be short.
+fn write_fd(fd: int, data: bytes) -> Result(int, OsErr):
+    if fd < 0:
+        return Err(BadValue)
+    st := 0
+    n := osx_write_fd(fd, data, &st)
+    if st == 0:
+        return Ok(n)
+    return Err(Failed)
+
+fn close_fd(fd: int):
+    if fd >= 0:
+        osx_close_fd(fd)

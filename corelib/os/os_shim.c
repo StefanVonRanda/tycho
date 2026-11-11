@@ -26,6 +26,8 @@
 #include <process.h>            /* _beginthreadex -- concurrent stdout/stderr drains */
 #include <errno.h>
 #include <sys/stat.h>           /* _chmod */
+#include <io.h>                 /* _read/_write/_close/_open_osfhandle */
+#include <fcntl.h>              /* _O_BINARY */
 #define TY_POPEN  _popen
 #define TY_PCLOSE _pclose
 static tycho_int ty_os_decode(int st) { return (tycho_int)st; }   /* Windows: system/_pclose return the code directly */
@@ -824,6 +826,73 @@ char *osx_user_name(void) {
     snprintf(ty_os_user, sizeof ty_os_user, "%s", pw->pw_name);
 #endif
     return ty_os_user;
+}
+
+tycho_int osx_pipe(tycho_int *rfd, tycho_int *wfd) {
+#ifdef _WIN32
+    HANDLE r, w;
+    if (!CreatePipe(&r, &w, NULL, 0)) return -1;
+    SetHandleInformation(r, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(w, HANDLE_FLAG_INHERIT, 0);
+    int rf = _open_osfhandle((intptr_t)r, _O_BINARY);
+    int wf = _open_osfhandle((intptr_t)w, _O_BINARY);
+    if (rf < 0 || wf < 0) {
+        if (rf >= 0) _close(rf); else CloseHandle(r);
+        if (wf >= 0) _close(wf); else CloseHandle(w);
+        return -1;
+    }
+    *rfd = rf;
+    *wfd = wf;
+    return 0;
+#else
+    int fds[2];
+    if (ty_pipe_cloexec(fds) != 0) return -1;
+    *rfd = fds[0];
+    *wfd = fds[1];
+    return 0;
+#endif
+}
+
+void osx_read_fd(tycho_int fd, tycho_int max, tycho_int *status,
+                 unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = 2;
+    if (fd < 0 || max <= 0) return;
+    unsigned char *buf = (unsigned char *)malloc((size_t)max);
+    if (!buf) return;
+#ifdef _WIN32
+    int n = _read((int)fd, buf, (unsigned int)max);
+#else
+    ssize_t n = read((int)fd, buf, (size_t)max);
+#endif
+    if (n < 0) { free(buf); return; }
+    *out = buf;
+    *outlen = (tycho_int)n;
+    *status = 0;
+}
+
+tycho_int osx_write_fd(tycho_int fd, const unsigned char *data, tycho_int len,
+                       tycho_int *status) {
+    *status = 2;
+    if (fd < 0 || len < 0) return -1;
+#ifdef _WIN32
+    int n = _write((int)fd, data, (unsigned int)len);
+#else
+    ssize_t n = write((int)fd, data, (size_t)len);
+#endif
+    if (n < 0) return -1;
+    *status = 0;
+    return (tycho_int)n;
+}
+
+void osx_close_fd(tycho_int fd) {
+    if (fd < 0) return;
+#ifdef _WIN32
+    _close((int)fd);
+#else
+    close((int)fd);
+#endif
 }
 
 /* ---- permissions and identity ---- */

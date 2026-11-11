@@ -72,6 +72,18 @@ fn is_none(o: Option(string)) -> bool:
         Some(_): return false
         None: return true
 
+fn bad_value(r: Result(bytes, os.OsErr)) -> bool:
+    match r:
+        Ok(_): return false
+        Err(os.BadValue): return true
+        Err(_): return false
+
+fn bad_int(r: Result(int, os.OsErr)) -> bool:
+    match r:
+        Ok(_): return false
+        Err(os.BadValue): return true
+        Err(_): return false
+
 fn main():
     # system(): exit code only. These commands write nothing to stdout, so they
     # never interleave with the println output below (ordering stays stable).
@@ -271,6 +283,26 @@ fn main():
         Some(n): println("user_name_nonempty=" + str(len(n) > 0))
         None: println("user_name_nonempty=false")
     println("temp_bad_prefix=" + str(is_none(os.create_temp_file("bad/prefix"))))
+
+    match os.pipe():
+        Ok(p):
+            rfd := p.0
+            wfd := p.1
+            println("pipe_ok=true")
+            match os.write_fd(wfd, to_bytes("ping")):
+                Ok(n): println("pipe_write=" + str(n == 4))
+                Err(_): println("pipe_write=false")
+            match os.read_fd(rfd, 16):
+                Ok(b): println("pipe_read=" + str(to_str(b) == "ping"))
+                Err(_): println("pipe_read=false")
+            os.close_fd(rfd)
+            os.close_fd(wfd)
+        Err(_):
+            println("pipe_ok=false")
+            println("pipe_write=false")
+            println("pipe_read=false")
+    println("pipe_bad_read=" + str(bad_value(os.read_fd(-1, 8))))
+    println("pipe_bad_write=" + str(bad_int(os.write_fd(-1, to_bytes("x")))))
 
     if os.platform() == os.Linux:
         println("platform=linux")
