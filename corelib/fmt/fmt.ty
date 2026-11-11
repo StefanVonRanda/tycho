@@ -1,0 +1,19 @@
+package fmt
+
+import "core:strings"
+
+# Integer in base 2..36, left-padded to `width` with `pad`.
+fn format_int(n: int, width: int, base: int, upper: bool, pad: string) -> string:
+    s := strings.format_int_base(n, base, upper)
+    return strings.pad_left(s, width, pad)
+
+# Fixed-point float, left-padded to `width` with `pad`.
+fn format_float(v: float, digits: int, width: int, pad: string) -> string:
+    s := strings.format_float(v, digits)
+    return strings.pad_left(s, width, pad)
+
+fn pad_left(s: string, width: int, pad: string) -> string:
+    return strings.pad_left(s, width, pad)
+
+fn pad_right(s: string, width: int, pad: string) -> string:
+    return strings.pad_right(s, width, pad)

@@ -28,3 +28,27 @@ fn report(t: T) -> int:
         return 0
     print("FAIL " + t.name + " (" + str(t.nfail) + " of " + str(t.nchecks) + " checks failed)\n")
     return 1
+
+struct Bench:
+    name: string
+    iters: int
+    ns: int
+
+# Run `f` `iters` times and record the wall time. This is a microbenchmark,
+# not a sampling profiler; report_bench formats the result.
+fn bench(name: string, iters: int, f: fn()) -> Bench:
+    n := iters
+    if n < 0:
+        n = 0
+    start := clock()
+    i := 0
+    for i < n:
+        f()
+        i += 1
+    return Bench(name, n, clock() - start)
+
+fn report_bench(b: Bench) -> string:
+    per := 0
+    if b.iters > 0:
+        per = b.ns / b.iters
+    return b.name + ": " + str(b.iters) + " iters, " + str(b.ns) + " ns, " + str(per) + " ns/op"

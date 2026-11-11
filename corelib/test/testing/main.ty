@@ -1,6 +1,9 @@
 package main
 import "core:testing"
 
+fn noop():
+    pass
+
 fn main():
     pass := testing.new("passing")
     testing.check(&pass, 1 + 1 == 2, "arithmetic")
@@ -15,3 +18,6 @@ fn main():
     r2 := testing.report(fail)
     # the exit-code contract: a fully passing test reports 0, a failing one 1
     print(str(r) + " " + str(r2) + "\n")
+    b := testing.bench("noop", 100, noop)
+    println("bench=" + str(b.iters == 100 and b.ns >= 0))
+    println("report=" + testing.report_bench(testing.Bench("x", 10, 1000)))

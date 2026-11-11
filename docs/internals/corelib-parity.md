@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 82 packages, ~15.7k lines, 1007 locked
+lines). The current Tycho corelib is 83 packages, ~15.4k lines, 1013 locked
 public functions.
 
 Status values:
@@ -30,7 +30,7 @@ Status values:
 | `dynlib` | partial | `open`, `symbol`, `close_lib` over `dlopen`/`LoadLibrary` | function-pointer invocation (Tycho has no callbacks into Tycho) |
 | `encoding` | partial | `base64`, `base32`, `hex`, `json`, `csv`, `uuid`, `pem`, `ini`, `varint`, `endian`, `xml`, `cbor`, `asn1` | entity tables, hxa |
 | `flags` | partial | `cli` parses argv, but with no declarative flag set | decide whether to extend `cli` or add `flags` |
-| `fmt` | partial | `str`, `f"..."` interpolation, `strings.format_g17`; no general format-spec API | add width/base/precision formatting where interpolation is not enough |
+| `fmt` | covered | `format_int`, `format_float`, `pad_left`/`pad_right` plus `str`/f-strings | none |
 | `hash` | covered | FNV-1a, djb2, sdbm, CRC32 and xxHash 32/64 | none |
 | `image` | partial | `image` is PNG; `raster` is BMP/QOI/TGA/PPM/PGM/PBM | JPEG and BNG (no external codec installed here) |
 | `io` | covered | file read/write/append/copy/stat/dirs, checked variants, stdin/stdout, line reader | no generic `Reader`/`Writer` interface; concrete values are the design |
@@ -54,7 +54,7 @@ Status values:
 | `sync` | covered | C11 atomics (int/bool/pointer), `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup`, `Once`, `Barrier`, recursive mutex; channels are language builtins | ticket mutex (not a capability gap) |
 | `sys` | non-goal | libc and shims are the portability boundary | none |
 | `terminal` | partial | ANSI escapes, tty/size, raw mode, byte read | key decoding, cursor queries, non-console Windows fallbacks |
-| `testing` | partial | `T`, `check`, `eq`, `report`; no subtests, benchmarks or fuzz hooks | expand after `container`/`sync` |
+| `testing` | partial | `T`, `check`, `eq`, `report`, `bench`, `report_bench` | subtests and fuzz hooks |
 | `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `edit`, `scanner`, `table`, `glob` | i18n tables and locale data |
 | `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; `thread.id`/`yield_now`/`cpus` | raw thread creation/TLS need callbacks Tycho does not support |
 | `time` | covered | monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset | none |

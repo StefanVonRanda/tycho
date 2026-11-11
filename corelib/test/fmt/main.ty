@@ -1,0 +1,9 @@
+package main
+import "core:fmt"
+
+fn main():
+    println("int=[" + fmt.format_int(255, 6, 16, false, "0") + "]")
+    println("int2=[" + fmt.format_int(-42, 5, 10, false, " ") + "]")
+    println("float=[" + fmt.format_float(3.14159, 2, 8, " ") + "]")
+    println("float2=[" + fmt.format_float(-0.5, 1, 5, "0") + "]")
+    println("pad=[" + fmt.pad_left("x", 4, ".") + "][" + fmt.pad_right("y", 4, ".") + "]")

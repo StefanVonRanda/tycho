@@ -104,6 +104,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
   `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a
   digit), `hex_val` (0..15 or −1).
+- **`fmt`** — width-aware formatting over `core:strings`: `format_int(n, width,
+  base, upper, pad)`, `format_float(v, digits, width, pad)`, `pad_left` and
+  `pad_right`. Bases are 2..36; floats keep trailing zeros.
 - **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
   `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `parse_u64`, `parse_int_prefix`,
   `is_space`, `lines` (splits on `\n`, drops one trailing `\r` per line, trailing
@@ -608,6 +611,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   composite compare with `==` and pass the message), and
   `exit(testing.report(t))` — prints `ok name (N checks)` or the failing checks
   plus `FAIL name (N of M checks failed)` and returns 0/1 for the exit code.
+  `bench(name, iters, f)` times a microbenchmark into a `Bench`, and
+  `report_bench(b)` formats it as `name: N iters, T ns, P ns/op`.
 - **`toml`** — a TOML v1.0-subset parser: `parse(s) -> Result(Value, string)`
   (fail-closed), a recursive `Value` enum (TStr/TInt/TFloat/TBool/TArr/TTable;
   tables are parallel keys/values arrays), and `get(t, "a.b.c") -> Option(Value)`
