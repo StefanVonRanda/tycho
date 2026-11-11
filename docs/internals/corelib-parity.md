@@ -76,7 +76,6 @@ Status values:
 These are the remaining rows that are not complete capability parity. None of
 them blocks the application-facing surface above:
 
-- `crypto` — post-quantum ML-KEM/ML-DSA depend on an OpenSSL provider.
 - `dynlib` — Tycho has no callback/function-pointer call path, so symbols are
   opaque handles for C shims.
 - `encoding` — HXA (Odin's 3D asset container) is not a general encoding.
