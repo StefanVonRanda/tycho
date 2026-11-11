@@ -1,0 +1,18 @@
+package main
+import "core:net"
+import "core:os"
+
+fn main():
+    if os.is_windows():
+        println("ifaces=skip")
+        return
+    r := net.interfaces()
+    match r:
+        Ok(xs):
+            loop := false
+            for i in xs:
+                if i.addr == "127.0.0.1" or i.addr == "::1":
+                    loop = true
+            println("ifaces=" + str(len(xs) > 0) + " loopback=" + str(loop))
+        Err(_):
+            println("ifaces=ERR")

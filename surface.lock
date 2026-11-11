@@ -709,6 +709,7 @@
   "net.accept_wait": "(fd: int, ms: int)-> Result(int, NetErr)",
   "net.close_fd": "(fd: int)",
   "net.connect": "(host: string, port: int)-> Result(int, NetErr)",
+  "net.interfaces": "()-> Result([Interface], NetErr)",
   "net.listen": "(host: string, port: int)-> Result(int, NetErr)",
   "net.peer_addr": "(fd: int)-> Result(string, NetErr)",
   "net.port_of": "(fd: int)-> Result(int, NetErr)",

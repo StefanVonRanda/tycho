@@ -2,6 +2,10 @@ package net
 
 import "core:strings"
 
+struct Interface:
+    name: string
+    addr: string
+
 # Why a socket call failed. Every variant is payload-free so `==` works on it.
 enum NetErr:
     Eof                # the peer closed the connection cleanly (recv == 0)
@@ -18,6 +22,7 @@ extern fn netx_set_broadcast(fd: int, on: int) -> int
 extern fn netx_set_nonblocking(fd: int, on: int) -> int
 extern fn netx_unix_listen(path: string) -> int
 extern fn netx_unix_connect(path: string) -> int
+extern fn netx_interfaces() -> Option(string)
 
 fn _has_nul(host: string) -> bool:
     for i := 0; i < len(host); i += 1:
@@ -277,3 +282,17 @@ fn unix_connect(path: string) -> Result(int, NetErr):
     if fd < 0:
         return Err(Failed)
     return Ok(fd)
+
+# Interface names and numeric addresses (IPv4/IPv6), newline-separated by the
+# shim as `name|addr`.
+fn interfaces() -> Result([Interface], NetErr):
+    match netx_interfaces():
+        Some(s):
+            out := []Interface
+            for line in strings.lines(s):
+                bar := find(line, "|")
+                if bar > 0:
+                    push(out, Interface(line[0:bar], line[bar + 1:len(line)]))
+            return Ok(out)
+        None:
+            return Err(Failed)

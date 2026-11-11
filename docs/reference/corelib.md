@@ -812,7 +812,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   `Failed`. Socket options are plain booleans: `set_reuse_addr`, `set_nodelay`,
   `set_keepalive`, `set_broadcast`, `set_nonblocking` (POSIX `fcntl`, Winsock
   `ioctlsocket`). `unix_listen(path)` / `unix_connect(path)` are POSIX
-  Unix-domain stream sockets (Windows answers `Failed`).
+  Unix-domain stream sockets (Windows answers `Failed`). `interfaces()` returns
+  `Interface{name, addr}` records from `getifaddrs` (POSIX; Windows `Failed`).
 - **`nbio`** — readiness polling. `poll(fds, events, timeout_ms) -> Result([Ready],
   NbioErr)` waits on each fd with an event mask of `READ`/`WRITE`
   (`Ready{fd, events}` carries the revents mask; a negative timeout waits

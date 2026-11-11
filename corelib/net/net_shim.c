@@ -638,3 +638,35 @@ tycho_int netx_unix_connect(const char *path) {
 tycho_int netx_unix_listen(const char *path) { (void)path; return -1; }
 tycho_int netx_unix_connect(const char *path) { (void)path; return -1; }
 #endif
+
+/* ---- interface enumeration (POSIX getifaddrs; Windows unsupported) ---- */
+#ifndef _WIN32
+#include <ifaddrs.h>
+char *netx_interfaces(void) {
+    struct ifaddrs *ifs = NULL;
+    if (getifaddrs(&ifs) != 0) return NULL;
+    static __thread char *buf = NULL;
+    static __thread size_t cap = 0;
+    size_t len = 0;
+    if (cap < 256) { buf = realloc(buf, 256); cap = 256; }
+    if (!buf) { freeifaddrs(ifs); return NULL; }
+    buf[0] = 0;
+    for (struct ifaddrs *p = ifs; p; p = p->ifa_next) {
+        if (!p->ifa_addr) continue;
+        int fam = p->ifa_addr->sa_family;
+        if (fam != AF_INET && fam != AF_INET6) continue;
+        char host[1024];
+        if (getnameinfo(p->ifa_addr,
+                        fam == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6),
+                        host, sizeof host, NULL, 0, NI_NUMERICHOST) != 0) continue;
+        size_t need = len + strlen(p->ifa_name) + strlen(host) + 3;
+        if (need > cap) { size_t n = cap; while (n < need) n *= 2; char *q = realloc(buf, n); if (!q) break; buf = q; cap = n; }
+        if (len) buf[len++] = '\n';
+        len += (size_t)sprintf(buf + len, "%s|%s", p->ifa_name, host);
+    }
+    freeifaddrs(ifs);
+    return buf;
+}
+#else
+char *netx_interfaces(void) { return NULL; }
+#endif
