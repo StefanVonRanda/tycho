@@ -1026,6 +1026,8 @@
   "toml.keys": "(t: Value)-> [string]",
   "toml.parse": "(s: string)-> Result(Value, string)",
   "toml.split_path": "(body: string)-> [string]",
+  "unicode.to_casefold": "(s: string)-> string",
+  "unicode.to_casefold_char": "(cp: int)-> int",
   "unicode.to_lower": "(s: string)-> string",
   "unicode.to_lower_char": "(cp: int)-> int",
   "unicode.to_upper": "(s: string)-> string",

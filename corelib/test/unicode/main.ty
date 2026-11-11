@@ -8,3 +8,4 @@ fn main():
     println("cyrillic=" + unicode.to_upper("привет") + "|" + unicode.to_lower("ПРИВЕТ"))
     println("char=" + str(unicode.to_upper_char(0x00E9)) + "," + str(unicode.to_lower_char(0x00C9)) + "," + str(unicode.to_upper_char(97)))
     println("invalid=" + str(len(unicode.to_upper(chr(255)))))
+    println("fold=" + unicode.to_casefold("Hello Σς") + " char=" + str(unicode.to_casefold_char(0x03C2)))

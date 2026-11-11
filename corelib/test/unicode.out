@@ -4,3 +4,4 @@ greek=ΑΒΓ|αβγ
 cyrillic=ПРИВЕТ|привет
 char=201,233,65
 invalid=1
+fold=hello σσ char=963
