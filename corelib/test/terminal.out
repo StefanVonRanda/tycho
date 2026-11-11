@@ -8,3 +8,7 @@ tty999=false ansi999=false
 size999=true
 raw999=true
 byte999=true
+key_chars=c97,c233,enter
+key_nav=up,down,right,left
+key_edit=home,end,del,bs
+key_unknown=?

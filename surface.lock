@@ -979,6 +979,7 @@
   "terminal.is_tty": "(fd: int)-> bool",
   "terminal.italic": "()-> string",
   "terminal.move": "(row: int, col: int)-> string",
+  "terminal.parse_key": "(data: bytes)-> Key",
   "terminal.raw_enter": "(fd: int)-> ptr",
   "terminal.raw_leave": "(h: ptr)",
   "terminal.read_byte": "(fd: int)-> Option(int)",

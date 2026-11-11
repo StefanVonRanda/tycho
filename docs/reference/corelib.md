@@ -913,8 +913,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   `hide_cursor`, `show_cursor`. Host queries: `is_tty(fd)`,
   `size(fd) -> Option((cols, rows))`, `supports_ansi(fd)`. `raw_enter(fd)`
   saves the terminal mode and returns an opaque handle (null on a non-terminal),
-  `raw_leave(h)` restores and frees it, and `read_byte(fd) -> Option(int)` reads
-  one byte from a raw descriptor.
+  `raw_leave(h)` restores and frees it, `read_byte(fd) -> Option(int)` reads
+  one byte from a raw descriptor, and `parse_key(bytes) -> Key` decodes printable
+  UTF-8, Enter/Tab/Backspace/Escape and the common CSI arrows/Home/End/Delete.
 - **`signal`** — **clean shutdown on SIGTERM/SIGINT, and nothing else**: a libc-only shim
   with nothing to install and nothing to link.
   `on_shutdown(fd) -> bool` installs one handler for both signals whose **only** action is

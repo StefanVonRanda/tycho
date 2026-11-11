@@ -13,6 +13,22 @@ fn byte_none(o: Option(int)) -> bool:
         None: return true
         Some(_): return false
 
+fn key_name(k: terminal.Key) -> string:
+    match k:
+        terminal.Char(cp): return "c" + str(cp)
+        terminal.Enter: return "enter"
+        terminal.Tab: return "tab"
+        terminal.Backspace: return "bs"
+        terminal.Escape: return "esc"
+        terminal.Up: return "up"
+        terminal.Down: return "down"
+        terminal.Left: return "left"
+        terminal.Right: return "right"
+        terminal.Home: return "home"
+        terminal.End: return "end"
+        terminal.Delete: return "del"
+        terminal.Unknown: return "?"
+
 fn hx(s: string) -> string:
     return hex.encode(s)
 
@@ -28,3 +44,9 @@ fn main():
     println("raw999=" + str(is_null(terminal.raw_enter(999))))
     terminal.raw_leave(null)
     println("byte999=" + str(byte_none(terminal.read_byte(999))))
+
+    # ---- key parsing ----
+    println("key_chars=" + key_name(terminal.parse_key(to_bytes("a"))) + "," + key_name(terminal.parse_key(to_bytes("é"))) + "," + key_name(terminal.parse_key(to_bytes([13]))))
+    println("key_nav=" + key_name(terminal.parse_key(to_bytes([27, 91, 65]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 66]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 67]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 68]))))
+    println("key_edit=" + key_name(terminal.parse_key(to_bytes([27, 91, 72]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 70]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 51, 126]))) + "," + key_name(terminal.parse_key(to_bytes([127]))))
+    println("key_unknown=" + key_name(terminal.parse_key(to_bytes([27, 91, 90]))))

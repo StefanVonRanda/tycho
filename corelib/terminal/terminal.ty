@@ -1,5 +1,7 @@
 package terminal
 
+import "core:utf8"
+
 extern fn termx_is_tty(fd: int) -> int
 extern fn termx_cols(fd: int) -> int
 extern fn termx_rows(fd: int) -> int
@@ -101,3 +103,55 @@ fn read_byte(fd: int) -> Option(int):
     if b < 0:
         return None
     return Some(b)
+
+enum Key:
+    Char(int)
+    Enter
+    Tab
+    Backspace
+    Escape
+    Up
+    Down
+    Left
+    Right
+    Home
+    End
+    Delete
+    Unknown
+
+# Decode one raw key sequence. Printable UTF-8 yields Char(codepoint), CR/LF
+# yields Enter, and the common CSI arrows/Home/End/Delete are recognized.
+fn parse_key(data: bytes) -> Key:
+    if len(data) == 0:
+        return Unknown
+    b := data[0]
+    if b == 27:
+        if len(data) == 1:
+            return Escape
+        if len(data) >= 3 and data[1] == 91:
+            c := data[2]
+            if c == 65:
+                return Up
+            if c == 66:
+                return Down
+            if c == 67:
+                return Right
+            if c == 68:
+                return Left
+            if c == 72:
+                return Home
+            if c == 70:
+                return End
+            if c == 51 and len(data) >= 4 and data[3] == 126:
+                return Delete
+        return Unknown
+    if b == 10 or b == 13:
+        return Enter
+    if b == 9:
+        return Tab
+    if b == 127:
+        return Backspace
+    cp, w := utf8.decode(to_str(data), 0)
+    if cp >= 0:
+        return Char(cp)
+    return Char(b)
