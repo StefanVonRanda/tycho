@@ -1,0 +1,33 @@
+package prof
+
+struct Span:
+    name: string
+    start_ns: int
+    end_ns: int
+
+# Manual instrumentation span; use prof for explicit scopes, not sampling.
+fn start(name: string) -> Span:
+    return Span(name, clock(), 0)
+
+fn stop(s: inout Span):
+    s.end_ns = clock()
+
+fn finished(s: Span) -> bool:
+    return s.end_ns != 0
+
+fn elapsed_ns(s: Span) -> int:
+    if s.end_ns == 0:
+        return 0
+    return s.end_ns - s.start_ns
+
+fn total_ns(spans: [Span]) -> int:
+    total := 0
+    for s in spans:
+        total += elapsed_ns(s)
+    return total
+
+fn report(spans: [Span]) -> string:
+    out := ""
+    for s in spans:
+        out = out + s.name + ": " + str(elapsed_ns(s)) + " ns\n"
+    return out

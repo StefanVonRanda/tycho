@@ -1,0 +1,6 @@
+finished=true nonneg=true
+report=[
+a: 150 ns
+b: 300 ns
+]
+total=450 running=0 finished_running=false

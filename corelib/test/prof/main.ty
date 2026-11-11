@@ -1,0 +1,10 @@
+package main
+import "core:prof"
+
+fn main():
+    s := prof.start("work")
+    prof.stop(&s)
+    println("finished=" + str(prof.finished(s)) + " nonneg=" + str(prof.elapsed_ns(s) >= 0))
+    fixed := [prof.Span("a", 100, 250), prof.Span("b", 1000, 1300)]
+    println("report=[\n" + prof.report(fixed) + "]")
+    println("total=" + str(prof.total_ns(fixed)) + " running=" + str(prof.elapsed_ns(prof.Span("r", 100, 0))) + " finished_running=" + str(prof.finished(prof.Span("r", 100, 0))))

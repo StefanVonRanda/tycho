@@ -1,0 +1,15 @@
+package thread
+
+extern fn thx_id() -> int
+extern fn thx_yield() -> int
+
+# OS-thread identity of the current task (opaque numeric; stable only while the
+# thread lives).
+fn id() -> int:
+    return thx_id()
+
+fn yield_now() -> bool:
+    return thx_yield() == 1
+
+fn cpus() -> int:
+    return ncpu()

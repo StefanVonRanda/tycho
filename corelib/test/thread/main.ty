@@ -1,0 +1,7 @@
+package main
+import "core:thread"
+
+fn main():
+    println("id_nonzero=" + str(thread.id() != 0))
+    println("yield=" + str(thread.yield_now()))
+    println("cpus=" + str(thread.cpus() > 0))
