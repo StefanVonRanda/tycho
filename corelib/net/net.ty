@@ -628,6 +628,7 @@ enum DnsErr:
     Truncated
     Corrupt
     TooMany
+    Network
 
 struct DnsMx:
     preference: int
@@ -792,6 +793,110 @@ fn parse_txt(data: bytes) -> Result([string], DnsErr):
 
 fn parse_srv(data: bytes) -> Result([DnsSrv], DnsErr):
     match parse_dns(data):
+        Ok(rs):
+            out := []DnsSrv
+            for r in rs:
+                match r.data:
+                    Srv(s): push(out, s)
+                    _: pass
+            return Ok(out)
+        Err(e):
+            return Err(e)
+
+
+# Build a standard recursive query for `name` and `qtype`.
+fn build_query(name: string, qtype: int, id: int) -> Result(bytes, DnsErr):
+    if id < 0 or id > 65535 or qtype < 0 or qtype > 65535:
+        return Err(Corrupt)
+    parts := split(name, ".")
+    if len(parts) == 0:
+        return Err(Corrupt)
+    q := []int
+    push(q, (id >> 8) & 255)
+    push(q, id & 255)
+    push(q, 1)                         # recursion desired
+    push(q, 0)
+    push(q, 0)                         # qdcount
+    push(q, 1)
+    push(q, 0)                         # ancount
+    push(q, 0)
+    push(q, 0)                         # nscount
+    push(q, 0)
+    push(q, 0)                         # arcount
+    push(q, 0)
+    for part in parts:
+        if len(part) == 0 or len(part) > 63:
+            return Err(Corrupt)
+        push(q, len(part))
+        for i := 0; i < len(part); i += 1:
+            push(q, part[i])
+    push(q, 0)
+    push(q, (qtype >> 8) & 255)
+    push(q, qtype & 255)
+    push(q, 0)                         # class IN
+    push(q, 1)
+    return Ok(to_bytes(q))
+
+# Send an already-built query on a bound UDP descriptor and parse the answer.
+fn dns_query_on(fd: int, server: string, port: int, query: bytes, id: int) -> Result([DnsRecord], DnsErr):
+    if len(query) == 0 or fd < 0:
+        return Err(Corrupt)
+    if udp_send(fd, server, port, query) < 0:
+        return Err(Network)
+    match udp_read_checked(fd, 4096):
+        Ok(b):
+            if len(b) < 12:
+                return Err(Truncated)
+            rid := (b[0] << 8) | b[1]
+            if rid != id or (b[2] & 128) == 0:
+                return Err(Corrupt)
+            if (b[3] & 15) != 0:
+                return Err(Corrupt)
+            return parse_dns(b)
+        Err(_):
+            return Err(Network)
+
+# Bind an ephemeral UDP socket, send a query to `server:port`, and parse it.
+fn dns_query(server: string, port: int, name: string, qtype: int, id: int) -> Result([DnsRecord], DnsErr):
+    match build_query(name, qtype, id):
+        Ok(q):
+            match udp_bind_checked("0.0.0.0", 0):
+                Ok(fd):
+                    set_read_timeout_ms(fd, 2000)
+                    r := dns_query_on(fd, server, port, q, id)
+                    close_fd(fd)
+                    return r
+                Err(_):
+                    return Err(Network)
+        Err(e):
+            return Err(e)
+
+fn query_mx(server: string, port: int, host: string, id: int) -> Result([DnsMx], DnsErr):
+    match dns_query(server, port, host, 15, id):
+        Ok(rs):
+            out := []DnsMx
+            for r in rs:
+                match r.data:
+                    Mx(m): push(out, m)
+                    _: pass
+            return Ok(out)
+        Err(e):
+            return Err(e)
+
+fn query_txt(server: string, port: int, host: string, id: int) -> Result([string], DnsErr):
+    match dns_query(server, port, host, 16, id):
+        Ok(rs):
+            out := []string
+            for r in rs:
+                match r.data:
+                    Txt(t): push(out, t)
+                    _: pass
+            return Ok(out)
+        Err(e):
+            return Err(e)
+
+fn query_srv(server: string, port: int, host: string, id: int) -> Result([DnsSrv], DnsErr):
+    match dns_query(server, port, host, 33, id):
         Ok(rs):
             out := []DnsSrv
             for r in rs:

@@ -899,7 +899,12 @@ expression-bodied; pass a named function where you need a multi-line body.
   `parse_srv` filter to one record type. Name compression, MX preference,
   TXT character-string chunks and SRV priority/weight/port are handled;
   `DnsMx{preference, host}` and `DnsSrv{priority, weight, port, target}` carry
-  the decoded fields.
+  the decoded fields. `build_query(name, qtype, id)` constructs a recursive
+  query; `dns_query_on` sends a built query on a bound UDP descriptor,
+  `dns_query` binds an ephemeral socket and uses a 2s read timeout, and
+  `query_mx`/`query_txt`/`query_srv` return the filtered records. `DnsErr` adds
+  `Network` for a send failure, timeout or short datagram. There is no
+  DNS-over-TCP fallback yet.
 - **`nbio`** — readiness polling. `poll(fds, events, timeout_ms) -> Result([Ready],
   NbioErr)` waits on each fd with an event mask of `READ`/`WRITE`
   (`Ready{fd, events}` carries the revents mask; a negative timeout waits

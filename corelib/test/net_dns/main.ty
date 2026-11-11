@@ -1,6 +1,14 @@
 package main
+import "core:hex"
 import "core:io"
 import "core:net"
+import "core:result"
+
+fn serve_dns(fd: int, client_port: int, response: bytes) -> int:
+    q := net.udp_read(fd, 512)
+    if len(q) > 0:
+        net.udp_send(fd, "127.0.0.1", client_port, response)
+    return 0
 
 fn why(e: net.DnsErr) -> string:
     if e == net.Truncated:
@@ -9,6 +17,8 @@ fn why(e: net.DnsErr) -> string:
         return "Corrupt"
     if e == net.TooMany:
         return "TooMany"
+    if e == net.Network:
+        return "Network"
     return "?"
 
 fn main():
@@ -74,3 +84,40 @@ fn main():
         Ok(_): println("loop=Ok")
         Err(net.Corrupt): println("loop=Corrupt")
         Err(_): println("loop=Other")
+
+    match net.build_query("example.com", 15, 0x1234):
+        Ok(q):
+            println("query_len=" + str(len(q)))
+            println("query=" + hex.encode(to_str(q)))
+            match io.read_bytes("corelib/test/net_dns/mx.bin"):
+                Ok(resp):
+                    match net.udp_bind_checked("127.0.0.1", 0):
+                        Ok(cfd):
+                            match net.udp_bind_checked("127.0.0.1", 0):
+                                Ok(sfd):
+                                    cport := result.unwrap_or(net.port_of(cfd), -1)
+                                    sport := result.unwrap_or(net.port_of(sfd), -1)
+                                    net.set_read_timeout_ms(cfd, 2000)
+                                    net.set_read_timeout_ms(sfd, 2000)
+                                    t := spawn serve_dns(sfd, cport, resp)
+                                    match net.dns_query_on(cfd, "127.0.0.1", sport, q, 0x1234):
+                                        Ok(rs):
+                                            println("query_count=" + str(len(rs)))
+                                            for r in rs:
+                                                match r.data:
+                                                    net.Mx(m): println("query_mx=" + str(m.preference) + ":" + m.host)
+                                                    _: pass
+                                        Err(e):
+                                            println("query_err=" + why(e))
+                                    n := wait(t)
+                                    println("query_server=" + str(n))
+                                    net.close_fd(sfd)
+                                Err(_):
+                                    println("srv_bind=err")
+                            net.close_fd(cfd)
+                        Err(_):
+                            println("cli_bind=err")
+                Err(_):
+                    println("resp_read=err")
+        Err(e):
+            println("query_build_err=" + why(e))

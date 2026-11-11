@@ -68,8 +68,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added the remaining `core:container` breadth: an AVL ordered map, a
   red-black ordered map, a generation-checked `HandleMap`, an inline 16-slot
   `SmallArray` and a freelist-backed `Xar`.
-- Added DNS response parsing to `core:net`: `parse_dns`, `parse_mx`,
-  `parse_txt` and `parse_srv`, including compressed names and MX/TXT/SRV RDATA.
+- Added DNS response parsing and UDP querying to `core:net`: `parse_dns`,
+  `parse_mx`, `parse_txt`, `parse_srv`, `build_query`, `dns_query_on`,
+  `dns_query`, `query_mx`, `query_txt` and `query_srv`, including compressed
+  names and MX/TXT/SRV RDATA.
 - The tree is now 88 corelib packages and 97 golden test trees.
 
 ## [0.9.1] — 2026-11-10
