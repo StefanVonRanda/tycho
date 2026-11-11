@@ -379,10 +379,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `format_offset(offset_secs)` renders a UTC offset as `+HH:MM` / `-HH:MM`.
 - **`tz`** — IANA TZif (RFC 8536) zones. `parse_tzif(data, name) ->
   Result(Zone, TzErr)` reads v1/v2/v3/v4 files, including the 64-bit block;
-  `offset_at(z, unix)` and `abbreviation_at(z, unix)` binary-search transitions
-  and fall back to the initial type before the first one. The POSIX TZ footer
-  and leap-second records are not used, so timestamps after the table use the
-  last transition.
+  `offset_at(z, unix)` and `abbreviation_at(z, unix)` binary-search transitions,
+  fall back to the initial type before the first one, and apply the POSIX TZ
+  footer after the last transition (including southern-hemisphere rules).
+  Leap-second records are still ignored.
 - **`regex`** — POSIX extended regular expressions (ERE) over libc. `compile(pat) ->
   ptr` (opaque handle; `ok`/`is_null` to check), `is_match`, `find` / `find_end`
   (offset or −1), `matched` (first match substring). **Capture groups** of the first

@@ -1,5 +1,8 @@
-# IANA TZif (RFC 8536) zones: transitions, UTC offsets and abbreviations.
+# IANA TZif (RFC 8536) zones: transitions, UTC offsets and abbreviations. The
+# v2+ POSIX footer is parsed so dates beyond the last transition keep their DST.
 package tz
+
+import "core:datetime"
 
 enum TzErr:
     BadMagic
@@ -8,6 +11,24 @@ enum TzErr:
     Corrupt
     TooBig
 
+struct PosixRule:
+    kind: int          # 0 none, 1 Jn, 2 n, 3 Mm.w.d
+    day: int
+    month: int
+    week: int
+    weekday: int
+    time: int          # seconds after local midnight
+
+struct PosixInfo:
+    present: bool
+    std_offset: int
+    dst_offset: int
+    std_abbr: string
+    dst_abbr: string
+    dst_present: bool
+    start: PosixRule
+    end: PosixRule
+
 struct Zone:
     name: string
     transitions: [int]
@@ -15,6 +36,13 @@ struct Zone:
     abbrs: [string]
     initial_offset: int
     initial_abbr: string
+    posix: PosixInfo
+
+fn _no_rule() -> PosixRule:
+    return PosixRule(0, 0, 0, 0, 0, 0)
+
+fn _no_posix() -> PosixInfo:
+    return PosixInfo(false, 0, 0, "", "", false, _no_rule(), _no_rule())
 
 fn _u32be(data: bytes, off: int) -> int:
     if off < 0 or off + 4 > len(data):
@@ -49,9 +77,203 @@ fn _abbr_at(blob: string, start: int) -> string:
 fn _block_size(timecnt: int, typecnt: int, charcnt: int, leapcnt: int, isstdcnt: int, isutcnt: int, tsize: int) -> int:
     return timecnt * tsize + timecnt + typecnt * 6 + charcnt + leapcnt * (tsize + 4) + isstdcnt + isutcnt
 
+fn _parse_num(s: string, i: int) -> (int, int, bool):
+    if i >= len(s):
+        return 0, i, false
+    v := 0
+    start := i
+    for i < len(s) and s[i] >= 48 and s[i] <= 57:
+        v = v * 10 + (s[i] - 48)
+        i += 1
+    if i == start:
+        return 0, i, false
+    return v, i, true
+
+fn _parse_hms(s: string, i: int) -> (int, int, bool):
+    sign := 1
+    if i < len(s) and s[i] == 45:
+        sign = 0 - 1
+        i += 1
+    elif i < len(s) and s[i] == 43:
+        i += 1
+    h := 0
+    m := 0
+    sec := 0
+    ok := false
+    h, i, ok = _parse_num(s, i)
+    if not ok:
+        return 0, i, false
+    if i < len(s) and s[i] == 58:
+        i += 1
+        m, i, ok = _parse_num(s, i)
+        if not ok:
+            return 0, i, false
+        if i < len(s) and s[i] == 58:
+            i += 1
+            sec, i, ok = _parse_num(s, i)
+            if not ok:
+                return 0, i, false
+    return sign * (h * 3600 + m * 60 + sec), i, true
+
+fn _parse_name(s: string, i: int) -> (string, int, bool):
+    if i >= len(s):
+        return "", i, false
+    if s[i] == 60:                       # <
+        j := i + 1
+        for j < len(s) and s[j] != 62:
+            j += 1
+        if j >= len(s):
+            return "", i, false
+        return s[i + 1:j], j + 1, true
+    j := i
+    for j < len(s) and ((s[j] >= 65 and s[j] <= 90) or (s[j] >= 97 and s[j] <= 122)):
+        j += 1
+    if j - i < 3:
+        return "", i, false
+    return s[i:j], j, true
+
+fn _parse_rule(s: string, i: int) -> (PosixRule, int, bool):
+    rule := _no_rule()
+    if i >= len(s):
+        return rule, i, false
+    ok := false
+    if s[i] == 74:                       # J
+        i += 1
+        v := 0
+        v, i, ok = _parse_num(s, i)
+        if not ok or v < 1 or v > 365:
+            return rule, i, false
+        rule = PosixRule(1, v, 0, 0, 0, 7200)
+    elif s[i] == 77:                     # M
+        i += 1
+        mon := 0
+        week := 0
+        wd := 0
+        mon, i, ok = _parse_num(s, i)
+        if not ok or i >= len(s) or s[i] != 46:
+            return rule, i, false
+        i += 1
+        week, i, ok = _parse_num(s, i)
+        if not ok or i >= len(s) or s[i] != 46:
+            return rule, i, false
+        i += 1
+        wd, i, ok = _parse_num(s, i)
+        if not ok or mon < 1 or mon > 12 or week < 1 or week > 5 or wd < 0 or wd > 6:
+            return rule, i, false
+        rule = PosixRule(3, 0, mon, week, wd, 7200)
+    else:
+        v := 0
+        v, i, ok = _parse_num(s, i)
+        if not ok or v < 0 or v > 365:
+            return rule, i, false
+        rule = PosixRule(2, v, 0, 0, 0, 7200)
+    if i < len(s) and s[i] == 47:         # /time
+        i += 1
+        t := 0
+        t, i, ok = _parse_hms(s, i)
+        if not ok or t < 0 or t > 86399:
+            return rule, i, false
+        rule.time = t
+    return rule, i, true
+
+fn _parse_posix(s: string) -> Result(PosixInfo, TzErr):
+    info := _no_posix()
+    if len(s) == 0:
+        return Ok(info)
+    i := 0
+    ok := false
+    std_name := ""
+    std_name, i, ok = _parse_name(s, i)
+    if not ok:
+        return Err(Corrupt)
+    off := 0
+    off, i, ok = _parse_hms(s, i)
+    if not ok:
+        return Err(Corrupt)
+    info.std_abbr = std_name
+    info.std_offset = 0 - off
+    info.present = true
+    if i >= len(s) or s[i] == 44:        # no DST name
+        if i != len(s):
+            return Err(Corrupt)
+        return Ok(info)
+    dst_name := ""
+    dst_name, i, ok = _parse_name(s, i)
+    if not ok:
+        return Err(Corrupt)
+    dst_off := info.std_offset + 3600
+    if i < len(s) and s[i] != 44:
+        v := 0
+        v, i, ok = _parse_hms(s, i)
+        if not ok:
+            return Err(Corrupt)
+        dst_off = 0 - v
+    info.dst_abbr = dst_name
+    info.dst_offset = dst_off
+    info.dst_present = true
+    if i >= len(s):
+        info.dst_present = false
+        return Ok(info)
+    if s[i] != 44:
+        return Err(Corrupt)
+    i += 1
+    start := _no_rule()
+    start, i, ok = _parse_rule(s, i)
+    if not ok or i >= len(s) or s[i] != 44:
+        return Err(Corrupt)
+    i += 1
+    end := _no_rule()
+    end, i, ok = _parse_rule(s, i)
+    if not ok or i != len(s):
+        return Err(Corrupt)
+    info.start = start
+    info.end = end
+    return Ok(info)
+
+fn _rule_local(year: int, rule: PosixRule) -> int:
+    doy := 0
+    if rule.kind == 1:
+        doy = rule.day - 1
+        if datetime.is_leap(year) and rule.day >= 60:
+            doy += 1
+    elif rule.kind == 2:
+        doy = rule.day
+        maxdoy := 364
+        if datetime.is_leap(year):
+            maxdoy = 365
+        if doy > maxdoy:
+            doy = maxdoy
+    elif rule.kind == 3:
+        first_wd := datetime.weekday(year, rule.month, 1)
+        day := 1 + ((rule.weekday - first_wd + 7) % 7) + (rule.week - 1) * 7
+        dim := datetime.days_in_month(year, rule.month)
+        if day > dim:
+            day = day - 7
+        for m := 1; m < rule.month; m += 1:
+            doy += datetime.days_in_month(year, m)
+        doy += day - 1
+    else:
+        return 0
+    return (datetime.days_from_civil(year, 1, 1) + doy) * 86400 + rule.time
+
+fn _dst_active(z: Zone, unix: int) -> bool:
+    if not z.posix.present or not z.posix.dst_present:
+        return false
+    y := datetime.from_unix(unix + z.posix.std_offset).year
+    for yy := y - 1; yy <= y + 1; yy += 1:
+        start := _rule_local(yy, z.posix.start) - z.posix.std_offset
+        end := _rule_local(yy, z.posix.end) - z.posix.dst_offset
+        if start < end:
+            if unix >= start and unix < end:
+                return true
+        else:
+            end2 := _rule_local(yy + 1, z.posix.end) - z.posix.dst_offset
+            if unix >= start and unix < end2:
+                return true
+    return false
+
 # Parse the 64-bit data block of a v2/v3/v4 file, or the only block of a v1
-# file. The POSIX footer after the v2 block is not needed for historical and
-# near-future timestamps, so it is left unread.
+# file, plus the newline-wrapped POSIX TZ footer when present.
 fn parse_tzif(data: bytes, name: string) -> Result(Zone, TzErr):
     if len(data) < 44:
         return Err(Truncated)
@@ -128,7 +350,20 @@ fn parse_tzif(data: bytes, name: string) -> Result(Zone, TzErr):
 
     init_off := utoffs[0]
     init_abbr := _abbr_at(abbr_blob, abbr_idx[0])
-    return Ok(Zone(name, trans, offsets, out_abbrs, init_off, init_abbr))
+
+    pinfo := _no_posix()
+    footer_start := block + size
+    if (ver == 50 or ver == 51 or ver == 52) and footer_start < len(data) and data[footer_start] == 10:
+        end := footer_start + 1
+        for end < len(data) and data[end] != 10:
+            end += 1
+        if end > footer_start + 1:
+            match _parse_posix(to_str(data[footer_start + 1:end])):
+                Ok(pi):
+                    pinfo = pi
+                Err(_):
+                    return Err(Corrupt)
+    return Ok(Zone(name, trans, offsets, out_abbrs, init_off, init_abbr, pinfo))
 
 fn _transition_at(z: Zone, unix: int) -> int:
     lo := 0
@@ -143,13 +378,28 @@ fn _transition_at(z: Zone, unix: int) -> int:
             hi = mid - 1
     return ans
 
+fn _use_posix(z: Zone, unix: int) -> bool:
+    if not z.posix.present:
+        return false
+    if len(z.transitions) == 0:
+        return true
+    return unix >= z.transitions[len(z.transitions) - 1]
+
 fn offset_at(z: Zone, unix: int) -> int:
+    if _use_posix(z, unix):
+        if _dst_active(z, unix):
+            return z.posix.dst_offset
+        return z.posix.std_offset
     i := _transition_at(z, unix)
     if i < 0:
         return z.initial_offset
     return z.offsets[i]
 
 fn abbreviation_at(z: Zone, unix: int) -> string:
+    if _use_posix(z, unix):
+        if _dst_active(z, unix):
+            return z.posix.dst_abbr
+        return z.posix.std_abbr
     i := _transition_at(z, unix)
     if i < 0:
         return z.initial_abbr

@@ -25,10 +25,34 @@ fn main():
                     println("summer=" + str(tz.offset_at(z, 1721044800)) + " " + tz.abbreviation_at(z, 1721044800))
                     println("epoch=" + str(tz.offset_at(z, 0)) + " " + tz.abbreviation_at(z, 0))
                     println("future=" + str(tz.offset_at(z, 1893456000)) + " " + tz.abbreviation_at(z, 1893456000))
+                    println("future_winter=" + str(tz.offset_at(z, 2209032000)) + " " + tz.abbreviation_at(z, 2209032000))
+                    println("future_summer=" + str(tz.offset_at(z, 2224756800)) + " " + tz.abbreviation_at(z, 2224756800))
+                    println("future_far=" + str(tz.offset_at(z, 2540289600)) + " " + tz.abbreviation_at(z, 2540289600))
                 Err(e):
                     println("parse=" + why(e))
         Err(_):
             println("read=err")
+
+    match io.read_bytes("corelib/test/tz/Asia_Tokyo.tzif"):
+        Ok(data):
+            match tz.parse_tzif(data, "Asia/Tokyo"):
+                Ok(z):
+                    println("tokyo=" + str(tz.offset_at(z, 2224756800)) + " " + tz.abbreviation_at(z, 2224756800))
+                Err(e):
+                    println("tokyo_parse=" + why(e))
+        Err(_):
+            println("tokyo_read=err")
+
+    match io.read_bytes("corelib/test/tz/Australia_Sydney.tzif"):
+        Ok(data):
+            match tz.parse_tzif(data, "Australia/Sydney"):
+                Ok(z):
+                    println("sydney_summer=" + str(tz.offset_at(z, 2210198400)) + " " + tz.abbreviation_at(z, 2210198400))
+                    println("sydney_winter=" + str(tz.offset_at(z, 2225923200)) + " " + tz.abbreviation_at(z, 2225923200))
+                Err(e):
+                    println("sydney_parse=" + why(e))
+        Err(_):
+            println("sydney_read=err")
 
     bad := to_bytes([88, 88, 88, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
     match tz.parse_tzif(bad, "bad"):

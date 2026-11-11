@@ -60,6 +60,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added `core:textmatch`, a Lua-pattern subset over POSIX ERE: `find`, `matches`,
   `gmatch` and `gsub` with capture references; non-greedy `-`, `%b` and `%f`
   are refused rather than given different semantics.
+- `core:tz` now parses the POSIX TZ footer, so timestamps after the last TZif
+  transition keep DST (including southern-hemisphere rules); leap-second
+  records remain ignored.
 - The tree is now 88 corelib packages and 94 golden test trees.
 
 ## [0.9.1] — 2026-11-10
