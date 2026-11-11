@@ -1,0 +1,93 @@
+package x509
+
+enum X509Err:
+    BadEncoding
+    Failed
+
+struct Certificate:
+    p: ptr
+
+extern fn x5x_parse_pem(pem: string) -> ptr
+extern fn x5x_parse_der(der: bytes) -> ptr
+extern fn x5x_free(c: ptr)
+extern fn x5x_subject(c: ptr) -> string
+extern fn x5x_issuer(c: ptr) -> string
+extern fn x5x_serial(c: ptr) -> string
+extern fn x5x_not_before(c: ptr) -> int
+extern fn x5x_not_after(c: ptr) -> int
+extern fn x5x_check_host(c: ptr, host: string) -> int
+extern fn x5x_verify(c: ptr, ca_pem: string, host: string) -> int
+
+fn _has_nul(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 0:
+            return true
+    return false
+
+fn parse_pem(pem: string) -> Result(Certificate, X509Err):
+    if _has_nul(pem) or len(pem) == 0:
+        return Err(BadEncoding)
+    p := x5x_parse_pem(pem)
+    if is_null(p):
+        return Err(BadEncoding)
+    return Ok(Certificate(p))
+
+fn parse_der(der: bytes) -> Result(Certificate, X509Err):
+    if len(der) == 0:
+        return Err(BadEncoding)
+    p := x5x_parse_der(der)
+    if is_null(p):
+        return Err(BadEncoding)
+    return Ok(Certificate(p))
+
+# Release the certificate exactly once.
+fn free(c: Certificate):
+    if is_null(c.p):
+        return
+    x5x_free(c.p)
+
+fn subject(c: Certificate) -> string:
+    if is_null(c.p):
+        return ""
+    return x5x_subject(c.p)
+
+fn issuer(c: Certificate) -> string:
+    if is_null(c.p):
+        return ""
+    return x5x_issuer(c.p)
+
+fn serial(c: Certificate) -> string:
+    if is_null(c.p):
+        return ""
+    return x5x_serial(c.p)
+
+# UNIX seconds, or -1 when the field cannot be read.
+fn not_before(c: Certificate) -> int:
+    if is_null(c.p):
+        return -1
+    return x5x_not_before(c.p)
+
+fn not_after(c: Certificate) -> int:
+    if is_null(c.p):
+        return -1
+    return x5x_not_after(c.p)
+
+fn is_valid_at(c: Certificate, secs: int) -> bool:
+    nb := not_before(c)
+    na := not_after(c)
+    if nb < 0 or na < 0:
+        return false
+    return secs >= nb and secs <= na
+
+# X509_check_host semantics: SAN DNS names, falling back to CN.
+fn verify_hostname(c: Certificate, host: string) -> bool:
+    if is_null(c.p) or _has_nul(host):
+        return false
+    return x5x_check_host(c.p, host) == 1
+
+# Verify against one trusted CA certificate (PEM). An empty host skips the
+# hostname check. The CA is not persisted; each call builds a fresh store.
+fn verify_chain(c: Certificate, ca_pem: string, host: string) -> bool:
+    if is_null(c.p) or _has_nul(ca_pem) or _has_nul(host):
+        return false
+    return x5x_verify(c.p, ca_pem, host) == 1

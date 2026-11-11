@@ -1,0 +1,11 @@
+subject=true
+issuer=true
+serial_nonempty=true
+times=true,true
+valid_now=true valid_epoch=false valid_2100=false
+host_ok=true host_bad=false
+chain_ok=true chain_bad=false
+der_subject=true
+badpem=BadEncoding
+badnul=BadEncoding
+null=true,true

@@ -499,6 +499,12 @@ expression-bodied; pass a named function where you need a multi-line body.
   it and returns the digest — the same answer `hex(s)` gives for the concatenation.
   `hex_bytes(b)` hashes one complete `bytes` buffer through the runtime C fast path
   (SHA-NI, OpenSSL, or scalar) and returns the same 64-char digest.
+- **`x509`** — X.509 certificate inspection and verification over OpenSSL
+  (`deps: openssl`). `parse_pem`/`parse_der` return a `Certificate` handle;
+  `subject`, `issuer`, `serial`, `not_before`/`not_after` (UNIX seconds),
+  `is_valid_at(c, secs)`, `verify_hostname(c, host)` (SAN DNS with CN fallback),
+  and `verify_chain(c, ca_pem, host)` against one trusted CA. `free(c)` releases
+  the handle exactly once.
 - **`bignum`** — arbitrary-precision integers in pure Tycho (sign + base-10⁹ limb array),
   value-semantic: `from_int`/`from_str`/`to_str`/`to_int`, `add`/`sub`/`mul`/`divmod`/`div`/
   `mod`/`pow`, `abs`/`neg`/`cmp`/`is_zero`.

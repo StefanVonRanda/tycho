@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 73 packages, ~14.2k lines, 919 locked
+lines). The current Tycho corelib is 74 packages, ~14.4k lines, 930 locked
 public functions.
 
 Status values:
@@ -24,7 +24,7 @@ Status values:
 | `c` | non-goal | `extern fn` FFI plus internal `*_shim.c` files | none |
 | `compress` | partial | gzip/zlib via zlib: `compress`, `decompress`, `raw_compress`, `raw_decompress` | split gzip/zlib framing, add LZ4 and a streaming API |
 | `container` | partial | `Deque`/`Queue`, `PriorityQueue`, `BitArray`, `Lru`; `pool` covers generational handles | ordered map/tree, small array, topological sort |
-| `crypto` | partial | OpenSSL shims: ChaCha20-Poly1305 and AES-GCM AEAD, AES-CTR, RSA PKCS#1 v1.5, ECDSA P-256, Ed25519, X25519, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, CSPRNG; ASN.1 DER/BER in its own package | AES-CBC, Argon2id, X.509; post-quantum only if dependency policy allows |
+| `crypto` | partial | OpenSSL shims: ChaCha20-Poly1305 and AES-GCM AEAD, AES-CTR, RSA PKCS#1 v1.5, ECDSA P-256, Ed25519, X25519, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, CSPRNG; ASN.1 DER/BER and X.509 parsing/verification in their own packages | AES-CBC, Argon2id; post-quantum only if dependency policy allows |
 | `debug` | partial | runtime traps and `tycho-debug bt`; no library API | `trace`, stack-trace capture, assertion helpers |
 | `diff` | covered | `diff.lines` and `diff.unified` (LCS, bounded fallback) | none |
 | `dynlib` | missing | none | `dlopen`/`LoadLibrary` shim |

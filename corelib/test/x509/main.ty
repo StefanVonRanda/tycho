@@ -1,0 +1,42 @@
+package main
+
+import "core:pem"
+import "core:x509"
+
+fn cert_of(r: Result(x509.Certificate, x509.X509Err)) -> x509.Certificate:
+    match r:
+        Ok(c): return c
+        Err(_): return x509.Certificate(null)
+
+fn bad(r: Result(x509.Certificate, x509.X509Err)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(x509.BadEncoding): return "BadEncoding"
+        Err(x509.Failed): return "Failed"
+
+fn contains(s: string, sub: string) -> bool:
+    return find(s, sub) >= 0
+
+fn main():
+    c := cert_of(x509.parse_pem(X509_CERT))
+    println("subject=" + str(contains(x509.subject(c), "example.test")))
+    println("issuer=" + str(contains(x509.issuer(c), "example.test")))
+    println("serial_nonempty=" + str(len(x509.serial(c)) > 0))
+    nb := x509.not_before(c)
+    na := x509.not_after(c)
+    println("times=" + str(nb > 0) + "," + str(na > nb))
+    println("valid_now=" + str(x509.is_valid_at(c, now())) + " valid_epoch=" + str(x509.is_valid_at(c, 0)) + " valid_2100=" + str(x509.is_valid_at(c, 4102444800)))
+    println("host_ok=" + str(x509.verify_hostname(c, "example.test")) + " host_bad=" + str(x509.verify_hostname(c, "other.test")))
+    println("chain_ok=" + str(x509.verify_chain(c, X509_CERT, "example.test")) + " chain_bad=" + str(x509.verify_chain(c, X509_CERT, "other.test")))
+    block := pem.Block("", to_bytes([]int))
+    match pem.decode(X509_CERT):
+        Ok(b): block = b
+        Err(_): pass
+    der := cert_of(x509.parse_der(block.data))
+    println("der_subject=" + str(contains(x509.subject(der), "example.test")))
+    x509.free(der)
+    x509.free(c)
+    println("badpem=" + bad(x509.parse_pem("not a certificate")))
+    println("badnul=" + bad(x509.parse_pem("x" + chr(0))))
+    empty := x509.Certificate(null)
+    println("null=" + str(len(x509.subject(empty)) == 0) + "," + str(x509.is_valid_at(empty, now()) == false))
