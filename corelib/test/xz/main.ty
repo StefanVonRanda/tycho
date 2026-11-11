@@ -1,0 +1,38 @@
+package main
+import "core:xz"
+
+fn main():
+    original := to_bytes("hello xz\n")
+    match xz.compress(original):
+        Ok(c):
+            println("compressed=" + str(len(c) > 0))
+            match xz.decompress(c):
+                Ok(d): println("roundtrip=" + str(to_str(d) == "hello xz\n"))
+                Err(_): println("roundtrip=err")
+        Err(_):
+            println("compress=err")
+
+    empty := to_bytes([]int)
+    match xz.compress(empty):
+        Ok(c):
+            match xz.decompress(c):
+                Ok(d): println("empty=" + str(len(d) == 0))
+                Err(_): println("empty=err")
+        Err(_):
+            println("empty=compress-err")
+
+    fixed := to_bytes([253, 55, 122, 88, 90, 0, 0, 4, 230, 214, 180, 70, 4, 192, 13, 9,
+        33, 1, 22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 95, 79, 51, 228,
+        1, 0, 8, 104, 101, 108, 108, 111, 32, 120, 122, 10, 0, 0, 0, 0,
+        193, 73, 58, 250, 99, 82, 20, 90, 0, 1, 41, 9, 100, 146, 28, 29,
+        31, 182, 243, 125, 1, 0, 0, 0, 0, 4, 89, 90])
+    match xz.decompress(fixed):
+        Ok(d): println("fixed=[" + to_str(d) + "]")
+        Err(_): println("fixed=err")
+
+    bad := to_bytes([1, 2, 3])
+    match xz.decompress(bad):
+        Ok(_): println("bad=Ok")
+        Err(xz.Corrupt): println("bad=Corrupt")
+        Err(xz.Truncated): println("bad=Truncated")
+        Err(_): println("bad=Other")

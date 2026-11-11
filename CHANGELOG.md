@@ -46,7 +46,7 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added the libm trig/exp/log surface to `core:fmath`.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM/PBM codecs to `core:raster`,
   and baseline JPEG encode/decode to `core:image`.
-- The tree is now 86 corelib packages and 92 golden test trees.
+- The tree is now 87 corelib packages and 93 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

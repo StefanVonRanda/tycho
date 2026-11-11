@@ -1,0 +1,6 @@
+compressed=true
+roundtrip=true
+empty=true
+fixed=[hello xz
+]
+bad=Truncated

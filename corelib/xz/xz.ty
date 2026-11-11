@@ -1,0 +1,43 @@
+# xz container format over liblzma. This is not raw LZMA2 and not .lzma.
+package xz
+
+enum XzErr:
+    Corrupt
+    Truncated
+    TooBig
+    Failed
+
+extern fn xzx_compress(data: bytes, status: inout int) -> bytes
+extern fn xzx_decompress(data: bytes, status: inout int) -> bytes
+
+const XZ_OK = 0
+const XZ_CORRUPT = 1
+const XZ_TRUNCATED = 2
+const XZ_TOOBIG = 3
+const XZ_FAILED = 4
+
+fn _cause(st: int) -> XzErr:
+    if st == XZ_CORRUPT:
+        return Corrupt
+    if st == XZ_TRUNCATED:
+        return Truncated
+    if st == XZ_TOOBIG:
+        return TooBig
+    return Failed
+
+# Compress to an xz stream (preset 6, CRC64 check).
+fn compress(data: bytes) -> Result(bytes, XzErr):
+    st := 0
+    b := xzx_compress(data, &st)
+    if st == XZ_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
+# Decompress an xz stream. The output ceiling is 1 GiB, so a bomb fails
+# closed as Err(TooBig) rather than exhausting the process.
+fn decompress(data: bytes) -> Result(bytes, XzErr):
+    st := 0
+    b := xzx_decompress(data, &st)
+    if st == XZ_OK:
+        return Ok(b)
+    return Err(_cause(st))

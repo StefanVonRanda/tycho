@@ -1150,6 +1150,8 @@
   "xml.tag": "(n: Node)-> string",
   "xml.text": "(n: Node)-> string",
   "xml.text_content": "(n: Node)-> string",
+  "xz.compress": "(data: bytes)-> Result(bytes, XzErr)",
+  "xz.decompress": "(data: bytes)-> Result(bytes, XzErr)",
   "zip.crc32": "(b: bytes)-> int",
   "zip.create": "(entries: [Entry])-> bytes",
   "zip.create_checked": "(entries: [Entry])-> Result(bytes, string)",
