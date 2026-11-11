@@ -1,5 +1,24 @@
 package main
+import "core:base64"
 import "core:image"
+
+const JPEG_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAAgACADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD4vooor+Uz/fw/Siiiiv5bP+Fc/Buiiiv+0w/1YP7iKKKK/wAAz9UP/9k="
+
+fn rgb_at(img: image.Image, x: int, y: int) -> (int, int, int):
+    p := (y * img.width + x) * 4
+    return (img.pixels[p], img.pixels[p + 1], img.pixels[p + 2])
+
+fn near(r: int, g: int, b: int, rr: int, gg: int, bb: int, tol: int) -> bool:
+    dr := r - rr
+    if dr < 0:
+        dr = 0 - dr
+    dg := g - gg
+    if dg < 0:
+        dg = 0 - dg
+    db := b - bb
+    if db < 0:
+        db = 0 - db
+    return dr <= tol and dg <= tol and db <= tol
 
 fn b2i(b: bool) -> int:
     if b:
@@ -70,3 +89,20 @@ fn main():
     dec_err("empty", to_bytes(""))                                               # Err(Empty)
     enc_err("enc_zero", image.make(0, 0, to_bytes("")))                          # Err(BadDims)
     enc_err("enc_short", image.make(10, 10, to_bytes("abc")))                    # Err(ShortPixels)
+
+    # ---- baseline JPEG decode (vendored stb_image, JPEG only) ----
+    jimg := image.make(0, 0, to_bytes([]int))
+    jr := image.decode_jpeg(to_bytes(base64.decode(JPEG_B64)))
+    match jr:
+        Ok(im): jimg = im
+        Err(e): println("jpeg failed: " + why(e))
+    println("jpeg_dims=" + str(jimg.width) + "x" + str(jimg.height))
+    r1, g1, b1 := rgb_at(jimg, 8, 8)
+    r2, g2, b2 := rgb_at(jimg, 24, 8)
+    r3, g3, b3 := rgb_at(jimg, 8, 24)
+    r4, g4, b4 := rgb_at(jimg, 24, 24)
+    println("jpeg_colors=" + str(b2i(near(r1, g1, b1, 255, 0, 0, 100) and near(r2, g2, b2, 0, 255, 0, 100) and near(r3, g3, b3, 0, 0, 255, 100) and near(r4, g4, b4, 255, 255, 255, 100))))
+    match image.decode(to_bytes(base64.decode(JPEG_B64))):
+        Ok(im): println("jpeg_auto=" + str(b2i(im.width == 32 and im.height == 32)))
+        Err(_): println("jpeg_auto=false")
+    dec_err("jpeg_corrupt", to_bytes([255, 216, 255]))

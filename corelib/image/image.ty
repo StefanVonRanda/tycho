@@ -30,6 +30,7 @@ enum ImgErr:
 extern fn imgx_decode(data: bytes, status: inout int) -> ptr   # decoded-image handle; null on failure
 extern fn imgx_width(h: ptr) -> int
 extern fn imgx_height(h: ptr) -> int
+extern fn imgx_jpeg_decode(data: bytes, status: inout int) -> ptr
 extern fn imgx_pixels(h: ptr) -> bytes           # RGBA copy, width*height*4 bytes
 extern fn imgx_free(h: ptr)
 extern fn imgx_encode(pixels: bytes, w: int, h: int, status: inout int) -> bytes   # RGBA -> PNG bytes
@@ -69,7 +70,25 @@ fn _cause(st: int) -> ImgErr:
 #   Err(NotPng)      the header did not read -- wrong signature, or it stops inside the header
 #   Err(Corrupt)     the header read, the pixel data did not -- truncated or damaged
 #   Err(Failed)      an allocation failed
+# JPEG (baseline) through the vendored stb_image.
+fn decode_jpeg(data: bytes) -> Result(Image, ImgErr):
+    if len(data) == 0:
+        return Err(Empty)
+    st := 0
+    h := imgx_jpeg_decode(data, &st)
+    if is_null(h):
+        return Err(_cause(st))
+    w := imgx_width(h)
+    ht := imgx_height(h)
+    px := imgx_pixels(h)
+    imgx_free(h)
+    return Ok(Image(w, ht, px))
+
 fn decode(data: bytes) -> Result(Image, ImgErr):
+    if len(data) == 0:
+        return Err(Empty)
+    if len(data) >= 2 and data[0] == 255 and data[1] == 216:
+        return decode_jpeg(data)
     st := 0
     h := imgx_decode(data, &st)
     if is_null(h):

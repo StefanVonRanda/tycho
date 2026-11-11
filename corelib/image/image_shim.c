@@ -1,3 +1,10 @@
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_JPEG
+#define STBI_NO_STDIO
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include "stb_image.h"
+#pragma GCC diagnostic pop
 #include <png.h>
 #include <stdlib.h>
 #include <string.h>
@@ -195,4 +202,28 @@ void imgx_encode(const unsigned char *pixels, tycho_int plen, tycho_int w, tycho
     *out = buf;
     *outlen = (tycho_int)nbytes;
     *status = IMG_OK;
+}
+
+/* Baseline JPEG decode through the vendored stb_image (JPEG only). */
+void *imgx_jpeg_decode(const unsigned char *data, tycho_int len, tycho_int *status) {
+    *status = IMG_CORRUPT;
+    if (len <= 0) { *status = IMG_EMPTY; return NULL; }
+    if (len > INT32_MAX) { *status = IMG_FAILED; return NULL; }
+    int w = 0, h = 0, n = 0;
+    unsigned char *px = stbi_load_from_memory(data, (int)len, &w, &h, &n, 4);
+    if (!px || w <= 0 || h <= 0) {
+        if (px) stbi_image_free(px);
+        return NULL;
+    }
+    size_t nbytes = (size_t)w * (size_t)h * 4;
+    if (nbytes > IMG_MAX_OUT) { stbi_image_free(px); *status = IMG_TOOBIG; return NULL; }
+    Img *im = (Img *)calloc(1, sizeof *im);
+    if (!im) { stbi_image_free(px); *status = IMG_FAILED; return NULL; }
+    im->w = w;
+    im->h = h;
+    im->rgba = px;
+    im->nbytes = nbytes;
+    imgx_add(im);
+    *status = IMG_OK;
+    return (void *)(uintptr_t)im->id;
 }

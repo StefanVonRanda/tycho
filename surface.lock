@@ -570,6 +570,7 @@
   "httpd.with_header": "(r: Response, key: string, val: string)-> Response",
   "httpd.write_response": "(fd: int, r: Response)-> Result(int, net.NetErr)",
   "image.decode": "(data: bytes)-> Result(Image, ImgErr)",
+  "image.decode_jpeg": "(data: bytes)-> Result(Image, ImgErr)",
   "image.encode": "(img: Image)-> Result(bytes, ImgErr)",
   "image.make": "(width: int, height: int, pixels: bytes)-> Image",
   "ini.get": "(d: Document, section: string, key: string)-> Option(string)",

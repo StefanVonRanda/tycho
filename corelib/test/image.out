@@ -7,3 +7,7 @@ garbage=Err(NotPng)
 empty=Err(Empty)
 enc_zero=Err(BadDims)
 enc_short=Err(ShortPixels)
+jpeg_dims=32x32
+jpeg_colors=1
+jpeg_auto=1
+jpeg_corrupt=Err(Corrupt)

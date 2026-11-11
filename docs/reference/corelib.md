@@ -995,12 +995,15 @@ plus four more:
   `raw_compress(data)` is the same deflate without the gzip framing, for callers that
   supply their own container. Each decompression is capped at 1 GiB (or the zlib `uInt`
   limit when lower).
-- **`image`** — PNG decode/encode over **libpng** (`deps: libpng`): `decode(bytes) ->
+- **`image`** — PNG decode/encode over **libpng** (`deps: libpng`) plus baseline
+  JPEG decode through a vendored JPEG-only `stb_image`; `decode(bytes) ->
   Result(Image{width, height, pixels}, ImgErr)` (8-bit RGBA) and `encode(Image) ->
-  Result(bytes, ImgErr)`. `ImgErr` names which failure: `Empty`, `NotPng`, `Corrupt` on the
-  decode side, `BadDims`, `ShortPixels` on the encode side, `Failed` for an allocation or
-  a libpng failure. PNG has no 0-dimension image, so an `Ok` always carries `width >= 1`.
-  JPEG is a demand-gated follow-up.
+  Result(bytes, ImgErr)`. `decode` dispatches PNG or baseline JPEG by magic;
+  `decode_jpeg(bytes)` is the explicit JPEG entry point. `ImgErr` names which
+  failure: `Empty`, `NotPng`, `Corrupt` on the decode side, `BadDims`,
+  `ShortPixels` on the encode side, `Failed` for an allocation or codec failure.
+  PNG has no 0-dimension image, so an `Ok` always carries `width >= 1`. JPEG
+  encoding is not implemented.
 - **`tls`** — a TLS 1.2/1.3 client over **OpenSSL** (`deps: openssl`). Secure by default:
   `connect(host, port)` verifies the certificate against the system CA store, checks the
   hostname, and sends SNI; failure returns a null handle (never a silent insecure
