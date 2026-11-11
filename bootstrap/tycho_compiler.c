@@ -7834,6 +7834,7 @@ TychoArrStr h_types___pkg_cands(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_
 char *h_types___pkg_dym(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_rs, char *h_q, char *h_name);
 int h_types___ends_ret(Arena *_parent, TychoArrK3 h_body);
 void h_types___warn(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_rs, char *h_msg);
+int h_types___repo_internal(Arena *_parent, char *h_path);
 void h_types__report_dead(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_rs);
 TychoArrStr h_types__warn_lines(Arena *_parent, S_types__R h_rs);
 void h_types___err(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_rs, char *h_msg);
@@ -17307,6 +17308,10 @@ void h_types___warn(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_rs, char *h_
     tycho_arr_str_push_move(_ina_h_rs, &((((*h_rs)).f_warns)), tycho_str_concat6(_ina_h_rs, (((*h_rs)).f_file), TYCHO_LIT(":"), tycho_int_to_str(_ina_h_rs, (((*h_rs)).f_line)), TYCHO_LIT(": warning: "), h_msg, h_types___excerpt(_ina_h_rs, &((*h_rs)), _ina_h_rs, (((*h_rs)).f_file), (((*h_rs)).f_line))));
 }
 
+int h_types___repo_internal(Arena *_parent, char *h_path) {
+    { int _ret = (((((h_strings__contains(_parent, h_path, TYCHO_LIT("compiler/")) || h_strings__contains(_parent, h_path, TYCHO_LIT("corelib/"))) || h_strings__contains(_parent, h_path, TYCHO_LIT("tools/"))) || h_strings__contains(_parent, h_path, TYCHO_LIT("bench/"))) || h_strings__contains(_parent, h_path, TYCHO_LIT("examples/"))) || h_strings__contains(_parent, h_path, TYCHO_LIT("server/"))); return _ret; }
+}
+
 void h_types__report_dead(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_rs) {
     Arena _scope = arena_child(_parent); _scope.name = "types__report_dead";
     {
@@ -17723,7 +17728,7 @@ void h_types___restore(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_rs, tycho
                     tycho_int _ps1300 = ((tycho_arr_K20_get((((*h_rs)).f_vars), h_i)).f_line);
                     (((*h_rs)).f_line) = _ps1300;
                     if (tycho_str_eq(((tycho_arr_K20_get((((*h_rs)).f_vars), h_i)).f_kind), TYCHO_LIT("bind"))) {
-                        if (!h_strings__contains(&_scr1299, (((*h_rs)).f_file), TYCHO_LIT("compiler/"))) {
+                        if (!h_types___repo_internal(&_scr1299, (((*h_rs)).f_file))) {
                             h_types___warn(&_scr1299, &((*h_rs)), _ina_h_rs, tycho_str_concat3(&_scr1299, TYCHO_LIT("'"), ((tycho_arr_K20_get((((*h_rs)).f_vars), h_i)).f_name), TYCHO_LIT("' payload is never used; write _ to discard it")));
                         }
                     } else {
@@ -18157,7 +18162,7 @@ void h_types___expr(Arena *_parent, S_types__R *h_rs, Arena *_ina_h_rs, TychoMap
             TychoArrK0 h_args = _m1355->u.V_Call.f4;
             h_types___tys(_parent, &((*h_rs)), _ina_h_rs, h_ts);
             if (tycho_str_len(h_q) == 0LL) {
-                if ((((tycho_str_eq(h_n, TYCHO_LIT("read_file")) && tycho_mapM0_has(h_bi, h_n)) && (!h_types___callable(_parent, h_types___kindof(&_scope, &((*h_rs)), _ina_h_rs, h_n)))) && (!h_strings__contains(_parent, (((*h_rs)).f_file), TYCHO_LIT("corelib/")))) && (!h_strings__contains(_parent, (((*h_rs)).f_file), TYCHO_LIT("compiler/")))) {
+                if (((tycho_str_eq(h_n, TYCHO_LIT("read_file")) && tycho_mapM0_has(h_bi, h_n)) && (!h_types___callable(_parent, h_types___kindof(&_scope, &((*h_rs)), _ina_h_rs, h_n)))) && (!h_types___repo_internal(_parent, (((*h_rs)).f_file)))) {
                     tycho_int _ps1356 = h_l;
                     (((*h_rs)).f_line) = _ps1356;
                     h_types___warn(_parent, &((*h_rs)), _ina_h_rs, TYCHO_LIT("read_file is fail-open: a missing, unreadable or empty file all return \"\"; use core:io.read_text when the difference matters"));

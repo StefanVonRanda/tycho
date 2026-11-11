@@ -863,10 +863,15 @@ void osx_read_fd(tycho_int fd, tycho_int max, tycho_int *status,
     if (!buf) return;
 #ifdef _WIN32
     int n = _read((int)fd, buf, (unsigned int)max);
-#else
-    ssize_t n = read((int)fd, buf, (size_t)max);
-#endif
     if (n < 0) { free(buf); return; }
+#else
+    ssize_t n;
+    for (;;) {
+        n = read((int)fd, buf, (size_t)max);
+        if (n >= 0) break;
+        if (errno != EINTR) { free(buf); return; }
+    }
+#endif
     *out = buf;
     *outlen = (tycho_int)n;
     *status = 0;
@@ -876,14 +881,24 @@ tycho_int osx_write_fd(tycho_int fd, const unsigned char *data, tycho_int len,
                        tycho_int *status) {
     *status = 2;
     if (fd < 0 || len < 0) return -1;
+    tycho_int off = 0;
+    while (off < len) {
 #ifdef _WIN32
-    int n = _write((int)fd, data, (unsigned int)len);
+        int n = _write((int)fd, data + off, (unsigned int)(len - off));
 #else
-    ssize_t n = write((int)fd, data, (size_t)len);
+        ssize_t n = write((int)fd, data + off, (size_t)(len - off));
 #endif
-    if (n < 0) return -1;
+        if (n < 0) {
+#ifndef _WIN32
+            if (errno == EINTR) continue;
+#endif
+            return -1;
+        }
+        if (n == 0) return -1;
+        off += (tycho_int)n;
+    }
     *status = 0;
-    return (tycho_int)n;
+    return off;
 }
 
 void osx_close_fd(tycho_int fd) {

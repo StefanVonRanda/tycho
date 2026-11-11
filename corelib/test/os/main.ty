@@ -292,9 +292,16 @@ fn main():
             match os.write_fd(wfd, to_bytes("ping")):
                 Ok(n): println("pipe_write=" + str(n == 4))
                 Err(_): println("pipe_write=false")
-            match os.read_fd(rfd, 16):
-                Ok(b): println("pipe_read=" + str(to_str(b) == "ping"))
-                Err(_): println("pipe_read=false")
+            got := ""
+            for len(got) < 4:
+                match os.read_fd(rfd, 16):
+                    Ok(b):
+                        if len(b) == 0:
+                            break
+                        got = got + to_str(b)
+                    Err(_):
+                        break
+            println("pipe_read=" + str(got == "ping"))
             os.close_fd(rfd)
             os.close_fd(wfd)
         Err(_):

@@ -26,6 +26,7 @@ fn main():
     b := Point(y: 2, x: 1)      # named construction, any order; all fields exactly once
     r := Rect(a, Point(4, 6))
     r.lo.x = 100               # nested field write, in place
+    println(str(b.x) + " " + str(b.y))
 ```
 
 Named construction is the readable form for a struct with several empty
@@ -39,6 +40,7 @@ struct Graph:
     rev: [[int]]
 
 g := Graph(rev: [], adj: [], nodes: [], edges: [])
+println(str(len(g.nodes)) + "," + str(len(g.edges)))
 ```
 
 A field name follows the same rule as any other name: it may not be a

@@ -322,6 +322,7 @@ struct Point:
 a := Point(1, 2)         # positional, in declaration order
 b := Point(y: 2, x: 1)   # named, any order; every field exactly once
 _c := a                   # deep copy; b.x, b.y independent of a
+println(str(b.x) + " " + str(b.y))
 ```
 
 As a complete program:

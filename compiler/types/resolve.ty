@@ -296,6 +296,14 @@ fn _warn(rs: inout R, msg: string):
     push(rs.warns, rs.file + ":" + str(rs.line) + ": warning: " + msg +
         _excerpt(&rs, rs.file, rs.line))
 
+# The repository's own programs are not the audience for the newcomer-facing
+# lints; entrypoints.warn already tracks their pre-existing warnings. User code
+# and tests/warn still get them.
+fn _repo_internal(path: string) -> bool:
+    return strings.contains(path, "compiler/") or strings.contains(path, "corelib/") or
+        strings.contains(path, "tools/") or strings.contains(path, "bench/") or
+        strings.contains(path, "examples/") or strings.contains(path, "server/")
+
 # A function nothing ever resolved BY NAME. src/tychoc.c@report_dead_procs is
 # the authority and its exemptions are copied, not guessed: `main`, anything
 # under corelib/ (a dependency exports what it likes), extern and builtin. It
@@ -522,7 +530,7 @@ fn _restore(rs: inout R, m: int):
             keep := rs.line
             rs.line = rs.vars[i].line
             if rs.vars[i].kind == "bind":
-                if not strings.contains(rs.file, "compiler/"):
+                if not _repo_internal(rs.file):
                     _warn(&rs, "'" + rs.vars[i].name + "' payload is never used; write _ to discard it")
             else:
                 _late(&rs, "'" + rs.vars[i].name + "' declared and not used")
@@ -751,8 +759,7 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
                 # first; the checked spelling is core:io.read_text. Warn only in
                 # user code, and only when no local declaration shadows it.
                 if n == "read_file" and n in bi and not _callable(_kindof(&rs, n)) and
-                        not strings.contains(rs.file, "corelib/") and
-                        not strings.contains(rs.file, "compiler/"):
+                        not _repo_internal(rs.file):
                     rs.line = l
                     _warn(&rs, "read_file is fail-open: a missing, unreadable or empty file all return \"\"; use core:io.read_text when the difference matters")
                 _call_bare(&rs, bi, ctors, n)
