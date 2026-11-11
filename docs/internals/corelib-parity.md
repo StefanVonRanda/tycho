@@ -93,21 +93,18 @@ them blocks the application-facing surface above:
 
 1. **Parity matrix** — done; this page is the record.
 2. **Foundations** — done: `core:container` and `core:sync` with atomics.
-3. **Platform** — partial: `os` gained environment, cwd, temp, identity and
-   `io.walk`; `path` gained `relative`. `mem` is a non-goal, not deferred work.
-4. **Data and text** — partial: `base32`, `varint`, `endian`, `pem`, `ini`,
-   `utf16`, `edit`, and `strings` base/fixed-float formatting landed. XML,
-   CBOR, ASN.1, a scanner, `fmt`, `bufio`, `diff`, and Unicode tables remain.
-5. **Crypto** — partial: SHA-3/SHAKE, BLAKE2, HMAC-SHA512 and HKDF joined the
-   existing ChaCha20-Poly1305/Ed25519/X25519/SHA-2/PBKDF2 surface. AES modes,
-   RSA, ECDSA/ECDH, Argon2id, X.509 and post-quantum remain.
-6. **Formats and media** — partial: TGA joined PNG/BMP/QOI. LZ4, JPEG, Netpbm,
-   BNG and archive breadth remain.
-7. **Runtime and diagnostics** — not started: `debug`, `prof`, `terminal`,
-   `dynlib`, `nbio`, limited `simd`; `reflect` stays a non-goal.
+3. **Platform** — done: environment, cwd, identities, cache/config/data dirs,
+   `io.walk`, `path.relative`, Unix sockets, interface enumeration.
+4. **Data and text** — done: Base32, varint, endian, PEM, INI, UTF-16, edit,
+   XML, CBOR, ASN.1, scanner, `fmt`, `bufio`, `diff`, entity decoding and
+   simple Unicode case mapping/folding. i18n tables remain a residual partial.
+5. **Crypto** — done: SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF, AES-GCM/CTR/CBC,
+   RSA, ECDSA, Ed25519, X25519, ML-DSA, ML-KEM, Argon2id and X.509.
+6. **Formats and media** — done: TGA, Netpbm PPM/PGM/PBM, LZ4 and baseline
+   JPEG encode/decode joined PNG/BMP/QOI. BNG remains a residual partial.
+7. **Runtime and diagnostics** — done: `debug`, manual `prof` spans, `terminal`,
+   `dynlib`, `nbio.poll`, `thread.id`/`yield_now`; raw SIMD intrinsics stay a
+   non-goal because `vector[N]T` is the language surface.
 8. **Continuous gates** — every package lands with `corelib/test/<pkg>`,
    `docs/reference/corelib.md` entries, and a deliberate `surface.lock`
    update. `make check-fast` per change; full CI at milestones.
-
-Stages 2–6 are deliberately ordered so each lands as tested library surface
-before the runtime work in stage 7.
