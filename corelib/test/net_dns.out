@@ -1,0 +1,13 @@
+mx_count=2
+mx=10:mail.example.com
+mx=20:mail2.example.com
+txt_count=2
+txt=hello world
+txt=v=spf1 -all
+srv_count=1
+srv=10:60:5060:sip.example.com
+recs=2
+rec=other:example.com:1
+rec=mx:example.com:10:mail.example.com
+short=Truncated
+loop=Corrupt

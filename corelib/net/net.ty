@@ -622,3 +622,182 @@ fn prefix_contains_ip6(p: Ip6Prefix, ip: Ip6) -> bool:
         if a.o[i] != b.o[i]:
             return false
     return true
+
+# ---- DNS response parsing (MX / TXT / SRV) ----
+enum DnsErr:
+    Truncated
+    Corrupt
+    TooMany
+
+struct DnsMx:
+    preference: int
+    host: string
+
+struct DnsSrv:
+    priority: int
+    weight: int
+    port: int
+    target: string
+
+enum DnsData:
+    Mx(DnsMx)
+    Txt(string)
+    Srv(DnsSrv)
+    Other(int)
+
+struct DnsRecord:
+    name: string
+    ttl: int
+    data: DnsData
+
+fn _dns_u16(data: bytes, off: int) -> int:
+    if off < 0 or off + 2 > len(data):
+        return -1
+    return (data[off] << 8) | data[off + 1]
+
+fn _dns_u32(data: bytes, off: int) -> int:
+    if off < 0 or off + 4 > len(data):
+        return -1
+    return (data[off] << 24) | (data[off + 1] << 16) | (data[off + 2] << 8) | data[off + 3]
+
+# DNS name with compression pointers. `next` is the byte after the name at the
+# original position, even when the labels themselves were reached by a pointer.
+fn _dns_name(data: bytes, start: int) -> (string, int, bool):
+    out := ""
+    i := start
+    next := 0 - 1
+    depth := 0
+    for true:
+        if i < 0 or i >= len(data):
+            return "", start, false
+        b := data[i]
+        if b == 0:
+            i += 1
+            if next < 0:
+                next = i
+            return out, next, true
+        if (b & 192) == 192:
+            if i + 1 >= len(data):
+                return "", start, false
+            p := ((b & 63) << 8) | data[i + 1]
+            if p < 0 or p >= len(data) or depth >= 16:
+                return "", start, false
+            if next < 0:
+                next = i + 2
+            i = p
+            depth += 1
+            continue
+        if (b & 192) != 0:
+            return "", start, false
+        n := b
+        if n == 0 or n > 63 or i + 1 + n > len(data):
+            return "", start, false
+        if out != "":
+            out = out + "."
+        out = out + to_str(data[i + 1:i + 1 + n])
+        i = i + 1 + n
+    return out, start, false
+
+# Parse the ANSWER section. Other record types are returned as Other(type) so a
+# caller can skip A/AAAA/CNAME without losing the record stream.
+fn parse_dns(data: bytes) -> Result([DnsRecord], DnsErr):
+    if len(data) < 12:
+        return Err(Truncated)
+    qd := _dns_u16(data, 4)
+    an := _dns_u16(data, 6)
+    if qd < 0 or an < 0:
+        return Err(Corrupt)
+    if qd > 4096 or an > 4096:
+        return Err(TooMany)
+    off := 12
+    for i := 0; i < qd; i += 1:
+        _, next, ok := _dns_name(data, off)
+        if not ok:
+            return Err(Corrupt)
+        off = next
+        if off + 4 > len(data):
+            return Err(Truncated)
+        off += 4
+    out := []DnsRecord
+    for i := 0; i < an; i += 1:
+        name, next, ok := _dns_name(data, off)
+        if not ok:
+            return Err(Corrupt)
+        off = next
+        if off + 10 > len(data):
+            return Err(Truncated)
+        typ := _dns_u16(data, off)
+        ttl := _dns_u32(data, off + 4)
+        rdlen := _dns_u16(data, off + 8)
+        rdata := off + 10
+        if rdlen < 0 or rdata + rdlen > len(data):
+            return Err(Truncated)
+        if typ == 15:
+            if rdlen < 3:
+                return Err(Corrupt)
+            pref := _dns_u16(data, rdata)
+            host, n2, ok2 := _dns_name(data, rdata + 2)
+            if not ok2 or n2 > rdata + rdlen:
+                return Err(Corrupt)
+            push(out, DnsRecord(name, ttl, Mx(DnsMx(pref, host))))
+        elif typ == 16:
+            txt := ""
+            p := rdata
+            for p < rdata + rdlen:
+                n := data[p]
+                p += 1
+                if p + n > rdata + rdlen:
+                    return Err(Truncated)
+                txt = txt + to_str(data[p:p + n])
+                p += n
+            push(out, DnsRecord(name, ttl, Txt(txt)))
+        elif typ == 33:
+            if rdlen < 7:
+                return Err(Corrupt)
+            prio := _dns_u16(data, rdata)
+            weight := _dns_u16(data, rdata + 2)
+            port := _dns_u16(data, rdata + 4)
+            target, n2, ok2 := _dns_name(data, rdata + 6)
+            if not ok2 or n2 > rdata + rdlen:
+                return Err(Corrupt)
+            push(out, DnsRecord(name, ttl, Srv(DnsSrv(prio, weight, port, target))))
+        else:
+            push(out, DnsRecord(name, ttl, Other(typ)))
+        off = rdata + rdlen
+    return Ok(out)
+
+fn parse_mx(data: bytes) -> Result([DnsMx], DnsErr):
+    match parse_dns(data):
+        Ok(rs):
+            out := []DnsMx
+            for r in rs:
+                match r.data:
+                    Mx(m): push(out, m)
+                    _: pass
+            return Ok(out)
+        Err(e):
+            return Err(e)
+
+fn parse_txt(data: bytes) -> Result([string], DnsErr):
+    match parse_dns(data):
+        Ok(rs):
+            out := []string
+            for r in rs:
+                match r.data:
+                    Txt(t): push(out, t)
+                    _: pass
+            return Ok(out)
+        Err(e):
+            return Err(e)
+
+fn parse_srv(data: bytes) -> Result([DnsSrv], DnsErr):
+    match parse_dns(data):
+        Ok(rs):
+            out := []DnsSrv
+            for r in rs:
+                match r.data:
+                    Srv(s): push(out, s)
+                    _: pass
+            return Ok(out)
+        Err(e):
+            return Err(e)

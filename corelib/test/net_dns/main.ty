@@ -1,0 +1,76 @@
+package main
+import "core:io"
+import "core:net"
+
+fn why(e: net.DnsErr) -> string:
+    if e == net.Truncated:
+        return "Truncated"
+    if e == net.Corrupt:
+        return "Corrupt"
+    if e == net.TooMany:
+        return "TooMany"
+    return "?"
+
+fn main():
+    match io.read_bytes("corelib/test/net_dns/mx.bin"):
+        Ok(d):
+            match net.parse_mx(d):
+                Ok(rs):
+                    println("mx_count=" + str(len(rs)))
+                    for r in rs:
+                        println("mx=" + str(r.preference) + ":" + r.host)
+                Err(e):
+                    println("mx_err=" + why(e))
+        Err(_):
+            println("mx_read=err")
+
+    match io.read_bytes("corelib/test/net_dns/txt.bin"):
+        Ok(d):
+            match net.parse_txt(d):
+                Ok(rs):
+                    println("txt_count=" + str(len(rs)))
+                    for r in rs:
+                        println("txt=" + r)
+                Err(e):
+                    println("txt_err=" + why(e))
+        Err(_):
+            println("txt_read=err")
+
+    match io.read_bytes("corelib/test/net_dns/srv.bin"):
+        Ok(d):
+            match net.parse_srv(d):
+                Ok(rs):
+                    println("srv_count=" + str(len(rs)))
+                    for r in rs:
+                        println("srv=" + str(r.priority) + ":" + str(r.weight) + ":" + str(r.port) + ":" + r.target)
+                Err(e):
+                    println("srv_err=" + why(e))
+        Err(_):
+            println("srv_read=err")
+
+    match io.read_bytes("corelib/test/net_dns/mixed.bin"):
+        Ok(d):
+            match net.parse_dns(d):
+                Ok(rs):
+                    println("recs=" + str(len(rs)))
+                    for r in rs:
+                        match r.data:
+                            net.Mx(m): println("rec=mx:" + r.name + ":" + str(m.preference) + ":" + m.host)
+                            net.Txt(t): println("rec=txt:" + r.name + ":" + t)
+                            net.Srv(s): println("rec=srv:" + r.name + ":" + str(s.priority) + ":" + str(s.weight) + ":" + str(s.port) + ":" + s.target)
+                            net.Other(t): println("rec=other:" + r.name + ":" + str(t))
+                Err(e):
+                    println("recs_err=" + why(e))
+        Err(_):
+            println("recs_read=err")
+
+    match net.parse_dns(to_bytes([0, 0, 0, 0])):
+        Ok(_): println("short=Ok")
+        Err(net.Truncated): println("short=Truncated")
+        Err(_): println("short=Other")
+
+    loop := to_bytes([0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 192, 12])
+    match net.parse_dns(loop):
+        Ok(_): println("loop=Ok")
+        Err(net.Corrupt): println("loop=Corrupt")
+        Err(_): println("loop=Other")

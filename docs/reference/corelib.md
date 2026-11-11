@@ -892,6 +892,14 @@ expression-bodied; pass a named function where you need a multi-line body.
   `format_ip4_prefix`/`format_ip6_prefix` (a bare address is `/32` or `/128`);
   `prefix_network_ip4`/`prefix_network_ip6` clear host bits and
   `prefix_contains_ip4`/`prefix_contains_ip6` test containment.
+  DNS response packets can be parsed without a resolver:
+  `parse_dns(data) -> Result([DnsRecord], DnsErr)` returns the ANSWER section,
+  with `DnsRecord{name, ttl, data}` and `DnsData` variants `Mx(DnsMx)`,
+  `Txt(string)`, `Srv(DnsSrv)` and `Other(type)`. `parse_mx`, `parse_txt` and
+  `parse_srv` filter to one record type. Name compression, MX preference,
+  TXT character-string chunks and SRV priority/weight/port are handled;
+  `DnsMx{preference, host}` and `DnsSrv{priority, weight, port, target}` carry
+  the decoded fields.
 - **`nbio`** — readiness polling. `poll(fds, events, timeout_ms) -> Result([Ready],
   NbioErr)` waits on each fd with an event mask of `READ`/`WRITE`
   (`Ready{fd, events}` carries the revents mask; a negative timeout waits
