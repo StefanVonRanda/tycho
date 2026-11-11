@@ -780,6 +780,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   `Failed`. Socket options are plain booleans: `set_reuse_addr`, `set_nodelay`,
   `set_keepalive`, `set_broadcast`, `set_nonblocking` (POSIX `fcntl`, Winsock
   `ioctlsocket`).
+- **`nbio`** — readiness polling. `poll(fds, events, timeout_ms) -> Result([Ready],
+  NbioErr)` waits on each fd with an event mask of `READ`/`WRITE`
+  (`Ready{fd, events}` carries the revents mask; a negative timeout waits
+  forever). POSIX uses `poll(2)`, Windows `WSAPoll`; `BadArg` covers a
+  length mismatch or timeout below -1.
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
   dependency — net is libc-only). The request/response plumbing is pure Tycho; the accept
   loop is the caller's. `parse_request(raw) -> Result(Request, httpd.ReqErr)`

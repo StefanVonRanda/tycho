@@ -668,6 +668,7 @@
   "math.sign": "(x: $T)-> int where numeric(T)",
   "md5.digest": "(msg: string)-> [int]",
   "md5.hex": "(msg: string)-> string",
+  "nbio.poll": "(fds: [int], events: [int], timeout_ms: int)-> Result([Ready], NbioErr)",
   "net.accept": "(fd: int)-> Result(int, NetErr)",
   "net.accept_wait": "(fd: int, ms: int)-> Result(int, NetErr)",
   "net.close_fd": "(fd: int)",

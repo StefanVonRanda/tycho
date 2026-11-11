@@ -1,0 +1,44 @@
+package main
+import "core:nbio"
+import "core:net"
+
+fn fd_of(r: Result(int, net.NetErr)) -> int:
+    match r:
+        Ok(v): return v
+        Err(_): return -1
+
+fn main():
+    a := fd_of(net.udp_bind_checked("127.0.0.1", 0))
+    b := fd_of(net.udp_bind_checked("127.0.0.1", 0))
+    pa := net.port_of(a)
+    port := 0
+    match pa:
+        Ok(p): port = p
+        Err(_): pass
+    empty := nbio.poll([a], [nbio.READ], 10)
+    z := 0
+    match empty:
+        Ok(xs): z = len(xs)
+        Err(_): z = -1
+    println("empty=" + str(z))
+    net.udp_send(b, "127.0.0.1", port, to_bytes("x"))
+    ready := nbio.poll([a], [nbio.READ], 100)
+    match ready:
+        Ok(xs):
+            if len(xs) == 1:
+                println("ready fd=" + str(xs[0].fd == a) + " read=" + str((xs[0].events & nbio.READ) != 0))
+            else:
+                println("ready count=" + str(len(xs)))
+        Err(_):
+            println("ready=ERR")
+    w := nbio.poll([a, b], [nbio.WRITE, nbio.WRITE], 10)
+    match w:
+        Ok(xs): println("write=" + str(len(xs)) + " all=" + str(len(xs) == 2))
+        Err(_): println("write=ERR")
+    bad := nbio.poll([a], [nbio.READ, nbio.WRITE], 10)
+    match bad:
+        Ok(_): println("bad=Ok")
+        Err(nbio.BadArg): println("bad=BadArg")
+        Err(nbio.Failed): println("bad=Failed")
+    net.close_fd(a)
+    net.close_fd(b)

@@ -1,0 +1,38 @@
+package nbio
+
+const READ = 1
+const WRITE = 2
+
+enum NbioErr:
+    BadArg
+    Failed
+
+struct Ready:
+    fd: int
+    events: int
+
+extern fn nbx_poll(fds: [int], events: [int], timeout_ms: int) -> ptr
+extern fn nbx_count(r: ptr) -> int
+extern fn nbx_fd(r: ptr, i: int) -> int
+extern fn nbx_events(r: ptr, i: int) -> int
+extern fn nbx_free(r: ptr)
+
+# Wait up to `timeout_ms` (negative waits forever) for readiness on each fd.
+# `events[i]` is a mask of READ/WRITE for `fds[i]`; the result carries the
+# revents mask in the same bit positions.
+fn poll(fds: [int], events: [int], timeout_ms: int) -> Result([Ready], NbioErr):
+    if len(fds) != len(events) or timeout_ms < -1:
+        return Err(BadArg)
+    if len(fds) == 0:
+        return Ok([]Ready)
+    r := nbx_poll(fds, events, timeout_ms)
+    if is_null(r):
+        return Err(Failed)
+    out := []Ready
+    n := nbx_count(r)
+    i := 0
+    for i < n:
+        push(out, Ready(nbx_fd(r, i), nbx_events(r, i)))
+        i += 1
+    nbx_free(r)
+    return Ok(out)

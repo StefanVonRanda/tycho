@@ -21,7 +21,7 @@ Tycho is a compiled language whose compiler (`src/tychoc.c`, a single
 dependency-free C file) **transpiles to C** and hands the result to `cc`. There
 is no VM and no runtime interpreter. Programs get value semantics, arena
 allocation freed at scope exit, and an affine `handle` type whose destructor runs
-at scope exit. The standard library (`corelib/`, 76 packages) is written in Tycho
+at scope exit. The standard library (`corelib/`, 77 packages) is written in Tycho
 except where it binds a system library, and those bindings are the subject below.
 
 **The security-relevant consequence of the design:** a Tycho program's memory

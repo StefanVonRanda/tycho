@@ -1,0 +1,4 @@
+empty=0
+ready fd=true read=true
+write=2 all=true
+bad=BadArg

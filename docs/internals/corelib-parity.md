@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 76 packages, ~14.9k lines, 965 locked
+lines). The current Tycho corelib is 77 packages, ~15.0k lines, 966 locked
 public functions.
 
 Status values:
@@ -37,7 +37,7 @@ Status values:
 | `log` | covered | leveled logger, stderr/file choice, `new`/`line` | none |
 | `math` | partial | `math`, `fmath` (trig/exp/log/hypot), `decimal`, `bignum`, `rand` | linear algebra, complex, fixed-point, easing, noise, bit operations |
 | `mem` | non-goal | implicit arenas; no public allocator API | none — explicit allocators, virtual memory and TLSF are a different memory model |
-| `nbio` | missing | `net.wait_readable`/`accept_wait` cover small poll loops | epoll/kqueue/IOCP wrapper |
+| `nbio` | partial | `nbio.poll` over `poll(2)`/`WSAPoll` with READ/WRITE masks | epoll/kqueue/IOCP completion loops |
 | `net` | partial | TCP/UDP, timeouts, TLS, HTTP/HTTPD; DNS `resolve`; reuse-addr/nodelay/keepalive/broadcast/nonblocking options | interface enumeration, Unix sockets, address parsing helpers |
 | `odin` | non-goal | Tycho has its own compiler packages | none |
 | `os` | partial | process execution, environment, cwd/chdir, pid/ppid, hostname, home/temp, `chmod`/`umask`, uid/gid, `io.walk` | user cache/config dirs, process-signal helpers beyond `core:signal` |
