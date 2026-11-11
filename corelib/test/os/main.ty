@@ -221,3 +221,4 @@ fn main():
         None: pass
     println("home_nonempty=" + str(home))
     println("temp_nonempty=" + str(len(os.temp_dir()) > 0))
+    println("dirs=" + str(len(os.cache_dir()) > 0) + "," + str(len(os.config_dir()) > 0) + "," + str(len(os.data_dir()) > 0))

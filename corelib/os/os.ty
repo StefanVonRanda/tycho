@@ -253,3 +253,52 @@ fn egid() -> int:
 
 fn ppid() -> int:
     return osx_getppid()
+
+fn _env_value(name: string) -> string:
+    match env(name):
+        Some(v):
+            if len(v) > 0:
+                return v
+        None:
+            pass
+    return ""
+
+fn _home_join(suffix: string) -> string:
+    match home_dir():
+        Some(h):
+            if len(h) > 0:
+                return h + suffix
+        None:
+            pass
+    return ""
+
+# XDG on POSIX, %LOCALAPPDATA% on Windows, with the conventional home fallback.
+fn cache_dir() -> string:
+    if is_windows():
+        v := _env_value("LOCALAPPDATA")
+        if len(v) > 0:
+            return v
+    v := _env_value("XDG_CACHE_HOME")
+    if len(v) > 0:
+        return v
+    return _home_join("/.cache")
+
+fn config_dir() -> string:
+    if is_windows():
+        v := _env_value("APPDATA")
+        if len(v) > 0:
+            return v
+    v := _env_value("XDG_CONFIG_HOME")
+    if len(v) > 0:
+        return v
+    return _home_join("/.config")
+
+fn data_dir() -> string:
+    if is_windows():
+        v := _env_value("LOCALAPPDATA")
+        if len(v) > 0:
+            return v
+    v := _env_value("XDG_DATA_HOME")
+    if len(v) > 0:
+        return v
+    return _home_join("/.local/share")

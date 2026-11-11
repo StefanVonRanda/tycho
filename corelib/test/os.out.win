@@ -15,3 +15,25 @@ nul_run=[] code=-1
 nul_exec=-1
 nul_exec_out=[] code=-1
 nul_child_output=windows-unavailable
+env_clear=Ok
+env_absent=none
+env_set=Ok value=[v1]
+env_empty=Ok value=[]
+env_unset=Ok value=none
+env_badname=none set=BadName eq=BadName
+env_nulvalue=BadValue value=none
+cwd_ok=Ok
+chdir_temp=Ok cwd=Ok
+chdir_back=Ok
+chdir_missing=NotFound
+chdir_empty=BadName
+chmod=Ok
+chmod_missing=NotFound
+chmod_nul=BadPath
+umask_restore=true
+ids=windows
+pid_positive=true
+hostname_nonempty=true
+home_nonempty=true
+temp_nonempty=true
+dirs=true,true,true

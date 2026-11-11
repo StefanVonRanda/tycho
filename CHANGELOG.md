@@ -27,8 +27,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   non-recursive `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup`, `Once`,
   `Barrier` and a recursive mutex over pthreads/Win32.
 - Expanded `core:os` with environment, cwd/chdir, pid/ppid, hostname, home and
-  temp paths, `chmod`/`umask` and uid/gid; added sorted, fail-closed `io.walk`;
-  added `path.relative`.
+  temp paths, cache/config/data dirs, `chmod`/`umask` and uid/gid; added
+  sorted, fail-closed `io.walk`; added `path.relative`.
 - Added `core:net` DNS resolution and socket options
   (reuse-addr/nodelay/keepalive/broadcast/nonblocking).
 - Added `core:base32`, `core:varint`, `core:endian`, `core:pem`, `core:ini`,

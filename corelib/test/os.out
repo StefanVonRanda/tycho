@@ -45,3 +45,4 @@ pid_positive=true
 hostname_nonempty=true
 home_nonempty=true
 temp_nonempty=true
+dirs=true,true,true

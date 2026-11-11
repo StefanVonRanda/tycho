@@ -773,7 +773,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   `chmod(path, mode) -> Result(void, OsErr)` sets permission bits (Windows maps
   to the read-only bit and ignores the rest), `umask(mask) -> int` returns the
   previous mask, and `uid`/`euid`/`gid`/`egid`/`ppid` report identity (`-1` on
-  Windows, which has no numeric ids).
+  Windows, which has no numeric ids). `cache_dir`, `config_dir` and `data_dir`
+  follow `XDG_*` on POSIX and `%LOCALAPPDATA%`/`%APPDATA%` on Windows.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (POSIX sockets; no `deps`,
   nothing to install). **The transfer calls block; readiness does not.**
   `read`/`write`/`connect` block, so a worker-per-connection server still has its
