@@ -11,3 +11,5 @@ jpeg_dims=32x32
 jpeg_colors=1
 jpeg_auto=1
 jpeg_corrupt=Err(Corrupt)
+jpeg_encoded=1
+jpeg_enc_roundtrip=1

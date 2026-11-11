@@ -572,6 +572,7 @@
   "image.decode": "(data: bytes)-> Result(Image, ImgErr)",
   "image.decode_jpeg": "(data: bytes)-> Result(Image, ImgErr)",
   "image.encode": "(img: Image)-> Result(bytes, ImgErr)",
+  "image.encode_jpeg": "(img: Image)-> Result(bytes, ImgErr)",
   "image.make": "(width: int, height: int, pixels: bytes)-> Image",
   "ini.get": "(d: Document, section: string, key: string)-> Option(string)",
   "ini.has": "(d: Document, section: string, key: string)-> bool",

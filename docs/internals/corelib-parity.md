@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 84 packages, ~16.0k lines, 1033 locked
+lines). The current Tycho corelib is 84 packages, ~16.0k lines, 1034 locked
 public functions.
 
 Status values:
@@ -32,7 +32,7 @@ Status values:
 | `flags` | partial | `cli` parses argv, but with no declarative flag set | decide whether to extend `cli` or add `flags` |
 | `fmt` | covered | `format_int`, `format_float`, `pad_left`/`pad_right` plus `str`/f-strings | none |
 | `hash` | covered | FNV-1a, djb2, sdbm, CRC32 and xxHash 32/64 | none |
-| `image` | partial | PNG encode/decode, baseline JPEG decode, `raster` BMP/QOI/TGA/PPM/PGM/PBM | JPEG encode and BNG |
+| `image` | partial | PNG encode/decode, baseline JPEG encode/decode, `raster` BMP/QOI/TGA/PPM/PGM/PBM | BNG |
 | `io` | covered | file read/write/append/copy/stat/dirs, checked variants, stdin/stdout, line reader | no generic `Reader`/`Writer` interface; concrete values are the design |
 | `log` | covered | leveled logger, stderr/file choice, `new`/`line` | none |
 | `math` | partial | `math`, `fmath` (trig/exp/log/hypot), `decimal`, `bignum`, `rand` | linear algebra, complex, fixed-point, easing, noise, bit operations |

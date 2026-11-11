@@ -5,6 +5,12 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "stb_image.h"
 #pragma GCC diagnostic pop
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STBI_WRITE_NO_STDIO
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include "stb_image_write.h"
+#pragma GCC diagnostic pop
 #include <png.h>
 #include <stdlib.h>
 #include <string.h>
@@ -226,4 +232,40 @@ void *imgx_jpeg_decode(const unsigned char *data, tycho_int len, tycho_int *stat
     imgx_add(im);
     *status = IMG_OK;
     return (void *)(uintptr_t)im->id;
+}
+
+typedef struct { unsigned char *buf; size_t len, cap; int failed; } JpegOut;
+
+static void jpeg_write(void *ctx, void *data, int size) {
+    JpegOut *o = (JpegOut *)ctx;
+    if (o->failed || size <= 0) return;
+    size_t need = o->len + (size_t)size;
+    if (need > o->cap) {
+        size_t cap = o->cap ? o->cap : 4096;
+        while (cap < need) cap *= 2;
+        unsigned char *p = (unsigned char *)realloc(o->buf, cap);
+        if (!p) { o->failed = 1; return; }
+        o->buf = p;
+        o->cap = cap;
+    }
+    memcpy(o->buf + o->len, data, (size_t)size);
+    o->len += (size_t)size;
+}
+
+void imgx_jpeg_encode(const unsigned char *pixels, tycho_int plen, tycho_int w, tycho_int h,
+                      tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = IMG_FAILED;
+    if (w <= 0 || h <= 0 || w > 100000 || h > 100000) { *status = IMG_BADDIMS; return; }
+    tycho_int need = w * h * 4;
+    if (plen < need) { *status = IMG_SHORTPX; return; }
+    JpegOut o = {0};
+    if (!stbi_write_jpg_to_func(jpeg_write, &o, (int)w, (int)h, 4, pixels, 90) || o.failed || !o.buf) {
+        free(o.buf);
+        return;
+    }
+    *out = o.buf;
+    *outlen = (tycho_int)o.len;
+    *status = IMG_OK;
 }

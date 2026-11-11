@@ -34,6 +34,7 @@ extern fn imgx_jpeg_decode(data: bytes, status: inout int) -> ptr
 extern fn imgx_pixels(h: ptr) -> bytes           # RGBA copy, width*height*4 bytes
 extern fn imgx_free(h: ptr)
 extern fn imgx_encode(pixels: bytes, w: int, h: int, status: inout int) -> bytes   # RGBA -> PNG bytes
+extern fn imgx_jpeg_encode(pixels: bytes, w: int, h: int, status: inout int) -> bytes
 
 const IMG_OK = 0
 const IMG_EMPTY = 1
@@ -103,6 +104,14 @@ fn decode(data: bytes) -> Result(Image, ImgErr):
 #   Err(BadDims)       width or height <= 0, or beyond the 100000-pixel bound
 #   Err(ShortPixels)   fewer than width*height*4 pixel bytes
 #   Err(Failed)        libpng's writer or an allocation failed
+# Encode RGBA to baseline JPEG (quality 90).
+fn encode_jpeg(img: Image) -> Result(bytes, ImgErr):
+    st := 0
+    b := imgx_jpeg_encode(img.pixels, img.width, img.height, &st)
+    if st == IMG_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
 fn encode(img: Image) -> Result(bytes, ImgErr):
     st := 0
     b := imgx_encode(img.pixels, img.width, img.height, &st)

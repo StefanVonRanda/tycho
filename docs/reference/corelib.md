@@ -999,11 +999,11 @@ plus four more:
   JPEG decode through a vendored JPEG-only `stb_image`; `decode(bytes) ->
   Result(Image{width, height, pixels}, ImgErr)` (8-bit RGBA) and `encode(Image) ->
   Result(bytes, ImgErr)`. `decode` dispatches PNG or baseline JPEG by magic;
-  `decode_jpeg(bytes)` is the explicit JPEG entry point. `ImgErr` names which
+  `decode_jpeg(bytes)` is the explicit JPEG entry point, and `encode_jpeg(img)`
+  writes baseline JPEG at quality 90. `ImgErr` names which
   failure: `Empty`, `NotPng`, `Corrupt` on the decode side, `BadDims`,
   `ShortPixels` on the encode side, `Failed` for an allocation or codec failure.
-  PNG has no 0-dimension image, so an `Ok` always carries `width >= 1`. JPEG
-  encoding is not implemented.
+  PNG has no 0-dimension image, so an `Ok` always carries `width >= 1`.
 - **`tls`** — a TLS 1.2/1.3 client over **OpenSSL** (`deps: openssl`). Secure by default:
   `connect(host, port)` verifies the certificate against the system CA store, checks the
   hostname, and sends SNI; failure returns a null handle (never a silent insecure
