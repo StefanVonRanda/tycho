@@ -1,0 +1,39 @@
+package buffer
+
+struct Buffer:
+    data: [int]
+
+fn new() -> Buffer:
+    return Buffer([]int)
+
+fn size(b: Buffer) -> int:
+    return len(b.data)
+
+fn write_byte(b: inout Buffer, c: int):
+    if c < 0 or c > 255:
+        die("buffer.write_byte: byte must be 0..255")
+    push(b.data, c)
+
+fn write(b: inout Buffer, s: string):
+    i := 0
+    for i < len(s):
+        push(b.data, s[i])
+        i += 1
+
+fn write_bytes(b: inout Buffer, x: bytes):
+    i := 0
+    for i < len(x):
+        push(b.data, x[i])
+        i += 1
+
+fn reserve_cap(b: inout Buffer, n: int):
+    reserve(b.data, n)
+
+fn as_bytes(b: Buffer) -> bytes:
+    return to_bytes(b.data)
+
+fn as_string(b: Buffer) -> string:
+    return to_str(to_bytes(b.data))
+
+fn clear(b: inout Buffer):
+    b.data = b.data[0:0]

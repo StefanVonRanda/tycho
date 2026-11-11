@@ -1,0 +1,16 @@
+package main
+import "core:buffer"
+
+fn main():
+    b := buffer.new()
+    buffer.write(&b, "ab")
+    buffer.write_byte(&b, 0)
+    buffer.write_bytes(&b, to_bytes([255, 65]))
+    println("len=" + str(buffer.size(b)))
+    x := buffer.as_bytes(b)
+    println("bytes=" + str(x[0]) + "," + str(x[2]) + "," + str(x[3]) + "," + str(x[4]))
+    println("string_len=" + str(len(buffer.as_string(b))))
+    buffer.clear(&b)
+    println("clear=" + str(buffer.size(b)))
+    buffer.reserve_cap(&b, 100)
+    println("reserve=" + str(buffer.size(b)))

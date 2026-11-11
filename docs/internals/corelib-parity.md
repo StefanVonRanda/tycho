@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 77 packages, ~15.0k lines, 966 locked
+lines). The current Tycho corelib is 78 packages, ~15.1k lines, 975 locked
 public functions.
 
 Status values:
@@ -20,7 +20,7 @@ Status values:
 | Odin core | Status | Tycho today | Plan |
 |---|---|---|---|
 | `bufio` | partial | `io.LineReader`, `io.read_lines`; no reusable buffered reader/writer or token scanner | `bufio`-style buffered reader/writer and scanner in the text stage |
-| `bytes` | partial | `bytes` builtin is immutable; `[int]` + `push` or concatenation build buffers | add a mutable buffer type only where a measured caller needs it |
+| `bytes` | covered | immutable `bytes` plus mutable `core:buffer` | none |
 | `c` | non-goal | `extern fn` FFI plus internal `*_shim.c` files | none |
 | `compress` | partial | gzip/zlib via zlib: `compress`, `decompress`, `raw_compress`, `raw_decompress` | split gzip/zlib framing, add LZ4 and a streaming API |
 | `container` | partial | `Deque`/`Queue`, `PriorityQueue`, `BitArray`, `Lru`, ordered `Treap`, `topo_sort`; `pool` covers generational handles | small array (fixed arrays cover it) |
