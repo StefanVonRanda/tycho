@@ -1,0 +1,41 @@
+package main
+import "core:io"
+import "core:tz"
+
+fn why(e: tz.TzErr) -> string:
+    if e == tz.BadMagic:
+        return "BadMagic"
+    if e == tz.Unsupported:
+        return "Unsupported"
+    if e == tz.Truncated:
+        return "Truncated"
+    if e == tz.Corrupt:
+        return "Corrupt"
+    if e == tz.TooBig:
+        return "TooBig"
+    return "?"
+
+fn main():
+    match io.read_bytes("corelib/test/tz/Europe_Copenhagen.tzif"):
+        Ok(data):
+            match tz.parse_tzif(data, "Europe/Copenhagen"):
+                Ok(z):
+                    println("name=" + z.name)
+                    println("winter=" + str(tz.offset_at(z, 1705320000)) + " " + tz.abbreviation_at(z, 1705320000))
+                    println("summer=" + str(tz.offset_at(z, 1721044800)) + " " + tz.abbreviation_at(z, 1721044800))
+                    println("epoch=" + str(tz.offset_at(z, 0)) + " " + tz.abbreviation_at(z, 0))
+                    println("future=" + str(tz.offset_at(z, 1893456000)) + " " + tz.abbreviation_at(z, 1893456000))
+                Err(e):
+                    println("parse=" + why(e))
+        Err(_):
+            println("read=err")
+
+    bad := to_bytes([88, 88, 88, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    match tz.parse_tzif(bad, "bad"):
+        Ok(_): println("bad=Ok")
+        Err(e): println("bad=" + why(e))
+
+    short := to_bytes([84, 90, 105, 102])
+    match tz.parse_tzif(short, "short"):
+        Ok(_): println("short=Ok")
+        Err(e): println("short=" + why(e))

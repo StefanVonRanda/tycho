@@ -1,0 +1,7 @@
+name=Europe/Copenhagen
+winter=3600 CET
+summer=7200 CEST
+epoch=3600 CET
+future=3600 CET
+bad=BadMagic
+short=Truncated

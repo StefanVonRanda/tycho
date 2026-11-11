@@ -1,0 +1,156 @@
+# IANA TZif (RFC 8536) zones: transitions, UTC offsets and abbreviations.
+package tz
+
+enum TzErr:
+    BadMagic
+    Unsupported
+    Truncated
+    Corrupt
+    TooBig
+
+struct Zone:
+    name: string
+    transitions: [int]
+    offsets: [int]
+    abbrs: [string]
+    initial_offset: int
+    initial_abbr: string
+
+fn _u32be(data: bytes, off: int) -> int:
+    if off < 0 or off + 4 > len(data):
+        return -1
+    return (data[off] << 24) | (data[off + 1] << 16) | (data[off + 2] << 8) | data[off + 3]
+
+fn _i32be(data: bytes, off: int) -> int:
+    v := _u32be(data, off)
+    if v >= 2147483648:
+        v = v - 4294967296
+    return v
+
+fn _u64be(data: bytes, off: int) -> u64:
+    if off < 0 or off + 8 > len(data):
+        return to_u64(0)
+    v := to_u64(0)
+    for i := 0; i < 8; i += 1:
+        v = (v << 8) | to_u64(data[off + i])
+    return v
+
+fn _i64be(data: bytes, off: int) -> int:
+    return to_int(_u64be(data, off))
+
+fn _abbr_at(blob: string, start: int) -> string:
+    if start < 0 or start >= len(blob):
+        return ""
+    end := start
+    for end < len(blob) and blob[end] != 0:
+        end += 1
+    return blob[start:end]
+
+fn _block_size(timecnt: int, typecnt: int, charcnt: int, leapcnt: int, isstdcnt: int, isutcnt: int, tsize: int) -> int:
+    return timecnt * tsize + timecnt + typecnt * 6 + charcnt + leapcnt * (tsize + 4) + isstdcnt + isutcnt
+
+# Parse the 64-bit data block of a v2/v3/v4 file, or the only block of a v1
+# file. The POSIX footer after the v2 block is not needed for historical and
+# near-future timestamps, so it is left unread.
+fn parse_tzif(data: bytes, name: string) -> Result(Zone, TzErr):
+    if len(data) < 44:
+        return Err(Truncated)
+    if data[0] != 84 or data[1] != 90 or data[2] != 105 or data[3] != 102:
+        return Err(BadMagic)
+    ver := data[4]
+    isut := _u32be(data, 20)
+    isstd := _u32be(data, 24)
+    leap := _u32be(data, 28)
+    timecnt := _u32be(data, 32)
+    typecnt := _u32be(data, 36)
+    charcnt := _u32be(data, 40)
+    if isut < 0 or isstd < 0 or leap < 0 or timecnt < 0 or typecnt < 0 or charcnt < 0:
+        return Err(Corrupt)
+    if timecnt > 1000000 or typecnt <= 0 or typecnt > 256:
+        return Err(TooBig)
+    tsize := 4
+    block := 44
+    if ver == 50 or ver == 51 or ver == 52:
+        first := _block_size(timecnt, typecnt, charcnt, leap, isstd, isut, 4)
+        second := 44 + first
+        if second + 44 > len(data):
+            return Err(Truncated)
+        isut = _u32be(data, second + 20)
+        isstd = _u32be(data, second + 24)
+        leap = _u32be(data, second + 28)
+        timecnt = _u32be(data, second + 32)
+        typecnt = _u32be(data, second + 36)
+        charcnt = _u32be(data, second + 40)
+        if isut < 0 or isstd < 0 or leap < 0 or timecnt < 0 or typecnt < 0 or charcnt < 0:
+            return Err(Corrupt)
+        if timecnt > 1000000 or typecnt <= 0 or typecnt > 256:
+            return Err(TooBig)
+        block = second + 44
+        tsize = 8
+    elif ver != 0:
+        return Err(Unsupported)
+    size := _block_size(timecnt, typecnt, charcnt, leap, isstd, isut, tsize)
+    if block + size > len(data):
+        return Err(Truncated)
+
+    p := block
+    trans := []int
+    for i := 0; i < timecnt; i += 1:
+        if tsize == 8:
+            push(trans, _i64be(data, p))
+        else:
+            push(trans, _i32be(data, p))
+        p += tsize
+
+    idxs := []int
+    for i := 0; i < timecnt; i += 1:
+        push(idxs, data[p])
+        p += 1
+
+    utoffs := []int
+    abbr_idx := []int
+    for i := 0; i < typecnt; i += 1:
+        push(utoffs, _i32be(data, p))
+        p += 4
+        p += 1                                  # dst flag
+        push(abbr_idx, data[p])
+        p += 1
+
+    abbr_blob := to_str(data[p:p + charcnt])
+
+    offsets := []int
+    out_abbrs := []string
+    for idx in idxs:
+        if idx < 0 or idx >= typecnt:
+            return Err(Corrupt)
+        push(offsets, utoffs[idx])
+        push(out_abbrs, _abbr_at(abbr_blob, abbr_idx[idx]))
+
+    init_off := utoffs[0]
+    init_abbr := _abbr_at(abbr_blob, abbr_idx[0])
+    return Ok(Zone(name, trans, offsets, out_abbrs, init_off, init_abbr))
+
+fn _transition_at(z: Zone, unix: int) -> int:
+    lo := 0
+    hi := len(z.transitions) - 1
+    ans := 0 - 1
+    for lo <= hi:
+        mid := (lo + hi) / 2
+        if z.transitions[mid] <= unix:
+            ans = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return ans
+
+fn offset_at(z: Zone, unix: int) -> int:
+    i := _transition_at(z, unix)
+    if i < 0:
+        return z.initial_offset
+    return z.offsets[i]
+
+fn abbreviation_at(z: Zone, unix: int) -> string:
+    i := _transition_at(z, unix)
+    if i < 0:
+        return z.initial_abbr
+    return z.abbrs[i]

@@ -373,8 +373,15 @@ expression-bodied; pass a named function where you need a multi-line body.
   as in Apache/nginx access logs) and `month_num` (`"Jan"`..`"Dec"` → 1..12), all
   fail-closed via a `year = -1` sentinel that `ok(dt)` checks. The core is UTC; timezone support is layered on — **fixed offsets** (`from_unix_at`,
   `to_unix_at`, `format_iso_tz`) in pure Tycho, plus DST-aware **system/zone** offsets via a
-  small libc shim (`local_offset`, `offset_at`, `now_local`). There is no IANA tz database.
+  small libc shim (`local_offset`, `offset_at`, `now_local`). IANA TZif zones live in
+  `core:tz`.
   `format_offset(offset_secs)` renders a UTC offset as `+HH:MM` / `-HH:MM`.
+- **`tz`** — IANA TZif (RFC 8536) zones. `parse_tzif(data, name) ->
+  Result(Zone, TzErr)` reads v1/v2/v3/v4 files, including the 64-bit block;
+  `offset_at(z, unix)` and `abbreviation_at(z, unix)` binary-search transitions
+  and fall back to the initial type before the first one. The POSIX TZ footer
+  and leap-second records are not used, so timestamps after the table use the
+  last transition.
 - **`regex`** — POSIX extended regular expressions (ERE) over libc. `compile(pat) ->
   ptr` (opaque handle; `ok`/`is_null` to check), `is_match`, `find` / `find_end`
   (offset or −1), `matched` (first match substring). **Capture groups** of the first
