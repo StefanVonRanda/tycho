@@ -1,0 +1,465 @@
+# HxA 3D asset interchange format: a compact binary tree of meta data, polygon
+# geometry and images. This is a reader/writer for format version 3.
+package hxa
+
+const HXA_LATEST_VERSION = 3
+
+enum HxaErr:
+    BadMagic
+    UnsupportedVersion
+    Truncated
+    Corrupt
+    TooBig
+
+struct HxaMeta:
+    name: string
+    kind: int          # 0 int64, 1 double, 2 node, 3 text, 4 binary, 5 meta
+    data: bytes        # raw little-endian payload for int64/double/binary
+    text: string
+    nodes: [int]
+    nested: [HxaMeta]
+
+struct HxaLayer:
+    name: string
+    components: int
+    kind: int          # 0 u8, 1 i32, 2 f32, 3 f64
+    data: bytes        # raw little-endian payload
+
+struct HxaNode:
+    kind: int          # 0 meta-only, 1 geometry, 2 image
+    meta: [HxaMeta]
+    vertex_count: int
+    vertex_layers: [HxaLayer]
+    edge_corner_count: int
+    corner_layers: [HxaLayer]
+    edge_layers: [HxaLayer]
+    face_count: int
+    face_layers: [HxaLayer]
+    image_type: int    # 0 cube, 1 1D, 2 2D, 3 3D
+    resolution: [3]int
+    image_layers: [HxaLayer]
+
+struct HxaFile:
+    version: int
+    nodes: [HxaNode]
+
+struct _HxaReader:
+    data: bytes
+    p: int
+
+fn _u8(r: inout _HxaReader) -> Result(int, HxaErr):
+    if r.p < 0 or r.p + 1 > len(r.data):
+        return Err(Truncated)
+    v := r.data[r.p]
+    r.p += 1
+    return Ok(v)
+
+fn _u32(r: inout _HxaReader) -> Result(int, HxaErr):
+    if r.p < 0 or r.p + 4 > len(r.data):
+        return Err(Truncated)
+    v := r.data[r.p] | (r.data[r.p + 1] << 8) | (r.data[r.p + 2] << 16) | (r.data[r.p + 3] << 24)
+    r.p += 4
+    return Ok(v)
+
+fn _i32(r: inout _HxaReader) -> Result(int, HxaErr):
+    v := _u32(&r) or_return
+    if v >= 2147483648:
+        v = v - 4294967296
+    return Ok(v)
+
+fn _bytes(r: inout _HxaReader, n: int) -> Result(bytes, HxaErr):
+    if n < 0 or r.p < 0 or r.p + n > len(r.data):
+        return Err(Truncated)
+    b := r.data[r.p:r.p + n]
+    r.p += n
+    return Ok(b)
+
+fn _name(r: inout _HxaReader) -> Result(string, HxaErr):
+    n := _u8(&r) or_return
+    b := _bytes(&r, n) or_return
+    return Ok(to_str(b))
+
+fn _meta(r: inout _HxaReader, count: int, depth: int) -> Result([HxaMeta], HxaErr):
+    if depth > 32 or count < 0 or count > 1000000:
+        return Err(TooBig)
+    out := []HxaMeta
+    for i := 0; i < count; i += 1:
+        name := _name(&r) or_return
+        kind := _u8(&r) or_return
+        if kind < 0 or kind > 5:
+            return Err(Corrupt)
+        n := _u32(&r) or_return
+        if n < 0 or n > 100000000:
+            return Err(TooBig)
+        m := HxaMeta(name, kind, to_bytes([]int), "", []int, []HxaMeta)
+        if kind == 0 or kind == 1:
+            if n > (len(r.data) - r.p) / 8:
+                return Err(Truncated)
+            m.data = _bytes(&r, n * 8) or_return
+        elif kind == 2:
+            if n > (len(r.data) - r.p) / 4:
+                return Err(Truncated)
+            for j := 0; j < n; j += 1:
+                push(m.nodes, _u32(&r) or_return)
+        elif kind == 3:
+            m.text = to_str(_bytes(&r, n) or_return)
+        elif kind == 4:
+            m.data = _bytes(&r, n) or_return
+        else:
+            m.nested = _meta(&r, n, depth + 1) or_return
+            if len(m.nested) != n:
+                return Err(Corrupt)
+        push(out, m)
+    return Ok(out)
+
+fn _layer_stack(r: inout _HxaReader, capacity: int) -> Result([HxaLayer], HxaErr):
+    if capacity < 0 or capacity > 100000000:
+        return Err(TooBig)
+    count := _u32(&r) or_return
+    if count < 0 or count > 1000000:
+        return Err(TooBig)
+    out := []HxaLayer
+    for i := 0; i < count; i += 1:
+        name := _name(&r) or_return
+        components := _u8(&r) or_return
+        if components < 1 or components > 255:
+            return Err(Corrupt)
+        kind := _u8(&r) or_return
+        es := _layer_elem_size(kind)
+        if es == 0:
+            return Err(Corrupt)
+        if capacity > 0 and components > 100000000 / capacity:
+            return Err(TooBig)
+        need := components * capacity * es
+        if need < 0 or need > len(r.data) - r.p:
+            return Err(Truncated)
+        data := _bytes(&r, need) or_return
+        push(out, HxaLayer(name, components, kind, data))
+    return Ok(out)
+
+fn _node(r: inout _HxaReader, version: int) -> Result(HxaNode, HxaErr):
+    kind := _u8(&r) or_return
+    if kind < 0 or kind > 2:
+        return Err(Corrupt)
+    meta_count := _u32(&r) or_return
+    if meta_count < 0 or meta_count > 1000000:
+        return Err(TooBig)
+    meta := _meta(&r, meta_count, 0) or_return
+    if len(meta) != meta_count:
+        return Err(Corrupt)
+    n := HxaNode(kind, meta, 0, []HxaLayer, 0, []HxaLayer, []HxaLayer, 0, []HxaLayer, 0, [1, 1, 1], []HxaLayer)
+    if kind == 1:
+        n.vertex_count = _u32(&r) or_return
+        n.vertex_layers = _layer_stack(&r, n.vertex_count) or_return
+        n.edge_corner_count = _u32(&r) or_return
+        n.corner_layers = _layer_stack(&r, n.edge_corner_count) or_return
+        if version > 2:
+            n.edge_layers = _layer_stack(&r, n.edge_corner_count) or_return
+        n.face_count = _u32(&r) or_return
+        n.face_layers = _layer_stack(&r, n.face_count) or_return
+    elif kind == 2:
+        n.image_type = _u8(&r) or_return
+        if n.image_type < 0 or n.image_type > 3:
+            return Err(Corrupt)
+        dims := 2
+        if n.image_type == 1:
+            dims = 1
+        elif n.image_type == 2:
+            dims = 2
+        elif n.image_type == 3:
+            dims = 3
+        for d := 0; d < dims; d += 1:
+            n.resolution[d] = _u32(&r) or_return
+        size := n.resolution[0] * n.resolution[1] * n.resolution[2]
+        if n.image_type == 0:
+            size *= 6
+        n.image_layers = _layer_stack(&r, size) or_return
+    return Ok(n)
+
+fn parse(data: bytes) -> Result(HxaFile, HxaErr):
+    if len(data) < 12:
+        return Err(Truncated)
+    if data[0] != 72 or data[1] != 120 or data[2] != 65 or data[3] != 0:
+        return Err(BadMagic)
+    version := data[4] | (data[5] << 8) | (data[6] << 16) | (data[7] << 24)
+    if version < 1 or version > HXA_LATEST_VERSION:
+        return Err(UnsupportedVersion)
+    node_count := data[8] | (data[9] << 8) | (data[10] << 16) | (data[11] << 24)
+    if node_count < 0 or node_count > 1000000:
+        return Err(TooBig)
+    r := _HxaReader(data, 12)
+    nodes := []HxaNode
+    for i := 0; i < node_count; i += 1:
+        push(nodes, _node(&r, version) or_return)
+    if r.p != len(data):
+        return Err(Corrupt)
+    return Ok(HxaFile(version, nodes))
+
+# ---- writer ----
+
+struct _HxaWriter:
+    out: [int]
+
+fn _w8(w: inout _HxaWriter, v: int):
+    push(w.out, v & 255)
+
+fn _w32(w: inout _HxaWriter, v: int):
+    push(w.out, v & 255)
+    push(w.out, (v >> 8) & 255)
+    push(w.out, (v >> 16) & 255)
+    push(w.out, (v >> 24) & 255)
+
+fn _w64(w: inout _HxaWriter, v: int):
+    for i := 0; i < 8; i += 1:
+        push(w.out, (v >> (8 * i)) & 255)
+
+fn _wbytes(w: inout _HxaWriter, b: bytes):
+    for i := 0; i < len(b); i += 1:
+        push(w.out, b[i])
+
+fn _wname(w: inout _HxaWriter, s: string):
+    n := len(s)
+    if n > 255:
+        n = 255
+    _w8(&w, n)
+    _wbytes(&w, to_bytes(s[0:n]))
+
+fn _write_meta(w: inout _HxaWriter, meta: [HxaMeta]) -> Result(void, HxaErr):
+    for m in meta:
+        _wname(&w, m.name)
+        if m.kind < 0 or m.kind > 5:
+            return Err(Corrupt)
+        _w8(&w, m.kind)
+        n := 0
+        if m.kind == 0 or m.kind == 1:
+            if len(m.data) % 8 != 0:
+                return Err(Corrupt)
+            n = len(m.data) / 8
+        elif m.kind == 2:
+            n = len(m.nodes)
+        elif m.kind == 3:
+            n = len(m.text)
+        elif m.kind == 4:
+            n = len(m.data)
+        else:
+            n = len(m.nested)
+        _w32(&w, n)
+        if m.kind == 0 or m.kind == 1 or m.kind == 4:
+            _wbytes(&w, m.data)
+        elif m.kind == 2:
+            for node in m.nodes:
+                _w32(&w, node)
+        elif m.kind == 3:
+            _wbytes(&w, to_bytes(m.text))
+        else:
+            _write_meta(&w, m.nested) or_return
+    return Ok()
+
+fn _write_layer_stack(w: inout _HxaWriter, layers: [HxaLayer], capacity: int) -> Result(void, HxaErr):
+    _w32(&w, len(layers))
+    for l in layers:
+        _wname(&w, l.name)
+        if l.components < 1 or l.components > 255:
+            return Err(Corrupt)
+        _w8(&w, l.components)
+        es := _layer_elem_size(l.kind)
+        if es == 0:
+            return Err(Corrupt)
+        _w8(&w, l.kind)
+        need := l.components * capacity * es
+        if need < 0 or len(l.data) != need:
+            return Err(Corrupt)
+        _wbytes(&w, l.data)
+    return Ok()
+
+fn write(file: HxaFile) -> Result(bytes, HxaErr):
+    if file.version < 1 or file.version > HXA_LATEST_VERSION:
+        return Err(UnsupportedVersion)
+    w := _HxaWriter([]int)
+    _w8(&w, 72)
+    _w8(&w, 120)
+    _w8(&w, 65)
+    _w8(&w, 0)
+    _w32(&w, file.version)
+    _w32(&w, len(file.nodes))
+    for n in file.nodes:
+        if n.kind < 0 or n.kind > 2:
+            return Err(Corrupt)
+        _w8(&w, n.kind)
+        _w32(&w, len(n.meta))
+        _write_meta(&w, n.meta) or_return
+        if n.kind == 1:
+            _w32(&w, n.vertex_count)
+            _write_layer_stack(&w, n.vertex_layers, n.vertex_count) or_return
+            _w32(&w, n.edge_corner_count)
+            _write_layer_stack(&w, n.corner_layers, n.edge_corner_count) or_return
+            if file.version > 2:
+                _write_layer_stack(&w, n.edge_layers, n.edge_corner_count) or_return
+            elif len(n.edge_layers) != 0:
+                return Err(Corrupt)
+            _w32(&w, n.face_count)
+            _write_layer_stack(&w, n.face_layers, n.face_count) or_return
+        elif n.kind == 2:
+            if n.image_type < 0 or n.image_type > 3:
+                return Err(Corrupt)
+            _w8(&w, n.image_type)
+            dims := 2
+            if n.image_type == 1:
+                dims = 1
+            elif n.image_type == 2:
+                dims = 2
+            elif n.image_type == 3:
+                dims = 3
+            for d := 0; d < dims; d += 1:
+                _w32(&w, n.resolution[d])
+            size := n.resolution[0] * n.resolution[1] * n.resolution[2]
+            if n.image_type == 0:
+                size *= 6
+            _write_layer_stack(&w, n.image_layers, size) or_return
+    return Ok(to_bytes(w.out))
+
+# ---- constructors and typed access ----
+
+fn _layer_elem_size(kind: int) -> int:
+    if kind == 0:
+        return 1
+    if kind == 1:
+        return 4
+    if kind == 2:
+        return 4
+    if kind == 3:
+        return 8
+    return 0
+
+fn layer_u8(name: string, components: int, values: [int]) -> HxaLayer:
+    out := []int
+    for v in values:
+        push(out, v & 255)
+    return HxaLayer(name, components, 0, to_bytes(out))
+
+fn layer_i32(name: string, components: int, values: [int]) -> HxaLayer:
+    out := []int
+    for v in values:
+        push(out, v & 255)
+        push(out, (v >> 8) & 255)
+        push(out, (v >> 16) & 255)
+        push(out, (v >> 24) & 255)
+    return HxaLayer(name, components, 1, to_bytes(out))
+
+fn layer_f32(name: string, components: int, values: [float]) -> HxaLayer:
+    out := []int
+    for v in values:
+        u := hxax_f32_bits(v)
+        push(out, to_int(u & 255))
+        push(out, to_int((u >> 8) & 255))
+        push(out, to_int((u >> 16) & 255))
+        push(out, to_int((u >> 24) & 255))
+    return HxaLayer(name, components, 2, to_bytes(out))
+
+fn layer_f64(name: string, components: int, values: [float]) -> HxaLayer:
+    out := []int
+    for v in values:
+        u := hxax_f64_bits(v)
+        for i := 0; i < 8; i += 1:
+            push(out, to_int((u >> (8 * i)) & 255))
+    return HxaLayer(name, components, 3, to_bytes(out))
+
+fn meta_text(name: string, text: string) -> HxaMeta:
+    return HxaMeta(name, 3, to_bytes([]int), text, []int, []HxaMeta)
+
+fn meta_i64(name: string, values: [int]) -> HxaMeta:
+    out := []int
+    for v in values:
+        for i := 0; i < 8; i += 1:
+            push(out, (v >> (8 * i)) & 255)
+    return HxaMeta(name, 0, to_bytes(out), "", []int, []HxaMeta)
+
+fn meta_f64(name: string, values: [float]) -> HxaMeta:
+    out := []int
+    for v in values:
+        u := hxax_f64_bits(v)
+        for i := 0; i < 8; i += 1:
+            push(out, to_int((u >> (8 * i)) & 255))
+    return HxaMeta(name, 1, to_bytes(out), "", []int, []HxaMeta)
+
+fn meta_node(name: string, nodes: [int]) -> HxaMeta:
+    return HxaMeta(name, 2, to_bytes([]int), "", nodes, []HxaMeta)
+
+fn meta_binary(name: string, data: bytes) -> HxaMeta:
+    return HxaMeta(name, 4, data, "", []int, []HxaMeta)
+
+fn meta_nested(name: string, nested: [HxaMeta]) -> HxaMeta:
+    return HxaMeta(name, 5, to_bytes([]int), "", []int, nested)
+
+fn node_meta(meta: [HxaMeta]) -> HxaNode:
+    return HxaNode(0, meta, 0, []HxaLayer, 0, []HxaLayer, []HxaLayer, 0, []HxaLayer, 0, [1, 1, 1], []HxaLayer)
+
+fn node_geometry(vertex_count: int, vertex_layers: [HxaLayer], edge_corner_count: int, corner_layers: [HxaLayer], edge_layers: [HxaLayer], face_count: int, face_layers: [HxaLayer]) -> HxaNode:
+    return HxaNode(1, []HxaMeta, vertex_count, vertex_layers, edge_corner_count, corner_layers, edge_layers, face_count, face_layers, 0, [1, 1, 1], []HxaLayer)
+
+fn node_image(image_type: int, resolution: [3]int, layers: [HxaLayer]) -> HxaNode:
+    return HxaNode(2, []HxaMeta, 0, []HxaLayer, 0, []HxaLayer, []HxaLayer, 0, []HxaLayer, image_type, resolution, layers)
+
+fn layer_count(l: HxaLayer) -> int:
+    es := _layer_elem_size(l.kind)
+    if es == 0 or l.components <= 0:
+        return 0
+    return len(l.data) / (l.components * es)
+
+fn layer_u8_at(l: HxaLayer, i: int) -> int:
+    if l.kind != 0 or i < 0 or i >= len(l.data):
+        return 0
+    return l.data[i]
+
+fn layer_i32_at(l: HxaLayer, i: int) -> int:
+    if l.kind != 1 or i < 0 or i * 4 + 4 > len(l.data):
+        return 0
+    p := i * 4
+    v := l.data[p] | (l.data[p + 1] << 8) | (l.data[p + 2] << 16) | (l.data[p + 3] << 24)
+    if v >= 2147483648:
+        v = v - 4294967296
+    return v
+
+fn layer_f32_at(l: HxaLayer, i: int) -> float:
+    if l.kind != 2 or i < 0 or i * 4 + 4 > len(l.data):
+        return 0.0
+    p := i * 4
+    u := to_u32(l.data[p] | (l.data[p + 1] << 8) | (l.data[p + 2] << 16) | (l.data[p + 3] << 24))
+    return hxax_f32_from_bits(u)
+
+fn layer_f64_at(l: HxaLayer, i: int) -> float:
+    if l.kind != 3 or i < 0 or i * 8 + 8 > len(l.data):
+        return 0.0
+    p := i * 8
+    u := to_u64(0)
+    for j := 0; j < 8; j += 1:
+        u = (u << 8) | to_u64(l.data[p + 7 - j])
+    return hxax_f64_from_bits(u)
+
+extern fn hxax_f32_bits(v: float) -> u32
+extern fn hxax_f32_from_bits(u: u32) -> float
+extern fn hxax_f64_bits(v: float) -> u64
+extern fn hxax_f64_from_bits(u: u64) -> float
+
+fn meta_i64_at(m: HxaMeta, i: int) -> int:
+    if m.kind != 0 or i < 0 or i * 8 + 8 > len(m.data):
+        return 0
+    p := i * 8
+    v := 0
+    for j := 0; j < 8; j += 1:
+        v = v | (m.data[p + j] << (8 * j))
+    return v
+
+fn meta_f64_at(m: HxaMeta, i: int) -> float:
+    if m.kind != 1 or i < 0 or i * 8 + 8 > len(m.data):
+        return 0.0
+    p := i * 8
+    u := to_u64(0)
+    for j := 0; j < 8; j += 1:
+        u = u | (to_u64(m.data[p + j]) << (8 * j))
+    return hxax_f64_from_bits(u)
+
+fn meta_node_at(m: HxaMeta, i: int) -> int:
+    if m.kind != 2 or i < 0 or i >= len(m.nodes):
+        return 0
+    return m.nodes[i]

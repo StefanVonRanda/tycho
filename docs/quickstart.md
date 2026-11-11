@@ -53,6 +53,6 @@ program: `xs` and `s` live in the scope that owns them and are released when
 
 - [Tutorial](tutorial.md) — structs, enums, `Result`, generics, concurrency.
 - [Language reference](reference/index.md) — every construct, with runnable examples.
-- [corelib](reference/corelib.md) — 88 packages, imported as `core:<name>`.
+- [corelib](reference/corelib.md) — 89 packages, imported as `core:<name>`.
 - [Examples](../examples/) — a JSON pipeline, an HTTP client, a static-site generator.
 - [Performance](performance.md) — what the model costs and where it wins.

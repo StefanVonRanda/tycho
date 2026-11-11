@@ -91,7 +91,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added leap-second records to `core:tz`: `Zone.leaps`, `leap_count`,
   `leap_at` and `leap_correction_at`, with monotonicity and correction-step
   validation.
-- The tree is now 88 corelib packages and 100 golden test trees.
+- Added `core:hxa`, a reader/writer for HxA 3D assets: `parse`/`write`,
+  meta/layer/node constructors, typed layer and meta accessors, and a
+  reference file that round-trips byte-for-byte.
+- The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

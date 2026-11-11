@@ -509,6 +509,15 @@ expression-bodied; pass a named function where you need a multi-line body.
   (padding `=`, whitespace, newlines in wrapped Base64) and accepts both alphabets.
   Tycho strings are length-carrying and can contain interior `0x00` bytes, so `decode`
   preserves NULs as well as other decoded bytes. Use `bytes` when crossing a binary C API.
+- **`hxa`** — HxA 3D asset interchange, format v3. `parse(data) ->
+  Result(HxaFile, HxaErr)` reads the node tree, metadata, geometry and images;
+  `write(file) -> Result(bytes, HxaErr)` serializes it. Metadata helpers are
+  `meta_text`, `meta_i64`, `meta_f64`, `meta_node`, `meta_binary` and
+  `meta_nested`; layer helpers are `layer_u8`, `layer_i32`, `layer_f32` and
+  `layer_f64`; node helpers are `node_meta`, `node_geometry` and `node_image`.
+  Accessors are `layer_count`, `layer_u8_at`, `layer_i32_at`, `layer_f32_at`,
+  `layer_f64_at`, `meta_i64_at`, `meta_f64_at` and `meta_node_at`. `HxaErr` is
+  `BadMagic`, `UnsupportedVersion`, `Truncated`, `Corrupt` or `TooBig`.
 - **`hex`** — hexadecimal `encode` (lowercase) / `encode_upper` / `decode`, two digits per
   byte, plus `is_valid` (strict: even length, all hex digits). `decode` is lenient (skips
   any non-hex byte, so `de:ad:be:ef` and spaced/newlined hex work, either case) and reuses

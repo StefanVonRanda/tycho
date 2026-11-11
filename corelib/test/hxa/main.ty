@@ -1,0 +1,153 @@
+package main
+
+import "core:hxa"
+import "core:io"
+
+fn load(p: string) -> bytes:
+    match io.read_bytes(p):
+        Ok(b):
+            return b
+        Err(_):
+            return to_bytes([]int)
+
+fn same(a: bytes, b: bytes) -> bool:
+    return to_str(a) == to_str(b)
+
+fn why(e: hxa.HxaErr) -> string:
+    match e:
+        hxa.BadMagic:
+            return "BadMagic"
+        hxa.UnsupportedVersion:
+            return "UnsupportedVersion"
+        hxa.Truncated:
+            return "Truncated"
+        hxa.Corrupt:
+            return "Corrupt"
+        hxa.TooBig:
+            return "TooBig"
+
+fn mutate(data: bytes, off: int, val: int) -> bytes:
+    xs := []int
+    for i := 0; i < len(data); i += 1:
+        push(xs, data[i])
+    if off >= 0 and off < len(xs):
+        xs[off] = val
+    return to_bytes(xs)
+
+fn main():
+    data := load("corelib/test/hxa/sample.hxa")
+    println("size=" + str(len(data)))
+    match hxa.parse(data):
+        Ok(f):
+            println("version=" + str(f.version) + " nodes=" + str(len(f.nodes)))
+            println("node0=" + str(f.nodes[0].kind) + ":" + str(len(f.nodes[0].meta)))
+            println("node1=" + str(f.nodes[1].kind) + ":" + str(len(f.nodes[1].meta)))
+            println("node2=" + str(f.nodes[2].kind) + ":" + str(len(f.nodes[2].meta)))
+            n0 := f.nodes[0]
+            println("meta0=" + n0.meta[0].name + ":" + str(n0.meta[0].kind) + ":" + n0.meta[0].text)
+            println("meta1=" + n0.meta[1].name + ":" + str(n0.meta[1].kind) + ":" + str(len(n0.meta[1].data) / 8))
+            println("meta2=" + n0.meta[2].name + ":" + str(n0.meta[2].kind) + ":" + str(len(n0.meta[2].data) / 8))
+            println("meta3=" + n0.meta[3].name + ":" + str(n0.meta[3].kind) + ":" + str(len(n0.meta[3].nodes)))
+            println("meta4=" + n0.meta[4].name + ":" + str(n0.meta[4].kind) + ":" + str(len(n0.meta[4].data)))
+            println("count=" + str(hxa.meta_i64_at(n0.meta[1], 0)) + "," + str(hxa.meta_i64_at(n0.meta[1], 1)))
+            println("weight=" + str(hxa.meta_f64_at(n0.meta[2], 0)))
+            println("ref=" + str(hxa.meta_node_at(n0.meta[3], 0)))
+            println("blob=" + str(n0.meta[4].data[0]) + ":" + str(n0.meta[4].data[3]))
+            n1 := f.nodes[1]
+            println("geom=" + str(n1.vertex_count) + ":" + str(n1.edge_corner_count) + ":" + str(n1.face_count))
+            vl := n1.vertex_layers[0]
+            println("vlayer=" + vl.name + ":" + str(vl.components) + ":" + str(vl.kind) + ":" + str(hxa.layer_count(vl)))
+            println("v0=" + str(hxa.layer_f32_at(vl, 0)) + ":" + str(hxa.layer_f32_at(vl, 1)) + ":" + str(hxa.layer_f32_at(vl, 2)))
+            println("v1=" + str(hxa.layer_f32_at(vl, 3)) + ":" + str(hxa.layer_f32_at(vl, 4)) + ":" + str(hxa.layer_f32_at(vl, 5)))
+            cl := n1.corner_layers[0]
+            println("corner=" + str(hxa.layer_i32_at(cl, 0)) + ":" + str(hxa.layer_i32_at(cl, 1)) + ":" + str(hxa.layer_i32_at(cl, 2)))
+            println("face=" + str(hxa.layer_u8_at(n1.face_layers[0], 0)))
+            n2 := f.nodes[2]
+            println("image=" + str(n2.image_type) + ":" + str(n2.resolution[0]) + ":" + str(n2.resolution[1]) + ":" + str(n2.resolution[2]))
+            il := n2.image_layers[0]
+            println("albedo=" + str(hxa.layer_count(il)) + ":" + str(il.components))
+            println("pixel0=" + str(hxa.layer_u8_at(il, 0)) + ":" + str(hxa.layer_u8_at(il, 1)) + ":" + str(hxa.layer_u8_at(il, 2)))
+            println("pixel3=" + str(hxa.layer_u8_at(il, 9)) + ":" + str(hxa.layer_u8_at(il, 10)) + ":" + str(hxa.layer_u8_at(il, 11)))
+            match hxa.write(f):
+                Ok(out):
+                    println("write=" + str(same(out, data)))
+                    match hxa.parse(out):
+                        Ok(f2):
+                            println("reparse=" + str(len(f2.nodes) == len(f.nodes)))
+                        Err(e):
+                            println("reparse=" + why(e))
+                Err(e):
+                    println("write=" + why(e))
+        Err(e):
+            println("parse=" + why(e))
+
+    nested := hxa.meta_nested("nested", [hxa.meta_text("inner", "ok"), hxa.meta_i64("n", [42])])
+    nf := hxa.HxaFile(3, [hxa.node_meta([nested])])
+    match hxa.write(nf):
+        Ok(b):
+            match hxa.parse(b):
+                Ok(f):
+                    println("nested=" + f.nodes[0].meta[0].nested[0].text + ":" + str(hxa.meta_i64_at(f.nodes[0].meta[0].nested[1], 0)))
+                Err(e):
+                    println("nested=" + why(e))
+        Err(e):
+            println("nested=" + why(e))
+
+    img := hxa.node_image(1, [4, 1, 1], [hxa.layer_u8("albedo", 3, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])])
+    imf := hxa.HxaFile(3, [img])
+    match hxa.write(imf):
+        Ok(b):
+            match hxa.parse(b):
+                Ok(f):
+                    l := f.nodes[0].image_layers[0]
+                    println("image_rt=" + str(f.nodes[0].image_type) + ":" + str(hxa.layer_count(l)) + ":" + str(hxa.layer_u8_at(l, 11)))
+                Err(e):
+                    println("image_rt=" + why(e))
+        Err(e):
+            println("image_rt=" + why(e))
+
+    geo := hxa.node_geometry(2, [hxa.layer_f32("position", 3, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0])], 3, [hxa.layer_i32("reference", 1, [0, 1, -2])], [], 1, [hxa.layer_u8("material", 1, [7])])
+    gf := hxa.HxaFile(3, [geo])
+    match hxa.write(gf):
+        Ok(b):
+            match hxa.parse(b):
+                Ok(f):
+                    g := f.nodes[0]
+                    println("geom_rt=" + str(hxa.layer_f32_at(g.vertex_layers[0], 3)) + ":" + str(hxa.layer_i32_at(g.corner_layers[0], 2)) + ":" + str(hxa.layer_u8_at(g.face_layers[0], 0)))
+                Err(e):
+                    println("geom_rt=" + why(e))
+        Err(e):
+            println("geom_rt=" + why(e))
+
+    match hxa.parse(mutate(data, 0, 0)):
+        Err(e):
+            println("bad_magic=" + why(e))
+        Ok(_):
+            println("bad_magic=Ok")
+    match hxa.parse(data[0:10]):
+        Err(e):
+            println("short=" + why(e))
+        Ok(_):
+            println("short=Ok")
+    match hxa.parse(mutate(data, 4, 4)):
+        Err(e):
+            println("bad_version=" + why(e))
+        Ok(_):
+            println("bad_version=Ok")
+    match hxa.parse(data + to_bytes([0])):
+        Err(e):
+            println("trailing=" + why(e))
+        Ok(_):
+            println("trailing=Ok")
+    bad_layer := hxa.HxaFile(3, [hxa.node_geometry(2, [hxa.layer_u8("position", 3, [1, 2, 3])], 0, [], [], 0, [])])
+    match hxa.write(bad_layer):
+        Err(e):
+            println("bad_layer=" + why(e))
+        Ok(_):
+            println("bad_layer=Ok")
+    bad_meta := hxa.HxaFile(3, [hxa.node_meta([hxa.HxaMeta("x", 9, to_bytes([]int), "", []int, []hxa.HxaMeta)])])
+    match hxa.write(bad_meta):
+        Err(e):
+            println("bad_meta=" + why(e))
+        Ok(_):
+            println("bad_meta=Ok")

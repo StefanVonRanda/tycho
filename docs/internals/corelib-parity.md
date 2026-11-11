@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 88 packages, ~24.7k lines, 1242 locked
+lines). The current Tycho corelib is 89 packages, ~25.1k lines, 1265 locked
 public functions.
 
 Status values:
@@ -28,7 +28,7 @@ Status values:
 | `debug` | covered | `assert`, `trace`, `enabled`, `stack_trace`; runtime traps and `tycho-debug bt` | PE introspection is platform-specific tooling |
 | `diff` | covered | `diff.lines` and `diff.unified` (LCS, bounded fallback) | none |
 | `dynlib` | partial | `open`, `symbol`, `close_lib` over `dlopen`/`LoadLibrary` | function-pointer invocation (Tycho has no callbacks into Tycho) |
-| `encoding` | partial | `base64`, `base32`, `hex`, `json`, `csv`, `uuid`, `pem`, `ini`, `varint`, `endian`, `xml`, `cbor`, `asn1`, `entity` | hxa (3D asset format) |
+| `encoding` | covered | `base64`, `base32`, `hex`, `json`, `csv`, `uuid`, `pem`, `ini`, `varint`, `endian`, `xml`, `cbor`, `asn1`, `entity`, `hxa` | none |
 | `flags` | covered | `cli.parse`/`parse_spec` and `cli.flag` | none |
 | `fmt` | covered | `format_int`, `format_float`, `pad_left`/`pad_right` plus `str`/f-strings | none |
 | `hash` | covered | FNV-1a 32/64, djb2, sdbm, CRC16/32/64, Adler-32, Murmur3 and xxHash 32/64 | none |
