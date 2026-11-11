@@ -1,0 +1,37 @@
+package main
+import "core:scanner"
+
+fn showb(o: Option(int)) -> string:
+    match o:
+        Some(v): return str(v)
+        None: return "none"
+
+fn shows(o: Option(string)) -> string:
+    match o:
+        Some(v): return "[" + v + "]"
+        None: return "none"
+
+fn main():
+    s := scanner.new("let x = 42\nnext -7")
+    println("init=" + str(scanner.pos(s)) + "," + str(scanner.line(s)) + "," + str(scanner.col(s)))
+    i1 := scanner.read_ident(&s)
+    scanner.skip_ws(&s)
+    i2 := scanner.read_ident(&s)
+    scanner.skip_ws(&s)
+    eq := scanner.accept(&s, "=")
+    scanner.skip_ws(&s)
+    n1 := scanner.read_int(&s)
+    println("idents=" + i1 + "," + i2 + " eq=" + str(eq) + " int=" + showb(n1))
+    l1 := scanner.read_line(&s)
+    l2 := scanner.read_line(&s)
+    e2 := scanner.eof(s)
+    println("line1=" + shows(l1))
+    println("line2=" + shows(l2) + " eof=" + str(e2))
+    println("badint=" + showb(scanner.read_int(&s)) + " badident=[" + scanner.read_ident(&s) + "]")
+    println("peekat=" + showb(scanner.peek_at(scanner.new("abc"), 2)))
+    t := scanner.new("  word123_ 456")
+    scanner.skip_ws(&t)
+    w := scanner.read_ident(&t)
+    scanner.skip_ws(&t)
+    n2 := scanner.read_int(&t)
+    println("word=" + w + " num=" + showb(n2) + " eof=" + str(scanner.eof(t)))

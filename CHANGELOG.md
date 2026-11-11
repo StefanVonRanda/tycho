@@ -35,12 +35,13 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `core:utf16`, `core:edit`, `core:xml`, `core:cbor`, `core:asn1`,
   `core:diff`, `core:terminal`, `core:lz4`, `core:bufio`, `core:bits`,
   `core:ease`, `core:linalg`, `core:fixed`, `core:complex`, `core:noise`,
-  `core:glob`, `core:table`, `core:unicode` and `core:x509`; added xxHash,
-  base 2..36 integer parse/format and fixed-point float formatting.
+  `core:glob`, `core:table`, `core:scanner`, `core:unicode` and `core:x509`;
+  added xxHash, base 2..36 integer parse/format and fixed-point float
+  formatting.
 - Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF-SHA256, AES-GCM, AES-CTR/CBC, RSA PKCS#1 v1.5/SHA-256, ECDSA P-256/SHA-256, Argon2id and X.509 parsing/verification.
 - Added the libm trig/exp/log surface to `core:fmath`.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM codecs to `core:raster`.
-- The tree is now 74 corelib packages and 77 golden test trees.
+- The tree is now 75 corelib packages and 78 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

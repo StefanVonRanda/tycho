@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 74 packages, ~14.6k lines, 947 locked
+lines). The current Tycho corelib is 75 packages, ~14.9k lines, 962 locked
 public functions.
 
 Status values:
@@ -55,7 +55,7 @@ Status values:
 | `sys` | non-goal | libc and shims are the portability boundary | none |
 | `terminal` | partial | ANSI escapes, tty/size, raw mode, byte read | key decoding, cursor queries, non-console Windows fallbacks |
 | `testing` | partial | `T`, `check`, `eq`, `report`; no subtests, benchmarks or fuzz hooks | expand after `container`/`sync` |
-| `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `edit` | scanner, i18n, table, pattern matching |
+| `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `edit`, `scanner`, `table`, `glob` | i18n tables and locale data |
 | `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; no raw thread handle or TLS | keep tasks as the model; add `Cond`/`Semaphore` before raw threads |
 | `time` | covered | monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset | none |
 | `unicode` | partial | `utf8`, `utf16`, and simple one-codepoint `unicode.to_upper`/`to_lower` | full case folding, segmentation, normalization |

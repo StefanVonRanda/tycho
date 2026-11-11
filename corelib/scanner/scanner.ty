@@ -1,0 +1,123 @@
+package scanner
+
+struct Scanner:
+    src: string
+    pos: int
+    line: int
+    col: int
+
+fn new(s: string) -> Scanner:
+    return Scanner(s, 0, 1, 1)
+
+fn eof(s: Scanner) -> bool:
+    return s.pos >= len(s.src)
+
+fn pos(s: Scanner) -> int:
+    return s.pos
+
+fn line(s: Scanner) -> int:
+    return s.line
+
+fn col(s: Scanner) -> int:
+    return s.col
+
+fn peek(s: Scanner) -> Option(int):
+    if s.pos >= len(s.src):
+        return None
+    return Some(s.src[s.pos])
+
+fn peek_at(s: Scanner, n: int) -> Option(int):
+    if n < 0 or s.pos + n >= len(s.src):
+        return None
+    return Some(s.src[s.pos + n])
+
+fn _advance(s: inout Scanner):
+    c := s.src[s.pos]
+    s.pos += 1
+    if c == 10:
+        s.line += 1
+        s.col = 1
+    else:
+        s.col += 1
+
+fn next(s: inout Scanner) -> Option(int):
+    if s.pos >= len(s.src):
+        return None
+    c := s.src[s.pos]
+    _advance(&s)
+    return Some(c)
+
+fn _starts(s: Scanner, lit: string) -> bool:
+    return s.pos + len(lit) <= len(s.src) and s.src[s.pos:s.pos + len(lit)] == lit
+
+# Consume `lit` only when it is next.
+fn accept(s: inout Scanner, lit: string) -> bool:
+    if not _starts(s, lit):
+        return false
+    i := 0
+    for i < len(lit):
+        _advance(&s)
+        i += 1
+    return true
+
+fn expect(s: inout Scanner, lit: string) -> bool:
+    return accept(&s, lit)
+
+fn _ws(c: int) -> bool:
+    return c == 32 or c == 9 or c == 10 or c == 13
+
+fn skip_ws(s: inout Scanner):
+    for s.pos < len(s.src) and _ws(s.src[s.pos]):
+        _advance(&s)
+
+fn read_while(s: inout Scanner, pred: fn(int) -> bool) -> string:
+    start := s.pos
+    for s.pos < len(s.src) and pred(s.src[s.pos]):
+        _advance(&s)
+    return s.src[start:s.pos]
+
+fn _ident_start(c: int) -> bool:
+    return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95
+
+fn _ident_cont(c: int) -> bool:
+    return _ident_start(c) or (c >= 48 and c <= 57)
+
+fn read_ident(s: inout Scanner) -> string:
+    if s.pos >= len(s.src) or not _ident_start(s.src[s.pos]):
+        return ""
+    return read_while(&s, _ident_cont)
+
+# Optional sign plus decimal digits; advances only on success.
+fn read_int(s: inout Scanner) -> Option(int):
+    save_pos := s.pos
+    save_line := s.line
+    save_col := s.col
+    neg := false
+    if s.pos < len(s.src) and s.src[s.pos] == 45:
+        neg = true
+        _advance(&s)
+    if s.pos >= len(s.src) or s.src[s.pos] < 48 or s.src[s.pos] > 57:
+        s.pos = save_pos
+        s.line = save_line
+        s.col = save_col
+        return None
+    v := 0
+    for s.pos < len(s.src) and s.src[s.pos] >= 48 and s.src[s.pos] <= 57:
+        v = v * 10 + (s.src[s.pos] - 48)
+        _advance(&s)
+    if neg:
+        return Some(0 - v)
+    return Some(v)
+
+fn read_line(s: inout Scanner) -> Option(string):
+    if s.pos >= len(s.src):
+        return None
+    start := s.pos
+    for s.pos < len(s.src) and s.src[s.pos] != 10:
+        _advance(&s)
+    line := s.src[start:s.pos]
+    if len(line) > 0 and line[len(line) - 1] == 13:
+        line = line[0:len(line) - 1]
+    if s.pos < len(s.src):
+        _advance(&s)
+    return Some(line)

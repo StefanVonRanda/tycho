@@ -128,6 +128,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   and keeps trailing zeros. `format_int_base(n, base, upper)` and
   `parse_int_base(s, base)` cover bases 2..36 (`parse_int_base` is fail-closed
   like the decimal parser; `format_int_base` handles the minimum int).
+- **`scanner`** — a positioned byte scanner for hand-written parsers.
+  `new(s)`, `pos`/`line`/`col` (1-based line/column), `peek`/`peek_at`, `next`,
+  `accept(lit)` (consume only on a match), `expect`, `skip_ws`,
+  `read_while(pred)`, `read_ident`, `read_int` (optional sign; advances only on
+  success), `read_line` (LF/CRLF) and `eof`.
 - **`glob`** — shell-style wildcard matching. `matches(pattern, s)` treats `*`
   and `?` as matching any byte including `/`; `matches_path` stops them at `/`
   but lets `**` cross it. Both support `[abc]`, `[a-z]` and `[!…]`/`[^…]`

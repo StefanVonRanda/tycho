@@ -1,0 +1,7 @@
+init=0,1,1
+idents=let,x eq=true int=42
+line1=[]
+line2=[next -7] eof=true
+badint=none badident=[]
+peekat=99
+word=word123_ num=456 eof=true
