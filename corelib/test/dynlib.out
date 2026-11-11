@@ -1,0 +1,5 @@
+missing=Failed
+nul=BadPath
+nullsym=true
+emptysym=true
+close_null=ok

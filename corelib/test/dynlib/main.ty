@@ -1,0 +1,16 @@
+package main
+import "core:dynlib"
+
+fn main():
+    match dynlib.open("definitely-not-a-library-xyz"):
+        Ok(_): println("missing=Ok")
+        Err(dynlib.Failed): println("missing=Failed")
+        Err(dynlib.BadPath): println("missing=BadPath")
+    match dynlib.open("x" + chr(0)):
+        Ok(_): println("nul=Ok")
+        Err(dynlib.BadPath): println("nul=BadPath")
+        Err(dynlib.Failed): println("nul=Failed")
+    println("nullsym=" + str(is_null(dynlib.symbol(null, "x"))))
+    println("emptysym=" + str(is_null(dynlib.symbol(null, ""))))
+    dynlib.close_lib(null)
+    println("close_null=ok")

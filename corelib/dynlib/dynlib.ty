@@ -1,0 +1,36 @@
+package dynlib
+
+enum DynErr:
+    BadPath
+    Failed
+
+extern fn dlx_open(path: string) -> ptr
+extern fn dlx_sym(h: ptr, name: string) -> ptr
+extern fn dlx_close(h: ptr)
+
+fn _has_nul(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 0:
+            return true
+    return false
+
+# Load a shared library. The handle is opaque; Tycho cannot call a symbol
+# pointer directly, so pass it to a C shim or use it as a library handle.
+fn open(path: string) -> Result(ptr, DynErr):
+    if _has_nul(path) or len(path) == 0:
+        return Err(BadPath)
+    h := dlx_open(path)
+    if is_null(h):
+        return Err(Failed)
+    return Ok(h)
+
+# Resolve a symbol name, or null. Never call the result from Tycho.
+fn symbol(h: ptr, name: string) -> ptr:
+    if is_null(h) or _has_nul(name) or len(name) == 0:
+        return null
+    return dlx_sym(h, name)
+
+fn close_lib(h: ptr):
+    if is_null(h):
+        return
+    dlx_close(h)

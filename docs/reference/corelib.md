@@ -511,6 +511,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   it and returns the digest — the same answer `hex(s)` gives for the concatenation.
   `hex_bytes(b)` hashes one complete `bytes` buffer through the runtime C fast path
   (SHA-NI, OpenSSL, or scalar) and returns the same 64-char digest.
+- **`dynlib`** — shared-library loading: `open(path) -> Result(ptr, DynErr)`,
+  `symbol(h, name) -> ptr` (null when absent), and `close_lib(h)`. The symbol
+  pointer is opaque: Tycho cannot call it directly, so hand it to a C shim or
+  use it as a library handle. Windows uses `LoadLibraryA`/`GetProcAddress`.
 - **`x509`** — X.509 certificate inspection and verification over OpenSSL
   (`deps: openssl`). `parse_pem`/`parse_der` return a `Certificate` handle;
   `subject`, `issuer`, `serial`, `not_before`/`not_after` (UNIX seconds),
