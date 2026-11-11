@@ -1,0 +1,6 @@
+ascii=HELLO, WORLD|hello
+latin=HÉLLO|héllo
+greek=ΑΒΓ|αβγ
+cyrillic=ПРИВЕТ|привет
+char=201,233,65
+invalid=1

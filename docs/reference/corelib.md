@@ -617,6 +617,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `decode(b)` (BOM-aware, little-endian when absent) and `decode_be(b)`.
   `OddLength`, `BadSurrogate` and `BadUtf8` are refused rather than decoded
   leniently.
+- **`unicode`** — simple one-codepoint case mapping: `to_upper(s)`,
+  `to_lower(s)`, `to_upper_char(cp)` and `to_lower_char(cp)`. Expansions such
+  as `ß -> SS` and locale-specific rules are not applied; invalid UTF-8 bytes
+  are copied through.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins.
   `read(p)` — **fail-open**: `""` for a missing file, an unreadable one and a genuinely
   empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` or `read_bytes(p)`

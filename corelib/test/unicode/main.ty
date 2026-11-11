@@ -1,0 +1,10 @@
+package main
+import "core:unicode"
+
+fn main():
+    println("ascii=" + unicode.to_upper("hello, world") + "|" + unicode.to_lower("HELLO"))
+    println("latin=" + unicode.to_upper("héllo") + "|" + unicode.to_lower("HÉLLO"))
+    println("greek=" + unicode.to_upper("αβγ") + "|" + unicode.to_lower("ΑΒΓ"))
+    println("cyrillic=" + unicode.to_upper("привет") + "|" + unicode.to_lower("ПРИВЕТ"))
+    println("char=" + str(unicode.to_upper_char(0x00E9)) + "," + str(unicode.to_lower_char(0x00C9)) + "," + str(unicode.to_upper_char(97)))
+    println("invalid=" + str(len(unicode.to_upper(chr(255)))))

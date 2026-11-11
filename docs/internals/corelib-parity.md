@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 72 packages, ~14.2k lines, 899 locked
+lines). The current Tycho corelib is 73 packages, ~14.2k lines, 903 locked
 public functions.
 
 Status values:
@@ -58,7 +58,7 @@ Status values:
 | `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `edit` | scanner, i18n, table, pattern matching |
 | `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; no raw thread handle or TLS | keep tasks as the model; add `Cond`/`Semaphore` before raw threads |
 | `time` | covered | monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset | none |
-| `unicode` | partial | `utf8` validation and decoding; no UTF-16, case mapping or segmentation | add UTF-16, case tables, segmentation |
+| `unicode` | partial | `utf8`, `utf16`, and simple one-codepoint `unicode.to_upper`/`to_lower` | full case folding, segmentation, normalization |
 
 ## What parity does not mean
 
