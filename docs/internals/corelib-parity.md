@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 82 packages, ~15.7k lines, 997 locked
+lines). The current Tycho corelib is 82 packages, ~15.7k lines, 1005 locked
 public functions.
 
 Status values:
@@ -51,7 +51,7 @@ Status values:
 | `sort` | covered | `sort` with generic ordering | none |
 | `strconv` | partial | decimal/base 2..36 parse and format, fixed float with 0..17 digits, `format_g17`, builtin `str` | widths, float32-specific forms |
 | `strings` | covered | case, trim, split, find, replace, pad, reverse, escapes, parsing | add a builder if measured concatenation cost demands it |
-| `sync` | partial | C11 atomics (int/bool/pointer), `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup`, `Once`; channels are language builtins | `Barrier`, recursive/ticket mutexes |
+| `sync` | covered | C11 atomics (int/bool/pointer), `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup`, `Once`, `Barrier`, recursive mutex; channels are language builtins | ticket mutex (not a capability gap) |
 | `sys` | non-goal | libc and shims are the portability boundary | none |
 | `terminal` | partial | ANSI escapes, tty/size, raw mode, byte read | key decoding, cursor queries, non-console Windows fallbacks |
 | `testing` | partial | `T`, `check`, `eq`, `report`; no subtests, benchmarks or fuzz hooks | expand after `container`/`sync` |

@@ -665,3 +665,146 @@ tycho_int syncx_atomic_ptr_cas(void *vp, void *expected, void *desired) {
 }
 
 #endif
+
+/* ---- barrier and recursive mutex ---- */
+#ifdef _WIN32
+
+typedef struct {
+    CRITICAL_SECTION cs;
+    CONDITION_VARIABLE cv;
+    tycho_int n;
+    tycho_int count;
+    tycho_int generation;
+} SyncBarrier;
+typedef struct { CRITICAL_SECTION cs; } SyncRecursiveMutex;
+
+void *syncx_barrier_new(tycho_int n) {
+    if (n < 1) return NULL;
+    SyncBarrier *b = (SyncBarrier *)malloc(sizeof *b);
+    if (!b) return NULL;
+    InitializeCriticalSection(&b->cs);
+    InitializeConditionVariable(&b->cv);
+    b->n = n;
+    b->count = 0;
+    b->generation = 0;
+    return b;
+}
+
+tycho_int syncx_barrier_free(void *vp) {
+    SyncBarrier *b = (SyncBarrier *)vp;
+    if (!b) return 0;
+    DeleteCriticalSection(&b->cs);
+    free(b);
+    return 0;
+}
+
+tycho_int syncx_barrier_wait(void *vp) {
+    SyncBarrier *b = (SyncBarrier *)vp;
+    EnterCriticalSection(&b->cs);
+    tycho_int gen = b->generation;
+    b->count += 1;
+    if (b->count == b->n) {
+        b->count = 0;
+        b->generation += 1;
+        WakeAllConditionVariable(&b->cv);
+        LeaveCriticalSection(&b->cs);
+        return 1;
+    }
+    while (gen == b->generation) SleepConditionVariableCS(&b->cv, &b->cs, INFINITE);
+    LeaveCriticalSection(&b->cs);
+    return 0;
+}
+
+void *syncx_recursive_mutex_new(void) {
+    SyncRecursiveMutex *m = (SyncRecursiveMutex *)malloc(sizeof *m);
+    if (!m) return NULL;
+    InitializeCriticalSection(&m->cs);
+    return m;
+}
+
+tycho_int syncx_recursive_mutex_free(void *vp) {
+    SyncRecursiveMutex *m = (SyncRecursiveMutex *)vp;
+    if (!m) return 0;
+    DeleteCriticalSection(&m->cs);
+    free(m);
+    return 0;
+}
+
+tycho_int syncx_recursive_mutex_lock(void *vp) {
+    EnterCriticalSection(&((SyncRecursiveMutex *)vp)->cs);
+    return 0;
+}
+
+tycho_int syncx_recursive_mutex_trylock(void *vp) {
+    return TryEnterCriticalSection(&((SyncRecursiveMutex *)vp)->cs) ? 1 : 0;
+}
+
+tycho_int syncx_recursive_mutex_unlock(void *vp) {
+    LeaveCriticalSection(&((SyncRecursiveMutex *)vp)->cs);
+    return 0;
+}
+
+#else
+
+typedef struct { pthread_barrier_t b; } SyncBarrier;
+typedef struct { pthread_mutex_t m; } SyncRecursiveMutex;
+
+void *syncx_barrier_new(tycho_int n) {
+    if (n < 1) return NULL;
+    SyncBarrier *b = (SyncBarrier *)malloc(sizeof *b);
+    if (!b) return NULL;
+    if (pthread_barrier_init(&b->b, NULL, (unsigned)n) != 0) { free(b); return NULL; }
+    return b;
+}
+
+tycho_int syncx_barrier_free(void *vp) {
+    SyncBarrier *b = (SyncBarrier *)vp;
+    if (!b) return 0;
+    if (pthread_barrier_destroy(&b->b) != 0) return -1;
+    free(b);
+    return 0;
+}
+
+tycho_int syncx_barrier_wait(void *vp) {
+    SyncBarrier *b = (SyncBarrier *)vp;
+    int rc = pthread_barrier_wait(&b->b);
+    if (rc == PTHREAD_BARRIER_SERIAL_THREAD) return 1;
+    return rc == 0 ? 0 : -1;
+}
+
+void *syncx_recursive_mutex_new(void) {
+    SyncRecursiveMutex *m = (SyncRecursiveMutex *)malloc(sizeof *m);
+    if (!m) return NULL;
+    pthread_mutexattr_t a;
+    if (pthread_mutexattr_init(&a) != 0) { free(m); return NULL; }
+    pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
+    if (pthread_mutex_init(&m->m, &a) != 0) {
+        pthread_mutexattr_destroy(&a);
+        free(m);
+        return NULL;
+    }
+    pthread_mutexattr_destroy(&a);
+    return m;
+}
+
+tycho_int syncx_recursive_mutex_free(void *vp) {
+    SyncRecursiveMutex *m = (SyncRecursiveMutex *)vp;
+    if (!m) return 0;
+    if (pthread_mutex_destroy(&m->m) != 0) return -1;
+    free(m);
+    return 0;
+}
+
+tycho_int syncx_recursive_mutex_lock(void *vp) {
+    return pthread_mutex_lock(&((SyncRecursiveMutex *)vp)->m) == 0 ? 0 : -1;
+}
+
+tycho_int syncx_recursive_mutex_trylock(void *vp) {
+    return pthread_mutex_trylock(&((SyncRecursiveMutex *)vp)->m) == 0 ? 1 : 0;
+}
+
+tycho_int syncx_recursive_mutex_unlock(void *vp) {
+    return pthread_mutex_unlock(&((SyncRecursiveMutex *)vp)->m) == 0 ? 0 : -1;
+}
+
+#endif

@@ -215,3 +215,4 @@ fn main():
     sync.atomic_ptr_store(ap, null)
     println("ptr swap nonnull=" + str(not is_null(pold)) + " cas=" + str(pcas) + " lost=" + str(plost) + " null=" + str(is_null(sync.atomic_ptr_load(ap))))
     sync.atomic_ptr_free(ap)
+

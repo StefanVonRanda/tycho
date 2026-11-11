@@ -1,0 +1,3 @@
+barrier serial=1
+recursive lock=true
+recursive try=true

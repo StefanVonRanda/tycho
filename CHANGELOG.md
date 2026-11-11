@@ -24,8 +24,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `BitArray`, an LRU cache, an ordered `Treap` and `topo_sort`, all value-semantic
   and golden-tested.
 - Added `core:sync`: C11 atomics (`AtomicInt`/`AtomicBool`/atomic pointer),
-  non-recursive `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup` and `Once`
-  over pthreads/Win32.
+  non-recursive `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup`, `Once`,
+  `Barrier` and a recursive mutex over pthreads/Win32.
 - Expanded `core:os` with environment, cwd/chdir, pid/ppid, hostname, home and
   temp paths, `chmod`/`umask` and uid/gid; added sorted, fail-closed `io.walk`;
   added `path.relative`.
@@ -42,7 +42,7 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF-SHA256, AES-GCM, AES-CTR/CBC, RSA PKCS#1 v1.5/SHA-256, ECDSA P-256/SHA-256, Argon2id and X.509 parsing/verification.
 - Added the libm trig/exp/log surface to `core:fmath`.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM codecs to `core:raster`.
-- The tree is now 82 corelib packages and 85 golden test trees.
+- The tree is now 82 corelib packages and 86 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

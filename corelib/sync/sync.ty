@@ -349,3 +349,56 @@ fn atomic_ptr_swap(p: ptr, v: ptr) -> ptr:
 fn atomic_ptr_cas(p: ptr, expected: ptr, desired: ptr) -> bool:
     _need(p, "atomic_ptr_cas")
     return syncx_atomic_ptr_cas(p, expected, desired) == 1
+
+extern fn syncx_barrier_new(n: int) -> ptr
+extern fn syncx_barrier_free(b: ptr) -> int
+extern fn syncx_barrier_wait(b: ptr) -> int
+
+extern fn syncx_recursive_mutex_new() -> ptr
+extern fn syncx_recursive_mutex_free(m: ptr) -> int
+extern fn syncx_recursive_mutex_lock(m: ptr) -> int
+extern fn syncx_recursive_mutex_trylock(m: ptr) -> int
+extern fn syncx_recursive_mutex_unlock(m: ptr) -> int
+
+# Barrier for `n` waiters. barrier_wait returns 1 for exactly one caller and 0
+# for the rest; every caller is released together.
+fn barrier_new(n: int) -> ptr:
+    if n < 1:
+        die("sync.barrier_new: count must be > 0")
+    return syncx_barrier_new(n)
+
+fn barrier_free(b: ptr):
+    if is_null(b):
+        return
+    if syncx_barrier_free(b) != 0:
+        die("sync.barrier_free: waiters are still blocked")
+
+fn barrier_wait(b: ptr) -> int:
+    _need(b, "barrier_wait")
+    k := syncx_barrier_wait(b)
+    if k < 0:
+        die("sync.barrier_wait: the platform barrier failed")
+    return k
+
+fn recursive_mutex_new() -> ptr:
+    return syncx_recursive_mutex_new()
+
+fn recursive_mutex_free(m: ptr):
+    if is_null(m):
+        return
+    if syncx_recursive_mutex_free(m) != 0:
+        die("sync.recursive_mutex_free: mutex is held")
+
+fn recursive_mutex_lock(m: ptr):
+    _need(m, "recursive_mutex_lock")
+    if syncx_recursive_mutex_lock(m) != 0:
+        die("sync.recursive_mutex_lock: the platform lock failed")
+
+fn recursive_mutex_try_lock(m: ptr) -> bool:
+    _need(m, "recursive_mutex_try_lock")
+    return syncx_recursive_mutex_trylock(m) == 1
+
+fn recursive_mutex_unlock(m: ptr):
+    _need(m, "recursive_mutex_unlock")
+    if syncx_recursive_mutex_unlock(m) != 0:
+        die("sync.recursive_mutex_unlock: the mutex is not held")

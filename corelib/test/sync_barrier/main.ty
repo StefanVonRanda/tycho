@@ -1,0 +1,32 @@
+package main
+import "core:sync"
+
+fn barrier_worker(b: ptr, serial: ptr) -> int:
+    if sync.barrier_wait(b) == 1:
+        sync.atomic_int_add(serial, 1)
+    return 0
+
+fn main():
+    b := sync.barrier_new(4)
+    serial := sync.atomic_int_new(0)
+    t1 := spawn barrier_worker(b, serial)
+    t2 := spawn barrier_worker(b, serial)
+    t3 := spawn barrier_worker(b, serial)
+    t4 := spawn barrier_worker(b, serial)
+    wait(t1)
+    wait(t2)
+    wait(t3)
+    wait(t4)
+    println("barrier serial=" + str(sync.atomic_int_load(serial)))
+    sync.barrier_free(b)
+    sync.atomic_int_free(serial)
+
+    m := sync.recursive_mutex_new()
+    sync.recursive_mutex_lock(m)
+    sync.recursive_mutex_lock(m)
+    println("recursive lock=true")
+    sync.recursive_mutex_unlock(m)
+    sync.recursive_mutex_unlock(m)
+    println("recursive try=" + str(sync.recursive_mutex_try_lock(m)))
+    sync.recursive_mutex_unlock(m)
+    sync.recursive_mutex_free(m)
