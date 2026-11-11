@@ -75,7 +75,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   automatic TCP fallback for TC responses.
 - Added reversible compression filters to `core:compress`: delta, BCJ for
   x86/ARM/ARM Thumb/ARM64/PowerPC/SPARC/IA64/RISC-V, and swap2/swap4.
-- The tree is now 88 corelib packages and 98 golden test trees.
+- Added PPMd7/PPMd8 and PKZIP Shrink/Reduce/Implode to `core:compress`,
+  backed by vendored public-domain C (7-Zip SDK and hwzip) with no runtime
+  library dependency. The PPMd encoders are byte-identical to 7-Zip.
+- The tree is now 88 corelib packages and 99 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

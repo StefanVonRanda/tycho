@@ -1096,6 +1096,23 @@ plus four more:
   `bcj_new(arch, start_offset)`/`bcj_encode`/`bcj_decode` for `X86`,
   `PowerPC`, `IA64`, `ARM`, `ARM_Thumb`, `SPARC`, `ARM64` and `RISCV`, and
   `swap2`/`swap4`. `FilterErr` is `BadDistance` or `BadAlignment`.
+  **PPMd** is vendored public-domain C (7-Zip's PPMd7 var.H and PPMd8 var.I),
+  so there is no runtime 7-Zip dependency. `PpmdProps{variant, order, mem_size,
+  restore}`; `ppmd_level_properties(variant, level, input_size)` maps 0..9 to
+  the same presets as 7-Zip; `ppmd_decode_props_7z`/`ppmd_encode_props_7z`
+  handle the 5-byte 7z properties and `ppmd_decode_props_zip`/
+  `ppmd_encode_props_zip` the 2-byte ZIP method 98 properties.
+  `ppmd_decompress_7z(data, props, expected_size)` and
+  `ppmd_compress_7z(data, props)` are the raw var.H stream 7z stores;
+  `ppmd_decompress_zip`/`ppmd_compress_zip` are the var.I stream used by ZIP
+  method 98. The encoders are byte-identical to 7-Zip for the same properties.
+  **PKZIP legacy methods** are also vendored public-domain C (hwzip):
+  `unshrink(data, expected_size)` and `shrink(data)` for method 1,
+  `expand(data, factor, expected_size)` and `reduce(data, factor)` for methods
+  2-5 (factor 1..4), and `explode(data, large_window, literal_tree,
+  expected_size)`/`implode(data, large_window, literal_tree)` for method 6.
+  `CodecErr` is `CodecInvalidProps`, `CodecBadOption`, `CodecCorrupt`,
+  `CodecTruncated`, `CodecTooBig` or `CodecFailed`.
 - **`xz`** — xz container compression over **liblzma** (`deps: liblzma`):
   `compress(bytes) -> Result(bytes, XzErr)` (preset 6, CRC64) and
   `decompress(bytes) -> Result(bytes, XzErr)`; `XzErr` is `Corrupt`, `Truncated`,

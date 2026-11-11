@@ -1,0 +1,2273 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=utf-8">
+	<TITLE></TITLE>
+	<META NAME="GENERATOR" CONTENT="LibreOffice 3.3  (Unix)">
+	<META NAME="CREATED" CONTENT="20110626;22235100">
+	<META NAME="CHANGED" CONTENT="20110626;22254500">
+	<STYLE TYPE="text/css">
+	<!--
+		@page { margin: 0.79in }
+		P { margin-bottom: 0.08in }
+		H1 { margin-bottom: 0.08in }
+		H1.western { font-family: "Liberation Serif", serif }
+		H1.cjk { font-family: "Bitstream Vera Sans" }
+		H1.ctl { font-family: "FreeSans" }
+		PRE.cjk { font-family: "Bitstream Vera Sans", monospace }
+		H2 { margin-bottom: 0.08in }
+		H2.ctl { font-family: "FreeSans" }
+		TT.cjk { font-family: "Bitstream Vera Sans", monospace }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" DIR="LTR">
+<H1 CLASS="western">Introduction</H1>
+<P>Libarchive is now a fairly complex piece of software that runs on
+a number of different platforms. A thorough test suite is essential
+both for verifying new ports and for ensuring that future changes
+don't break existing functionality. 
+</P>
+<P>Any significant change to libarchive, including most bug fixes,
+should be accompanied by new tests or changes to existing tests. This
+article explains how the libarchive test suites work and how to
+extend them. 
+</P>
+<H1 CLASS="western"><A NAME="Building_and_Running_the_Test_Programs"></A>
+Building and Running the Test Programs</H1>
+<P>Each major component--libarchive, bsdtar, and bsdcpio--has a test
+program that exercises the functionality of that component. These
+test programs are compiled in the same way that the rest of the
+libarchive suite is compiled. 
+</P>
+<P>To run the test programs, you need to give them two pieces of
+information: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The full path to the directory
+	holding the &quot;reference files&quot; 
+	</P>
+	<LI><P>The full path to the executable program being tested (not
+	applicable to libarchive_test since libarchive is compiled into the
+	test program) 
+	</P>
+</UL>
+<P>The reference files are a collection of known inputs that are used
+in the test process. They are all stored in uuencoded format in files
+with a &quot;.uu&quot; extension. The test programs look in a few
+standard locations; if none of those work, you'll need to specify the
+<TT CLASS="western">-r</TT> option with the full pathname to the
+appropriate directory. 
+</P>
+<P>The bsdtar_test and bsdcpio_test programs run bsdtar or bsdcpio
+repeatedly; they need the full path to the appropriate executable.
+Although bsdtar_test and bsdcpio_test are specifically intended for
+testing bsdtar and bsdcpio, they should be usable for testing other
+tar and cpio programs. In fact, running these test programs against
+other tar implementations is a good way to verify that the test
+programs themselves are working correctly. 
+</P>
+<P>When run, the test programs output a progress message for each
+test, an error message for each failed assertion, and a final
+summary: 
+</P>
+<PRE CLASS="western">&nbsp;Running tests in: /tmp/bsdtar_test.2009-02-17T21.30.40-000
+&nbsp;Reference files will be read from: &nbsp; &nbsp;/home/tim/libarchive/trunk/tar/test
+&nbsp;Running tests on: /home/tim/libarchive/trunk/bsdtar
+&nbsp;Exercising: bsdtar 2.6.900a - libarchive 2.6.900a
+&nbsp;0: test_0
+&nbsp;1: test_basic
+&nbsp;2: test_copy
+&nbsp; test_copy.c:171: Assertion failed: Ints not equal
+&nbsp; &nbsp; &nbsp; 0=0
+&nbsp; &nbsp; &nbsp; lstat(name2 + 3, &amp;st2)=-1
+&nbsp; test_copy.c:171: Failed 264 times
+&nbsp;3: test_getdate
+&nbsp;4: test_help
+&nbsp; &nbsp; ... more output omitted ...
+&nbsp;1 of 13 tests reported failures
+&nbsp; Total of 105097 assertions checked.
+&nbsp; Total of 264 assertions failed.
+&nbsp; Total of 0 assertions skipped.</PRE><P>
+The header lines here record: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">the directory that will be used
+	for scratch files during the test. If a test fails, the scratch
+	files will be left behind in this directory for further debugging. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">The directory from which the
+	reference files will be read. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">For bsdtar_test and bsdcpio_test,
+	the full path to the executable being exercised. 
+	</P>
+	<LI><P>Basic version information about the target. 
+	</P>
+</UL>
+<P>In this case, the trailer indicates that one test failed. As you
+can see, there was a single assertion in the code that failed 264
+times. The first time it failed, it was because an <TT CLASS="western">lstat()</TT>
+call returned -1 instead of the zero that was expected. 
+</P>
+<H1 CLASS="western"><A NAME="Basic_test_terminology"></A>Basic test
+terminology</H1>
+<P>Each test program consists of a number of &quot;tests&quot;. Each
+test has a name and is implemented in a C source file with the same
+name as the test. Tests work by performing some series of operations
+and making &quot;assertions&quot; about the results. For example,
+many of the libarchive tests open and read an archive and assert that
+particular operations succeeded or failed. (Yes, it is often
+important to verify that illegal requests generate appropriate
+errors.) 
+</P>
+<P>Here is a somewhat edited excerpt from <TT CLASS="western">test_compat_zip</TT>,
+which verifies compatibility with various ZIP format archives: 
+</P>
+<PRE CLASS="western">&nbsp; DEFINE_TEST(test_compat_zip)
+&nbsp; {
+&nbsp; &nbsp; /* ... setup omitted ... */
+&nbsp; &nbsp; assert((a = archive_read_new()) != NULL);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_compression_all(a));
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_format_all(a));
+&nbsp; &nbsp; extract_reference_file(name);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_open_filename(a, name, 10240));
+&nbsp; &nbsp; &nbsp;/* Read first entry. */
+&nbsp; &nbsp; &nbsp;assertEqualInt(ARCHIVE_OK, archive_read_next_header(a, &amp;ae));
+&nbsp; &nbsp; &nbsp;assertEqualString(&quot;META-INF/MANIFEST.MF&quot;, archive_entry_pathname(ae));</PRE><P>
+The <TT CLASS="western">assertXXXX</TT> macros check that their
+arguments satisfy certain conditions. If the assertion fails--for
+example, if the name of the first entry is not
+&quot;META-INF/MANIFEST.MF&quot;--the macro will report the problem. 
+</P>
+<P>There are two important differences between the <TT CLASS="western">assertXXX</TT>
+macros used in these test harnesses and the ISO C standard <TT CLASS="western">assert</TT>
+macro: First, these assert macros don't exit on failure. By default,
+they report the failure and return zero (the C notion of &quot;false&quot;).
+Second, these macros include variants that perform a variety of
+specific tests. These specific versions (such as <TT CLASS="western">assertEqualInt</TT>
+and <TT CLASS="western">assertEqualString</TT> in the example above)
+generate detailed log messages on failure. In particular, they print
+the value of both arguments; this greatly simplifies diagnosing
+failures. 
+</P>
+<H1 CLASS="western"><A NAME="Life_cycle_of_a_test"></A>Life cycle of
+a test</H1>
+<P>Each test resides in a C source file with the same name as the
+test. The test itself is a function that takes no arguments. The test
+is declared using the <TT CLASS="western">DEFINE_TEST()</TT> macro.
+This macro serves both to ensure that the test is declared correctly
+and as a label that can be used to locate all defined tests. (On
+Unix-like platforms, a simple <TT CLASS="western">grep</TT> operation
+is used to construct a file called <TT CLASS="western">list.h</TT>
+that holds the names of all of the tests. This makes it very easy to
+add new tests.) 
+</P>
+<P>The test harness determines which tests to run. It goes through
+the following steps whenever it runs a test: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in"><STRIKE>Closes all file
+	descriptors except for stdin, stdout, and stderr.</STRIKE> (This
+	screws up libc on some platforms so has been removed.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Creates a temporary directory
+	whose name matches the name of the test and switches into that
+	directory. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Resets the current locale. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Calls the test function. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">If there were no assertion
+	failures, it will remove the temporary directory. (If <TT CLASS="western">-k</TT>
+	is specified, temporary directory are left even if the test
+	succeeds.) 
+	</P>
+	<LI><P><STRIKE>If there are any open file descriptors other than
+	stdin, stdout, and stderr, it reports an error.</STRIKE> Tests
+	should never leave open file descriptors. 
+	</P>
+</UL>
+<P>In particular, tests can safely assume that: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The current directory is empty
+	when the test starts. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Any files created in the current
+	directory will be removed for you. 
+	</P>
+	<LI><P>The current locale is the default &quot;C&quot; locale. 
+	</P>
+</UL>
+<P>Tests should: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Release all memory. The test
+	suites are occasionally run under a memory debugger to detect leaks
+	in the libarchive library. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Close all opened files. This helps
+	to catch file descriptor leaks in libarchive. 
+	</P>
+	<LI><P>Not read or write absolute paths. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Platform_variation"></A>Platform
+variation</H1>
+<P>Some tests are specific to a particular platform. Such tests
+should use appropriate platform-specific macros as follows: 
+</P>
+<PRE CLASS="western">#if __PLATFORM
+... various helper functions ...
+#endif
+DEFINE_TEST(foo_platform)
+{
+#if __PLATFORM
+&nbsp; &nbsp;... tests as usual ....
+#else
+&nbsp; &nbsp;skipping(&quot;platform-specific tests&quot;);
+#endif
+}</PRE><P>
+In particular, note that all tests are compiled and run on all
+platforms. 
+</P>
+<P>Most tests are not platform-specific and will thus end up running
+on many different platforms. In order to simplify writing such tests,
+try to use platform-independent coding: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Use stdio <TT CLASS="western">fopen()</TT>,
+	<TT CLASS="western">fwrite()</TT>, <TT CLASS="western">fread()</TT>,
+	and <TT CLASS="western">fclose()</TT> to access files whenever
+	feasible. 
+	</P>
+	<LI><P>Look through the <TT CLASS="western">test.h</TT> header to
+	see if there are assertXxx() functions that you can use. There's a
+	list of the more popular ones below, but new ones are often added. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Assert_macros"></A>Assert macros</H1>
+<P>The following is a necessarily incomplete list of assert functions
+available to tests: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Basic equality: <TT CLASS="western">assertEqualInt</TT>,
+	<TT CLASS="western">assertEqualString</TT>, <TT CLASS="western">assertEqualMem</TT>
+		</P>
+	<LI><P STYLE="margin-bottom: 0in">File creation: <TT CLASS="western">assertMakeFile</TT>,
+	<TT CLASS="western">assertMakeSymlink</TT>, <TT CLASS="western">assertMakeHardlink</TT>,
+	<TT CLASS="western">assertMakeDir</TT> 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">File tests: <TT CLASS="western">assertIsReg</TT>,
+	<TT CLASS="western">assertIsDir</TT>, <TT CLASS="western">assertIsSymlink</TT>,
+	<TT CLASS="western">assertFileSize</TT>, <TT CLASS="western">assertFileNlinks</TT>,
+	<TT CLASS="western">assertFileMtime</TT> 
+	</P>
+	<LI><P>File contents: <TT CLASS="western">assertFileEmpty</TT>,
+	<TT CLASS="western">assertFileNonEmpty</TT>, <TT CLASS="western">assertFileContents</TT>,
+	<TT CLASS="western">assertTextFileContents</TT> 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Reference_Files"></A>Reference Files</H1>
+<P>Many tests require reading a pre-constructed reference file. Such
+files are stored with the source code for the associated test suite.
+Reference files are named according to the test and must be uuencoded
+to be checked into source control. 
+</P>
+<P>For example, if you need a reference tar archive to use with
+<TT CLASS="western">test_foo</TT>, the file should be named
+<TT CLASS="western">test_foo.tar</TT> and stored in source control as
+<TT CLASS="western">test_foo.tar.uu</TT>. 
+</P>
+<P>Within the test code, you can recover the reference file with: 
+</P>
+<PRE CLASS="western" STYLE="margin-bottom: 0.2in">&nbsp; &nbsp; extract_reference_file(&quot;test_foo.tar&quot;);</PRE><P>
+The <TT CLASS="western">extract_reference_file()</TT> function will
+uudecode the requested file and put the result in the current
+directory. 
+</P>
+<P>Look at <TT CLASS="western">test_read_format_cpio_bin_be.c</TT>
+for a simple example of this usage. 
+</P>
+<P>A few of the older tests store reference data within the source
+code as a hex-encoded array of characters. This was common before
+<TT CLASS="western">extract_reference_file()</TT> was added and is
+not recommended for new code. 
+</P>
+<H1 CLASS="western"><A NAME="Dos_and_Donts"></A>Dos and Donts</H1>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">DO use asserts liberally. It's
+	common to have an assert on almost every line. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use assertEqualInt,
+	assertEqualString, assertEqualMem to test equality instead of plain
+	assert(); the specialized forms give a lot more information on a
+	failure. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO test your tests; experiment by
+	changing a piece of code and make sure your test fails. If you think
+	you've found a bug, we recommend writing the test first, make sure
+	the test fails, then fixing the bug. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO run all of the tests before
+	submitting a change. Depending on your build environment, <TT CLASS="western">make
+	test</TT> or <TT CLASS="western">make check</TT> will usually run
+	all of the tests. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DON'T rely on <TT CLASS="western">HAVE_</TT>
+	macros from config.h. (If the tests use the same <TT CLASS="western">HAVE_</TT>
+	macros as the code being tested then configuration problems will be
+	covered up.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use runtime tests for platform
+	features. For example, the ACL tests try to set an ACL on a file and
+	read it back to determine if ACL support is available, then they
+	exercise the libarchive ACL handling. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO look at existing tests. Often,
+	a bug can be tested by adding just a couple of asserts to an
+	existing test instead of writing a new one. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO improve existing tests. In
+	particular, if you see a test failure that is hard to understand,
+	consider adding a failure() message or comments so the next person
+	will have an easier time. 
+	</P>
+	<LI><P>DO ask on the mailing lists if you have questions. Some tests
+	are better written than others. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Some_examples_of_tests"></A>Some
+examples of tests</H1>
+<H2 CLASS="western"><A NAME="Libarchive_read_tests"></A>Libarchive
+read tests</H2>
+<P>There are quite a few read tests that simply read a pre-built
+input file and verify the results. These use <TT CLASS="western">extract_reference_file()</TT>
+to decode a uuencoded input file, then open that file with libarchive
+and verify the results. Most of these are pretty straightforward. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_read/write_tests"></A>Libarchive
+read/write tests</H2>
+<P>Most of the write tests really just verify that libarchive can
+read what it writes. These generally use the memory interfaces. They
+feed archive entries into the writer to create an archive in memory
+and then open the memory again to read the data back and verify that
+it is the same. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_write_validators"></A>Libarchive
+write validators</H2>
+<P>A few write tests write an archive into memory and then inspect
+the actual bytes to verify that the archive was created correctly.
+These tests are nice to have but are tedious to build. 
+</P>
+<P>There are also a couple of such validators for bsdtar and bsdcpio.
+These are very tricky since the exact data contains values that the
+test cannot completely control (such as the current time or
+username). 
+</P>
+<H2 CLASS="western"><A NAME="Disk_tests"></A>Disk tests</H2>
+<P>Libarchive's disk I/O APIs, as well as bsdtar and bsdcpio, need to
+operate by verifying files on disk. To make this easier, the test
+framework now has a large number of assertions to verify timestamps,
+permissions, and other basic file data. These assertions use
+appropriate system calls for each platform; new tests should try to
+avoid using <TT CLASS="western">stat()</TT>, which is not uniformly
+available. 
+</P>
+<H2 CLASS="western"><A NAME="Fuzz_tester"></A>Fuzz tester</H2>
+<P>The fuzz tester is one of the few tests that does not aggressively
+use assertions. Its purpose is to try and crash libarchive by feeding
+it input that is slightly damaged. (Remember that libarchive does
+have some failsafe code that deliberately aborts the entire program
+if certain invariants are violated.) 
+</P>
+<P>Since a fuzz failure causes a crash, it's impossible to report the
+error to the console, so the fuzz tester instead generates a
+randomly-damaged file, saves that file to disk, then runs the file
+through libarchive to try to provoke a crash. If libarchive crashes
+the entire tester, the input that caused the crash will be available
+on disk for further analysis. 
+</P>
+<P>Although it is unusual for a test program to use random input, the
+fuzz tester has proven quite useful at uncovering poor error
+handling. Unfortunately, the need to write the data to disk before
+each test is a significant performance issue. 
+</P>
+<H2 CLASS="western"><A NAME="Large_tar_tester"></A>Large tar tester</H2>
+<P>The large tar tester attempts to exercise boundary cases with very
+large entries, up to 1 terabyte. Of course, writing a 1 terabyte
+entry to an uncompressed archive on disk or memory is unacceptable,
+both for performance and space reasons. Even gzip or bzip2
+compression won't help; although smaller, the output is still large
+and the time needed to compress such a large amount of data is
+prohibitive. So the large tar tester uses a trick. 
+</P>
+<P>Remember that an uncompressed tar archive consists of alternating
+headers and bodies. If the bodies consist entirely of zero bytes,
+then all that's needed to reconstruct the archive is to record the
+relatively small headers and store a count of each contiguous block
+of zeros. This simple &quot;run-length encoding&quot; is very
+effective, compressing a sample archive with a dozen entries down to
+just a few kilobytes, even if those entries range up to 1TB. 
+</P>
+<P>By writing a custom I/O layer that implements such compression, we
+can write very large entries through libarchive then read them back
+and verify that libarchive correctly handles all of the boundary
+cases. 
+</P>
+<P>Of course, even scanning output to determine zero blocks can take
+quite a while, so the large tar tester makes one more optimization:
+Libarchive is &quot;mostly&quot; zero-copy. When you give it a large
+block to write to an entry body, it will pass pointers straight
+through to the output routine, except in those cases where it must
+copy data to correctly build blocks. The large tar tester takes
+advantage of this to quickly detect when a block being written out by
+the archive writer is the same as some of the data that was given by
+the test as the entry body, and similarly when reading the archive
+back. 
+</P>
+<P>Taken together, these tricks allow the large tar writer to test
+for issues such as proper storage of very large file sizes (tar files
+support several different ways to store file sizes which trade off
+portability versus range; libarchive tries to use the most portable
+one it can for each entry) and integer overflow (Windows 32-bit <TT CLASS="western">off_t</TT>
+broke the large tar test and led libarchive to make heavier use of
+<TT CLASS="western">int64_t</TT> internally) in a test that runs in
+under 1/4 second. 
+</P>
+<P STYLE="margin-bottom: 0in"><BR>
+</P>
+</BODY>
+</HTML><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=utf-8">
+	<TITLE></TITLE>
+	<META NAME="GENERATOR" CONTENT="LibreOffice 3.3  (Unix)">
+	<META NAME="CREATED" CONTENT="20110626;22235100">
+	<META NAME="CHANGED" CONTENT="20110626;22254500">
+	<STYLE TYPE="text/css">
+	<!--
+		@page { margin: 0.79in }
+		P { margin-bottom: 0.08in }
+		H1 { margin-bottom: 0.08in }
+		H1.western { font-family: "Liberation Serif", serif }
+		H1.cjk { font-family: "Bitstream Vera Sans" }
+		H1.ctl { font-family: "FreeSans" }
+		PRE.cjk { font-family: "Bitstream Vera Sans", monospace }
+		H2 { margin-bottom: 0.08in }
+		H2.ctl { font-family: "FreeSans" }
+		TT.cjk { font-family: "Bitstream Vera Sans", monospace }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" DIR="LTR">
+<H1 CLASS="western">Introduction</H1>
+<P>Libarchive is now a fairly complex piece of software that runs on
+a number of different platforms. A thorough test suite is essential
+both for verifying new ports and for ensuring that future changes
+don't break existing functionality. 
+</P>
+<P>Any significant change to libarchive, including most bug fixes,
+should be accompanied by new tests or changes to existing tests. This
+article explains how the libarchive test suites work and how to
+extend them. 
+</P>
+<H1 CLASS="western"><A NAME="Building_and_Running_the_Test_Programs"></A>
+Building and Running the Test Programs</H1>
+<P>Each major component--libarchive, bsdtar, and bsdcpio--has a test
+program that exercises the functionality of that component. These
+test programs are compiled in the same way that the rest of the
+libarchive suite is compiled. 
+</P>
+<P>To run the test programs, you need to give them two pieces of
+information: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The full path to the directory
+	holding the &quot;reference files&quot; 
+	</P>
+	<LI><P>The full path to the executable program being tested (not
+	applicable to libarchive_test since libarchive is compiled into the
+	test program) 
+	</P>
+</UL>
+<P>The reference files are a collection of known inputs that are used
+in the test process. They are all stored in uuencoded format in files
+with a &quot;.uu&quot; extension. The test programs look in a few
+standard locations; if none of those work, you'll need to specify the
+<TT CLASS="western">-r</TT> option with the full pathname to the
+appropriate directory. 
+</P>
+<P>The bsdtar_test and bsdcpio_test programs run bsdtar or bsdcpio
+repeatedly; they need the full path to the appropriate executable.
+Although bsdtar_test and bsdcpio_test are specifically intended for
+testing bsdtar and bsdcpio, they should be usable for testing other
+tar and cpio programs. In fact, running these test programs against
+other tar implementations is a good way to verify that the test
+programs themselves are working correctly. 
+</P>
+<P>When run, the test programs output a progress message for each
+test, an error message for each failed assertion, and a final
+summary: 
+</P>
+<PRE CLASS="western">&nbsp;Running tests in: /tmp/bsdtar_test.2009-02-17T21.30.40-000
+&nbsp;Reference files will be read from: &nbsp; &nbsp;/home/tim/libarchive/trunk/tar/test
+&nbsp;Running tests on: /home/tim/libarchive/trunk/bsdtar
+&nbsp;Exercising: bsdtar 2.6.900a - libarchive 2.6.900a
+&nbsp;0: test_0
+&nbsp;1: test_basic
+&nbsp;2: test_copy
+&nbsp; test_copy.c:171: Assertion failed: Ints not equal
+&nbsp; &nbsp; &nbsp; 0=0
+&nbsp; &nbsp; &nbsp; lstat(name2 + 3, &amp;st2)=-1
+&nbsp; test_copy.c:171: Failed 264 times
+&nbsp;3: test_getdate
+&nbsp;4: test_help
+&nbsp; &nbsp; ... more output omitted ...
+&nbsp;1 of 13 tests reported failures
+&nbsp; Total of 105097 assertions checked.
+&nbsp; Total of 264 assertions failed.
+&nbsp; Total of 0 assertions skipped.</PRE><P>
+The header lines here record: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">the directory that will be used
+	for scratch files during the test. If a test fails, the scratch
+	files will be left behind in this directory for further debugging. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">The directory from which the
+	reference files will be read. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">For bsdtar_test and bsdcpio_test,
+	the full path to the executable being exercised. 
+	</P>
+	<LI><P>Basic version information about the target. 
+	</P>
+</UL>
+<P>In this case, the trailer indicates that one test failed. As you
+can see, there was a single assertion in the code that failed 264
+times. The first time it failed, it was because an <TT CLASS="western">lstat()</TT>
+call returned -1 instead of the zero that was expected. 
+</P>
+<H1 CLASS="western"><A NAME="Basic_test_terminology"></A>Basic test
+terminology</H1>
+<P>Each test program consists of a number of &quot;tests&quot;. Each
+test has a name and is implemented in a C source file with the same
+name as the test. Tests work by performing some series of operations
+and making &quot;assertions&quot; about the results. For example,
+many of the libarchive tests open and read an archive and assert that
+particular operations succeeded or failed. (Yes, it is often
+important to verify that illegal requests generate appropriate
+errors.) 
+</P>
+<P>Here is a somewhat edited excerpt from <TT CLASS="western">test_compat_zip</TT>,
+which verifies compatibility with various ZIP format archives: 
+</P>
+<PRE CLASS="western">&nbsp; DEFINE_TEST(test_compat_zip)
+&nbsp; {
+&nbsp; &nbsp; /* ... setup omitted ... */
+&nbsp; &nbsp; assert((a = archive_read_new()) != NULL);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_compression_all(a));
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_format_all(a));
+&nbsp; &nbsp; extract_reference_file(name);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_open_filename(a, name, 10240));
+&nbsp; &nbsp; &nbsp;/* Read first entry. */
+&nbsp; &nbsp; &nbsp;assertEqualInt(ARCHIVE_OK, archive_read_next_header(a, &amp;ae));
+&nbsp; &nbsp; &nbsp;assertEqualString(&quot;META-INF/MANIFEST.MF&quot;, archive_entry_pathname(ae));</PRE><P>
+The <TT CLASS="western">assertXXXX</TT> macros check that their
+arguments satisfy certain conditions. If the assertion fails--for
+example, if the name of the first entry is not
+&quot;META-INF/MANIFEST.MF&quot;--the macro will report the problem. 
+</P>
+<P>There are two important differences between the <TT CLASS="western">assertXXX</TT>
+macros used in these test harnesses and the ISO C standard <TT CLASS="western">assert</TT>
+macro: First, these assert macros don't exit on failure. By default,
+they report the failure and return zero (the C notion of &quot;false&quot;).
+Second, these macros include variants that perform a variety of
+specific tests. These specific versions (such as <TT CLASS="western">assertEqualInt</TT>
+and <TT CLASS="western">assertEqualString</TT> in the example above)
+generate detailed log messages on failure. In particular, they print
+the value of both arguments; this greatly simplifies diagnosing
+failures. 
+</P>
+<H1 CLASS="western"><A NAME="Life_cycle_of_a_test"></A>Life cycle of
+a test</H1>
+<P>Each test resides in a C source file with the same name as the
+test. The test itself is a function that takes no arguments. The test
+is declared using the <TT CLASS="western">DEFINE_TEST()</TT> macro.
+This macro serves both to ensure that the test is declared correctly
+and as a label that can be used to locate all defined tests. (On
+Unix-like platforms, a simple <TT CLASS="western">grep</TT> operation
+is used to construct a file called <TT CLASS="western">list.h</TT>
+that holds the names of all of the tests. This makes it very easy to
+add new tests.) 
+</P>
+<P>The test harness determines which tests to run. It goes through
+the following steps whenever it runs a test: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in"><STRIKE>Closes all file
+	descriptors except for stdin, stdout, and stderr.</STRIKE> (This
+	screws up libc on some platforms so has been removed.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Creates a temporary directory
+	whose name matches the name of the test and switches into that
+	directory. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Resets the current locale. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Calls the test function. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">If there were no assertion
+	failures, it will remove the temporary directory. (If <TT CLASS="western">-k</TT>
+	is specified, temporary directory are left even if the test
+	succeeds.) 
+	</P>
+	<LI><P><STRIKE>If there are any open file descriptors other than
+	stdin, stdout, and stderr, it reports an error.</STRIKE> Tests
+	should never leave open file descriptors. 
+	</P>
+</UL>
+<P>In particular, tests can safely assume that: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The current directory is empty
+	when the test starts. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Any files created in the current
+	directory will be removed for you. 
+	</P>
+	<LI><P>The current locale is the default &quot;C&quot; locale. 
+	</P>
+</UL>
+<P>Tests should: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Release all memory. The test
+	suites are occasionally run under a memory debugger to detect leaks
+	in the libarchive library. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Close all opened files. This helps
+	to catch file descriptor leaks in libarchive. 
+	</P>
+	<LI><P>Not read or write absolute paths. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Platform_variation"></A>Platform
+variation</H1>
+<P>Some tests are specific to a particular platform. Such tests
+should use appropriate platform-specific macros as follows: 
+</P>
+<PRE CLASS="western">#if __PLATFORM
+... various helper functions ...
+#endif
+DEFINE_TEST(foo_platform)
+{
+#if __PLATFORM
+&nbsp; &nbsp;... tests as usual ....
+#else
+&nbsp; &nbsp;skipping(&quot;platform-specific tests&quot;);
+#endif
+}</PRE><P>
+In particular, note that all tests are compiled and run on all
+platforms. 
+</P>
+<P>Most tests are not platform-specific and will thus end up running
+on many different platforms. In order to simplify writing such tests,
+try to use platform-independent coding: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Use stdio <TT CLASS="western">fopen()</TT>,
+	<TT CLASS="western">fwrite()</TT>, <TT CLASS="western">fread()</TT>,
+	and <TT CLASS="western">fclose()</TT> to access files whenever
+	feasible. 
+	</P>
+	<LI><P>Look through the <TT CLASS="western">test.h</TT> header to
+	see if there are assertXxx() functions that you can use. There's a
+	list of the more popular ones below, but new ones are often added. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Assert_macros"></A>Assert macros</H1>
+<P>The following is a necessarily incomplete list of assert functions
+available to tests: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Basic equality: <TT CLASS="western">assertEqualInt</TT>,
+	<TT CLASS="western">assertEqualString</TT>, <TT CLASS="western">assertEqualMem</TT>
+		</P>
+	<LI><P STYLE="margin-bottom: 0in">File creation: <TT CLASS="western">assertMakeFile</TT>,
+	<TT CLASS="western">assertMakeSymlink</TT>, <TT CLASS="western">assertMakeHardlink</TT>,
+	<TT CLASS="western">assertMakeDir</TT> 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">File tests: <TT CLASS="western">assertIsReg</TT>,
+	<TT CLASS="western">assertIsDir</TT>, <TT CLASS="western">assertIsSymlink</TT>,
+	<TT CLASS="western">assertFileSize</TT>, <TT CLASS="western">assertFileNlinks</TT>,
+	<TT CLASS="western">assertFileMtime</TT> 
+	</P>
+	<LI><P>File contents: <TT CLASS="western">assertFileEmpty</TT>,
+	<TT CLASS="western">assertFileNonEmpty</TT>, <TT CLASS="western">assertFileContents</TT>,
+	<TT CLASS="western">assertTextFileContents</TT> 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Reference_Files"></A>Reference Files</H1>
+<P>Many tests require reading a pre-constructed reference file. Such
+files are stored with the source code for the associated test suite.
+Reference files are named according to the test and must be uuencoded
+to be checked into source control. 
+</P>
+<P>For example, if you need a reference tar archive to use with
+<TT CLASS="western">test_foo</TT>, the file should be named
+<TT CLASS="western">test_foo.tar</TT> and stored in source control as
+<TT CLASS="western">test_foo.tar.uu</TT>. 
+</P>
+<P>Within the test code, you can recover the reference file with: 
+</P>
+<PRE CLASS="western" STYLE="margin-bottom: 0.2in">&nbsp; &nbsp; extract_reference_file(&quot;test_foo.tar&quot;);</PRE><P>
+The <TT CLASS="western">extract_reference_file()</TT> function will
+uudecode the requested file and put the result in the current
+directory. 
+</P>
+<P>Look at <TT CLASS="western">test_read_format_cpio_bin_be.c</TT>
+for a simple example of this usage. 
+</P>
+<P>A few of the older tests store reference data within the source
+code as a hex-encoded array of characters. This was common before
+<TT CLASS="western">extract_reference_file()</TT> was added and is
+not recommended for new code. 
+</P>
+<H1 CLASS="western"><A NAME="Dos_and_Donts"></A>Dos and Donts</H1>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">DO use asserts liberally. It's
+	common to have an assert on almost every line. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use assertEqualInt,
+	assertEqualString, assertEqualMem to test equality instead of plain
+	assert(); the specialized forms give a lot more information on a
+	failure. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO test your tests; experiment by
+	changing a piece of code and make sure your test fails. If you think
+	you've found a bug, we recommend writing the test first, make sure
+	the test fails, then fixing the bug. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO run all of the tests before
+	submitting a change. Depending on your build environment, <TT CLASS="western">make
+	test</TT> or <TT CLASS="western">make check</TT> will usually run
+	all of the tests. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DON'T rely on <TT CLASS="western">HAVE_</TT>
+	macros from config.h. (If the tests use the same <TT CLASS="western">HAVE_</TT>
+	macros as the code being tested then configuration problems will be
+	covered up.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use runtime tests for platform
+	features. For example, the ACL tests try to set an ACL on a file and
+	read it back to determine if ACL support is available, then they
+	exercise the libarchive ACL handling. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO look at existing tests. Often,
+	a bug can be tested by adding just a couple of asserts to an
+	existing test instead of writing a new one. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO improve existing tests. In
+	particular, if you see a test failure that is hard to understand,
+	consider adding a failure() message or comments so the next person
+	will have an easier time. 
+	</P>
+	<LI><P>DO ask on the mailing lists if you have questions. Some tests
+	are better written than others. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Some_examples_of_tests"></A>Some
+examples of tests</H1>
+<H2 CLASS="western"><A NAME="Libarchive_read_tests"></A>Libarchive
+read tests</H2>
+<P>There are quite a few read tests that simply read a pre-built
+input file and verify the results. These use <TT CLASS="western">extract_reference_file()</TT>
+to decode a uuencoded input file, then open that file with libarchive
+and verify the results. Most of these are pretty straightforward. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_read/write_tests"></A>Libarchive
+read/write tests</H2>
+<P>Most of the write tests really just verify that libarchive can
+read what it writes. These generally use the memory interfaces. They
+feed archive entries into the writer to create an archive in memory
+and then open the memory again to read the data back and verify that
+it is the same. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_write_validators"></A>Libarchive
+write validators</H2>
+<P>A few write tests write an archive into memory and then inspect
+the actual bytes to verify that the archive was created correctly.
+These tests are nice to have but are tedious to build. 
+</P>
+<P>There are also a couple of such validators for bsdtar and bsdcpio.
+These are very tricky since the exact data contains values that the
+test cannot completely control (such as the current time or
+username). 
+</P>
+<H2 CLASS="western"><A NAME="Disk_tests"></A>Disk tests</H2>
+<P>Libarchive's disk I/O APIs, as well as bsdtar and bsdcpio, need to
+operate by verifying files on disk. To make this easier, the test
+framework now has a large number of assertions to verify timestamps,
+permissions, and other basic file data. These assertions use
+appropriate system calls for each platform; new tests should try to
+avoid using <TT CLASS="western">stat()</TT>, which is not uniformly
+available. 
+</P>
+<H2 CLASS="western"><A NAME="Fuzz_tester"></A>Fuzz tester</H2>
+<P>The fuzz tester is one of the few tests that does not aggressively
+use assertions. Its purpose is to try and crash libarchive by feeding
+it input that is slightly damaged. (Remember that libarchive does
+have some failsafe code that deliberately aborts the entire program
+if certain invariants are violated.) 
+</P>
+<P>Since a fuzz failure causes a crash, it's impossible to report the
+error to the console, so the fuzz tester instead generates a
+randomly-damaged file, saves that file to disk, then runs the file
+through libarchive to try to provoke a crash. If libarchive crashes
+the entire tester, the input that caused the crash will be available
+on disk for further analysis. 
+</P>
+<P>Although it is unusual for a test program to use random input, the
+fuzz tester has proven quite useful at uncovering poor error
+handling. Unfortunately, the need to write the data to disk before
+each test is a significant performance issue. 
+</P>
+<H2 CLASS="western"><A NAME="Large_tar_tester"></A>Large tar tester</H2>
+<P>The large tar tester attempts to exercise boundary cases with very
+large entries, up to 1 terabyte. Of course, writing a 1 terabyte
+entry to an uncompressed archive on disk or memory is unacceptable,
+both for performance and space reasons. Even gzip or bzip2
+compression won't help; although smaller, the output is still large
+and the time needed to compress such a large amount of data is
+prohibitive. So the large tar tester uses a trick. 
+</P>
+<P>Remember that an uncompressed tar archive consists of alternating
+headers and bodies. If the bodies consist entirely of zero bytes,
+then all that's needed to reconstruct the archive is to record the
+relatively small headers and store a count of each contiguous block
+of zeros. This simple &quot;run-length encoding&quot; is very
+effective, compressing a sample archive with a dozen entries down to
+just a few kilobytes, even if those entries range up to 1TB. 
+</P>
+<P>By writing a custom I/O layer that implements such compression, we
+can write very large entries through libarchive then read them back
+and verify that libarchive correctly handles all of the boundary
+cases. 
+</P>
+<P>Of course, even scanning output to determine zero blocks can take
+quite a while, so the large tar tester makes one more optimization:
+Libarchive is &quot;mostly&quot; zero-copy. When you give it a large
+block to write to an entry body, it will pass pointers straight
+through to the output routine, except in those cases where it must
+copy data to correctly build blocks. The large tar tester takes
+advantage of this to quickly detect when a block being written out by
+the archive writer is the same as some of the data that was given by
+the test as the entry body, and similarly when reading the archive
+back. 
+</P>
+<P>Taken together, these tricks allow the large tar writer to test
+for issues such as proper storage of very large file sizes (tar files
+support several different ways to store file sizes which trade off
+portability versus range; libarchive tries to use the most portable
+one it can for each entry) and integer overflow (Windows 32-bit <TT CLASS="western">off_t</TT>
+broke the large tar test and led libarchive to make heavier use of
+<TT CLASS="western">int64_t</TT> internally) in a test that runs in
+under 1/4 second. 
+</P>
+<P STYLE="margin-bottom: 0in"><BR>
+</P>
+</BODY>
+</HTML><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=utf-8">
+	<TITLE></TITLE>
+	<META NAME="GENERATOR" CONTENT="LibreOffice 3.3  (Unix)">
+	<META NAME="CREATED" CONTENT="20110626;22235100">
+	<META NAME="CHANGED" CONTENT="20110626;22254500">
+	<STYLE TYPE="text/css">
+	<!--
+		@page { margin: 0.79in }
+		P { margin-bottom: 0.08in }
+		H1 { margin-bottom: 0.08in }
+		H1.western { font-family: "Liberation Serif", serif }
+		H1.cjk { font-family: "Bitstream Vera Sans" }
+		H1.ctl { font-family: "FreeSans" }
+		PRE.cjk { font-family: "Bitstream Vera Sans", monospace }
+		H2 { margin-bottom: 0.08in }
+		H2.ctl { font-family: "FreeSans" }
+		TT.cjk { font-family: "Bitstream Vera Sans", monospace }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" DIR="LTR">
+<H1 CLASS="western">Introduction</H1>
+<P>Libarchive is now a fairly complex piece of software that runs on
+a number of different platforms. A thorough test suite is essential
+both for verifying new ports and for ensuring that future changes
+don't break existing functionality. 
+</P>
+<P>Any significant change to libarchive, including most bug fixes,
+should be accompanied by new tests or changes to existing tests. This
+article explains how the libarchive test suites work and how to
+extend them. 
+</P>
+<H1 CLASS="western"><A NAME="Building_and_Running_the_Test_Programs"></A>
+Building and Running the Test Programs</H1>
+<P>Each major component--libarchive, bsdtar, and bsdcpio--has a test
+program that exercises the functionality of that component. These
+test programs are compiled in the same way that the rest of the
+libarchive suite is compiled. 
+</P>
+<P>To run the test programs, you need to give them two pieces of
+information: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The full path to the directory
+	holding the &quot;reference files&quot; 
+	</P>
+	<LI><P>The full path to the executable program being tested (not
+	applicable to libarchive_test since libarchive is compiled into the
+	test program) 
+	</P>
+</UL>
+<P>The reference files are a collection of known inputs that are used
+in the test process. They are all stored in uuencoded format in files
+with a &quot;.uu&quot; extension. The test programs look in a few
+standard locations; if none of those work, you'll need to specify the
+<TT CLASS="western">-r</TT> option with the full pathname to the
+appropriate directory. 
+</P>
+<P>The bsdtar_test and bsdcpio_test programs run bsdtar or bsdcpio
+repeatedly; they need the full path to the appropriate executable.
+Although bsdtar_test and bsdcpio_test are specifically intended for
+testing bsdtar and bsdcpio, they should be usable for testing other
+tar and cpio programs. In fact, running these test programs against
+other tar implementations is a good way to verify that the test
+programs themselves are working correctly. 
+</P>
+<P>When run, the test programs output a progress message for each
+test, an error message for each failed assertion, and a final
+summary: 
+</P>
+<PRE CLASS="western">&nbsp;Running tests in: /tmp/bsdtar_test.2009-02-17T21.30.40-000
+&nbsp;Reference files will be read from: &nbsp; &nbsp;/home/tim/libarchive/trunk/tar/test
+&nbsp;Running tests on: /home/tim/libarchive/trunk/bsdtar
+&nbsp;Exercising: bsdtar 2.6.900a - libarchive 2.6.900a
+&nbsp;0: test_0
+&nbsp;1: test_basic
+&nbsp;2: test_copy
+&nbsp; test_copy.c:171: Assertion failed: Ints not equal
+&nbsp; &nbsp; &nbsp; 0=0
+&nbsp; &nbsp; &nbsp; lstat(name2 + 3, &amp;st2)=-1
+&nbsp; test_copy.c:171: Failed 264 times
+&nbsp;3: test_getdate
+&nbsp;4: test_help
+&nbsp; &nbsp; ... more output omitted ...
+&nbsp;1 of 13 tests reported failures
+&nbsp; Total of 105097 assertions checked.
+&nbsp; Total of 264 assertions failed.
+&nbsp; Total of 0 assertions skipped.</PRE><P>
+The header lines here record: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">the directory that will be used
+	for scratch files during the test. If a test fails, the scratch
+	files will be left behind in this directory for further debugging. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">The directory from which the
+	reference files will be read. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">For bsdtar_test and bsdcpio_test,
+	the full path to the executable being exercised. 
+	</P>
+	<LI><P>Basic version information about the target. 
+	</P>
+</UL>
+<P>In this case, the trailer indicates that one test failed. As you
+can see, there was a single assertion in the code that failed 264
+times. The first time it failed, it was because an <TT CLASS="western">lstat()</TT>
+call returned -1 instead of the zero that was expected. 
+</P>
+<H1 CLASS="western"><A NAME="Basic_test_terminology"></A>Basic test
+terminology</H1>
+<P>Each test program consists of a number of &quot;tests&quot;. Each
+test has a name and is implemented in a C source file with the same
+name as the test. Tests work by performing some series of operations
+and making &quot;assertions&quot; about the results. For example,
+many of the libarchive tests open and read an archive and assert that
+particular operations succeeded or failed. (Yes, it is often
+important to verify that illegal requests generate appropriate
+errors.) 
+</P>
+<P>Here is a somewhat edited excerpt from <TT CLASS="western">test_compat_zip</TT>,
+which verifies compatibility with various ZIP format archives: 
+</P>
+<PRE CLASS="western">&nbsp; DEFINE_TEST(test_compat_zip)
+&nbsp; {
+&nbsp; &nbsp; /* ... setup omitted ... */
+&nbsp; &nbsp; assert((a = archive_read_new()) != NULL);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_compression_all(a));
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_format_all(a));
+&nbsp; &nbsp; extract_reference_file(name);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_open_filename(a, name, 10240));
+&nbsp; &nbsp; &nbsp;/* Read first entry. */
+&nbsp; &nbsp; &nbsp;assertEqualInt(ARCHIVE_OK, archive_read_next_header(a, &amp;ae));
+&nbsp; &nbsp; &nbsp;assertEqualString(&quot;META-INF/MANIFEST.MF&quot;, archive_entry_pathname(ae));</PRE><P>
+The <TT CLASS="western">assertXXXX</TT> macros check that their
+arguments satisfy certain conditions. If the assertion fails--for
+example, if the name of the first entry is not
+&quot;META-INF/MANIFEST.MF&quot;--the macro will report the problem. 
+</P>
+<P>There are two important differences between the <TT CLASS="western">assertXXX</TT>
+macros used in these test harnesses and the ISO C standard <TT CLASS="western">assert</TT>
+macro: First, these assert macros don't exit on failure. By default,
+they report the failure and return zero (the C notion of &quot;false&quot;).
+Second, these macros include variants that perform a variety of
+specific tests. These specific versions (such as <TT CLASS="western">assertEqualInt</TT>
+and <TT CLASS="western">assertEqualString</TT> in the example above)
+generate detailed log messages on failure. In particular, they print
+the value of both arguments; this greatly simplifies diagnosing
+failures. 
+</P>
+<H1 CLASS="western"><A NAME="Life_cycle_of_a_test"></A>Life cycle of
+a test</H1>
+<P>Each test resides in a C source file with the same name as the
+test. The test itself is a function that takes no arguments. The test
+is declared using the <TT CLASS="western">DEFINE_TEST()</TT> macro.
+This macro serves both to ensure that the test is declared correctly
+and as a label that can be used to locate all defined tests. (On
+Unix-like platforms, a simple <TT CLASS="western">grep</TT> operation
+is used to construct a file called <TT CLASS="western">list.h</TT>
+that holds the names of all of the tests. This makes it very easy to
+add new tests.) 
+</P>
+<P>The test harness determines which tests to run. It goes through
+the following steps whenever it runs a test: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in"><STRIKE>Closes all file
+	descriptors except for stdin, stdout, and stderr.</STRIKE> (This
+	screws up libc on some platforms so has been removed.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Creates a temporary directory
+	whose name matches the name of the test and switches into that
+	directory. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Resets the current locale. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Calls the test function. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">If there were no assertion
+	failures, it will remove the temporary directory. (If <TT CLASS="western">-k</TT>
+	is specified, temporary directory are left even if the test
+	succeeds.) 
+	</P>
+	<LI><P><STRIKE>If there are any open file descriptors other than
+	stdin, stdout, and stderr, it reports an error.</STRIKE> Tests
+	should never leave open file descriptors. 
+	</P>
+</UL>
+<P>In particular, tests can safely assume that: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The current directory is empty
+	when the test starts. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Any files created in the current
+	directory will be removed for you. 
+	</P>
+	<LI><P>The current locale is the default &quot;C&quot; locale. 
+	</P>
+</UL>
+<P>Tests should: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Release all memory. The test
+	suites are occasionally run under a memory debugger to detect leaks
+	in the libarchive library. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Close all opened files. This helps
+	to catch file descriptor leaks in libarchive. 
+	</P>
+	<LI><P>Not read or write absolute paths. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Platform_variation"></A>Platform
+variation</H1>
+<P>Some tests are specific to a particular platform. Such tests
+should use appropriate platform-specific macros as follows: 
+</P>
+<PRE CLASS="western">#if __PLATFORM
+... various helper functions ...
+#endif
+DEFINE_TEST(foo_platform)
+{
+#if __PLATFORM
+&nbsp; &nbsp;... tests as usual ....
+#else
+&nbsp; &nbsp;skipping(&quot;platform-specific tests&quot;);
+#endif
+}</PRE><P>
+In particular, note that all tests are compiled and run on all
+platforms. 
+</P>
+<P>Most tests are not platform-specific and will thus end up running
+on many different platforms. In order to simplify writing such tests,
+try to use platform-independent coding: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Use stdio <TT CLASS="western">fopen()</TT>,
+	<TT CLASS="western">fwrite()</TT>, <TT CLASS="western">fread()</TT>,
+	and <TT CLASS="western">fclose()</TT> to access files whenever
+	feasible. 
+	</P>
+	<LI><P>Look through the <TT CLASS="western">test.h</TT> header to
+	see if there are assertXxx() functions that you can use. There's a
+	list of the more popular ones below, but new ones are often added. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Assert_macros"></A>Assert macros</H1>
+<P>The following is a necessarily incomplete list of assert functions
+available to tests: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Basic equality: <TT CLASS="western">assertEqualInt</TT>,
+	<TT CLASS="western">assertEqualString</TT>, <TT CLASS="western">assertEqualMem</TT>
+		</P>
+	<LI><P STYLE="margin-bottom: 0in">File creation: <TT CLASS="western">assertMakeFile</TT>,
+	<TT CLASS="western">assertMakeSymlink</TT>, <TT CLASS="western">assertMakeHardlink</TT>,
+	<TT CLASS="western">assertMakeDir</TT> 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">File tests: <TT CLASS="western">assertIsReg</TT>,
+	<TT CLASS="western">assertIsDir</TT>, <TT CLASS="western">assertIsSymlink</TT>,
+	<TT CLASS="western">assertFileSize</TT>, <TT CLASS="western">assertFileNlinks</TT>,
+	<TT CLASS="western">assertFileMtime</TT> 
+	</P>
+	<LI><P>File contents: <TT CLASS="western">assertFileEmpty</TT>,
+	<TT CLASS="western">assertFileNonEmpty</TT>, <TT CLASS="western">assertFileContents</TT>,
+	<TT CLASS="western">assertTextFileContents</TT> 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Reference_Files"></A>Reference Files</H1>
+<P>Many tests require reading a pre-constructed reference file. Such
+files are stored with the source code for the associated test suite.
+Reference files are named according to the test and must be uuencoded
+to be checked into source control. 
+</P>
+<P>For example, if you need a reference tar archive to use with
+<TT CLASS="western">test_foo</TT>, the file should be named
+<TT CLASS="western">test_foo.tar</TT> and stored in source control as
+<TT CLASS="western">test_foo.tar.uu</TT>. 
+</P>
+<P>Within the test code, you can recover the reference file with: 
+</P>
+<PRE CLASS="western" STYLE="margin-bottom: 0.2in">&nbsp; &nbsp; extract_reference_file(&quot;test_foo.tar&quot;);</PRE><P>
+The <TT CLASS="western">extract_reference_file()</TT> function will
+uudecode the requested file and put the result in the current
+directory. 
+</P>
+<P>Look at <TT CLASS="western">test_read_format_cpio_bin_be.c</TT>
+for a simple example of this usage. 
+</P>
+<P>A few of the older tests store reference data within the source
+code as a hex-encoded array of characters. This was common before
+<TT CLASS="western">extract_reference_file()</TT> was added and is
+not recommended for new code. 
+</P>
+<H1 CLASS="western"><A NAME="Dos_and_Donts"></A>Dos and Donts</H1>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">DO use asserts liberally. It's
+	common to have an assert on almost every line. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use assertEqualInt,
+	assertEqualString, assertEqualMem to test equality instead of plain
+	assert(); the specialized forms give a lot more information on a
+	failure. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO test your tests; experiment by
+	changing a piece of code and make sure your test fails. If you think
+	you've found a bug, we recommend writing the test first, make sure
+	the test fails, then fixing the bug. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO run all of the tests before
+	submitting a change. Depending on your build environment, <TT CLASS="western">make
+	test</TT> or <TT CLASS="western">make check</TT> will usually run
+	all of the tests. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DON'T rely on <TT CLASS="western">HAVE_</TT>
+	macros from config.h. (If the tests use the same <TT CLASS="western">HAVE_</TT>
+	macros as the code being tested then configuration problems will be
+	covered up.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use runtime tests for platform
+	features. For example, the ACL tests try to set an ACL on a file and
+	read it back to determine if ACL support is available, then they
+	exercise the libarchive ACL handling. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO look at existing tests. Often,
+	a bug can be tested by adding just a couple of asserts to an
+	existing test instead of writing a new one. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO improve existing tests. In
+	particular, if you see a test failure that is hard to understand,
+	consider adding a failure() message or comments so the next person
+	will have an easier time. 
+	</P>
+	<LI><P>DO ask on the mailing lists if you have questions. Some tests
+	are better written than others. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Some_examples_of_tests"></A>Some
+examples of tests</H1>
+<H2 CLASS="western"><A NAME="Libarchive_read_tests"></A>Libarchive
+read tests</H2>
+<P>There are quite a few read tests that simply read a pre-built
+input file and verify the results. These use <TT CLASS="western">extract_reference_file()</TT>
+to decode a uuencoded input file, then open that file with libarchive
+and verify the results. Most of these are pretty straightforward. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_read/write_tests"></A>Libarchive
+read/write tests</H2>
+<P>Most of the write tests really just verify that libarchive can
+read what it writes. These generally use the memory interfaces. They
+feed archive entries into the writer to create an archive in memory
+and then open the memory again to read the data back and verify that
+it is the same. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_write_validators"></A>Libarchive
+write validators</H2>
+<P>A few write tests write an archive into memory and then inspect
+the actual bytes to verify that the archive was created correctly.
+These tests are nice to have but are tedious to build. 
+</P>
+<P>There are also a couple of such validators for bsdtar and bsdcpio.
+These are very tricky since the exact data contains values that the
+test cannot completely control (such as the current time or
+username). 
+</P>
+<H2 CLASS="western"><A NAME="Disk_tests"></A>Disk tests</H2>
+<P>Libarchive's disk I/O APIs, as well as bsdtar and bsdcpio, need to
+operate by verifying files on disk. To make this easier, the test
+framework now has a large number of assertions to verify timestamps,
+permissions, and other basic file data. These assertions use
+appropriate system calls for each platform; new tests should try to
+avoid using <TT CLASS="western">stat()</TT>, which is not uniformly
+available. 
+</P>
+<H2 CLASS="western"><A NAME="Fuzz_tester"></A>Fuzz tester</H2>
+<P>The fuzz tester is one of the few tests that does not aggressively
+use assertions. Its purpose is to try and crash libarchive by feeding
+it input that is slightly damaged. (Remember that libarchive does
+have some failsafe code that deliberately aborts the entire program
+if certain invariants are violated.) 
+</P>
+<P>Since a fuzz failure causes a crash, it's impossible to report the
+error to the console, so the fuzz tester instead generates a
+randomly-damaged file, saves that file to disk, then runs the file
+through libarchive to try to provoke a crash. If libarchive crashes
+the entire tester, the input that caused the crash will be available
+on disk for further analysis. 
+</P>
+<P>Although it is unusual for a test program to use random input, the
+fuzz tester has proven quite useful at uncovering poor error
+handling. Unfortunately, the need to write the data to disk before
+each test is a significant performance issue. 
+</P>
+<H2 CLASS="western"><A NAME="Large_tar_tester"></A>Large tar tester</H2>
+<P>The large tar tester attempts to exercise boundary cases with very
+large entries, up to 1 terabyte. Of course, writing a 1 terabyte
+entry to an uncompressed archive on disk or memory is unacceptable,
+both for performance and space reasons. Even gzip or bzip2
+compression won't help; although smaller, the output is still large
+and the time needed to compress such a large amount of data is
+prohibitive. So the large tar tester uses a trick. 
+</P>
+<P>Remember that an uncompressed tar archive consists of alternating
+headers and bodies. If the bodies consist entirely of zero bytes,
+then all that's needed to reconstruct the archive is to record the
+relatively small headers and store a count of each contiguous block
+of zeros. This simple &quot;run-length encoding&quot; is very
+effective, compressing a sample archive with a dozen entries down to
+just a few kilobytes, even if those entries range up to 1TB. 
+</P>
+<P>By writing a custom I/O layer that implements such compression, we
+can write very large entries through libarchive then read them back
+and verify that libarchive correctly handles all of the boundary
+cases. 
+</P>
+<P>Of course, even scanning output to determine zero blocks can take
+quite a while, so the large tar tester makes one more optimization:
+Libarchive is &quot;mostly&quot; zero-copy. When you give it a large
+block to write to an entry body, it will pass pointers straight
+through to the output routine, except in those cases where it must
+copy data to correctly build blocks. The large tar tester takes
+advantage of this to quickly detect when a block being written out by
+the archive writer is the same as some of the data that was given by
+the test as the entry body, and similarly when reading the archive
+back. 
+</P>
+<P>Taken together, these tricks allow the large tar writer to test
+for issues such as proper storage of very large file sizes (tar files
+support several different ways to store file sizes which trade off
+portability versus range; libarchive tries to use the most portable
+one it can for each entry) and integer overflow (Windows 32-bit <TT CLASS="western">off_t</TT>
+broke the large tar test and led libarchive to make heavier use of
+<TT CLASS="western">int64_t</TT> internally) in a test that runs in
+under 1/4 second. 
+</P>
+<P STYLE="margin-bottom: 0in"><BR>
+</P>
+</BODY>
+</HTML><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=utf-8">
+	<TITLE></TITLE>
+	<META NAME="GENERATOR" CONTENT="LibreOffice 3.3  (Unix)">
+	<META NAME="CREATED" CONTENT="20110626;22235100">
+	<META NAME="CHANGED" CONTENT="20110626;22254500">
+	<STYLE TYPE="text/css">
+	<!--
+		@page { margin: 0.79in }
+		P { margin-bottom: 0.08in }
+		H1 { margin-bottom: 0.08in }
+		H1.western { font-family: "Liberation Serif", serif }
+		H1.cjk { font-family: "Bitstream Vera Sans" }
+		H1.ctl { font-family: "FreeSans" }
+		PRE.cjk { font-family: "Bitstream Vera Sans", monospace }
+		H2 { margin-bottom: 0.08in }
+		H2.ctl { font-family: "FreeSans" }
+		TT.cjk { font-family: "Bitstream Vera Sans", monospace }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" DIR="LTR">
+<H1 CLASS="western">Introduction</H1>
+<P>Libarchive is now a fairly complex piece of software that runs on
+a number of different platforms. A thorough test suite is essential
+both for verifying new ports and for ensuring that future changes
+don't break existing functionality. 
+</P>
+<P>Any significant change to libarchive, including most bug fixes,
+should be accompanied by new tests or changes to existing tests. This
+article explains how the libarchive test suites work and how to
+extend them. 
+</P>
+<H1 CLASS="western"><A NAME="Building_and_Running_the_Test_Programs"></A>
+Building and Running the Test Programs</H1>
+<P>Each major component--libarchive, bsdtar, and bsdcpio--has a test
+program that exercises the functionality of that component. These
+test programs are compiled in the same way that the rest of the
+libarchive suite is compiled. 
+</P>
+<P>To run the test programs, you need to give them two pieces of
+information: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The full path to the directory
+	holding the &quot;reference files&quot; 
+	</P>
+	<LI><P>The full path to the executable program being tested (not
+	applicable to libarchive_test since libarchive is compiled into the
+	test program) 
+	</P>
+</UL>
+<P>The reference files are a collection of known inputs that are used
+in the test process. They are all stored in uuencoded format in files
+with a &quot;.uu&quot; extension. The test programs look in a few
+standard locations; if none of those work, you'll need to specify the
+<TT CLASS="western">-r</TT> option with the full pathname to the
+appropriate directory. 
+</P>
+<P>The bsdtar_test and bsdcpio_test programs run bsdtar or bsdcpio
+repeatedly; they need the full path to the appropriate executable.
+Although bsdtar_test and bsdcpio_test are specifically intended for
+testing bsdtar and bsdcpio, they should be usable for testing other
+tar and cpio programs. In fact, running these test programs against
+other tar implementations is a good way to verify that the test
+programs themselves are working correctly. 
+</P>
+<P>When run, the test programs output a progress message for each
+test, an error message for each failed assertion, and a final
+summary: 
+</P>
+<PRE CLASS="western">&nbsp;Running tests in: /tmp/bsdtar_test.2009-02-17T21.30.40-000
+&nbsp;Reference files will be read from: &nbsp; &nbsp;/home/tim/libarchive/trunk/tar/test
+&nbsp;Running tests on: /home/tim/libarchive/trunk/bsdtar
+&nbsp;Exercising: bsdtar 2.6.900a - libarchive 2.6.900a
+&nbsp;0: test_0
+&nbsp;1: test_basic
+&nbsp;2: test_copy
+&nbsp; test_copy.c:171: Assertion failed: Ints not equal
+&nbsp; &nbsp; &nbsp; 0=0
+&nbsp; &nbsp; &nbsp; lstat(name2 + 3, &amp;st2)=-1
+&nbsp; test_copy.c:171: Failed 264 times
+&nbsp;3: test_getdate
+&nbsp;4: test_help
+&nbsp; &nbsp; ... more output omitted ...
+&nbsp;1 of 13 tests reported failures
+&nbsp; Total of 105097 assertions checked.
+&nbsp; Total of 264 assertions failed.
+&nbsp; Total of 0 assertions skipped.</PRE><P>
+The header lines here record: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">the directory that will be used
+	for scratch files during the test. If a test fails, the scratch
+	files will be left behind in this directory for further debugging. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">The directory from which the
+	reference files will be read. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">For bsdtar_test and bsdcpio_test,
+	the full path to the executable being exercised. 
+	</P>
+	<LI><P>Basic version information about the target. 
+	</P>
+</UL>
+<P>In this case, the trailer indicates that one test failed. As you
+can see, there was a single assertion in the code that failed 264
+times. The first time it failed, it was because an <TT CLASS="western">lstat()</TT>
+call returned -1 instead of the zero that was expected. 
+</P>
+<H1 CLASS="western"><A NAME="Basic_test_terminology"></A>Basic test
+terminology</H1>
+<P>Each test program consists of a number of &quot;tests&quot;. Each
+test has a name and is implemented in a C source file with the same
+name as the test. Tests work by performing some series of operations
+and making &quot;assertions&quot; about the results. For example,
+many of the libarchive tests open and read an archive and assert that
+particular operations succeeded or failed. (Yes, it is often
+important to verify that illegal requests generate appropriate
+errors.) 
+</P>
+<P>Here is a somewhat edited excerpt from <TT CLASS="western">test_compat_zip</TT>,
+which verifies compatibility with various ZIP format archives: 
+</P>
+<PRE CLASS="western">&nbsp; DEFINE_TEST(test_compat_zip)
+&nbsp; {
+&nbsp; &nbsp; /* ... setup omitted ... */
+&nbsp; &nbsp; assert((a = archive_read_new()) != NULL);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_compression_all(a));
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_format_all(a));
+&nbsp; &nbsp; extract_reference_file(name);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_open_filename(a, name, 10240));
+&nbsp; &nbsp; &nbsp;/* Read first entry. */
+&nbsp; &nbsp; &nbsp;assertEqualInt(ARCHIVE_OK, archive_read_next_header(a, &amp;ae));
+&nbsp; &nbsp; &nbsp;assertEqualString(&quot;META-INF/MANIFEST.MF&quot;, archive_entry_pathname(ae));</PRE><P>
+The <TT CLASS="western">assertXXXX</TT> macros check that their
+arguments satisfy certain conditions. If the assertion fails--for
+example, if the name of the first entry is not
+&quot;META-INF/MANIFEST.MF&quot;--the macro will report the problem. 
+</P>
+<P>There are two important differences between the <TT CLASS="western">assertXXX</TT>
+macros used in these test harnesses and the ISO C standard <TT CLASS="western">assert</TT>
+macro: First, these assert macros don't exit on failure. By default,
+they report the failure and return zero (the C notion of &quot;false&quot;).
+Second, these macros include variants that perform a variety of
+specific tests. These specific versions (such as <TT CLASS="western">assertEqualInt</TT>
+and <TT CLASS="western">assertEqualString</TT> in the example above)
+generate detailed log messages on failure. In particular, they print
+the value of both arguments; this greatly simplifies diagnosing
+failures. 
+</P>
+<H1 CLASS="western"><A NAME="Life_cycle_of_a_test"></A>Life cycle of
+a test</H1>
+<P>Each test resides in a C source file with the same name as the
+test. The test itself is a function that takes no arguments. The test
+is declared using the <TT CLASS="western">DEFINE_TEST()</TT> macro.
+This macro serves both to ensure that the test is declared correctly
+and as a label that can be used to locate all defined tests. (On
+Unix-like platforms, a simple <TT CLASS="western">grep</TT> operation
+is used to construct a file called <TT CLASS="western">list.h</TT>
+that holds the names of all of the tests. This makes it very easy to
+add new tests.) 
+</P>
+<P>The test harness determines which tests to run. It goes through
+the following steps whenever it runs a test: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in"><STRIKE>Closes all file
+	descriptors except for stdin, stdout, and stderr.</STRIKE> (This
+	screws up libc on some platforms so has been removed.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Creates a temporary directory
+	whose name matches the name of the test and switches into that
+	directory. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Resets the current locale. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Calls the test function. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">If there were no assertion
+	failures, it will remove the temporary directory. (If <TT CLASS="western">-k</TT>
+	is specified, temporary directory are left even if the test
+	succeeds.) 
+	</P>
+	<LI><P><STRIKE>If there are any open file descriptors other than
+	stdin, stdout, and stderr, it reports an error.</STRIKE> Tests
+	should never leave open file descriptors. 
+	</P>
+</UL>
+<P>In particular, tests can safely assume that: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The current directory is empty
+	when the test starts. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Any files created in the current
+	directory will be removed for you. 
+	</P>
+	<LI><P>The current locale is the default &quot;C&quot; locale. 
+	</P>
+</UL>
+<P>Tests should: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Release all memory. The test
+	suites are occasionally run under a memory debugger to detect leaks
+	in the libarchive library. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Close all opened files. This helps
+	to catch file descriptor leaks in libarchive. 
+	</P>
+	<LI><P>Not read or write absolute paths. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Platform_variation"></A>Platform
+variation</H1>
+<P>Some tests are specific to a particular platform. Such tests
+should use appropriate platform-specific macros as follows: 
+</P>
+<PRE CLASS="western">#if __PLATFORM
+... various helper functions ...
+#endif
+DEFINE_TEST(foo_platform)
+{
+#if __PLATFORM
+&nbsp; &nbsp;... tests as usual ....
+#else
+&nbsp; &nbsp;skipping(&quot;platform-specific tests&quot;);
+#endif
+}</PRE><P>
+In particular, note that all tests are compiled and run on all
+platforms. 
+</P>
+<P>Most tests are not platform-specific and will thus end up running
+on many different platforms. In order to simplify writing such tests,
+try to use platform-independent coding: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Use stdio <TT CLASS="western">fopen()</TT>,
+	<TT CLASS="western">fwrite()</TT>, <TT CLASS="western">fread()</TT>,
+	and <TT CLASS="western">fclose()</TT> to access files whenever
+	feasible. 
+	</P>
+	<LI><P>Look through the <TT CLASS="western">test.h</TT> header to
+	see if there are assertXxx() functions that you can use. There's a
+	list of the more popular ones below, but new ones are often added. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Assert_macros"></A>Assert macros</H1>
+<P>The following is a necessarily incomplete list of assert functions
+available to tests: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Basic equality: <TT CLASS="western">assertEqualInt</TT>,
+	<TT CLASS="western">assertEqualString</TT>, <TT CLASS="western">assertEqualMem</TT>
+		</P>
+	<LI><P STYLE="margin-bottom: 0in">File creation: <TT CLASS="western">assertMakeFile</TT>,
+	<TT CLASS="western">assertMakeSymlink</TT>, <TT CLASS="western">assertMakeHardlink</TT>,
+	<TT CLASS="western">assertMakeDir</TT> 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">File tests: <TT CLASS="western">assertIsReg</TT>,
+	<TT CLASS="western">assertIsDir</TT>, <TT CLASS="western">assertIsSymlink</TT>,
+	<TT CLASS="western">assertFileSize</TT>, <TT CLASS="western">assertFileNlinks</TT>,
+	<TT CLASS="western">assertFileMtime</TT> 
+	</P>
+	<LI><P>File contents: <TT CLASS="western">assertFileEmpty</TT>,
+	<TT CLASS="western">assertFileNonEmpty</TT>, <TT CLASS="western">assertFileContents</TT>,
+	<TT CLASS="western">assertTextFileContents</TT> 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Reference_Files"></A>Reference Files</H1>
+<P>Many tests require reading a pre-constructed reference file. Such
+files are stored with the source code for the associated test suite.
+Reference files are named according to the test and must be uuencoded
+to be checked into source control. 
+</P>
+<P>For example, if you need a reference tar archive to use with
+<TT CLASS="western">test_foo</TT>, the file should be named
+<TT CLASS="western">test_foo.tar</TT> and stored in source control as
+<TT CLASS="western">test_foo.tar.uu</TT>. 
+</P>
+<P>Within the test code, you can recover the reference file with: 
+</P>
+<PRE CLASS="western" STYLE="margin-bottom: 0.2in">&nbsp; &nbsp; extract_reference_file(&quot;test_foo.tar&quot;);</PRE><P>
+The <TT CLASS="western">extract_reference_file()</TT> function will
+uudecode the requested file and put the result in the current
+directory. 
+</P>
+<P>Look at <TT CLASS="western">test_read_format_cpio_bin_be.c</TT>
+for a simple example of this usage. 
+</P>
+<P>A few of the older tests store reference data within the source
+code as a hex-encoded array of characters. This was common before
+<TT CLASS="western">extract_reference_file()</TT> was added and is
+not recommended for new code. 
+</P>
+<H1 CLASS="western"><A NAME="Dos_and_Donts"></A>Dos and Donts</H1>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">DO use asserts liberally. It's
+	common to have an assert on almost every line. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use assertEqualInt,
+	assertEqualString, assertEqualMem to test equality instead of plain
+	assert(); the specialized forms give a lot more information on a
+	failure. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO test your tests; experiment by
+	changing a piece of code and make sure your test fails. If you think
+	you've found a bug, we recommend writing the test first, make sure
+	the test fails, then fixing the bug. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO run all of the tests before
+	submitting a change. Depending on your build environment, <TT CLASS="western">make
+	test</TT> or <TT CLASS="western">make check</TT> will usually run
+	all of the tests. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DON'T rely on <TT CLASS="western">HAVE_</TT>
+	macros from config.h. (If the tests use the same <TT CLASS="western">HAVE_</TT>
+	macros as the code being tested then configuration problems will be
+	covered up.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use runtime tests for platform
+	features. For example, the ACL tests try to set an ACL on a file and
+	read it back to determine if ACL support is available, then they
+	exercise the libarchive ACL handling. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO look at existing tests. Often,
+	a bug can be tested by adding just a couple of asserts to an
+	existing test instead of writing a new one. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO improve existing tests. In
+	particular, if you see a test failure that is hard to understand,
+	consider adding a failure() message or comments so the next person
+	will have an easier time. 
+	</P>
+	<LI><P>DO ask on the mailing lists if you have questions. Some tests
+	are better written than others. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Some_examples_of_tests"></A>Some
+examples of tests</H1>
+<H2 CLASS="western"><A NAME="Libarchive_read_tests"></A>Libarchive
+read tests</H2>
+<P>There are quite a few read tests that simply read a pre-built
+input file and verify the results. These use <TT CLASS="western">extract_reference_file()</TT>
+to decode a uuencoded input file, then open that file with libarchive
+and verify the results. Most of these are pretty straightforward. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_read/write_tests"></A>Libarchive
+read/write tests</H2>
+<P>Most of the write tests really just verify that libarchive can
+read what it writes. These generally use the memory interfaces. They
+feed archive entries into the writer to create an archive in memory
+and then open the memory again to read the data back and verify that
+it is the same. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_write_validators"></A>Libarchive
+write validators</H2>
+<P>A few write tests write an archive into memory and then inspect
+the actual bytes to verify that the archive was created correctly.
+These tests are nice to have but are tedious to build. 
+</P>
+<P>There are also a couple of such validators for bsdtar and bsdcpio.
+These are very tricky since the exact data contains values that the
+test cannot completely control (such as the current time or
+username). 
+</P>
+<H2 CLASS="western"><A NAME="Disk_tests"></A>Disk tests</H2>
+<P>Libarchive's disk I/O APIs, as well as bsdtar and bsdcpio, need to
+operate by verifying files on disk. To make this easier, the test
+framework now has a large number of assertions to verify timestamps,
+permissions, and other basic file data. These assertions use
+appropriate system calls for each platform; new tests should try to
+avoid using <TT CLASS="western">stat()</TT>, which is not uniformly
+available. 
+</P>
+<H2 CLASS="western"><A NAME="Fuzz_tester"></A>Fuzz tester</H2>
+<P>The fuzz tester is one of the few tests that does not aggressively
+use assertions. Its purpose is to try and crash libarchive by feeding
+it input that is slightly damaged. (Remember that libarchive does
+have some failsafe code that deliberately aborts the entire program
+if certain invariants are violated.) 
+</P>
+<P>Since a fuzz failure causes a crash, it's impossible to report the
+error to the console, so the fuzz tester instead generates a
+randomly-damaged file, saves that file to disk, then runs the file
+through libarchive to try to provoke a crash. If libarchive crashes
+the entire tester, the input that caused the crash will be available
+on disk for further analysis. 
+</P>
+<P>Although it is unusual for a test program to use random input, the
+fuzz tester has proven quite useful at uncovering poor error
+handling. Unfortunately, the need to write the data to disk before
+each test is a significant performance issue. 
+</P>
+<H2 CLASS="western"><A NAME="Large_tar_tester"></A>Large tar tester</H2>
+<P>The large tar tester attempts to exercise boundary cases with very
+large entries, up to 1 terabyte. Of course, writing a 1 terabyte
+entry to an uncompressed archive on disk or memory is unacceptable,
+both for performance and space reasons. Even gzip or bzip2
+compression won't help; although smaller, the output is still large
+and the time needed to compress such a large amount of data is
+prohibitive. So the large tar tester uses a trick. 
+</P>
+<P>Remember that an uncompressed tar archive consists of alternating
+headers and bodies. If the bodies consist entirely of zero bytes,
+then all that's needed to reconstruct the archive is to record the
+relatively small headers and store a count of each contiguous block
+of zeros. This simple &quot;run-length encoding&quot; is very
+effective, compressing a sample archive with a dozen entries down to
+just a few kilobytes, even if those entries range up to 1TB. 
+</P>
+<P>By writing a custom I/O layer that implements such compression, we
+can write very large entries through libarchive then read them back
+and verify that libarchive correctly handles all of the boundary
+cases. 
+</P>
+<P>Of course, even scanning output to determine zero blocks can take
+quite a while, so the large tar tester makes one more optimization:
+Libarchive is &quot;mostly&quot; zero-copy. When you give it a large
+block to write to an entry body, it will pass pointers straight
+through to the output routine, except in those cases where it must
+copy data to correctly build blocks. The large tar tester takes
+advantage of this to quickly detect when a block being written out by
+the archive writer is the same as some of the data that was given by
+the test as the entry body, and similarly when reading the archive
+back. 
+</P>
+<P>Taken together, these tricks allow the large tar writer to test
+for issues such as proper storage of very large file sizes (tar files
+support several different ways to store file sizes which trade off
+portability versus range; libarchive tries to use the most portable
+one it can for each entry) and integer overflow (Windows 32-bit <TT CLASS="western">off_t</TT>
+broke the large tar test and led libarchive to make heavier use of
+<TT CLASS="western">int64_t</TT> internally) in a test that runs in
+under 1/4 second. 
+</P>
+<P STYLE="margin-bottom: 0in"><BR>
+</P>
+</BODY>
+</HTML><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=utf-8">
+	<TITLE></TITLE>
+	<META NAME="GENERATOR" CONTENT="LibreOffice 3.3  (Unix)">
+	<META NAME="CREATED" CONTENT="20110626;22235100">
+	<META NAME="CHANGED" CONTENT="20110626;22254500">
+	<STYLE TYPE="text/css">
+	<!--
+		@page { margin: 0.79in }
+		P { margin-bottom: 0.08in }
+		H1 { margin-bottom: 0.08in }
+		H1.western { font-family: "Liberation Serif", serif }
+		H1.cjk { font-family: "Bitstream Vera Sans" }
+		H1.ctl { font-family: "FreeSans" }
+		PRE.cjk { font-family: "Bitstream Vera Sans", monospace }
+		H2 { margin-bottom: 0.08in }
+		H2.ctl { font-family: "FreeSans" }
+		TT.cjk { font-family: "Bitstream Vera Sans", monospace }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" DIR="LTR">
+<H1 CLASS="western">Introduction</H1>
+<P>Libarchive is now a fairly complex piece of software that runs on
+a number of different platforms. A thorough test suite is essential
+both for verifying new ports and for ensuring that future changes
+don't break existing functionality. 
+</P>
+<P>Any significant change to libarchive, including most bug fixes,
+should be accompanied by new tests or changes to existing tests. This
+article explains how the libarchive test suites work and how to
+extend them. 
+</P>
+<H1 CLASS="western"><A NAME="Building_and_Running_the_Test_Programs"></A>
+Building and Running the Test Programs</H1>
+<P>Each major component--libarchive, bsdtar, and bsdcpio--has a test
+program that exercises the functionality of that component. These
+test programs are compiled in the same way that the rest of the
+libarchive suite is compiled. 
+</P>
+<P>To run the test programs, you need to give them two pieces of
+information: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The full path to the directory
+	holding the &quot;reference files&quot; 
+	</P>
+	<LI><P>The full path to the executable program being tested (not
+	applicable to libarchive_test since libarchive is compiled into the
+	test program) 
+	</P>
+</UL>
+<P>The reference files are a collection of known inputs that are used
+in the test process. They are all stored in uuencoded format in files
+with a &quot;.uu&quot; extension. The test programs look in a few
+standard locations; if none of those work, you'll need to specify the
+<TT CLASS="western">-r</TT> option with the full pathname to the
+appropriate directory. 
+</P>
+<P>The bsdtar_test and bsdcpio_test programs run bsdtar or bsdcpio
+repeatedly; they need the full path to the appropriate executable.
+Although bsdtar_test and bsdcpio_test are specifically intended for
+testing bsdtar and bsdcpio, they should be usable for testing other
+tar and cpio programs. In fact, running these test programs against
+other tar implementations is a good way to verify that the test
+programs themselves are working correctly. 
+</P>
+<P>When run, the test programs output a progress message for each
+test, an error message for each failed assertion, and a final
+summary: 
+</P>
+<PRE CLASS="western">&nbsp;Running tests in: /tmp/bsdtar_test.2009-02-17T21.30.40-000
+&nbsp;Reference files will be read from: &nbsp; &nbsp;/home/tim/libarchive/trunk/tar/test
+&nbsp;Running tests on: /home/tim/libarchive/trunk/bsdtar
+&nbsp;Exercising: bsdtar 2.6.900a - libarchive 2.6.900a
+&nbsp;0: test_0
+&nbsp;1: test_basic
+&nbsp;2: test_copy
+&nbsp; test_copy.c:171: Assertion failed: Ints not equal
+&nbsp; &nbsp; &nbsp; 0=0
+&nbsp; &nbsp; &nbsp; lstat(name2 + 3, &amp;st2)=-1
+&nbsp; test_copy.c:171: Failed 264 times
+&nbsp;3: test_getdate
+&nbsp;4: test_help
+&nbsp; &nbsp; ... more output omitted ...
+&nbsp;1 of 13 tests reported failures
+&nbsp; Total of 105097 assertions checked.
+&nbsp; Total of 264 assertions failed.
+&nbsp; Total of 0 assertions skipped.</PRE><P>
+The header lines here record: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">the directory that will be used
+	for scratch files during the test. If a test fails, the scratch
+	files will be left behind in this directory for further debugging. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">The directory from which the
+	reference files will be read. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">For bsdtar_test and bsdcpio_test,
+	the full path to the executable being exercised. 
+	</P>
+	<LI><P>Basic version information about the target. 
+	</P>
+</UL>
+<P>In this case, the trailer indicates that one test failed. As you
+can see, there was a single assertion in the code that failed 264
+times. The first time it failed, it was because an <TT CLASS="western">lstat()</TT>
+call returned -1 instead of the zero that was expected. 
+</P>
+<H1 CLASS="western"><A NAME="Basic_test_terminology"></A>Basic test
+terminology</H1>
+<P>Each test program consists of a number of &quot;tests&quot;. Each
+test has a name and is implemented in a C source file with the same
+name as the test. Tests work by performing some series of operations
+and making &quot;assertions&quot; about the results. For example,
+many of the libarchive tests open and read an archive and assert that
+particular operations succeeded or failed. (Yes, it is often
+important to verify that illegal requests generate appropriate
+errors.) 
+</P>
+<P>Here is a somewhat edited excerpt from <TT CLASS="western">test_compat_zip</TT>,
+which verifies compatibility with various ZIP format archives: 
+</P>
+<PRE CLASS="western">&nbsp; DEFINE_TEST(test_compat_zip)
+&nbsp; {
+&nbsp; &nbsp; /* ... setup omitted ... */
+&nbsp; &nbsp; assert((a = archive_read_new()) != NULL);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_compression_all(a));
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_support_format_all(a));
+&nbsp; &nbsp; extract_reference_file(name);
+&nbsp; &nbsp; assertEqualInt(ARCHIVE_OK,
+&nbsp; &nbsp; &nbsp; &nbsp; archive_read_open_filename(a, name, 10240));
+&nbsp; &nbsp; &nbsp;/* Read first entry. */
+&nbsp; &nbsp; &nbsp;assertEqualInt(ARCHIVE_OK, archive_read_next_header(a, &amp;ae));
+&nbsp; &nbsp; &nbsp;assertEqualString(&quot;META-INF/MANIFEST.MF&quot;, archive_entry_pathname(ae));</PRE><P>
+The <TT CLASS="western">assertXXXX</TT> macros check that their
+arguments satisfy certain conditions. If the assertion fails--for
+example, if the name of the first entry is not
+&quot;META-INF/MANIFEST.MF&quot;--the macro will report the problem. 
+</P>
+<P>There are two important differences between the <TT CLASS="western">assertXXX</TT>
+macros used in these test harnesses and the ISO C standard <TT CLASS="western">assert</TT>
+macro: First, these assert macros don't exit on failure. By default,
+they report the failure and return zero (the C notion of &quot;false&quot;).
+Second, these macros include variants that perform a variety of
+specific tests. These specific versions (such as <TT CLASS="western">assertEqualInt</TT>
+and <TT CLASS="western">assertEqualString</TT> in the example above)
+generate detailed log messages on failure. In particular, they print
+the value of both arguments; this greatly simplifies diagnosing
+failures. 
+</P>
+<H1 CLASS="western"><A NAME="Life_cycle_of_a_test"></A>Life cycle of
+a test</H1>
+<P>Each test resides in a C source file with the same name as the
+test. The test itself is a function that takes no arguments. The test
+is declared using the <TT CLASS="western">DEFINE_TEST()</TT> macro.
+This macro serves both to ensure that the test is declared correctly
+and as a label that can be used to locate all defined tests. (On
+Unix-like platforms, a simple <TT CLASS="western">grep</TT> operation
+is used to construct a file called <TT CLASS="western">list.h</TT>
+that holds the names of all of the tests. This makes it very easy to
+add new tests.) 
+</P>
+<P>The test harness determines which tests to run. It goes through
+the following steps whenever it runs a test: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in"><STRIKE>Closes all file
+	descriptors except for stdin, stdout, and stderr.</STRIKE> (This
+	screws up libc on some platforms so has been removed.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Creates a temporary directory
+	whose name matches the name of the test and switches into that
+	directory. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Resets the current locale. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Calls the test function. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">If there were no assertion
+	failures, it will remove the temporary directory. (If <TT CLASS="western">-k</TT>
+	is specified, temporary directory are left even if the test
+	succeeds.) 
+	</P>
+	<LI><P><STRIKE>If there are any open file descriptors other than
+	stdin, stdout, and stderr, it reports an error.</STRIKE> Tests
+	should never leave open file descriptors. 
+	</P>
+</UL>
+<P>In particular, tests can safely assume that: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The current directory is empty
+	when the test starts. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Any files created in the current
+	directory will be removed for you. 
+	</P>
+	<LI><P>The current locale is the default &quot;C&quot; locale. 
+	</P>
+</UL>
+<P>Tests should: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Release all memory. The test
+	suites are occasionally run under a memory debugger to detect leaks
+	in the libarchive library. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">Close all opened files. This helps
+	to catch file descriptor leaks in libarchive. 
+	</P>
+	<LI><P>Not read or write absolute paths. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Platform_variation"></A>Platform
+variation</H1>
+<P>Some tests are specific to a particular platform. Such tests
+should use appropriate platform-specific macros as follows: 
+</P>
+<PRE CLASS="western">#if __PLATFORM
+... various helper functions ...
+#endif
+DEFINE_TEST(foo_platform)
+{
+#if __PLATFORM
+&nbsp; &nbsp;... tests as usual ....
+#else
+&nbsp; &nbsp;skipping(&quot;platform-specific tests&quot;);
+#endif
+}</PRE><P>
+In particular, note that all tests are compiled and run on all
+platforms. 
+</P>
+<P>Most tests are not platform-specific and will thus end up running
+on many different platforms. In order to simplify writing such tests,
+try to use platform-independent coding: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Use stdio <TT CLASS="western">fopen()</TT>,
+	<TT CLASS="western">fwrite()</TT>, <TT CLASS="western">fread()</TT>,
+	and <TT CLASS="western">fclose()</TT> to access files whenever
+	feasible. 
+	</P>
+	<LI><P>Look through the <TT CLASS="western">test.h</TT> header to
+	see if there are assertXxx() functions that you can use. There's a
+	list of the more popular ones below, but new ones are often added. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Assert_macros"></A>Assert macros</H1>
+<P>The following is a necessarily incomplete list of assert functions
+available to tests: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">Basic equality: <TT CLASS="western">assertEqualInt</TT>,
+	<TT CLASS="western">assertEqualString</TT>, <TT CLASS="western">assertEqualMem</TT>
+		</P>
+	<LI><P STYLE="margin-bottom: 0in">File creation: <TT CLASS="western">assertMakeFile</TT>,
+	<TT CLASS="western">assertMakeSymlink</TT>, <TT CLASS="western">assertMakeHardlink</TT>,
+	<TT CLASS="western">assertMakeDir</TT> 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">File tests: <TT CLASS="western">assertIsReg</TT>,
+	<TT CLASS="western">assertIsDir</TT>, <TT CLASS="western">assertIsSymlink</TT>,
+	<TT CLASS="western">assertFileSize</TT>, <TT CLASS="western">assertFileNlinks</TT>,
+	<TT CLASS="western">assertFileMtime</TT> 
+	</P>
+	<LI><P>File contents: <TT CLASS="western">assertFileEmpty</TT>,
+	<TT CLASS="western">assertFileNonEmpty</TT>, <TT CLASS="western">assertFileContents</TT>,
+	<TT CLASS="western">assertTextFileContents</TT> 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Reference_Files"></A>Reference Files</H1>
+<P>Many tests require reading a pre-constructed reference file. Such
+files are stored with the source code for the associated test suite.
+Reference files are named according to the test and must be uuencoded
+to be checked into source control. 
+</P>
+<P>For example, if you need a reference tar archive to use with
+<TT CLASS="western">test_foo</TT>, the file should be named
+<TT CLASS="western">test_foo.tar</TT> and stored in source control as
+<TT CLASS="western">test_foo.tar.uu</TT>. 
+</P>
+<P>Within the test code, you can recover the reference file with: 
+</P>
+<PRE CLASS="western" STYLE="margin-bottom: 0.2in">&nbsp; &nbsp; extract_reference_file(&quot;test_foo.tar&quot;);</PRE><P>
+The <TT CLASS="western">extract_reference_file()</TT> function will
+uudecode the requested file and put the result in the current
+directory. 
+</P>
+<P>Look at <TT CLASS="western">test_read_format_cpio_bin_be.c</TT>
+for a simple example of this usage. 
+</P>
+<P>A few of the older tests store reference data within the source
+code as a hex-encoded array of characters. This was common before
+<TT CLASS="western">extract_reference_file()</TT> was added and is
+not recommended for new code. 
+</P>
+<H1 CLASS="western"><A NAME="Dos_and_Donts"></A>Dos and Donts</H1>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">DO use asserts liberally. It's
+	common to have an assert on almost every line. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use assertEqualInt,
+	assertEqualString, assertEqualMem to test equality instead of plain
+	assert(); the specialized forms give a lot more information on a
+	failure. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO test your tests; experiment by
+	changing a piece of code and make sure your test fails. If you think
+	you've found a bug, we recommend writing the test first, make sure
+	the test fails, then fixing the bug. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO run all of the tests before
+	submitting a change. Depending on your build environment, <TT CLASS="western">make
+	test</TT> or <TT CLASS="western">make check</TT> will usually run
+	all of the tests. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DON'T rely on <TT CLASS="western">HAVE_</TT>
+	macros from config.h. (If the tests use the same <TT CLASS="western">HAVE_</TT>
+	macros as the code being tested then configuration problems will be
+	covered up.) 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO use runtime tests for platform
+	features. For example, the ACL tests try to set an ACL on a file and
+	read it back to determine if ACL support is available, then they
+	exercise the libarchive ACL handling. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO look at existing tests. Often,
+	a bug can be tested by adding just a couple of asserts to an
+	existing test instead of writing a new one. 
+	</P>
+	<LI><P STYLE="margin-bottom: 0in">DO improve existing tests. In
+	particular, if you see a test failure that is hard to understand,
+	consider adding a failure() message or comments so the next person
+	will have an easier time. 
+	</P>
+	<LI><P>DO ask on the mailing lists if you have questions. Some tests
+	are better written than others. 
+	</P>
+</UL>
+<H1 CLASS="western"><A NAME="Some_examples_of_tests"></A>Some
+examples of tests</H1>
+<H2 CLASS="western"><A NAME="Libarchive_read_tests"></A>Libarchive
+read tests</H2>
+<P>There are quite a few read tests that simply read a pre-built
+input file and verify the results. These use <TT CLASS="western">extract_reference_file()</TT>
+to decode a uuencoded input file, then open that file with libarchive
+and verify the results. Most of these are pretty straightforward. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_read/write_tests"></A>Libarchive
+read/write tests</H2>
+<P>Most of the write tests really just verify that libarchive can
+read what it writes. These generally use the memory interfaces. They
+feed archive entries into the writer to create an archive in memory
+and then open the memory again to read the data back and verify that
+it is the same. 
+</P>
+<H2 CLASS="western"><A NAME="Libarchive_write_validators"></A>Libarchive
+write validators</H2>
+<P>A few write tests write an archive into memory and then inspect
+the actual bytes to verify that the archive was created correctly.
+These tests are nice to have but are tedious to build. 
+</P>
+<P>There are also a couple of such validators for bsdtar and bsdcpio.
+These are very tricky since the exact data contains values that the
+test cannot completely control (such as the current time or
+username). 
+</P>
+<H2 CLASS="western"><A NAME="Disk_tests"></A>Disk tests</H2>
+<P>Libarchive's disk I/O APIs, as well as bsdtar and bsdcpio, need to
+operate by verifying files on disk. To make this easier, the test
+framework now has a large number of assertions to verify timestamps,
+permissions, and other basic file data. These assertions use
+appropriate system calls for each platform; new tests should try to
+avoid using <TT CLASS="western">stat()</TT>, which is not uniformly
+available. 
+</P>
+<H2 CLASS="western"><A NAME="Fuzz_tester"></A>Fuzz tester</H2>
+<P>The fuzz tester is one of the few tests that does not aggressively
+use assertions. Its purpose is to try and crash libarchive by feeding
+it input that is slightly damaged. (Remember that libarchive does
+have some failsafe code that deliberately aborts the entire program
+if certain invariants are violated.) 
+</P>
+<P>Since a fuzz failure causes a crash, it's impossible to report the
+error to the console, so the fuzz tester instead generates a
+randomly-damaged file, saves that file to disk, then runs the file
+through libarchive to try to provoke a crash. If libarchive crashes
+the entire tester, the input that caused the crash will be available
+on disk for further analysis. 
+</P>
+<P>Although it is unusual for a test program to use random input, the
+fuzz tester has proven quite useful at uncovering poor error
+handling. Unfortunately, the need to write the data to disk before
+each test is a significant performance issue. 
+</P>
+<H2 CLASS="western"><A NAME="Large_tar_tester"></A>Large tar tester</H2>
+<P>The large tar tester attempts to exercise boundary cases with very
+large entries, up to 1 terabyte. Of course, writing a 1 terabyte
+entry to an uncompressed archive on disk or memory is unacceptable,
+both for performance and space reasons. Even gzip or bzip2
+compression won't help; although smaller, the output is still large
+and the time needed to compress such a large amount of data is
+prohibitive. So the large tar tester uses a trick. 
+</P>
+<P>Remember that an uncompressed tar archive consists of alternating
+headers and bodies. If the bodies consist entirely of zero bytes,
+then all that's needed to reconstruct the archive is to record the
+relatively small headers and store a count of each contiguous block
+of zeros. This simple &quot;run-length encoding&quot; is very
+effective, compressing a sample archive with a dozen entries down to
+just a few kilobytes, even if those entries range up to 1TB. 
+</P>
+<P>By writing a custom I/O layer that implements such compression, we
+can write very large entries through libarchive then read them back
+and verify that libarchive correctly handles all of the boundary
+cases. 
+</P>
+<P>Of course, even scanning output to determine zero blocks can take
+quite a while, so the large tar tester makes one more optimization:
+Libarchive is &quot;mostly&quot; zero-copy. When you give it a large
+block to write to an entry body, it will pass pointers straight
+through to the output routine, except in those cases where it must
+copy data to correctly build blocks. The large tar tester takes
+advantage of this to quickly detect when a block being written out by
+the archive writer is the same as some of the data that was given by
+the test as the entry body, and similarly when reading the archive
+back. 
+</P>
+<P>Taken together, these tricks allow the large tar writer to test
+for issues such as proper storage of very large file sizes (tar files
+support several different ways to store file sizes which trade off
+portability versus range; libarchive tries to use the most portable
+one it can for each entry) and integer overflow (Windows 32-bit <TT CLASS="western">off_t</TT>
+broke the large tar test and led libarchive to make heavier use of
+<TT CLASS="western">int64_t</TT> internally) in a test that runs in
+under 1/4 second. 
+</P>
+<P STYLE="margin-bottom: 0in"><BR>
+</P>
+</BODY>
+</HTML><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=utf-8">
+	<TITLE></TITLE>
+	<META NAME="GENERATOR" CONTENT="LibreOffice 3.3  (Unix)">
+	<META NAME="CREATED" CONTENT="20110626;22235100">
+	<META NAME="CHANGED" CONTENT="20110626;22254500">
+	<STYLE TYPE="text/css">
+	<!--
+		@page { margin: 0.79in }
+		P { margin-bottom: 0.08in }
+		H1 { margin-bottom: 0.08in }
+		H1.western { font-family: "Liberation Serif", serif }
+		H1.cjk { font-family: "Bitstream Vera Sans" }
+		H1.ctl { font-family: "FreeSans" }
+		PRE.cjk { font-family: "Bitstream Vera Sans", monospace }
+		H2 { margin-bottom: 0.08in }
+		H2.ctl { font-family: "FreeSans" }
+		TT.cjk { font-family: "Bitstream Vera Sans", monospace }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" DIR="LTR">
+<H1 CLASS="western">Introduction</H1>
+<P>Libarchive is now a fairly complex piece of software that runs on
+a number of different platforms. A thorough test suite is essential
+both for verifying new ports and for ensuring that future changes
+don't break existing functionality. 
+</P>
+<P>Any significant change to libarchive, including most bug fixes,
+should be accompanied by new tests or changes to existing tests. This
+article explains how the libarchive test suites work and how to
+extend them. 
+</P>
+<H1 CLASS="western"><A NAME="Building_and_Running_the_Test_Programs"></A>
+Building and Running the Test Programs</H1>
+<P>Each major component--libarchive, bsdtar, and bsdcpio--has a test
+program that exercises the functionality of that component. These
+test programs are compiled in the same way that the rest of the
+libarchive suite is compiled. 
+</P>
+<P>To run the test programs, you need to give them two pieces of
+information: 
+</P>
+<UL>
+	<LI><P STYLE="margin-bottom: 0in">The full path to the directory
+	holding t

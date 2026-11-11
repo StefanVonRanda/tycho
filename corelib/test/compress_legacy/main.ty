@@ -1,0 +1,165 @@
+package main
+
+import "core:compress"
+import "core:io"
+
+fn load(path: string) -> bytes:
+    match io.read_bytes(path):
+        Ok(b):
+            return b
+        Err(_):
+            return to_bytes([]int)
+
+fn same(a: bytes, b: bytes) -> bool:
+    return to_str(a) == to_str(b)
+
+fn why(e: compress.CodecErr) -> string:
+    match e:
+        compress.CodecInvalidProps:
+            return "InvalidProps"
+        compress.CodecBadOption:
+            return "BadOption"
+        compress.CodecCorrupt:
+            return "Corrupt"
+        compress.CodecTruncated:
+            return "Truncated"
+        compress.CodecTooBig:
+            return "TooBig"
+        compress.CodecFailed:
+            return "Failed"
+
+fn main():
+    p7 := compress.PpmdProps(compress.H, 6, 16777216, 0)
+    p8 := compress.PpmdProps(compress.I, 8, 1048576, 0)
+
+    match compress.ppmd_encode_props_7z(p7):
+        Ok(b):
+            println("ppmd7_props=" + str(same(b, to_bytes([6, 0, 0, 0, 1]))))
+        Err(e):
+            println("ppmd7_props=" + why(e))
+    match compress.ppmd_encode_props_zip(p8):
+        Ok(b):
+            println("ppmd8_props=" + str(same(b, to_bytes([7, 0]))))
+        Err(e):
+            println("ppmd8_props=" + why(e))
+
+    raw7 := load("corelib/test/compress_legacy/ppmd7.raw")
+    txt7 := load("corelib/test/compress_legacy/ppmd7.txt")
+    match compress.ppmd_decompress_7z(raw7, p7, len(txt7)):
+        Ok(b):
+            println("ppmd7_decode=" + str(same(b, txt7)))
+        Err(e):
+            println("ppmd7_decode=" + why(e))
+    match compress.ppmd_compress_7z(txt7, p7):
+        Ok(b):
+            println("ppmd7_encode=" + str(same(b, raw7)))
+        Err(e):
+            println("ppmd7_encode=" + why(e))
+
+    raw8 := load("corelib/test/compress_legacy/ppmd8.raw")
+    txt8 := load("corelib/test/compress_legacy/ppmd8.txt")
+    match compress.ppmd_decompress_zip(raw8, p8, len(txt8)):
+        Ok(b):
+            println("ppmd8_decode=" + str(same(b, txt8)))
+        Err(e):
+            println("ppmd8_decode=" + why(e))
+    match compress.ppmd_compress_zip(txt8, p8):
+        Ok(b):
+            println("ppmd8_encode=" + str(same(b, raw8)))
+        Err(e):
+            println("ppmd8_encode=" + why(e))
+
+    shrink_raw := load("corelib/test/compress_legacy/shrink.raw")
+    shrink_txt := load("corelib/test/compress_legacy/shrink.txt")
+    match compress.unshrink(shrink_raw, len(shrink_txt)):
+        Ok(b):
+            println("shrink_decode=" + str(same(b, shrink_txt)))
+        Err(e):
+            println("shrink_decode=" + why(e))
+    match compress.shrink(shrink_txt):
+        Ok(b):
+            println("shrink_encode=" + str(same(b, shrink_raw)))
+        Err(e):
+            println("shrink_encode=" + why(e))
+
+    implode4_raw := load("corelib/test/compress_legacy/implode4.raw")
+    implode4_txt := load("corelib/test/compress_legacy/implode4.txt")
+    match compress.explode(implode4_raw, false, false, len(implode4_txt)):
+        Ok(b):
+            println("explode4=" + str(same(b, implode4_txt)))
+        Err(e):
+            println("explode4=" + why(e))
+    match compress.implode(implode4_txt, false, false):
+        Ok(b):
+            match compress.explode(b, false, false, len(implode4_txt)):
+                Ok(d):
+                    println("implode4_rt=" + str(same(d, implode4_txt)))
+                Err(e):
+                    println("implode4_rt=" + why(e))
+        Err(e):
+            println("implode4_rt=" + why(e))
+
+    implode8_raw := load("corelib/test/compress_legacy/implode8.raw")
+    implode8_txt := load("corelib/test/compress_legacy/implode8.txt")
+    match compress.explode(implode8_raw, true, true, len(implode8_txt)):
+        Ok(b):
+            println("explode8=" + str(same(b, implode8_txt)))
+        Err(e):
+            println("explode8=" + why(e))
+    match compress.implode(implode8_txt, true, true):
+        Ok(b):
+            match compress.explode(b, true, true, len(implode8_txt)):
+                Ok(d):
+                    println("implode8_rt=" + str(same(d, implode8_txt)))
+                Err(e):
+                    println("implode8_rt=" + why(e))
+        Err(e):
+            println("implode8_rt=" + why(e))
+
+    reduce_raw := load("corelib/test/compress_legacy/reduce.raw")
+    reduce_txt := load("corelib/test/compress_legacy/reduce.txt")
+    match compress.expand(reduce_raw, 4, len(reduce_txt)):
+        Ok(b):
+            println("reduce_decode=" + str(same(b, reduce_txt)))
+        Err(e):
+            println("reduce_decode=" + why(e))
+    match compress.reduce(reduce_txt, 4):
+        Ok(b):
+            match compress.expand(b, 4, len(reduce_txt)):
+                Ok(d):
+                    println("reduce_rt=" + str(same(d, reduce_txt)))
+                Err(e):
+                    println("reduce_rt=" + why(e))
+        Err(e):
+            println("reduce_rt=" + why(e))
+
+    bad := compress.PpmdProps(compress.H, 1, 1024, 0)
+    match compress.ppmd_compress_7z(to_bytes("x"), bad):
+        Err(compress.CodecInvalidProps):
+            println("bad_props=InvalidProps")
+        Err(e):
+            println("bad_props=" + why(e))
+        Ok(_):
+            println("bad_props=Ok")
+    match compress.expand(to_bytes("x"), 0, 1):
+        Err(compress.CodecBadOption):
+            println("bad_factor=BadOption")
+        Err(e):
+            println("bad_factor=" + why(e))
+        Ok(_):
+            println("bad_factor=Ok")
+    match compress.ppmd_decompress_7z(raw7[0:16], p7, len(txt7)):
+        Err(e):
+            println("truncated=" + why(e))
+        Ok(_):
+            println("truncated=Ok")
+    match compress.ppmd_decompress_zip(raw8[0:8], p8, len(txt8)):
+        Err(e):
+            println("truncated8=" + why(e))
+        Ok(_):
+            println("truncated8=Ok")
+
+    lh := compress.ppmd_level_properties(compress.H, 5, -1)
+    li := compress.ppmd_level_properties(compress.I, 7, -1)
+    println("level_h=" + str(lh.order) + ":" + str(lh.mem_size))
+    println("level_i=" + str(li.order) + ":" + str(li.mem_size) + ":" + str(li.restore))

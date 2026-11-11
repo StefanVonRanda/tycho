@@ -8,6 +8,10 @@
  * truncated input, or allocation failure yields *out=NULL / *outlen=0 (empty bytes
  * to tycho), never a partial or uninitialized buffer. Length-carried, so binary
  * data with interior NUL bytes round-trips intact.
+ *
+ * The same shim carries the PPMd7/PPMd8 and PKZIP Shrink/Reduce/Implode
+ * codecs. Their implementations are vendored public-domain C below; they add
+ * no library dependency.
  */
 #include <zlib.h>
 #include <stdlib.h>
@@ -21,6 +25,12 @@
 #include <pthread.h>
 #endif
 #include "../tycho.h"
+
+/* PPMd7/PPMd8 (7-Zip SDK) and Shrink/Reduce/Implode (hwzip), both public
+ * domain. They are vendored, not linked: core:compress has no runtime
+ * dependency on 7-Zip or hwzip. */
+#include "vendor/ppmd/ppmd_all.c"
+#include "vendor/hwzip/hwzip_all.c"
 
 /* windowBits 15 | 16 selects zlib's gzip wrapper (header + CRC32 + length). */
 #define GZIP_WBITS (15 + 16)
@@ -461,5 +471,382 @@ void bzx_decompress(const unsigned char *data, tycho_int len,
         if (rc == -7) { *status = ZD_TRUNCATED; return; }
         *status = ZD_FAILED;
         return;
+    }
+}
+
+/* ---- PPMd and PKZIP legacy codecs ---------------------------------------- */
+
+#define PPX_OK        0
+#define PPX_CORRUPT   1
+#define PPX_TRUNCATED 2
+#define PPX_TOOBIG    3
+#define PPX_FAILED    4
+#define PPX_BAD_PROPS 5
+#define PPX_BAD_OPT   6
+
+#define PPX_MAX_OUT ((size_t)1 << 30)
+
+static void ppx_clear(unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+}
+
+static int ppx_size_ok(tycho_int n, size_t *out) {
+    if (n < 0 || (uint64_t)n > (uint64_t)PPX_MAX_OUT) return 0;
+    *out = (size_t)n;
+    return 1;
+}
+
+static int ppx_ppmd_props_ok(tycho_int variant, tycho_int order,
+                             tycho_int mem, tycho_int restore) {
+    if (order < 2 || mem < 2048 || (uint64_t)mem > 0xFFFFFFF4u) return 0;
+    if (variant == 0) {
+        return order <= 64 && restore == 0;
+    }
+    if (variant == 1) {
+        if (order > 16 || restore < 0 || restore > 2) return 0;
+        if (restore == 1 && mem < 2064) return 0;
+        return 1;
+    }
+    return 0;
+}
+
+typedef struct {
+    IByteIn vt;
+    const unsigned char *p;
+    size_t n;
+    size_t i;
+    int overrun;
+} PpxIn;
+
+static Byte ppx_in_read(IByteInPtr p) {
+    PpxIn *m = (PpxIn *)p;
+    if (m->i >= m->n) {
+        m->overrun = 1;
+        return 0;
+    }
+    return m->p[m->i++];
+}
+
+typedef struct {
+    IByteOut vt;
+    unsigned char *p;
+    size_t n;
+    size_t cap;
+    int oom;
+} PpxOut;
+
+static void ppx_out_write(IByteOutPtr p, Byte b) {
+    PpxOut *m = (PpxOut *)p;
+    if (m->oom) return;
+    if (m->n >= m->cap) {
+        size_t next = m->cap ? m->cap * 2 : 4096;
+        if (next > PPX_MAX_OUT) {
+            m->oom = 1;
+            return;
+        }
+        unsigned char *q = (unsigned char *)realloc(m->p, next);
+        if (!q) {
+            m->oom = 1;
+            return;
+        }
+        m->p = q;
+        m->cap = next;
+    }
+    m->p[m->n++] = b;
+}
+
+static void *ppx_alloc(ISzAllocPtr p, size_t n) {
+    (void)p;
+    return malloc(n);
+}
+
+static void ppx_free(ISzAllocPtr p, void *q) {
+    (void)p;
+    free(q);
+}
+
+static const ISzAlloc ppx_allocator = { ppx_alloc, ppx_free };
+
+void ppx_decompress_7z(const unsigned char *data, tycho_int len,
+                       tycho_int order, tycho_int mem, tycho_int expected,
+                       tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    size_t want;
+    if (!ppx_ppmd_props_ok(0, order, mem, 0)) { *status = PPX_BAD_PROPS; return; }
+    if (len < 0) { *status = PPX_BAD_OPT; return; }
+    if (!ppx_size_ok(expected, &want)) { *status = PPX_TOOBIG; return; }
+    if (want == 0) { *status = PPX_OK; return; }
+    unsigned char *buf = (unsigned char *)malloc(want);
+    if (!buf) return;
+
+    PpxIn in;
+    memset(&in, 0, sizeof in);
+    in.vt.Read = ppx_in_read;
+    in.p = data;
+    in.n = (size_t)len;
+
+    CPpmd7 p;
+    Ppmd7_Construct(&p);
+    if (!Ppmd7_Alloc(&p, (UInt32)mem, &ppx_allocator)) { free(buf); return; }
+    Ppmd7_Init(&p, (unsigned)order);
+    p.rc.dec.Stream = (IByteInPtr)&in;
+    if (!Ppmd7z_RangeDec_Init(&p.rc.dec)) {
+        Ppmd7_Free(&p, &ppx_allocator);
+        free(buf);
+        *status = PPX_TRUNCATED;
+        return;
+    }
+    for (size_t i = 0; i < want; i++) {
+        int sym = Ppmd7z_DecodeSymbol(&p);
+        if (sym < 0) {
+            *status = in.overrun ? PPX_TRUNCATED : PPX_CORRUPT;
+            Ppmd7_Free(&p, &ppx_allocator);
+            free(buf);
+            return;
+        }
+        buf[i] = (unsigned char)sym;
+    }
+    Ppmd7_Free(&p, &ppx_allocator);
+    *out = buf;
+    *outlen = (tycho_int)want;
+    *status = PPX_OK;
+}
+
+void ppx_compress_7z(const unsigned char *data, tycho_int len,
+                     tycho_int order, tycho_int mem,
+                     tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (!ppx_ppmd_props_ok(0, order, mem, 0)) { *status = PPX_BAD_PROPS; return; }
+    if (len < 0 || (uint64_t)len > (uint64_t)PPX_MAX_OUT) { *status = PPX_BAD_OPT; return; }
+
+    PpxOut o;
+    memset(&o, 0, sizeof o);
+    o.vt.Write = ppx_out_write;
+
+    CPpmd7 p;
+    Ppmd7_Construct(&p);
+    if (!Ppmd7_Alloc(&p, (UInt32)mem, &ppx_allocator)) return;
+    Ppmd7_Init(&p, (unsigned)order);
+    p.rc.enc.Stream = (IByteOutPtr)&o;
+    Ppmd7z_Init_RangeEnc(&p);
+    const Byte *src = (const Byte *)(len ? data : (const unsigned char *)"");
+    Ppmd7z_EncodeSymbols(&p, src, src + (size_t)len);
+    Ppmd7z_Flush_RangeEnc(&p);
+    Ppmd7_Free(&p, &ppx_allocator);
+    if (o.oom) { free(o.p); return; }
+    *out = o.p;
+    *outlen = (tycho_int)o.n;
+    *status = PPX_OK;
+}
+
+void ppx_decompress_zip(const unsigned char *data, tycho_int len,
+                        tycho_int order, tycho_int mem, tycho_int restore,
+                        tycho_int expected, tycho_int *status,
+                        unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (!ppx_ppmd_props_ok(1, order, mem, restore)) { *status = PPX_BAD_PROPS; return; }
+    if (len < 0) { *status = PPX_BAD_OPT; return; }
+    size_t want;
+    if (!ppx_size_ok(expected, &want)) { *status = PPX_TOOBIG; return; }
+    if (want == 0) { *status = PPX_OK; return; }
+    unsigned char *buf = (unsigned char *)malloc(want);
+    if (!buf) return;
+
+    PpxIn in;
+    memset(&in, 0, sizeof in);
+    in.vt.Read = ppx_in_read;
+    in.p = data;
+    in.n = (size_t)len;
+
+    CPpmd8 p;
+    Ppmd8_Construct(&p);
+    if (!Ppmd8_Alloc(&p, (UInt32)mem, &ppx_allocator)) { free(buf); return; }
+    Ppmd8_Init(&p, (unsigned)order, (unsigned)restore);
+    p.Stream.In = (IByteInPtr)&in;
+    if (!Ppmd8_Init_RangeDec(&p)) {
+        Ppmd8_Free(&p, &ppx_allocator);
+        free(buf);
+        *status = PPX_TRUNCATED;
+        return;
+    }
+    for (size_t i = 0; i < want; i++) {
+        int sym = Ppmd8_DecodeSymbol(&p);
+        if (sym < 0) {
+            *status = (sym == PPMD8_SYM_END) ? PPX_TRUNCATED : PPX_CORRUPT;
+            Ppmd8_Free(&p, &ppx_allocator);
+            free(buf);
+            return;
+        }
+        buf[i] = (unsigned char)sym;
+    }
+    if (!Ppmd8_RangeDec_IsFinishedOK(&p)) {
+        int sym = Ppmd8_DecodeSymbol(&p);
+        if (sym != PPMD8_SYM_END) {
+            *status = in.overrun ? PPX_TRUNCATED : PPX_CORRUPT;
+            Ppmd8_Free(&p, &ppx_allocator);
+            free(buf);
+            return;
+        }
+    }
+    Ppmd8_Free(&p, &ppx_allocator);
+    *out = buf;
+    *outlen = (tycho_int)want;
+    *status = PPX_OK;
+}
+
+void ppx_compress_zip(const unsigned char *data, tycho_int len,
+                      tycho_int order, tycho_int mem, tycho_int restore,
+                      tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (!ppx_ppmd_props_ok(1, order, mem, restore)) { *status = PPX_BAD_PROPS; return; }
+    if (len < 0 || (uint64_t)len > (uint64_t)PPX_MAX_OUT) { *status = PPX_BAD_OPT; return; }
+
+    PpxOut o;
+    memset(&o, 0, sizeof o);
+    o.vt.Write = ppx_out_write;
+
+    CPpmd8 p;
+    Ppmd8_Construct(&p);
+    if (!Ppmd8_Alloc(&p, (UInt32)mem, &ppx_allocator)) return;
+    Ppmd8_Init(&p, (unsigned)order, (unsigned)restore);
+    p.Stream.Out = (IByteOutPtr)&o;
+    Ppmd8_Init_RangeEnc(&p);
+    for (tycho_int i = 0; i < len; i++) Ppmd8_EncodeSymbol(&p, data[i]);
+    Ppmd8_EncodeSymbol(&p, PPMD8_SYM_END);
+    Ppmd8_Flush_RangeEnc(&p);
+    Ppmd8_Free(&p, &ppx_allocator);
+    if (o.oom) { free(o.p); return; }
+    *out = o.p;
+    *outlen = (tycho_int)o.n;
+    *status = PPX_OK;
+}
+
+void pkx_unshrink(const unsigned char *data, tycho_int len, tycho_int expected,
+                  tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (len < 0) { *status = PPX_BAD_OPT; return; }
+    size_t want;
+    if (!ppx_size_ok(expected, &want)) { *status = PPX_TOOBIG; return; }
+    if (want == 0) { *status = PPX_OK; return; }
+    unsigned char *buf = (unsigned char *)malloc(want);
+    if (!buf) return;
+    size_t src_used = 0, dst_used = 0;
+    unshrnk_stat_t st = hwunshrink(data, (size_t)len, &src_used, buf, want, &dst_used);
+    if (st == HWUNSHRINK_OK && dst_used == want) {
+        *out = buf; *outlen = (tycho_int)want; *status = PPX_OK; return;
+    }
+    free(buf);
+    if (st == HWUNSHRINK_FULL) *status = PPX_TOOBIG;
+    else if (st == HWUNSHRINK_ERR) *status = PPX_CORRUPT;
+    else *status = PPX_TRUNCATED;
+}
+
+void pkx_explode(const unsigned char *data, tycho_int len, tycho_int expected,
+                 tycho_int flags, tycho_int *status,
+                 unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (len < 0) { *status = PPX_BAD_OPT; return; }
+    size_t want;
+    if (!ppx_size_ok(expected, &want)) { *status = PPX_TOOBIG; return; }
+    if (want == 0) { *status = PPX_OK; return; }
+    unsigned char *buf = (unsigned char *)malloc(want);
+    if (!buf) return;
+    size_t src_used = 0;
+    explode_stat_t st = hwexplode(data, (size_t)len, want,
+                                  (flags & 2) != 0, (flags & 4) != 0, 0,
+                                  &src_used, buf);
+    if (st == HWEXPLODE_OK) {
+        *out = buf; *outlen = (tycho_int)want; *status = PPX_OK; return;
+    }
+    free(buf);
+    *status = PPX_CORRUPT;
+}
+
+void pkx_expand(const unsigned char *data, tycho_int len, tycho_int expected,
+                tycho_int factor, tycho_int *status,
+                unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (len < 0 || factor < 1 || factor > 4) { *status = PPX_BAD_OPT; return; }
+    size_t want;
+    if (!ppx_size_ok(expected, &want)) { *status = PPX_TOOBIG; return; }
+    if (want == 0) { *status = PPX_OK; return; }
+    unsigned char *buf = (unsigned char *)malloc(want);
+    if (!buf) return;
+    size_t src_used = 0;
+    expand_stat_t st = hwexpand(data, (size_t)len, want, (int)factor, &src_used, buf);
+    if (st == HWEXPAND_OK) {
+        *out = buf; *outlen = (tycho_int)want; *status = PPX_OK; return;
+    }
+    free(buf);
+    *status = PPX_CORRUPT;
+}
+
+void pkx_shrink(const unsigned char *data, tycho_int len,
+                tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (len < 0 || (uint64_t)len > (uint64_t)PPX_MAX_OUT) { *status = PPX_BAD_OPT; return; }
+    size_t cap = (size_t)len * 2 + 4096;
+    if (cap > PPX_MAX_OUT) cap = PPX_MAX_OUT;
+    for (;;) {
+        unsigned char *buf = (unsigned char *)malloc(cap);
+        if (!buf) return;
+        size_t used = 0;
+        if (hwshrink(data, (size_t)len, buf, cap, &used)) {
+            *out = buf; *outlen = (tycho_int)used; *status = PPX_OK; return;
+        }
+        free(buf);
+        if (cap >= PPX_MAX_OUT) { *status = PPX_TOOBIG; return; }
+        cap = cap > PPX_MAX_OUT / 2 ? PPX_MAX_OUT : cap * 2;
+    }
+}
+
+void pkx_implode(const unsigned char *data, tycho_int len, tycho_int flags,
+                 tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (len < 0 || (uint64_t)len > (uint64_t)PPX_MAX_OUT) { *status = PPX_BAD_OPT; return; }
+    size_t cap = (size_t)len * 2 + 4096;
+    if (cap > PPX_MAX_OUT) cap = PPX_MAX_OUT;
+    for (;;) {
+        unsigned char *buf = (unsigned char *)malloc(cap);
+        if (!buf) return;
+        size_t used = 0;
+        if (hwimplode(data, (size_t)len, (flags & 2) != 0, (flags & 4) != 0,
+                      buf, cap, &used)) {
+            *out = buf; *outlen = (tycho_int)used; *status = PPX_OK; return;
+        }
+        free(buf);
+        if (cap >= PPX_MAX_OUT) { *status = PPX_TOOBIG; return; }
+        cap = cap > PPX_MAX_OUT / 2 ? PPX_MAX_OUT : cap * 2;
+    }
+}
+
+void pkx_reduce(const unsigned char *data, tycho_int len, tycho_int factor,
+                tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (len < 0 || factor < 1 || factor > 4) { *status = PPX_BAD_OPT; return; }
+    if ((uint64_t)len > (uint64_t)PPX_MAX_OUT) { *status = PPX_BAD_OPT; return; }
+    size_t cap = (size_t)len * 2 + 4096;
+    if (cap > PPX_MAX_OUT) cap = PPX_MAX_OUT;
+    for (;;) {
+        unsigned char *buf = (unsigned char *)malloc(cap);
+        if (!buf) return;
+        size_t used = 0;
+        if (hwreduce(data, (size_t)len, (int)factor, buf, cap, &used)) {
+            *out = buf; *outlen = (tycho_int)used; *status = PPX_OK; return;
+        }
+        free(buf);
+        if (cap >= PPX_MAX_OUT) { *status = PPX_TOOBIG; return; }
+        cap = cap > PPX_MAX_OUT / 2 ? PPX_MAX_OUT : cap * 2;
     }
 }

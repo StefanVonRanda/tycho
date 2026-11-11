@@ -27,6 +27,18 @@ extern fn bzx_available() -> int
 extern fn bzx_compress(data: bytes, status: inout int) -> bytes
 extern fn bzx_decompress(data: bytes, status: inout int) -> bytes
 
+# PPMd and PKZIP legacy codecs (vendored public-domain C; no runtime library).
+extern fn ppx_decompress_7z(data: bytes, order: int, mem_size: int, expected_size: int, status: inout int) -> bytes
+extern fn ppx_compress_7z(data: bytes, order: int, mem_size: int, status: inout int) -> bytes
+extern fn ppx_decompress_zip(data: bytes, order: int, mem_size: int, restore: int, expected_size: int, status: inout int) -> bytes
+extern fn ppx_compress_zip(data: bytes, order: int, mem_size: int, restore: int, status: inout int) -> bytes
+extern fn pkx_unshrink(data: bytes, expected_size: int, status: inout int) -> bytes
+extern fn pkx_explode(data: bytes, expected_size: int, flags: int, status: inout int) -> bytes
+extern fn pkx_expand(data: bytes, expected_size: int, factor: int, status: inout int) -> bytes
+extern fn pkx_shrink(data: bytes, status: inout int) -> bytes
+extern fn pkx_implode(data: bytes, flags: int, status: inout int) -> bytes
+extern fn pkx_reduce(data: bytes, factor: int, status: inout int) -> bytes
+
 const ZD_OK = 0
 const ZD_CORRUPT = 1
 const ZD_TRUNCATED = 2
@@ -682,3 +694,224 @@ fn swap4(data: bytes) -> bytes:
         push(out, data[i])
         i += 1
     return to_bytes(out)
+
+# ---- PPMd (7z method 03 04 01 / ZIP method 98) and PKZIP legacy methods ----
+
+# Shared failure type for the codecs below. Names are prefixed because Tycho
+# enum variants share one package-wide namespace with ZErr's.
+enum CodecErr:
+    CodecInvalidProps
+    CodecBadOption
+    CodecCorrupt
+    CodecTruncated
+    CodecTooBig
+    CodecFailed
+
+enum PpmdVariant:
+    H                                  # PPMd var.H, used by 7z
+    I                                  # PPMd var.I, used by ZIP method 98
+
+struct PpmdProps:
+    variant: PpmdVariant
+    order: int
+    mem_size: int
+    restore: int                       # 0 restart, 1 cut-off, 2 freeze (var.I)
+
+fn _codec_cause(st: int) -> CodecErr:
+    if st == 1:
+        return CodecCorrupt
+    if st == 2:
+        return CodecTruncated
+    if st == 3:
+        return CodecTooBig
+    if st == 5:
+        return CodecInvalidProps
+    if st == 6:
+        return CodecBadOption
+    return CodecFailed
+
+fn _ppmd_valid(p: PpmdProps) -> bool:
+    if p.order < 2 or p.mem_size < 2048 or p.mem_size > 4294967284:
+        return false
+    if p.variant == H:
+        return p.order <= 64 and p.restore == 0
+    if p.order > 16 or p.restore < 0 or p.restore > 2:
+        return false
+    if p.restore == 1 and p.mem_size < 2064:
+        return false
+    return true
+
+# PPMd var.H decoder for the raw stream 7z stores after the 5-byte properties.
+# `expected_size` is the 7z unpack size; there is no end marker.
+fn ppmd_decompress_7z(data: bytes, props: PpmdProps, expected_size: int) -> Result(bytes, CodecErr):
+    if props.variant != H or not _ppmd_valid(props):
+        return Err(CodecInvalidProps)
+    if expected_size < 0:
+        return Err(CodecBadOption)
+    st := 0
+    b := ppx_decompress_7z(data, props.order, props.mem_size, expected_size, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+# PPMd var.H encoder. Output is byte-identical to 7-Zip for the same
+# order/memory properties.
+fn ppmd_compress_7z(data: bytes, props: PpmdProps) -> Result(bytes, CodecErr):
+    if props.variant != H or not _ppmd_valid(props):
+        return Err(CodecInvalidProps)
+    st := 0
+    b := ppx_compress_7z(data, props.order, props.mem_size, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+# PPMd var.I decoder for ZIP method 98. `data` starts after the two property
+# bytes; `expected_size` is the ZIP uncompressed size. The stream carries an
+# end marker, which is checked after the last output byte.
+fn ppmd_decompress_zip(data: bytes, props: PpmdProps, expected_size: int) -> Result(bytes, CodecErr):
+    if props.variant != I or not _ppmd_valid(props):
+        return Err(CodecInvalidProps)
+    if expected_size < 0:
+        return Err(CodecBadOption)
+    st := 0
+    b := ppx_decompress_zip(data, props.order, props.mem_size, props.restore, expected_size, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+fn ppmd_compress_zip(data: bytes, props: PpmdProps) -> Result(bytes, CodecErr):
+    if props.variant != I or not _ppmd_valid(props):
+        return Err(CodecInvalidProps)
+    st := 0
+    b := ppx_compress_zip(data, props.order, props.mem_size, props.restore, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+fn ppmd_decode_props_7z(data: bytes) -> Result(PpmdProps, CodecErr):
+    if len(data) < 5:
+        return Err(CodecInvalidProps)
+    mem := data[1] | (data[2] << 8) | (data[3] << 16) | (data[4] << 24)
+    p := PpmdProps(H, data[0], mem, 0)
+    if not _ppmd_valid(p):
+        return Err(CodecInvalidProps)
+    return Ok(p)
+
+fn ppmd_encode_props_7z(props: PpmdProps) -> Result(bytes, CodecErr):
+    if props.variant != H or not _ppmd_valid(props):
+        return Err(CodecInvalidProps)
+    m := props.mem_size
+    return Ok(to_bytes([props.order, m & 255, (m >> 8) & 255, (m >> 16) & 255, (m >> 24) & 255]))
+
+fn ppmd_decode_props_zip(data: bytes) -> Result(PpmdProps, CodecErr):
+    if len(data) < 2:
+        return Err(CodecInvalidProps)
+    w := data[0] | (data[1] << 8)
+    restore := w >> 12
+    if restore > 2:
+        return Err(CodecInvalidProps)
+    p := PpmdProps(I, (w & 15) + 1, (((w >> 4) & 255) + 1) << 20, restore)
+    if not _ppmd_valid(p):
+        return Err(CodecInvalidProps)
+    return Ok(p)
+
+fn ppmd_encode_props_zip(props: PpmdProps) -> Result(bytes, CodecErr):
+    if props.variant != I or not _ppmd_valid(props):
+        return Err(CodecInvalidProps)
+    if props.mem_size % (1 << 20) != 0 or props.mem_size > (256 << 20):
+        return Err(CodecInvalidProps)
+    w := (props.order - 1) | (((props.mem_size >> 20) - 1) << 4) | (props.restore << 12)
+    return Ok(to_bytes([w & 255, (w >> 8) & 255]))
+
+# Preset properties, matching 7-Zip's level mapping. `input_size` < 0 leaves
+# the level's memory size unchanged; a non-negative size is capped so small
+# inputs do not reserve the full level memory.
+fn ppmd_level_properties(variant: PpmdVariant, level: int, input_size: int) -> PpmdProps:
+    l := level
+    if l < 0:
+        l = 0
+    if l > 9:
+        l = 9
+    mem := 1 << (19 + l)
+    order := 3
+    restore := 0
+    if variant == H:
+        orders: [10]int = [3, 4, 4, 5, 5, 6, 8, 16, 24, 32]
+        order = orders[l]
+    else:
+        order = 3 + l
+        if l >= 7:
+            restore = 1
+        if mem < (1 << 20):
+            mem = 1 << 20
+    if input_size >= 0:
+        reduced := 1 << 16
+        for reduced < 16 * input_size and reduced < mem:
+            reduced = reduced << 1
+        if variant == I and reduced < (1 << 20):
+            reduced = 1 << 20
+        if reduced < mem:
+            mem = reduced
+    return PpmdProps(variant, order, mem, restore)
+
+# ---- PKZIP legacy methods 1, 2-5 and 6 ----
+
+fn unshrink(data: bytes, expected_size: int) -> Result(bytes, CodecErr):
+    if expected_size < 0:
+        return Err(CodecBadOption)
+    st := 0
+    b := pkx_unshrink(data, expected_size, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+fn expand(data: bytes, factor: int, expected_size: int) -> Result(bytes, CodecErr):
+    if factor < 1 or factor > 4 or expected_size < 0:
+        return Err(CodecBadOption)
+    st := 0
+    b := pkx_expand(data, expected_size, factor, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+fn explode(data: bytes, large_window: bool, literal_tree: bool, expected_size: int) -> Result(bytes, CodecErr):
+    if expected_size < 0:
+        return Err(CodecBadOption)
+    flags := 0
+    if large_window:
+        flags = flags | 2
+    if literal_tree:
+        flags = flags | 4
+    st := 0
+    b := pkx_explode(data, expected_size, flags, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+fn shrink(data: bytes) -> Result(bytes, CodecErr):
+    st := 0
+    b := pkx_shrink(data, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+fn implode(data: bytes, large_window: bool, literal_tree: bool) -> Result(bytes, CodecErr):
+    flags := 0
+    if large_window:
+        flags = flags | 2
+    if literal_tree:
+        flags = flags | 4
+    st := 0
+    b := pkx_implode(data, flags, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+fn reduce(data: bytes, factor: int) -> Result(bytes, CodecErr):
+    if factor < 1 or factor > 4:
+        return Err(CodecBadOption)
+    st := 0
+    b := pkx_reduce(data, factor, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
