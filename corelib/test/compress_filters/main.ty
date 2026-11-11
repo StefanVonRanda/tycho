@@ -1,0 +1,80 @@
+package main
+import "core:compress"
+import "core:hex"
+
+fn hx(b: bytes) -> string:
+    return hex.encode(to_str(b))
+
+fn main():
+    match compress.delta_new(1):
+        Ok(d):
+            e := compress.delta_encode(&d, to_bytes("ABCDE"))
+            println("delta1=" + hx(e))
+            d2 := compress.delta_new(1)
+            match d2:
+                Ok(dd):
+                    println("delta1_rt=" + str(to_str(compress.delta_decode(&dd, e)) == "ABCDE"))
+                Err(_): println("delta1_rt=err")
+        Err(_):
+            println("delta1=err")
+
+    match compress.delta_new(2):
+        Ok(d):
+            e := compress.delta_encode(&d, to_bytes("ABCDE"))
+            println("delta2=" + hx(e))
+        Err(_):
+            println("delta2=err")
+
+    match compress.delta_new(2):
+        Ok(d):
+            a := compress.delta_encode(&d, to_bytes("AB"))
+            b := compress.delta_encode(&d, to_bytes("CD"))
+            println("delta_stream=" + hx(a) + "|" + hx(b))
+            d2 := compress.delta_new(2)
+            match d2:
+                Ok(dd):
+                    da := compress.delta_decode(&dd, a)
+                    db := compress.delta_decode(&dd, b)
+                    println("delta_stream_rt=" + str(to_str(da) + to_str(db) == "ABCD"))
+                Err(_): println("delta_stream_rt=err")
+        Err(_):
+            println("delta_stream=err")
+
+    match compress.delta_new(0):
+        Ok(_): println("delta_bad=Ok")
+        Err(compress.BadDistance): println("delta_bad=BadDistance")
+        Err(_): println("delta_bad=Other")
+
+    match compress.bcj_new(compress.X86, 0):
+        Ok(b):
+            input := to_bytes([232, 1, 0, 0, 0, 144, 233, 255, 255, 255, 144])
+            e := compress.bcj_encode(&b, input)
+            println("bcj_enc=" + hx(e))
+            match compress.bcj_new(compress.X86, 0):
+                Ok(b2):
+                    d := compress.bcj_decode(&b2, e)
+                    println("bcj_rt=" + str(to_str(d) == to_str(input)))
+                Err(_): println("bcj_rt=err")
+        Err(_):
+            println("bcj=err")
+
+    match compress.bcj_new(compress.X86, 0):
+        Ok(b):
+            neg := to_bytes([232, 255, 255, 255, 255, 144])
+            e := compress.bcj_encode(&b, neg)
+            println("bcj_neg=" + hx(e))
+            match compress.bcj_new(compress.X86, 0):
+                Ok(b2):
+                    d := compress.bcj_decode(&b2, e)
+                    println("bcj_neg_rt=" + str(to_str(d) == to_str(neg)))
+                Err(_): println("bcj_neg_rt=err")
+        Err(_):
+            println("bcj_neg=err")
+
+    match compress.bcj_new(compress.X86, -1):
+        Ok(_): println("bcj_bad=Ok")
+        Err(compress.BadAlignment): println("bcj_bad=BadAlignment")
+        Err(_): println("bcj_bad=Other")
+
+    println("swap2=" + hx(compress.swap2(to_bytes("abcdefg"))))
+    println("swap4=" + hx(compress.swap4(to_bytes("abcdefghij"))))

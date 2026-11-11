@@ -73,7 +73,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `dns_query`, `query_mx`, `query_txt`, `query_srv`, `dns_query_tcp` and
   `dns_query_fallback_on`, including compressed names, MX/TXT/SRV RDATA and
   automatic TCP fallback for TC responses.
-- The tree is now 88 corelib packages and 97 golden test trees.
+- Added reversible compression filters to `core:compress`: delta, x86 BCJ and
+  swap2/swap4.
+- The tree is now 88 corelib packages and 98 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

@@ -150,3 +150,200 @@ fn inflate_finish(i: inout Inflater) -> Result(bytes, ZErr):
 
 fn inflater_free(i: Inflater):
     zx_inflate_free(i.p)
+
+# ---- reversible filters (delta, x86 BCJ, byte swaps) ----
+enum FilterErr:
+    BadDistance
+    BadAlignment
+    Unsupported
+
+struct Delta:
+    distance: int
+    history: [int]
+
+fn delta_new(distance: int) -> Result(Delta, FilterErr):
+    if distance < 1 or distance > 256:
+        return Err(BadDistance)
+    h := []int
+    for i := 0; i < distance; i += 1:
+        push(h, 0)
+    return Ok(Delta(distance, h))
+
+fn _delta_update_bytes(d: inout Delta, src: bytes):
+    n := len(src)
+    if n >= d.distance:
+        for j := 0; j < d.distance; j += 1:
+            d.history[j] = src[n - d.distance + j]
+    else:
+        for j := 0; j < d.distance - n; j += 1:
+            d.history[j] = d.history[j + n]
+        for j := 0; j < n; j += 1:
+            d.history[d.distance - n + j] = src[j]
+
+fn _delta_update_ints(d: inout Delta, src: [int]):
+    n := len(src)
+    if n >= d.distance:
+        for j := 0; j < d.distance; j += 1:
+            d.history[j] = src[n - d.distance + j]
+    else:
+        for j := 0; j < d.distance - n; j += 1:
+            d.history[j] = d.history[j + n]
+        for j := 0; j < n; j += 1:
+            d.history[d.distance - n + j] = src[j]
+
+fn delta_encode(d: inout Delta, data: bytes) -> bytes:
+    out := []int
+    for i := 0; i < len(data); i += 1:
+        prev := 0
+        if i >= d.distance:
+            prev = data[i - d.distance]
+        else:
+            prev = d.history[i]
+        v := data[i] - prev
+        if v < 0:
+            v += 256
+        push(out, v)
+    _delta_update_bytes(&d, data)
+    return to_bytes(out)
+
+fn delta_decode(d: inout Delta, data: bytes) -> bytes:
+    out := []int
+    for i := 0; i < len(data); i += 1:
+        prev := 0
+        if i >= d.distance:
+            prev = out[i - d.distance]
+        else:
+            prev = d.history[i]
+        v := data[i] + prev
+        if v >= 256:
+            v -= 256
+        push(out, v)
+    _delta_update_ints(&d, out)
+    return to_bytes(out)
+
+enum BcjArch:
+    X86
+
+struct Bcj:
+    arch: BcjArch
+    pc: int
+    mask: int
+
+fn bcj_new(arch: BcjArch, start_offset: int) -> Result(Bcj, FilterErr):
+    if arch != X86:
+        return Err(Unsupported)
+    if start_offset < 0:
+        return Err(BadAlignment)
+    return Ok(Bcj(arch, start_offset, 0))
+
+fn _x86_scan(d: [int], pos: int, limit: int) -> int:
+    i := pos
+    for i < limit and (d[i] & 254) != 232:
+        i += 1
+    return i
+
+fn _x86_bit(mask: int) -> int:
+    if mask == 0 or mask == 1 or mask == 2:
+        return mask
+    if mask == 3 or mask == 4:
+        return 2
+    return 3
+
+fn _x86_allowed(mask: int) -> bool:
+    return mask == 0 or mask == 1 or mask == 2 or mask == 4
+
+fn _x86_convert(b: inout Bcj, data: bytes, encoding: bool) -> bytes:
+    n := len(data)
+    if n < 5:
+        return data
+    d := []int
+    for i := 0; i < n; i += 1:
+        push(d, data[i])
+    ip := b.pc + 5
+    prev_mask := b.mask & 7
+    prev_pos := 0 - 1
+    pos := 0
+    limit := n - 4
+    for true:
+        pos = _x86_scan(d, pos, limit)
+        if pos >= limit:
+            break
+        distance := pos - prev_pos
+        if distance > 3:
+            prev_mask = 0
+        else:
+            prev_mask = (prev_mask << (distance - 1)) & 7
+            if prev_mask != 0:
+                b4 := d[pos + 4 - _x86_bit(prev_mask)]
+                if not _x86_allowed(prev_mask) or b4 == 0 or b4 == 255:
+                    prev_pos = pos
+                    prev_mask = ((prev_mask << 1) & 7) | 1
+                    pos += 1
+                    continue
+        prev_pos = pos
+        b4 := d[pos + 4]
+        if b4 != 0 and b4 != 255:
+            prev_mask = ((prev_mask << 1) & 7) | 1
+            pos += 1
+            continue
+        src := (b4 << 24) | (d[pos + 3] << 16) | (d[pos + 2] << 8) | d[pos + 1]
+        dest := 0
+        for true:
+            if encoding:
+                dest = (ip + pos + src) & 4294967295
+            else:
+                dest = (src - (ip + pos)) & 4294967295
+            if prev_mask == 0:
+                break
+            index := _x86_bit(prev_mask) * 8
+            chk := (dest >> (24 - index)) & 255
+            if chk != 0 and chk != 255:
+                break
+            src = dest ^ ((1 << (32 - index)) - 1)
+        if ((dest >> 24) & 1) == 1:
+            d[pos + 4] = 255
+        else:
+            d[pos + 4] = 0
+        d[pos + 3] = (dest >> 16) & 255
+        d[pos + 2] = (dest >> 8) & 255
+        d[pos + 1] = dest & 255
+        pos += 5
+    distance := pos - prev_pos
+    if distance > 3:
+        b.mask = 0
+    else:
+        b.mask = (prev_mask << (distance - 1)) & 7
+    b.pc += pos
+    return to_bytes(d)
+
+fn bcj_encode(b: inout Bcj, data: bytes) -> bytes:
+    return _x86_convert(&b, data, true)
+
+fn bcj_decode(b: inout Bcj, data: bytes) -> bytes:
+    return _x86_convert(&b, data, false)
+
+fn swap2(data: bytes) -> bytes:
+    out := []int
+    i := 0
+    for i + 2 <= len(data):
+        push(out, data[i + 1])
+        push(out, data[i])
+        i += 2
+    for i < len(data):
+        push(out, data[i])
+        i += 1
+    return to_bytes(out)
+
+fn swap4(data: bytes) -> bytes:
+    out := []int
+    i := 0
+    for i + 4 <= len(data):
+        push(out, data[i + 3])
+        push(out, data[i + 2])
+        push(out, data[i + 1])
+        push(out, data[i])
+        i += 4
+    for i < len(data):
+        push(out, data[i])
+        i += 1
+    return to_bytes(out)

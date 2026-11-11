@@ -1,0 +1,13 @@
+delta1=4101010101
+delta1_rt=true
+delta2=4142020202
+delta_stream=4142|0202
+delta_stream_rt=true
+delta_bad=BadDistance
+bcj_enc=e80600000090e9ffffff90
+bcj_rt=true
+bcj_neg=e80400000090
+bcj_neg_rt=true
+bcj_bad=BadAlignment
+swap2=62616463666567
+swap4=6463626168676665696a
