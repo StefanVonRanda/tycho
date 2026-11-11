@@ -5,6 +5,19 @@ import "core:hex"
 fn hx(b: bytes) -> string:
     return hex.encode(to_str(b))
 
+fn check_arch(name: string, arch: compress.BcjArch, data: [int], want: string):
+    match compress.bcj_new(arch, 0):
+        Ok(b):
+            e := compress.bcj_encode(&b, to_bytes(data))
+            println(name + "=" + hx(e) + " ok=" + str(hx(e) == want))
+            match compress.bcj_new(arch, 0):
+                Ok(b2):
+                    d := compress.bcj_decode(&b2, e)
+                    println(name + "_rt=" + str(to_str(d) == to_str(to_bytes(data))))
+                Err(_): println(name + "_rt=err")
+        Err(_):
+            println(name + "=err")
+
 fn main():
     match compress.delta_new(1):
         Ok(d):
@@ -78,3 +91,15 @@ fn main():
 
     println("swap2=" + hx(compress.swap2(to_bytes("abcdefg"))))
     println("swap4=" + hx(compress.swap4(to_bytes("abcdefghij"))))
+
+    check_arch("arm", compress.ARM, [0,0,0,0xEB, 0,0,0,0xEB], "020000eb030000eb")
+    check_arch("armt", compress.ARM_Thumb, [0x00,0xF0,0x00,0xF8,0x00,0xF0,0x00,0xF8], "00f002f800f004f8")
+    check_arch("ppc", compress.PowerPC, [0x48,0,0,1,0x48,0,0,1,0x48,0,0,1,0x48,0,0,1], "4800000148000005480000094800000d")
+    check_arch("sparc", compress.SPARC, [0x40,0,0,0,0x40,0,0,4], "4000000040000005")
+    check_arch("arm64", compress.ARM64, [0,0,0,0x94,0,0,0,0x94], "0000009401000094")
+    check_arch("riscv", compress.RISCV, [0x96,0xFF,0xEF,0x30,0x58,0x6E,0xA2,0x5B,0xB2,0x98,0x18,0x7C,0xEC,0x4C,0x2B,0x07], "96ffef401f73a25bb298187cec4c2b07")
+    check_arch("ia64", compress.IA64, [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 16,0,0,0,0,0,0,0,0,0,0,0,0,0,0x80,0x50], "0000000000000000000000000000000010000000000000000000000010008050")
+    match compress.bcj_new(compress.ARM, 2):
+        Ok(_): println("arm_align=Ok")
+        Err(compress.BadAlignment): println("arm_align=BadAlignment")
+        Err(_): println("arm_align=Other")

@@ -11,3 +11,18 @@ bcj_neg_rt=true
 bcj_bad=BadAlignment
 swap2=62616463666567
 swap4=6463626168676665696a
+arm=020000eb030000eb ok=true
+arm_rt=true
+armt=00f002f800f004f8 ok=true
+armt_rt=true
+ppc=4800000148000005480000094800000d ok=true
+ppc_rt=true
+sparc=4000000040000005 ok=true
+sparc_rt=true
+arm64=0000009401000094 ok=true
+arm64_rt=true
+riscv=96ffef401f73a25bb298187cec4c2b07 ok=true
+riscv_rt=true
+ia64=0000000000000000000000000000000010000000000000000000000010008050 ok=true
+ia64_rt=true
+arm_align=BadAlignment

@@ -155,7 +155,6 @@ fn inflater_free(i: Inflater):
 enum FilterErr:
     BadDistance
     BadAlignment
-    Unsupported
 
 struct Delta:
     distance: int
@@ -223,16 +222,30 @@ fn delta_decode(d: inout Delta, data: bytes) -> bytes:
 
 enum BcjArch:
     X86
+    PowerPC
+    IA64
+    ARM
+    ARM_Thumb
+    SPARC
+    ARM64
+    RISCV
 
 struct Bcj:
     arch: BcjArch
     pc: int
     mask: int
 
+fn _bcj_align(arch: BcjArch) -> int:
+    if arch == X86:
+        return 1
+    if arch == ARM_Thumb or arch == RISCV:
+        return 2
+    if arch == IA64:
+        return 16
+    return 4
+
 fn bcj_new(arch: BcjArch, start_offset: int) -> Result(Bcj, FilterErr):
-    if arch != X86:
-        return Err(Unsupported)
-    if start_offset < 0:
+    if start_offset < 0 or start_offset % _bcj_align(arch) != 0:
         return Err(BadAlignment)
     return Ok(Bcj(arch, start_offset, 0))
 
@@ -316,11 +329,333 @@ fn _x86_convert(b: inout Bcj, data: bytes, encoding: bool) -> bytes:
     b.pc += pos
     return to_bytes(d)
 
+fn _bcj_ints(data: bytes) -> [int]:
+    d := []int
+    for i := 0; i < len(data); i += 1:
+        push(d, data[i])
+    return d
+
+fn _le16(d: [int], i: int) -> int:
+    return d[i] | (d[i + 1] << 8)
+
+fn _le32(d: [int], i: int) -> int:
+    return (d[i] | (d[i + 1] << 8) | (d[i + 2] << 16) | (d[i + 3] << 24)) & 4294967295
+
+fn _be32(d: [int], i: int) -> int:
+    return ((d[i] << 24) | (d[i + 1] << 16) | (d[i + 2] << 8) | d[i + 3]) & 4294967295
+
+fn _put_le16(d: inout [int], i: int, v: int):
+    d[i] = v & 255
+    d[i + 1] = (v >> 8) & 255
+
+fn _put_le32(d: inout [int], i: int, v: int):
+    d[i] = v & 255
+    d[i + 1] = (v >> 8) & 255
+    d[i + 2] = (v >> 16) & 255
+    d[i + 3] = (v >> 24) & 255
+
+fn _put_be32(d: inout [int], i: int, v: int):
+    d[i] = (v >> 24) & 255
+    d[i + 1] = (v >> 16) & 255
+    d[i + 2] = (v >> 8) & 255
+    d[i + 3] = v & 255
+
+fn _arm_convert(d: inout [int], pc: int, encoding: bool) -> int:
+    size := len(d) / 4 * 4
+    for i := 0; i < size; i += 4:
+        if d[i + 3] == 235:
+            v := _le32(d, i)
+            c := (pc + i + 8) >> 2
+            if encoding:
+                v = (v + c) & 4294967295
+            else:
+                v = (v - c) & 4294967295
+            _put_le32(&d, i, (v & 16777215) | 3942645760)
+    return size
+
+fn _armt_convert(d: inout [int], pc: int, encoding: bool) -> int:
+    size := len(d) / 2 * 2
+    if size <= 2:
+        return 0
+    limit := size - 2
+    i := 0
+    for i < limit:
+        if (d[i + 3] & (d[i + 1] ^ 8)) < 248:
+            i += 2
+            continue
+        v := (_le16(d, i) << 11) | (_le16(d, i + 2) & 2047)
+        c := (pc + i + 4) >> 1
+        if encoding:
+            v = (v + c) & 4294967295
+        else:
+            v = (v - c) & 4294967295
+        _put_le16(&d, i, ((v >> 11) & 2047) | 61440)
+        _put_le16(&d, i + 2, (v & 65535) | 63488)
+        i += 4
+    return i
+
+fn _ppc_convert(d: inout [int], pc: int, encoding: bool) -> int:
+    size := len(d) / 4 * 4
+    for i := 0; i < size; i += 4:
+        if _le32(d, i) & 50331900 == 16777288:
+            v := _be32(d, i)
+            c := pc + i
+            if encoding:
+                v = (v + c) & 4294967295
+            else:
+                v = (v - c) & 4294967295
+            _put_be32(&d, i, (v & 67108863) | 1207959552)
+    return size
+
+fn _sparc_convert(d: inout [int], pc: int, encoding: bool) -> int:
+    flag := 1 << 22
+    size := len(d) / 4 * 4
+    for i := 0; i < size; i += 4:
+        v := _be32(d, i)
+        v = ((v << 2) | (v >> 30)) & 4294967295
+        v = (v + ((flag << 2) - 1)) & 4294967295
+        if v & 4261412867 != 0:
+            continue
+        c := pc + i
+        if encoding:
+            v = (v + c) & 4294967295
+        else:
+            v = (v - c) & 4294967295
+        v = v & ((flag << 3) - 1)
+        v = (v - ((flag << 2) - 1)) & 4294967295
+        v = ((v >> 2) | (v << 30)) & 4294967295
+        _put_be32(&d, i, v)
+    return size
+
+fn _ia64_convert(d: inout [int], pc: int, encoding: bool) -> int:
+    size := len(d) / 16 * 16
+    ip := (pc - 16) >> 3
+    for i := 0; i < size; i += 16:
+        ip += 2
+        m := (860553216 >> (d[i] & 30)) & 3
+        if m == 0:
+            continue
+        p := i + m * 5 - 4
+        for true:
+            t := _le16(d, p)
+            z := (_le32(d, p + 1) >> m) & 4294967295
+            p += 5
+            if ((t >> m) & 224) == 0 and (((z - 167772160) & 503316480) & 4294967295) == 0:
+                v := 18874367 & z
+                z = z ^ v
+                if encoding:
+                    ip = ip & 4194303
+                    v = (v + ip) & 4294967295
+                else:
+                    ip = ip | ((~4194303) & 4294967295)
+                    v = (v - ip) & 4294967295
+                v = v & ((~12582912) & 4294967295)
+                v = (v + 14680064) & 4294967295
+                v = v & 18874367
+                z = z | v
+                z = (z << m) & 4294967295
+                _put_le32(&d, p - 4, z)
+            m = (m + 1) & 3
+            if m == 0:
+                break
+    return size
+
+fn _arm64_convert(d: inout [int], pc: int, encoding: bool) -> int:
+    flag := 1 << 20
+    mask := (1 << 24) - (flag << 1)
+    size := len(d) / 4 * 4
+    for i := 0; i < size; i += 4:
+        v := _le32(d, i)
+        if ((v - 2483027968) & 4227858432) == 0:
+            c := (pc + i) >> 2
+            if encoding:
+                v = (v + c) & 4294967295
+            else:
+                v = (v - c) & 4294967295
+            _put_le32(&d, i, (v & 67108863) | 2483027968)
+            continue
+        v = (v - 2415919104) & 4294967295
+        if v & 2667577344 != 0:
+            continue
+        v = (v + flag) & 4294967295
+        if v & mask != 0:
+            continue
+        z := (v & 4294967264) | (v >> 26)
+        c := ((pc + i) >> 9) & 4294967288
+        if encoding:
+            z = (z + c) & 4294967295
+        else:
+            z = (z - c) & 4294967295
+        v = v & 31
+        v = v | 2415919104
+        v = v | ((z << 26) & 4294967295)
+        v = v | (16777184 & (((z & ((flag << 1) - 1)) - flag) & 4294967295))
+        _put_le32(&d, i, v)
+    return size
+
+fn _rv_check1(v: int, b: int) -> bool:
+    return ((((b - 3) & 4294967295) ^ ((v << 8) & 4294967295)) & 1015811) == 0
+
+fn _rv_check2(v: int, r: int) -> bool:
+    return ((((v - 12552) << 18) & 4294967295) < (r & 29))
+
+fn _rv_scan(d: [int], i: inout int, limit: int) -> (int, bool):
+    for i < limit:
+        a := (_le16(d, i) ^ 16) + 1
+        if (a & 119) == 0:
+            return a, true
+        a = (_le16(d, i + 2) ^ 16) + 1
+        i += 4
+        if (a & 119) == 0:
+            i -= 2
+            if i >= limit:
+                return 0, false
+            return a, true
+    return 0, false
+
+fn _riscv_encode(d: inout [int], pc: int) -> int:
+    size := len(d) / 2 * 2
+    if size <= 6:
+        return 0
+    limit := size - 6
+    i := 0
+    for true:
+        pair := _rv_scan(d, &i, limit)
+        v := pair.0
+        if not pair.1:
+            break
+        a := _le32(d, i)
+        if v & 8 == 0:
+            if (v - 256) & 3456 != 0:
+                i += 2
+                continue
+            v = (((a & 2147483648) >> 11) | ((a & 2145386496) >> 20) | ((a & 1048576) >> 9) | (a & 1044480)) & 4294967295
+            v = (v + pc + i) & 4294967295
+            d[i + 1] = ((v >> 13) & 240) | ((a >> 8) & 15)
+            d[i + 2] = (v >> 9) & 255
+            d[i + 3] = (v >> 1) & 255
+            i += 4
+            continue
+        if v & 3712 != 0:
+            b := _le32(d, i + 4)
+            if not _rv_check1(v, b):
+                i += 6
+                continue
+            _put_le32(&d, i, ((b << 12) | 273) & 4294967295)
+            a = a & 4294963200
+            sb := b
+            if b >= 2147483648:
+                sb = b - 4294967296
+            a = (a + (sb >> 20) + pc + i) & 4294967295
+            _put_be32(&d, i + 4, a)
+            i += 8
+        else:
+            r := a >> 27
+            if not _rv_check2(v, r):
+                i += 4
+                continue
+            v2 := _le32(d, i + 4)
+            r2 := ((r << 7) + 23 + (v2 & 4294963200)) & 4294967295
+            a2 := ((a >> 12) | ((v2 << 20) & 4294967295)) & 4294967295
+            _put_le32(&d, i, r2)
+            _put_le32(&d, i + 4, a2)
+            i += 8
+    return i
+
+fn _riscv_decode(d: inout [int], pc: int) -> int:
+    size := len(d) / 2 * 2
+    if size <= 6:
+        return 0
+    limit := size - 6
+    i := 0
+    for true:
+        pair := _rv_scan(d, &i, limit)
+        a := pair.0
+        if not pair.1:
+            break
+        if a & 8 == 0:
+            a = a - 129
+            if a & 3456 != 0:
+                i += 2
+                continue
+            a_old := (a + 112) & 4095
+            v := ((d[i + 3] << 1) | (d[i + 2] << 9) | ((a & 61440) << 5)) & 4294967295
+            v = (v - (pc + i)) & 4294967295
+            a = (a_old | ((v << 11) & 2147483648) | ((v << 20) & 2145386496) | ((v << 9) & 1048576) | (v & 1044480)) & 4294967295
+            _put_le32(&d, i, a)
+            i += 4
+            continue
+        v := a
+        a = _le32(d, i)
+        if v & 3712 == 0:
+            r := a >> 27
+            if not _rv_check2(v, r):
+                i += 4
+                continue
+            b := _be32(d, i + 4)
+            v2 := a >> 12
+            b = (b - (pc + i)) & 4294967295
+            a2 := ((r << 7) + 23) & 4294967295
+            a2 = (a2 + ((b + 2048) & 4294963200)) & 4294967295
+            v2 = (v2 | ((b << 20) & 4294967295)) & 4294967295
+            _put_le32(&d, i, a2)
+            _put_le32(&d, i + 4, v2)
+            i += 8
+        else:
+            b := _le32(d, i + 4)
+            if not _rv_check1(v, b):
+                i += 6
+                continue
+            v2 := ((a & 4294963200) | (b >> 20)) & 4294967295
+            a2 := ((b << 12) | 273) & 4294967295
+            _put_le32(&d, i, a2)
+            _put_le32(&d, i + 4, v2)
+            i += 8
+    return i
+
 fn bcj_encode(b: inout Bcj, data: bytes) -> bytes:
-    return _x86_convert(&b, data, true)
+    if b.arch == X86:
+        return _x86_convert(&b, data, true)
+    d := _bcj_ints(data)
+    p := 0
+    if b.arch == ARM:
+        p = _arm_convert(&d, b.pc, true)
+    elif b.arch == ARM_Thumb:
+        p = _armt_convert(&d, b.pc, true)
+    elif b.arch == PowerPC:
+        p = _ppc_convert(&d, b.pc, true)
+    elif b.arch == SPARC:
+        p = _sparc_convert(&d, b.pc, true)
+    elif b.arch == IA64:
+        p = _ia64_convert(&d, b.pc, true)
+    elif b.arch == ARM64:
+        p = _arm64_convert(&d, b.pc, true)
+    elif b.arch == RISCV:
+        p = _riscv_encode(&d, b.pc)
+    b.pc += p
+    return to_bytes(d)
 
 fn bcj_decode(b: inout Bcj, data: bytes) -> bytes:
-    return _x86_convert(&b, data, false)
+    if b.arch == X86:
+        return _x86_convert(&b, data, false)
+    d := _bcj_ints(data)
+    p := 0
+    if b.arch == ARM:
+        p = _arm_convert(&d, b.pc, false)
+    elif b.arch == ARM_Thumb:
+        p = _armt_convert(&d, b.pc, false)
+    elif b.arch == PowerPC:
+        p = _ppc_convert(&d, b.pc, false)
+    elif b.arch == SPARC:
+        p = _sparc_convert(&d, b.pc, false)
+    elif b.arch == IA64:
+        p = _ia64_convert(&d, b.pc, false)
+    elif b.arch == ARM64:
+        p = _arm64_convert(&d, b.pc, false)
+    elif b.arch == RISCV:
+        p = _riscv_decode(&d, b.pc)
+    b.pc += p
+    return to_bytes(d)
 
 fn swap2(data: bytes) -> bytes:
     out := []int

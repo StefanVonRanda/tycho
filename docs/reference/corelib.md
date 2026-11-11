@@ -1093,9 +1093,9 @@ plus four more:
   `bzip2_decompress(data)` return `Result(bytes, ZErr)`. There is no hard link
   dependency on libbz2.
   Reversible filters: `delta_new(distance)`/`delta_encode`/`delta_decode`,
-  `bcj_new(X86, start_offset)`/`bcj_encode`/`bcj_decode` (x86 BCJ), and
-  `swap2`/`swap4`. `FilterErr` is `BadDistance`, `BadAlignment` or
-  `Unsupported`; BCJ architectures other than x86 are not implemented.
+  `bcj_new(arch, start_offset)`/`bcj_encode`/`bcj_decode` for `X86`,
+  `PowerPC`, `IA64`, `ARM`, `ARM_Thumb`, `SPARC`, `ARM64` and `RISCV`, and
+  `swap2`/`swap4`. `FilterErr` is `BadDistance` or `BadAlignment`.
 - **`xz`** — xz container compression over **liblzma** (`deps: liblzma`):
   `compress(bytes) -> Result(bytes, XzErr)` (preset 6, CRC64) and
   `decompress(bytes) -> Result(bytes, XzErr)`; `XzErr` is `Corrupt`, `Truncated`,
