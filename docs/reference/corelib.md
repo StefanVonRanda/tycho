@@ -684,15 +684,23 @@ expression-bodied; pass a named function where you need a multi-line body.
   `decode(b)` (BOM-aware, little-endian when absent) and `decode_be(b)`.
   `OddLength`, `BadSurrogate` and `BadUtf8` are refused rather than decoded
   leniently.
-- **`unicode`** — case mapping/folding plus normalization and segmentation.
-  `to_upper(s)`, `to_lower(s)` and `to_casefold(s)` apply full one-to-many
-  expansions (`ß -> SS`, `Straße -> strasse`); `to_upper_char`,
+- **`unicode`** — case mapping/folding, normalization, segmentation and UCD
+  classification. `to_upper(s)`, `to_lower(s)` and `to_casefold(s)` apply full
+  one-to-many expansions (`ß -> SS`, `Straße -> strasse`); `to_upper_char`,
   `to_lower_char` and `to_casefold_char` return the simple one-codepoint
-  mapping. `normalize_nfd`, `normalize_nfc`,
-  `normalize_nfkd` and `normalize_nfkc` implement UAX #15 (Hangul algorithmic,
-  canonical ordering, composition exclusions). `graphemes(s)` returns extended
-  grapheme clusters (CRLF, Hangul, RI pairs, emoji ZWJ, Indic conjuncts) and
-  `words(s)` returns UAX #29 word segments. Invalid UTF-8 bytes pass through.
+  mapping. `normalize_nfd`, `normalize_nfc`, `normalize_nfkd` and
+  `normalize_nfkc` implement UAX #15 (Hangul algorithmic, canonical ordering,
+  composition exclusions). `graphemes(s)` returns extended grapheme clusters
+  (CRLF, Hangul, RI pairs, emoji ZWJ, Indic conjuncts) and `words(s)` returns
+  UAX #29 word segments. `general_category(cp)` and `category_name(cp)` expose
+  the UCD general category; `is_letter`, `is_alpha`, `is_alphabetic`, `is_upper`,
+  `is_lower`, `is_title`, `is_decimal`, `is_digit`, `is_number`, `is_alnum`,
+  `is_alphanumeric`, `is_space`, `is_whitespace`, `is_control`, `is_punct`,
+  `is_symbol`, `is_mark`, `is_separator`, `is_graphic`, `is_print`, `is_ascii`,
+  `is_hex_digit`, `is_combining`, `is_emoji`, `is_emoji_modifier` and
+  `is_emoji_extended_pictographic` are the predicates; `combining_class(cp)`,
+  `script(cp)` and `block(cp)` expose the canonical combining class, script name
+  and block name. Invalid UTF-8 bytes pass through.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins.
   `read(p)` — **fail-open**: `""` for a missing file, an unreadable one and a genuinely
   empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` or `read_bytes(p)`

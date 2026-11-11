@@ -13,6 +13,7 @@ fn main():
     println("expand=" + unicode.to_upper("straße") + "|" + unicode.to_lower("İ") + "|" + unicode.to_casefold("Straße"))
     main2()
     main3()
+    main4()
 
 fn s_of(cps: [int]) -> string:
     out := ""
@@ -55,3 +56,24 @@ fn main3():
     println("g7=" + str(len(unicode.graphemes("क्ष")) == 1))
     println("w3=" + list_of(unicode.words("🇺🇸 3.14 can't a_b")))
     println("w4=" + list_of(unicode.words("👨‍👩‍👧‍👦")))
+
+
+fn main4():
+    println("cat_A=" + unicode.category_name(65) + " cat_a=" + unicode.category_name(97) + " cat_acute=" + unicode.category_name(0x0301))
+    println("cat_digit=" + unicode.category_name(48) + " cat_sup2=" + unicode.category_name(0x00B2) + " cat_space=" + unicode.category_name(32))
+    println("cat_ctrl=" + unicode.category_name(10) + " cat_sc=" + unicode.category_name(36) + " cat_po=" + unicode.category_name(33))
+    println("cat_zl=" + unicode.category_name(0x2028) + " cat_emoji=" + unicode.category_name(0x1F600))
+    println("letter=" + str(unicode.is_letter(65)) + "," + str(unicode.is_letter(48)))
+    println("case=" + str(unicode.is_upper(65)) + "," + str(unicode.is_lower(97)) + "," + str(unicode.is_title(0x01C5)))
+    println("number=" + str(unicode.is_decimal(0x0660)) + "," + str(unicode.is_digit(0x00B2)) + "," + str(unicode.is_number(0x00B2)))
+    println("alnum=" + str(unicode.is_alnum(65)) + "," + str(unicode.is_alnum(32)))
+    println("space=" + str(unicode.is_space(32)) + "," + str(unicode.is_space(0x00A0)) + "," + str(unicode.is_space(65)))
+    println("classes=" + str(unicode.is_control(10)) + "," + str(unicode.is_punct(33)) + "," + str(unicode.is_symbol(36)) + "," + str(unicode.is_mark(0x0301)) + "," + str(unicode.is_separator(0x2028)))
+    println("graphic=" + str(unicode.is_graphic(65)) + "," + str(unicode.is_graphic(32)) + "," + str(unicode.is_print(32)))
+    println("ascii=" + str(unicode.is_ascii(127)) + "," + str(unicode.is_ascii(128)))
+    println("hex=" + str(unicode.is_hex_digit(70)) + "," + str(unicode.is_hex_digit(71)))
+    println("combining=" + str(unicode.is_combining(0x0301)) + "," + str(unicode.is_combining(97)) + "," + str(unicode.combining_class(0x0301)))
+    println("emoji=" + str(unicode.is_emoji(0x1F600)) + "," + str(unicode.is_emoji_modifier(0x1F3FD)) + "," + str(unicode.is_emoji_extended_pictographic(0x1F600)))
+    println("alpha=" + str(unicode.is_alphabetic(0x0345)) + "," + str(unicode.is_letter(0x0345)))
+    println("script=" + unicode.script(65) + "," + unicode.script(0x0391) + "," + unicode.script(0x4E00))
+    println("block=" + unicode.block(65) + "," + unicode.block(0x1F600))

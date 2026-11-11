@@ -30,3 +30,21 @@ g6=true
 g7=true
 w3=[🇺🇸][ ][3.14][ ][can't][ ][a_b]
 w4=[👨‍👩‍👧‍👦]
+cat_A=Lu cat_a=Ll cat_acute=Mn
+cat_digit=Nd cat_sup2=No cat_space=Zs
+cat_ctrl=Cc cat_sc=Sc cat_po=Po
+cat_zl=Zl cat_emoji=So
+letter=true,false
+case=true,true,true
+number=true,false,true
+alnum=true,false
+space=true,true,false
+classes=true,true,true,true,true
+graphic=true,false,true
+ascii=true,false
+hex=true,false
+combining=true,false,230
+emoji=true,true,true
+alpha=true,false
+script=Latin,Greek,Han
+block=Basic Latin,Emoticons
