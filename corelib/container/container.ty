@@ -946,3 +946,313 @@ fn xar_clear(x: inout Xar($T)):
     x.slots = x.slots[0:0]
     x.free = x.free[0:0]
     x.count = 0
+
+# ---- red-black tree (ordered key/value map) ----
+struct RbTree($K, $V):
+    less: fn($K, $K) -> bool
+    keys: [$K]
+    vals: [$V]
+    left: [int]
+    right: [int]
+    parent: [int]
+    color: [int]                  # 0 black, 1 red
+    root: int
+    count: int
+
+fn make_rbtree(less: fn($K, $K) -> bool, sample: $V) -> RbTree($K, $V):
+    ks: [$K] = []
+    vs: [$V] = []
+    l := []int
+    r := []int
+    p := []int
+    c := []int
+    return RbTree(less, ks, vs, l, r, p, c, -1, 0)
+
+fn _rb_color(t: RbTree($K, $V), i: int) -> int:
+    if i < 0:
+        return 0
+    return t.color[i]
+
+fn _rb_alloc(t: inout RbTree($K, $V), k: $K, v: $V) -> int:
+    i := len(t.keys)
+    push(t.keys, k)
+    push(t.vals, v)
+    push(t.left, -1)
+    push(t.right, -1)
+    push(t.parent, -1)
+    push(t.color, 1)
+    return i
+
+fn _rb_rot_left(t: inout RbTree($K, $V), x: int):
+    y := t.right[x]
+    t.right[x] = t.left[y]
+    if t.left[y] >= 0:
+        t.parent[t.left[y]] = x
+    t.parent[y] = t.parent[x]
+    if t.parent[x] < 0:
+        t.root = y
+    elif x == t.left[t.parent[x]]:
+        t.left[t.parent[x]] = y
+    else:
+        t.right[t.parent[x]] = y
+    t.left[y] = x
+    t.parent[x] = y
+
+fn _rb_rot_right(t: inout RbTree($K, $V), x: int):
+    y := t.left[x]
+    t.left[x] = t.right[y]
+    if t.right[y] >= 0:
+        t.parent[t.right[y]] = x
+    t.parent[y] = t.parent[x]
+    if t.parent[x] < 0:
+        t.root = y
+    elif x == t.right[t.parent[x]]:
+        t.right[t.parent[x]] = y
+    else:
+        t.left[t.parent[x]] = y
+    t.right[y] = x
+    t.parent[x] = y
+
+fn _rb_insert_fixup(t: inout RbTree($K, $V), z: int):
+    for _rb_color(t, t.parent[z]) == 1:
+        p := t.parent[z]
+        g := t.parent[p]
+        if p == t.left[g]:
+            y := t.right[g]
+            if _rb_color(t, y) == 1:
+                t.color[p] = 0
+                t.color[y] = 0
+                t.color[g] = 1
+                z = g
+            else:
+                if z == t.right[p]:
+                    z = p
+                    _rb_rot_left(&t, z)
+                    p = t.parent[z]
+                    g = t.parent[p]
+                t.color[p] = 0
+                t.color[g] = 1
+                _rb_rot_right(&t, g)
+        else:
+            y := t.left[g]
+            if _rb_color(t, y) == 1:
+                t.color[p] = 0
+                t.color[y] = 0
+                t.color[g] = 1
+                z = g
+            else:
+                if z == t.left[p]:
+                    z = p
+                    _rb_rot_right(&t, z)
+                    p = t.parent[z]
+                    g = t.parent[p]
+                t.color[p] = 0
+                t.color[g] = 1
+                _rb_rot_left(&t, g)
+    if t.root >= 0:
+        t.color[t.root] = 0
+
+fn rb_put(t: inout RbTree($K, $V), k: $K, v: $V):
+    if t.root < 0:
+        z := _rb_alloc(&t, k, v)
+        t.color[z] = 0
+        t.root = z
+        t.count = 1
+        return
+    cur := t.root
+    parent := -1
+    for cur >= 0:
+        parent = cur
+        if t.less(k, t.keys[cur]):
+            cur = t.left[cur]
+        elif t.less(t.keys[cur], k):
+            cur = t.right[cur]
+        else:
+            t.vals[cur] = v
+            return
+    z := _rb_alloc(&t, k, v)
+    t.parent[z] = parent
+    if t.less(k, t.keys[parent]):
+        t.left[parent] = z
+    else:
+        t.right[parent] = z
+    t.count += 1
+    _rb_insert_fixup(&t, z)
+
+fn rb_get(t: RbTree($K, $V), k: $K) -> Option($V):
+    cur := t.root
+    for cur >= 0:
+        if t.less(k, t.keys[cur]):
+            cur = t.left[cur]
+        elif t.less(t.keys[cur], k):
+            cur = t.right[cur]
+        else:
+            return Some(t.vals[cur])
+    return None
+
+fn rb_contains(t: RbTree($K, $V), k: $K) -> bool:
+    match rb_get(t, k):
+        Some(_): return true
+        None: return false
+
+fn _rb_min(t: RbTree($K, $V), node: int) -> int:
+    for t.left[node] >= 0:
+        node = t.left[node]
+    return node
+
+fn _rb_transplant(t: inout RbTree($K, $V), u: int, v: int):
+    if t.parent[u] < 0:
+        t.root = v
+    elif u == t.left[t.parent[u]]:
+        t.left[t.parent[u]] = v
+    else:
+        t.right[t.parent[u]] = v
+    if v >= 0:
+        t.parent[v] = t.parent[u]
+
+fn _rb_delete_fixup(t: inout RbTree($K, $V), x: int, parent: int):
+    for x != t.root and _rb_color(t, x) == 0:
+        if parent < 0:
+            break
+        if x == t.left[parent]:
+            w := t.right[parent]
+            if w < 0:
+                x = parent
+                parent = t.parent[x]
+                continue
+            if _rb_color(t, w) == 1:
+                t.color[w] = 0
+                t.color[parent] = 1
+                _rb_rot_left(&t, parent)
+                w = t.right[parent]
+            if _rb_color(t, t.left[w]) == 0 and _rb_color(t, t.right[w]) == 0:
+                t.color[w] = 1
+                x = parent
+                parent = t.parent[x]
+            else:
+                if _rb_color(t, t.right[w]) == 0:
+                    t.color[t.left[w]] = 0
+                    t.color[w] = 1
+                    _rb_rot_right(&t, w)
+                    w = t.right[parent]
+                t.color[w] = t.color[parent]
+                t.color[parent] = 0
+                t.color[t.right[w]] = 0
+                _rb_rot_left(&t, parent)
+                x = t.root
+                parent = -1
+        else:
+            w := t.left[parent]
+            if w < 0:
+                x = parent
+                parent = t.parent[x]
+                continue
+            if _rb_color(t, w) == 1:
+                t.color[w] = 0
+                t.color[parent] = 1
+                _rb_rot_right(&t, parent)
+                w = t.left[parent]
+            if _rb_color(t, t.right[w]) == 0 and _rb_color(t, t.left[w]) == 0:
+                t.color[w] = 1
+                x = parent
+                parent = t.parent[x]
+            else:
+                if _rb_color(t, t.left[w]) == 0:
+                    t.color[t.right[w]] = 0
+                    t.color[w] = 1
+                    _rb_rot_left(&t, w)
+                    w = t.left[parent]
+                t.color[w] = t.color[parent]
+                t.color[parent] = 0
+                t.color[t.left[w]] = 0
+                _rb_rot_right(&t, parent)
+                x = t.root
+                parent = -1
+    if x >= 0:
+        t.color[x] = 0
+
+fn rb_remove(t: inout RbTree($K, $V), k: $K) -> bool:
+    z := t.root
+    for z >= 0:
+        if t.less(k, t.keys[z]):
+            z = t.left[z]
+        elif t.less(t.keys[z], k):
+            z = t.right[z]
+        else:
+            break
+    if z < 0:
+        return false
+    y := z
+    y_color := t.color[y]
+    x := -1
+    x_parent := -1
+    if t.left[z] < 0:
+        x = t.right[z]
+        x_parent = t.parent[z]
+        _rb_transplant(&t, z, t.right[z])
+    elif t.right[z] < 0:
+        x = t.left[z]
+        x_parent = t.parent[z]
+        _rb_transplant(&t, z, t.left[z])
+    else:
+        y = _rb_min(t, t.right[z])
+        y_color = t.color[y]
+        x = t.right[y]
+        if t.parent[y] == z:
+            x_parent = y
+            if x >= 0:
+                t.parent[x] = y
+        else:
+            x_parent = t.parent[y]
+            _rb_transplant(&t, y, t.right[y])
+            t.right[y] = t.right[z]
+            t.parent[t.right[y]] = y
+        _rb_transplant(&t, z, y)
+        t.left[y] = t.left[z]
+        t.parent[t.left[y]] = y
+        t.color[y] = t.color[z]
+    if y_color == 0:
+        _rb_delete_fixup(&t, x, x_parent)
+    t.count -= 1
+    return true
+
+fn rb_len(t: RbTree($K, $V)) -> int:
+    return t.count
+
+fn rb_empty(t: RbTree($K, $V)) -> bool:
+    return t.count == 0
+
+fn _rb_keys(t: RbTree($K, $V), node: int, out: inout [$K]):
+    if node < 0:
+        return
+    _rb_keys$(K, V)(t, t.left[node], out)
+    push(out, t.keys[node])
+    _rb_keys$(K, V)(t, t.right[node], out)
+
+fn rb_keys(t: RbTree($K, $V)) -> [$K]:
+    out: [$K] = []
+    _rb_keys(t, t.root, &out)
+    return out
+
+fn rb_first_key(t: RbTree($K, $V)) -> Option($K):
+    if t.root < 0:
+        return None
+    return Some(t.keys[_rb_min(t, t.root)])
+
+fn rb_last_key(t: RbTree($K, $V)) -> Option($K):
+    if t.root < 0:
+        return None
+    node := t.root
+    for t.right[node] >= 0:
+        node = t.right[node]
+    return Some(t.keys[node])
+
+fn rb_clear(t: inout RbTree($K, $V)):
+    t.keys = t.keys[0:0]
+    t.vals = t.vals[0:0]
+    t.left = t.left[0:0]
+    t.right = t.right[0:0]
+    t.parent = t.parent[0:0]
+    t.color = t.color[0:0]
+    t.root = -1
+    t.count = 0

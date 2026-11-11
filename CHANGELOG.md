@@ -66,8 +66,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added runtime-loaded bzip2 support to `core:compress`: `bzip2_available`,
   `bzip2_compress` and `bzip2_decompress`, with no hard libbz2 link dependency.
 - Added the remaining `core:container` breadth: an AVL ordered map, a
-  generation-checked `HandleMap`, an inline 16-slot `SmallArray` and a
-  freelist-backed `Xar`.
+  red-black ordered map, a generation-checked `HandleMap`, an inline 16-slot
+  `SmallArray` and a freelist-backed `Xar`.
 - The tree is now 88 corelib packages and 96 golden test trees.
 
 ## [0.9.1] — 2026-11-10

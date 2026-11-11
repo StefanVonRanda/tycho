@@ -306,6 +306,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   fixes the value type), `avl_put`, `avl_get`, `avl_contains`, `avl_remove`,
   `avl_len`, `avl_empty`, `avl_keys` (in-order), `avl_first_key`,
   `avl_last_key` and `avl_clear`.
+  `RbTree` is a red-black ordered map with the same surface: `make_rbtree(less,
+  sample)`, `rb_put`, `rb_get`, `rb_contains`, `rb_remove`, `rb_len`, `rb_empty`,
+  `rb_keys` (in-order), `rb_first_key`, `rb_last_key` and `rb_clear`.
   `HandleMap` is a generation-checked sparse map: `make_handle_map(sample)`,
   `handle_map_add` (returns an int handle), `handle_map_get`, `handle_map_valid`,
   `handle_map_remove`, `handle_map_len` and `handle_map_clear`; removing a handle

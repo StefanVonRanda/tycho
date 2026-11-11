@@ -21,3 +21,10 @@ xar_reuse=true get=c
 xar_set=true,true
 xar_len=2
 xar_clear=0
+rb_keys=2,3,6,7,8,10,11,13,18,22,26
+rb_get=r10,none
+rb_contains=true,false
+rb_first_last=2,26
+rb_remove=true,false,true,true
+rb_keys2=3,6,8,10,11,13,22,26 len=8
+rb_drain=true len=0 empty=true

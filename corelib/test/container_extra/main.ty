@@ -78,3 +78,26 @@ fn main():
     println("xar_len=" + str(container.xar_len(x)))
     container.xar_clear(&x)
     println("xar_clear=" + str(container.xar_len(x)))
+
+    rb := container.make_rbtree(less_int, "")
+    for k in [7, 3, 18, 10, 22, 8, 11, 26, 2, 6, 13]:
+        container.rb_put(&rb, k, "r" + str(k))
+    println("rb_keys=" + list_int(container.rb_keys(rb)))
+    println("rb_get=" + opt_str(container.rb_get(rb, 10)) + "," + opt_str(container.rb_get(rb, 5)))
+    println("rb_contains=" + str(container.rb_contains(rb, 22)) + "," + str(container.rb_contains(rb, 5)))
+    println("rb_first_last=" + opt_int(container.rb_first_key(rb)) + "," + opt_int(container.rb_last_key(rb)))
+    rr1 := container.rb_remove(&rb, 18)
+    rr2 := container.rb_remove(&rb, 18)
+    rr3 := container.rb_remove(&rb, 2)
+    rr4 := container.rb_remove(&rb, 7)
+    println("rb_remove=" + str(rr1) + "," + str(rr2) + "," + str(rr3) + "," + str(rr4))
+    println("rb_keys2=" + list_int(container.rb_keys(rb)) + " len=" + str(container.rb_len(rb)))
+
+    rb2 := container.make_rbtree(less_int, "")
+    for i := 1; i <= 15; i += 1:
+        container.rb_put(&rb2, i, "x")
+    drain := true
+    for i := 1; i <= 15; i += 1:
+        if not container.rb_remove(&rb2, i):
+            drain = false
+    println("rb_drain=" + str(drain) + " len=" + str(container.rb_len(rb2)) + " empty=" + str(container.rb_empty(rb2)))
