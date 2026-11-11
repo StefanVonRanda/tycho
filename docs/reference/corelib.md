@@ -1127,6 +1127,12 @@ plus four more:
   give the 2x worst-case bounds. Empty input is `CodecTruncated`; non-ASCII
   bytes are escaped with a `0x00` sentinel, and a truncated sentinel or packed
   code fails closed.
+  **BCJ2** is 7z's four-stream x86 CALL/JUMP converter:
+  `bcj2_encode(data) -> Result(Bcj2Streams, CodecErr)` returns `main`, `call`,
+  `jump` and `rc`; `bcj2_decode(main, call, jump, rc)` rebuilds the original
+  bytes, and `bcj2_decode_to(..., output_size)` checks the declared size.
+  `bcj2_encode_with(data, relat_limit, file_size)` exposes the conversion
+  limit. The encoder is byte-identical to the LZMA SDK for the tested vectors.
 - **`xz`** — xz container compression over **liblzma** (`deps: liblzma`):
   `compress(bytes) -> Result(bytes, XzErr)` (preset 6, CRC64) and
   `decompress(bytes) -> Result(bytes, XzErr)`; `XzErr` is `Corrupt`, `Truncated`,

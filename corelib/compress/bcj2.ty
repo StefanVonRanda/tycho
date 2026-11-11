@@ -1,0 +1,284 @@
+package compress
+
+# BCJ2: 7z's four-stream x86 CALL/JUMP converter. The encoder splits the
+# input into main/call/jump/range-coder streams; the decoder rebuilds it.
+# Ported from the LZMA SDK's Bcj2.c/Bcj2Enc.c (public domain).
+
+const BCJ2_TOP = 1 << 24
+const BCJ2_PROB_BITS = 11
+const BCJ2_PROB_TOTAL = 1 << 11
+const BCJ2_PROB_INIT = BCJ2_PROB_TOTAL >> 1
+const BCJ2_MOVE_BITS = 5
+const BCJ2_RELAT_LIMIT_DEFAULT = 0x0F << 24
+const BCJ2_RELAT_LIMIT_MAX = 1 << 31
+
+struct Bcj2Streams:
+    main: bytes
+    call: bytes
+    jump: bytes
+    rc: bytes
+
+fn _bcj2_be32(data: bytes, i: int) -> int:
+    return ((data[i] << 24) | (data[i + 1] << 16) | (data[i + 2] << 8) | data[i + 3]) & 4294967295
+
+fn _bcj2_le32(data: bytes, i: int) -> int:
+    return (data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24)) & 4294967295
+
+fn _bcj2_put_le32(dst: inout [int], i: int, v: int):
+    dst[i] = v & 255
+    dst[i + 1] = (v >> 8) & 255
+    dst[i + 2] = (v >> 16) & 255
+    dst[i + 3] = (v >> 24) & 255
+
+# Copy bytes up to the next marker, including the marker itself. Returns the
+# marker position, len(src) at end of input, or -1 when dst is too small.
+fn _bcj2_copy_scan(dst: inout [int], o: int, src: bytes, start: int, prev: int) -> int:
+    k := start
+    p := prev
+    for k < len(src):
+        di := o + k - start
+        if di < 0 or di >= len(dst):
+            return -1
+        c := src[k]
+        dst[di] = c
+        if (c & 254) == 232 or (p == 15 and (c & 240) == 128):
+            return k
+        p = c
+        k += 1
+    return k
+
+fn _bcj2_shift_low(low: inout int, cache: inout int, cache_size: inout int, rc: inout [int]):
+    l := low & 4294967295
+    high := (low >> 32) & 255
+    if l < 4278190080 or high != 0:
+        temp := cache
+        for true:
+            push(rc, (temp + high) & 255)
+            temp = 255
+            cache_size -= 1
+            if cache_size == 0:
+                break
+        cache = (l >> 24) & 255
+    cache_size += 1
+    low = (l << 8) & 4294967295
+
+fn _bcj2_decode(output: inout [int], main: bytes, call: bytes, jump: bytes, rc: bytes) -> bool:
+    if len(rc) < 5:
+        return false
+    if rc[0] != 0:
+        return false
+    code := _bcj2_be32(rc, 1)
+    if code == 4294967295:
+        return false
+    range_ := 4294967295
+    r := 5
+    probs: [258]int = [
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024,
+    ]
+    ip := 0
+    prev := 0
+    o := 0
+    m := 0
+    c := 0
+    j := 0
+    for true:
+        if range_ < BCJ2_TOP:
+            if r == len(rc):
+                return false
+            range_ = (range_ << 8) & 4294967295
+            code = ((code << 8) | rc[r]) & 4294967295
+            r += 1
+        k := _bcj2_copy_scan(&output, o, main, m, prev)
+        if k < 0:
+            return false
+        o += k - m
+        ip += k - m
+        if k == len(main):
+            m = k
+            break
+        marker := main[k]
+        before := prev
+        if k != m:
+            before = main[k - 1]
+        prev = marker
+        o += 1
+        ip += 1
+        m = k + 1
+        index := 0
+        if marker == 232:
+            index = 2 + before
+        elif marker == 233:
+            index = 1
+        ttt := probs[index]
+        bound := ((range_ >> BCJ2_PROB_BITS) * ttt) & 4294967295
+        if code < bound:
+            range_ = bound
+            probs[index] = ttt + ((BCJ2_PROB_TOTAL - ttt) >> BCJ2_MOVE_BITS)
+            continue
+        range_ -= bound
+        code -= bound
+        probs[index] = ttt - (ttt >> BCJ2_MOVE_BITS)
+        absolute := 0
+        if marker == 232:
+            if c > len(call) - 4:
+                return false
+            absolute = _bcj2_be32(call, c)
+            c += 4
+        else:
+            if j > len(jump) - 4:
+                return false
+            absolute = _bcj2_be32(jump, j)
+            j += 4
+        ip += 4
+        relative := (absolute - ip) & 4294967295
+        if o + 3 >= len(output):
+            return false
+        _bcj2_put_le32(&output, o, relative)
+        o += 4
+        prev = (relative >> 24) & 255
+    if o != len(output) or c != len(call) or j != len(jump) or r != len(rc) or code != 0:
+        return false
+    return true
+
+fn _bcj2_encode(data: bytes, relat_limit: int, file_size: int) -> Result(Bcj2Streams, CodecErr):
+    if relat_limit < 0 or relat_limit > BCJ2_RELAT_LIMIT_MAX:
+        return Err(CodecBadOption)
+    n := len(data)
+    main := []int
+    for i := 0; i < n; i += 1:
+        push(main, 0)
+    call := []int
+    jump := []int
+    rc := []int
+    probs: [258]int = [
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024,
+        1024, 1024,
+    ]
+    low := 0
+    range_ := 4294967295
+    cache := 0
+    cache_size := 1
+    size_limit := 9223372036854775807
+    if file_size >= 0:
+        size_limit = file_size - 1
+    ip := 0
+    prev := 0
+    i := 0
+    o := 0
+    for true:
+        if range_ < BCJ2_TOP:
+            _bcj2_shift_low(&low, &cache, &cache_size, &rc)
+            range_ = (range_ << 8) & 4294967295
+        k := _bcj2_copy_scan(&main, o, data, i, prev)
+        if k < 0:
+            return Err(CodecCorrupt)
+        o += k - i
+        ip += k - i
+        if k == n:
+            i = k
+            break
+        marker := data[k]
+        before := prev
+        if k != i:
+            before = data[k - 1]
+        prev = marker
+        o += 1
+        ip += 1
+        i = k + 1
+        convert := false
+        relative := 0
+        if n - i >= 4:
+            relative = _bcj2_le32(data, i)
+            first := 0
+            if (marker & 240) == 128:
+                first = 1
+            signed := relative
+            if relative >= 2147483648:
+                signed = relative - 4294967296
+            target := ip + 4 + signed
+            if ip > first and target >= 0 and target <= size_limit and (((relative + relat_limit) & 4294967295) >> 1) < relat_limit:
+                convert = true
+        index := 0
+        if marker == 232:
+            index = 2 + before
+        elif marker == 233:
+            index = 1
+        ttt := probs[index]
+        bound := ((range_ >> BCJ2_PROB_BITS) * ttt) & 4294967295
+        if not convert:
+            range_ = bound
+            probs[index] = ttt + ((BCJ2_PROB_TOTAL - ttt) >> BCJ2_MOVE_BITS)
+            continue
+        low += bound
+        range_ -= bound
+        probs[index] = ttt - (ttt >> BCJ2_MOVE_BITS)
+        ip += 4
+        absolute := (ip + relative) & 4294967295
+        if marker == 232:
+            push(call, (absolute >> 24) & 255)
+            push(call, (absolute >> 16) & 255)
+            push(call, (absolute >> 8) & 255)
+            push(call, absolute & 255)
+        else:
+            push(jump, (absolute >> 24) & 255)
+            push(jump, (absolute >> 16) & 255)
+            push(jump, (absolute >> 8) & 255)
+            push(jump, absolute & 255)
+        i += 4
+        prev = (relative >> 24) & 255
+    for n := 0; n < 5; n += 1:
+        _bcj2_shift_low(&low, &cache, &cache_size, &rc)
+    return Ok(Bcj2Streams(to_bytes(main[0:o]), to_bytes(call), to_bytes(jump), to_bytes(rc)))
+
+fn bcj2_encode(data: bytes) -> Result(Bcj2Streams, CodecErr):
+    return _bcj2_encode(data, BCJ2_RELAT_LIMIT_DEFAULT, -1)
+
+fn bcj2_encode_with(data: bytes, relat_limit: int, file_size: int) -> Result(Bcj2Streams, CodecErr):
+    return _bcj2_encode(data, relat_limit, file_size)
+
+fn bcj2_decode_to(main: bytes, call: bytes, jump: bytes, rc: bytes, output_size: int) -> Result(bytes, CodecErr):
+    if output_size < len(main):
+        return Err(CodecCorrupt)
+    rest := output_size - len(main)
+    if len(call) > rest or len(jump) != rest - len(call):
+        return Err(CodecCorrupt)
+    out := []int
+    for i := 0; i < output_size; i += 1:
+        push(out, 0)
+    if not _bcj2_decode(&out, main, call, jump, rc):
+        return Err(CodecCorrupt)
+    return Ok(to_bytes(out))
+
+fn bcj2_decode(main: bytes, call: bytes, jump: bytes, rc: bytes) -> Result(bytes, CodecErr):
+    return bcj2_decode_to(main, call, jump, rc, len(main) + len(call) + len(jump))

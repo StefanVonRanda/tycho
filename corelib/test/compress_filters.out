@@ -26,3 +26,12 @@ riscv_rt=true
 ia64=0000000000000000000000000000000010000000000000000000000010008050 ok=true
 ia64_rt=true
 arm_align=BadAlignment
+bcj2_decode=true
+bcj2_main=true
+bcj2_call=true
+bcj2_jump=true
+bcj2_rc=true
+bcj2_rt=true
+bcj2_bad_size=Corrupt
+bcj2_short_rc=Corrupt
+bcj2_empty_rt=true

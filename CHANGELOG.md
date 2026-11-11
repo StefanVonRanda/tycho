@@ -85,6 +85,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `shoco_compress`, `shoco_decompress`, the `_with` model variants,
   `shoco_default_model` and the two bounds, with the English model and
   golden vectors from the reference C implementation.
+- Added BCJ2 to `core:compress`: `bcj2_encode`, `bcj2_encode_with`,
+  `bcj2_decode` and `bcj2_decode_to`, byte-identical to the LZMA SDK for the
+  four-stream reference vector.
 - The tree is now 88 corelib packages and 100 golden test trees.
 
 ## [0.9.1] — 2026-11-10
