@@ -517,6 +517,8 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`hash`** — non-cryptographic hashes for hash tables / checksums / dedup
   (NOT for cryptographic use): `fnv1a_32`, `djb2`, `sdbm`, `crc32`, and
   xxHash `xxh32(s, seed)` / `xxh64(s, seed)`. The old 32-bit helpers remain.
+  Also `crc16_ccitt` (CRC-16/CCITT-FALSE), `crc64_ecma` (CRC-64/ECMA-182),
+  `adler32`, `murmur3_32(s, seed)` and `fnv1a_64`.
   security): `fnv1a_32`, `djb2`, `sdbm`, and `crc32` (IEEE/zlib, bit-by-bit), plus `to_hex`
   (8-digit lowercase). All return a non-negative int in `[0, 2^32)`. Matches published vectors:
   `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`. For a hash of

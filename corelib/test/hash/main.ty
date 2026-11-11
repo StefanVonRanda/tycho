@@ -53,3 +53,14 @@ fn main():
     println("xxh64 empty=" + str(hash.xxh64("", 0) == ((to_u64(0xEF46DB37) << 32) | to_u64(0x51D8E999))))
     println("xxh64 abc=" + str(hash.xxh64("abc", 0) == ((to_u64(0x44BC2CF5) << 32) | to_u64(0xAD770999))))
     println("xxh64 long=" + str(hash.xxh64("0123456789abcdef0123456789abcdef0123456789abcdef", 0) != to_u64(0)))
+
+    # ---- CRC-16, CRC-64, Adler-32, Murmur3, FNV-1a 64 ----
+    println("crc16=" + str(hash.crc16_ccitt("123456789") == 10673))
+    println("crc64=" + str(hash.crc64_ecma("123456789") == ((to_u64(0x6C40DF5F) << 32) | to_u64(0x0B497347))))
+    println("adler32=" + str(hash.adler32("Wikipedia") == 300286872))
+    println("adler32b=" + str(hash.adler32("123456789") == 152961502))
+    println("murmur3=" + str(hash.murmur3_32("hello", 0) == to_u32(0x248BFA47)))
+    println("murmur3a=" + str(hash.murmur3_32("a", 0) == to_u32(0x3C2569B2)))
+    println("fnv64_empty=" + str(hash.fnv1a_64("") == ((to_u64(0xCBF29CE4) << 32) | to_u64(0x84222325))))
+    println("fnv64_a=" + str(hash.fnv1a_64("a") == ((to_u64(0xAF63DC4C) << 32) | to_u64(0x8601EC8C))))
+    println("fnv64_foobar=" + str(hash.fnv1a_64("foobar") == ((to_u64(0x85944171) << 32) | to_u64(0xF73967E8))))
