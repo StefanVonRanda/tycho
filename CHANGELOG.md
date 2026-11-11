@@ -78,6 +78,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added PPMd7/PPMd8 and PKZIP Shrink/Reduce/Implode to `core:compress`,
   backed by vendored public-domain C (7-Zip SDK and hwzip) with no runtime
   library dependency. The PPMd encoders are byte-identical to 7-Zip.
+- Added Deflate64 (ZIP method 9) to `core:compress`: `deflate64_compress`,
+  `deflate64_decompress` and `deflate64_bound`, using zlib's `infback9`
+  decoder for the full 64 KiB format.
 - The tree is now 88 corelib packages and 99 golden test trees.
 
 ## [0.9.1] — 2026-11-10

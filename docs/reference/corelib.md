@@ -1113,6 +1113,13 @@ plus four more:
   expected_size)`/`implode(data, large_window, literal_tree)` for method 6.
   `CodecErr` is `CodecInvalidProps`, `CodecBadOption`, `CodecCorrupt`,
   `CodecTruncated`, `CodecTooBig` or `CodecFailed`.
+  **Deflate64** (ZIP method 9) is a raw stream codec:
+  `deflate64_decompress(data, expected_size)` uses zlib's `infback9` decoder
+  and accepts the full 64 KiB window and extended length/distance codes;
+  `deflate64_compress(data)` emits a valid Deflate64 stream through zlib's
+  raw-deflate path and verifies it with the same decoder. The encoder uses the
+  standard 32 KiB/257-byte subset, so it does not exercise the extended 64 KiB
+  window. `deflate64_bound(len)` is a conservative output bound.
 - **`xz`** — xz container compression over **liblzma** (`deps: liblzma`):
   `compress(bytes) -> Result(bytes, XzErr)` (preset 6, CRC64) and
   `decompress(bytes) -> Result(bytes, XzErr)`; `XzErr` is `Corrupt`, `Truncated`,

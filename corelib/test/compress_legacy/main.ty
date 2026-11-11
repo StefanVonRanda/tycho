@@ -133,6 +133,44 @@ fn main():
         Err(e):
             println("reduce_rt=" + why(e))
 
+    d64_raw := load("corelib/test/compress_legacy/deflate64.raw")
+    d64_txt := load("corelib/test/compress_legacy/deflate64.txt")
+    match compress.deflate64_decompress(d64_raw, len(d64_txt)):
+        Ok(b):
+            println("deflate64_decode=" + str(same(b, d64_txt)))
+        Err(e):
+            println("deflate64_decode=" + why(e))
+    match compress.deflate64_compress(d64_txt):
+        Ok(b):
+            println("deflate64_bound=" + str(len(b) <= compress.deflate64_bound(len(d64_txt))))
+            match compress.deflate64_decompress(b, len(d64_txt)):
+                Ok(d):
+                    println("deflate64_rt=" + str(same(d, d64_txt)))
+                Err(e):
+                    println("deflate64_rt=" + why(e))
+        Err(e):
+            println("deflate64_compress=" + why(e))
+    match compress.deflate64_compress(to_bytes("")):
+        Ok(b):
+            match compress.deflate64_decompress(b, 0):
+                Ok(d):
+                    println("deflate64_empty=" + str(len(d) == 0))
+                Err(e):
+                    println("deflate64_empty=" + why(e))
+        Err(e):
+            println("deflate64_empty=" + why(e))
+    match compress.deflate64_decompress(to_bytes(""), 0):
+        Err(e):
+            println("deflate64_empty_bad=" + why(e))
+        Ok(_):
+            println("deflate64_empty_bad=Ok")
+
+    match compress.deflate64_decompress(d64_raw[0:100], len(d64_txt)):
+        Err(e):
+            println("deflate64_truncated=" + why(e))
+        Ok(_):
+            println("deflate64_truncated=Ok")
+
     bad := compress.PpmdProps(compress.H, 1, 1024, 0)
     match compress.ppmd_compress_7z(to_bytes("x"), bad):
         Err(compress.CodecInvalidProps):

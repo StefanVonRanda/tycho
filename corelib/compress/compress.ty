@@ -38,6 +38,8 @@ extern fn pkx_expand(data: bytes, expected_size: int, factor: int, status: inout
 extern fn pkx_shrink(data: bytes, status: inout int) -> bytes
 extern fn pkx_implode(data: bytes, flags: int, status: inout int) -> bytes
 extern fn pkx_reduce(data: bytes, factor: int, status: inout int) -> bytes
+extern fn dfx_compress(data: bytes, status: inout int) -> bytes
+extern fn dfx_decompress(data: bytes, expected_size: int, status: inout int) -> bytes
 
 const ZD_OK = 0
 const ZD_CORRUPT = 1
@@ -912,6 +914,33 @@ fn reduce(data: bytes, factor: int) -> Result(bytes, CodecErr):
         return Err(CodecBadOption)
     st := 0
     b := pkx_reduce(data, factor, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+# ---- Deflate64 (PKZIP method 9) ----
+
+# Conservative output bound for `deflate64_compress`.
+fn deflate64_bound(len: int) -> int:
+    if len < 0:
+        return -1
+    return len + len / 8 + 4096
+
+# Raw Deflate64 stream. The decoder accepts the full 64 KiB/65538-byte form;
+# the encoder emits the standard 32 KiB/257-byte subset, which every Deflate64
+# decoder accepts.
+fn deflate64_compress(data: bytes) -> Result(bytes, CodecErr):
+    st := 0
+    b := dfx_compress(data, &st)
+    if st == 0:
+        return Ok(b)
+    return Err(_codec_cause(st))
+
+fn deflate64_decompress(data: bytes, expected_size: int) -> Result(bytes, CodecErr):
+    if expected_size < 0:
+        return Err(CodecBadOption)
+    st := 0
+    b := dfx_decompress(data, expected_size, &st)
     if st == 0:
         return Ok(b)
     return Err(_codec_cause(st))

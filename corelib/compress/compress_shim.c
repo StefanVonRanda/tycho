@@ -32,6 +32,25 @@
 #include "vendor/ppmd/ppmd_all.c"
 #include "vendor/hwzip/hwzip_all.c"
 
+/* infback9 allocates its state through zlib's default allocator hooks. Keep
+ * those hooks local so the shim does not export zcalloc/zcfree over the zlib
+ * it links. */
+static voidpf dfx_zcalloc(voidpf opaque, unsigned items, unsigned size) {
+    (void)opaque;
+    return calloc(items, size);
+}
+
+static void dfx_zcfree(voidpf opaque, voidpf ptr) {
+    (void)opaque;
+    free(ptr);
+}
+
+#define zcalloc dfx_zcalloc
+#define zcfree dfx_zcfree
+#include "vendor/deflate64/deflate64_all.c"
+#undef zcalloc
+#undef zcfree
+
 /* windowBits 15 | 16 selects zlib's gzip wrapper (header + CRC32 + length). */
 #define GZIP_WBITS (15 + 16)
 
@@ -849,4 +868,149 @@ void pkx_reduce(const unsigned char *data, tycho_int len, tycho_int factor,
         if (cap >= PPX_MAX_OUT) { *status = PPX_TOOBIG; return; }
         cap = cap > PPX_MAX_OUT / 2 ? PPX_MAX_OUT : cap * 2;
     }
+}
+
+/* ---- Deflate64 (PKZIP method 9) ------------------------------------------ */
+
+typedef struct {
+    const unsigned char *p;
+    size_t n;
+    size_t i;
+} DfxIn;
+
+static unsigned dfx_in_cb(void *d, z_const unsigned char **buf) {
+    DfxIn *m = (DfxIn *)d;
+    if (m->i >= m->n) {
+        *buf = (z_const unsigned char *)"";
+        return 0;
+    }
+    size_t k = m->n - m->i;
+    *buf = (unsigned char *)(m->p + m->i);
+    m->i = m->n;
+    return (unsigned)k;
+}
+
+typedef struct {
+    unsigned char *p;
+    size_t n;
+    size_t cap;
+    int too_big;
+} DfxOut;
+
+static int dfx_out_cb(void *d, unsigned char *buf, unsigned len) {
+    DfxOut *o = (DfxOut *)d;
+    if (len > o->cap - o->n) {
+        o->too_big = 1;
+        return 1;
+    }
+    if (len) memcpy(o->p + o->n, buf, len);
+    o->n += len;
+    return 0;
+}
+
+static int dfx_decode(const unsigned char *data, size_t len,
+                      unsigned char *dst, size_t cap, size_t *got) {
+    unsigned char *window = (unsigned char *)malloc(65536);
+    if (!window) return PPX_FAILED;
+    z_stream s;
+    memset(&s, 0, sizeof s);
+    DfxIn in;
+    in.p = data;
+    in.n = len;
+    in.i = 0;
+    DfxOut out;
+    out.p = dst;
+    out.n = 0;
+    out.cap = cap;
+    out.too_big = 0;
+    int rc = inflateBack9Init(&s, window);
+    if (rc != Z_OK) { free(window); return PPX_FAILED; }
+    rc = inflateBack9(&s, dfx_in_cb, &in, dfx_out_cb, &out);
+    inflateBack9End(&s);
+    free(window);
+    *got = out.n;
+    if (out.too_big) return PPX_TOOBIG;
+    if (rc == Z_STREAM_END) return PPX_OK;
+    if (rc == Z_MEM_ERROR) return PPX_FAILED;
+    if (rc == Z_BUF_ERROR) return PPX_TRUNCATED;
+    return PPX_CORRUPT;
+}
+
+static int dfx_zlib_compress(const unsigned char *data, size_t len, int strategy,
+                             unsigned char **out, size_t *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    z_stream s;
+    memset(&s, 0, sizeof s);
+    if (deflateInit2(&s, 6, Z_DEFLATED, -15, 8, strategy) != Z_OK) return 0;
+    uLong bound = deflateBound(&s, (uLong)len);
+    if (bound == 0 || bound > (uLong)PPX_MAX_OUT) { deflateEnd(&s); return 0; }
+    unsigned char *buf = (unsigned char *)malloc((size_t)bound);
+    if (!buf) { deflateEnd(&s); return 0; }
+    s.next_in = (Bytef *)(len ? data : (const unsigned char *)"");
+    s.avail_in = (uInt)len;
+    s.next_out = buf;
+    s.avail_out = (uInt)bound;
+    int rc = deflate(&s, Z_FINISH);
+    if (rc != Z_STREAM_END) { free(buf); deflateEnd(&s); return 0; }
+    *out = buf;
+    *outlen = (size_t)s.total_out;
+    deflateEnd(&s);
+    return 1;
+}
+
+static int dfx_validate(const unsigned char *comp, size_t clen,
+                        const unsigned char *plain, size_t plen) {
+    unsigned char *buf = (unsigned char *)malloc(plen ? plen : 1);
+    if (!buf) return 0;
+    size_t got = 0;
+    int st = dfx_decode(comp, clen, buf, plen, &got);
+    int ok = st == PPX_OK && got == plen &&
+             (plen == 0 || memcmp(buf, plain, plen) == 0);
+    free(buf);
+    return ok;
+}
+
+void dfx_compress(const unsigned char *data, tycho_int len,
+                  tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (len < 0 || (uint64_t)len > (uint64_t)PPX_MAX_OUT) {
+        *status = PPX_BAD_OPT;
+        return;
+    }
+    const int strategies[3] = { Z_DEFAULT_STRATEGY, Z_RLE, Z_HUFFMAN_ONLY };
+    for (int i = 0; i < 3; i++) {
+        unsigned char *buf = NULL;
+        size_t n = 0;
+        if (!dfx_zlib_compress(data, (size_t)len, strategies[i], &buf, &n)) continue;
+        if (dfx_validate(buf, n, data, (size_t)len)) {
+            *out = buf;
+            *outlen = (tycho_int)n;
+            *status = PPX_OK;
+            return;
+        }
+        free(buf);
+    }
+}
+
+void dfx_decompress(const unsigned char *data, tycho_int len, tycho_int expected,
+                    tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ppx_clear(out, outlen);
+    *status = PPX_FAILED;
+    if (len < 0) { *status = PPX_BAD_OPT; return; }
+    size_t want;
+    if (!ppx_size_ok(expected, &want)) { *status = PPX_TOOBIG; return; }
+    unsigned char *buf = (unsigned char *)malloc(want ? want : 1);
+    if (!buf) return;
+    size_t got = 0;
+    int st = dfx_decode(data, (size_t)len, buf, want, &got);
+    if (st == PPX_OK && got == want) {
+        *out = buf;
+        *outlen = (tycho_int)want;
+        *status = PPX_OK;
+        return;
+    }
+    free(buf);
+    *status = st == PPX_OK ? PPX_TRUNCATED : st;
 }
