@@ -1,0 +1,5 @@
+available=true
+compressed=true
+roundtrip=true
+fixed_ok=true
+bad=Corrupt

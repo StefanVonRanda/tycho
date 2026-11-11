@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 88 packages, ~22.2k lines, 1142 locked
+lines). The current Tycho corelib is 88 packages, ~22.4k lines, 1145 locked
 public functions.
 
 Status values:
@@ -22,7 +22,7 @@ Status values:
 | `bufio` | covered | `core:bufio` in-memory reader/writer plus `core:scanner` | none |
 | `bytes` | covered | immutable `bytes` plus mutable `core:buffer` | none |
 | `c` | non-goal | `extern fn` FFI plus internal `*_shim.c` files | none |
-| `compress` | partial | gzip/zlib one-shot and streaming, raw DEFLATE, LZ4 block, xz via `core:xz` | bzip2, ppmd, pkzip-legacy and filters |
+| `compress` | partial | gzip/zlib one-shot and streaming, raw DEFLATE, LZ4 block, xz via `core:xz`, bzip2 via runtime-loaded libbz2 | ppmd, pkzip-legacy and filters |
 | `container` | covered | `Deque`/`Queue`, `PriorityQueue`, `BitArray`, `Lru`, ordered `Treap`, `topo_sort`; `pool` covers handles; fixed arrays cover small arrays | intrusive containers need references (non-goal) |
 | `crypto` | covered | OpenSSL shims: ChaCha20-Poly1305 and AES-GCM AEAD, AES-CTR, AES-CBC, RSA PKCS#1 v1.5, ECDSA P-256, Ed25519, X25519, ML-DSA, ML-KEM, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, Argon2id, CSPRNG; ASN.1 DER/BER and X.509 in their own packages | none |
 | `debug` | covered | `assert`, `trace`, `enabled`, `stack_trace`; runtime traps and `tycho-debug bt` | PE introspection is platform-specific tooling |

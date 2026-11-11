@@ -1,6 +1,6 @@
 package compress
 
-# Why an inflate failed. Payload-free, so a caller can test one cause with `==`.
+# Why a compression or decompression failed. Payload-free, so `==` works.
 enum ZErr:
     Corrupt        # inflate refused the data: bad wrapper, bad checksum, needs a dictionary
     Truncated      # the input stops mid-stream
@@ -23,6 +23,9 @@ extern fn zx_deflate_chunk(s: ptr, data: bytes, status: inout int) -> bytes
 extern fn zx_deflate_finish(s: ptr, status: inout int) -> bytes
 extern fn zx_inflate_chunk(s: ptr, data: bytes, status: inout int) -> bytes
 extern fn zx_inflate_finish(s: ptr, status: inout int) -> bytes
+extern fn bzx_available() -> int
+extern fn bzx_compress(data: bytes, status: inout int) -> bytes
+extern fn bzx_decompress(data: bytes, status: inout int) -> bytes
 
 const ZD_OK = 0
 const ZD_CORRUPT = 1
@@ -51,6 +54,25 @@ fn _cause(st: int) -> ZErr:
 fn decompress(data: bytes) -> Result(bytes, ZErr):
     st := 0
     b := zx_decompress(data, &st)
+    if st == ZD_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
+# bzip2 is loaded at run time (libbz2.so.1 / libbz2.dylib / libbz2.dll), so
+# core:compress has no hard link dependency on it. Check availability first.
+fn bzip2_available() -> bool:
+    return bzx_available() == 1
+
+fn bzip2_compress(data: bytes) -> Result(bytes, ZErr):
+    st := 0
+    b := bzx_compress(data, &st)
+    if st == ZD_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
+fn bzip2_decompress(data: bytes) -> Result(bytes, ZErr):
+    st := 0
+    b := bzx_decompress(data, &st)
     if st == ZD_OK:
         return Ok(b)
     return Err(_cause(st))

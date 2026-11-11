@@ -1057,6 +1057,10 @@ plus four more:
   `raw_compress(data)` is the same deflate without the gzip framing, for callers that
   supply their own container. Each decompression is capped at 1 GiB (or the zlib `uInt`
   limit when lower).
+  **bzip2** is loaded at run time (`libbz2.so.1`, `libbz2.dylib`, `libbz2.dll`);
+  `bzip2_available()` reports whether it loaded, and `bzip2_compress(data)` /
+  `bzip2_decompress(data)` return `Result(bytes, ZErr)`. There is no hard link
+  dependency on libbz2.
 - **`xz`** — xz container compression over **liblzma** (`deps: liblzma`):
   `compress(bytes) -> Result(bytes, XzErr)` (preset 6, CRC64) and
   `decompress(bytes) -> Result(bytes, XzErr)`; `XzErr` is `Corrupt`, `Truncated`,

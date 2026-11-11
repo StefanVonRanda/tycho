@@ -14,6 +14,12 @@
 #include <string.h>
 #include <stdint.h>
 #include <limits.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#include <pthread.h>
+#endif
 #include "../tycho.h"
 
 /* windowBits 15 | 16 selects zlib's gzip wrapper (header + CRC32 + length). */
@@ -336,4 +342,124 @@ void zx_inflate_finish(void *vp, tycho_int *status, unsigned char **out, tycho_i
         return;
     }
     zx_do_chunk(s, (const unsigned char *)"", 0, Z_FINISH, 1, status, out, outlen);
+}
+
+
+/* ---- bzip2, loaded at run time so core:compress keeps no hard link dep ---- */
+typedef int (*bz_compress_fn)(char *, unsigned int *, char *, unsigned int, int, int, int);
+typedef int (*bz_decompress_fn)(char *, unsigned int *, char *, unsigned int, int, int);
+
+static bz_compress_fn bz_compress_p = NULL;
+static bz_decompress_fn bz_decompress_p = NULL;
+
+static void bz_load_once(void) {
+#ifdef _WIN32
+    HMODULE h = LoadLibraryA("libbz2.dll");
+    if (!h) h = LoadLibraryA("bz2.dll");
+    if (h) {
+        bz_compress_p = (bz_compress_fn)(void *)GetProcAddress(h, "BZ2_bzBuffToBuffCompress");
+        bz_decompress_p = (bz_decompress_fn)(void *)GetProcAddress(h, "BZ2_bzBuffToBuffDecompress");
+    }
+#else
+    void *h = dlopen("libbz2.so.1", RTLD_LAZY);
+    if (!h) h = dlopen("libbz2.so", RTLD_LAZY);
+    if (!h) h = dlopen("libbz2.dylib", RTLD_LAZY);
+    if (h) {
+        bz_compress_p = (bz_compress_fn)dlsym(h, "BZ2_bzBuffToBuffCompress");
+        bz_decompress_p = (bz_decompress_fn)dlsym(h, "BZ2_bzBuffToBuffDecompress");
+    }
+#endif
+}
+
+#ifdef _WIN32
+static BOOL CALLBACK bz_init_once(PINIT_ONCE once, PVOID param, PVOID *ctx) {
+    (void)once; (void)param; (void)ctx;
+    bz_load_once();
+    return TRUE;
+}
+static void bz_ensure(void) {
+    static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+    InitOnceExecuteOnce(&once, bz_init_once, NULL, NULL);
+}
+#else
+static pthread_once_t bz_once = PTHREAD_ONCE_INIT;
+static void bz_ensure(void) {
+    pthread_once(&bz_once, bz_load_once);
+}
+#endif
+
+tycho_int bzx_available(void) {
+    bz_ensure();
+    return (bz_compress_p && bz_decompress_p) ? 1 : 0;
+}
+
+/* BZ_OK is 0; BZ_OUTBUFF_FULL is -8; BZ_UNEXPECTED_EOF is -7; the data and
+ * magic errors are -4/-5; memory/config are -3/-9. */
+void bzx_compress(const unsigned char *data, tycho_int len,
+                  tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = ZD_FAILED;
+    bz_ensure();
+    if (!bz_compress_p || len < 0 || (uint64_t)len > UINT_MAX) return;
+    size_t limit = (size_t)1024 * 1024 * 1024;
+    size_t cap = (size_t)len + (size_t)len / 100 + 601;
+    if (cap > limit) { *status = ZD_TOOBIG; return; }
+    for (;;) {
+        unsigned char *buf = (unsigned char *)malloc(cap);
+        if (!buf) return;
+        unsigned int destlen = (unsigned int)cap;
+        int rc = bz_compress_p((char *)buf, &destlen, (char *)data, (unsigned int)len, 9, 0, 30);
+        if (rc == 0) {
+            *out = buf;
+            *outlen = (tycho_int)destlen;
+            *status = ZD_OK;
+            return;
+        }
+        free(buf);
+        if (rc == -8) {
+            if (cap >= limit) { *status = ZD_TOOBIG; return; }
+            cap = cap > limit / 2 ? limit : cap * 2;
+            continue;
+        }
+        if (rc == -4 || rc == -5) { *status = ZD_CORRUPT; return; }
+        if (rc == -7) { *status = ZD_TRUNCATED; return; }
+        *status = ZD_FAILED;
+        return;
+    }
+}
+
+void bzx_decompress(const unsigned char *data, tycho_int len,
+                    tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = ZD_FAILED;
+    bz_ensure();
+    if (!bz_decompress_p || len < 0 || (uint64_t)len > UINT_MAX) return;
+    size_t limit = (size_t)1024 * 1024 * 1024;
+    size_t cap = (size_t)len * 4 + 64;
+    if (cap < 1024) cap = 1024;
+    if (cap > limit) cap = limit;
+    for (;;) {
+        unsigned char *buf = (unsigned char *)malloc(cap);
+        if (!buf) return;
+        unsigned int destlen = (unsigned int)cap;
+        int rc = bz_decompress_p((char *)buf, &destlen, (char *)data, (unsigned int)len, 0, 0);
+        if (rc == 0) {
+            *out = buf;
+            *outlen = (tycho_int)destlen;
+            *status = ZD_OK;
+            return;
+        }
+        free(buf);
+        if (rc == -8) {
+            if (cap >= limit) { *status = ZD_TOOBIG; return; }
+            cap = cap > limit / 2 ? limit : cap * 2;
+            continue;
+        }
+        if (rc == -4 || rc == -5) { *status = ZD_CORRUPT; return; }
+        if (rc == -7) { *status = ZD_TRUNCATED; return; }
+        *status = ZD_FAILED;
+        return;
+    }
 }

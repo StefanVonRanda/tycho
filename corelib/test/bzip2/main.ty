@@ -1,0 +1,35 @@
+package main
+import "core:compress"
+
+fn main():
+    println("available=" + str(compress.bzip2_available()))
+    if not compress.bzip2_available():
+        println("roundtrip=skip")
+        println("fixed=skip")
+        return
+
+    original := to_bytes("hello bzip2\n")
+    match compress.bzip2_compress(original):
+        Ok(c):
+            println("compressed=" + str(len(c) > 0))
+            match compress.bzip2_decompress(c):
+                Ok(d): println("roundtrip=" + str(to_str(d) == "hello bzip2\n"))
+                Err(_): println("roundtrip=false")
+        Err(_):
+            println("compressed=false")
+            println("roundtrip=false")
+
+    fixed := to_bytes([66, 90, 104, 57, 49, 65, 89, 38, 83, 89, 171, 107, 161, 241, 0, 0,
+     2, 217, 128, 0, 16, 64, 0, 16, 0, 18, 100, 192, 16, 32, 0, 49,
+     0, 211, 77, 4, 0, 30, 163, 239, 78, 81, 162, 7, 139, 185, 34, 156,
+     40, 72, 85, 181, 208, 248, 128])
+    match compress.bzip2_decompress(fixed):
+        Ok(d): println("fixed_ok=" + str(to_str(d) == "hello bzip2\n"))
+        Err(_): println("fixed_ok=false")
+
+    bad := to_bytes([1, 2, 3])
+    match compress.bzip2_decompress(bad):
+        Ok(_): println("bad=Ok")
+        Err(compress.Corrupt): println("bad=Corrupt")
+        Err(compress.Truncated): println("bad=Truncated")
+        Err(_): println("bad=Other")

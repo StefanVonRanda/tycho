@@ -23,6 +23,7 @@ classify() {
         os)                 echo "skip its test drives POSIX-shell commands (true/false/printf) that cmd.exe lacks -- the PACKAGE works (exit codes map, exit 7 passes); the test needs a Windows variant, phase 6" ;;
         datetime)           echo "skip its offset_at cases use POSIX TZ strings whose sign convention Windows _tzset inverts (EST5EDT -> +5h); utc0 matches; needs a Windows-aware golden, phase 6" ;;
         signal)             echo "skip its test kills itself via 'kill -TERM \$PPID' from a POSIX shell -- cmd.exe has no kill, the handler never fires and the accept blocks forever (the shim is compile-verified; the test needs a Windows variant, phase 6)" ;;
+        bzip2)              echo "skip libbz2 is loaded at run time and is not in the wine image" ;;
         compress|zip)       echo "run--lz" ;;
         crypto|http|image|sqlite|tls)
             echo "skip OpenSSL/libcurl/libpng/sqlite3 mingw lib not on this host (MSYS2)" ;;

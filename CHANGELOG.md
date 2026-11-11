@@ -63,7 +63,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - `core:tz` now parses the POSIX TZ footer, so timestamps after the last TZif
   transition keep DST (including southern-hemisphere rules); leap-second
   records remain ignored.
-- The tree is now 88 corelib packages and 94 golden test trees.
+- Added runtime-loaded bzip2 support to `core:compress`: `bzip2_available`,
+  `bzip2_compress` and `bzip2_decompress`, with no hard libbz2 link dependency.
+- The tree is now 88 corelib packages and 95 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 
