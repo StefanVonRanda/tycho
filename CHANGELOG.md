@@ -15,6 +15,16 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ## [Unreleased]
 
+### Compiler
+
+- `read_file` now warns that it is fail-open and points at `core:io.read_text`
+  when a missing, unreadable or empty file must be distinguishable.
+- An unused match payload binding (`Err(e)` / `Ok(v)`) now warns; write `_` to
+  discard it deliberately.
+- Named struct construction supplies the field type to each argument, so an
+  empty literal can infer it from the field (`Graph(edges: [], ...)`). The spec
+  and `docs/reference/structs-tuples.md` document the named form.
+
 ### Corelib
 
 - Added the Odin `core` parity map at
@@ -46,6 +56,7 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added the libm trig/exp/log surface to `core:fmath`.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM/PBM codecs to `core:raster`,
   and baseline JPEG encode/decode to `core:image`.
+- Added `strings.fields` for splitting on runs of ASCII whitespace.
 - The tree is now 87 corelib packages and 93 golden test trees.
 
 ## [0.9.1] — 2026-11-10

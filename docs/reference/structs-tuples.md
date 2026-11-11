@@ -23,8 +23,22 @@ fn area(r: Rect) -> int:
 
 fn main():
     a := Point(1, 2)            # positional construction, fields in declaration order
+    b := Point(y: 2, x: 1)      # named construction, any order; all fields exactly once
     r := Rect(a, Point(4, 6))
     r.lo.x = 100               # nested field write, in place
+```
+
+Named construction is the readable form for a struct with several empty
+containers, and each argument gets its field's type, so `edges: []` is enough:
+
+```tycho
+struct Graph:
+    edges: [string: int]
+    nodes: [string]
+    adj: [[int]]
+    rev: [[int]]
+
+g := Graph(rev: [], adj: [], nodes: [], edges: [])
 ```
 
 A field name follows the same rule as any other name: it may not be a

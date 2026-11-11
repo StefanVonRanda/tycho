@@ -1,0 +1,2 @@
+tests/warn/read_file.ty:2: warning: read_file is fail-open: a missing, unreadable or empty file all return ""; use core:io.read_text when the difference matters
+     2 |     s := read_file("does-not-exist")

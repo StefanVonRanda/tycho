@@ -521,7 +521,11 @@ fn _restore(rs: inout R, m: int):
         if rs.vars[i].report and not rs.vars[i].used:
             keep := rs.line
             rs.line = rs.vars[i].line
-            _late(&rs, "'" + rs.vars[i].name + "' declared and not used")
+            if rs.vars[i].kind == "bind":
+                if not strings.contains(rs.file, "compiler/"):
+                    _warn(&rs, "'" + rs.vars[i].name + "' payload is never used; write _ to discard it")
+            else:
+                _late(&rs, "'" + rs.vars[i].name + "' declared and not used")
             rs.line = keep
     rs.nvars = m
 
@@ -743,6 +747,14 @@ fn _expr(rs: inout R, bi: [string: bool], ctors: [string: bool], e: ast.Expr):
         ast.Call(l, q, n, ts, args):
             _tys(&rs, ts)
             if len(q) == 0:
+                # read_file is the fail-open builtin every newcomer reaches for
+                # first; the checked spelling is core:io.read_text. Warn only in
+                # user code, and only when no local declaration shadows it.
+                if n == "read_file" and n in bi and not _callable(_kindof(&rs, n)) and
+                        not strings.contains(rs.file, "corelib/") and
+                        not strings.contains(rs.file, "compiler/"):
+                    rs.line = l
+                    _warn(&rs, "read_file is fail-open: a missing, unreadable or empty file all return \"\"; use core:io.read_text when the difference matters")
                 _call_bare(&rs, bi, ctors, n)
             elif _enum_qual(&rs, q, n):
                 _note(&rs, "enumqual")
@@ -1063,7 +1075,7 @@ fn _bind(rs: inout R, ctors: [string: bool], name: string):
     if len(name) > 0 and name[0] >= 65 and name[0] <= 90:
         _note(&rs, "armpattern.deferred")
         return
-    _push(&rs, name, "bind", false)
+    _push(&rs, name, "bind", true)
 
 fn _arms(rs: inout R, bi: [string: bool], ctors: [string: bool], arms: [ast.Arm]):
     for a in arms:

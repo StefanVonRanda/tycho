@@ -1,0 +1,9 @@
+enum Box:
+    Full(int)
+    Empty
+
+fn main():
+    b := Full(1)
+    match b:
+        Full(v): print("full")
+        Empty: print("empty")

@@ -1,0 +1,3 @@
+fn main():
+    s := read_file("does-not-exist")
+    print(str(len(s)))

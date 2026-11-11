@@ -1,0 +1,2 @@
+tests/warn/unused_pattern.ty:8: warning: 'v' payload is never used; write _ to discard it
+     8 |         Full(v): print("full")

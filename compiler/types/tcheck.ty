@@ -2370,8 +2370,26 @@ fn _check_fields(cs: inout C, ti: int, args: [ast.Expr], line: int) -> string:
     if _any_named(args) or cs.tds[ti].generic:
         keep := cs.in_arg
         cs.in_arg = true
-        for a in args:
-            _ex(&cs, a)
+        if _any_named(args) and not cs.tds[ti].generic:
+            for a in args:
+                match a:
+                    ast.Named(l, nm, k):
+                        fi := -1
+                        for j := 0; j < len(cs.tds[ti].fnames); j += 1:
+                            if cs.tds[ti].fnames[j] == nm:
+                                fi = j
+                        if fi >= 0:
+                            at := _ex2(&cs, k[0], cs.tds[ti].ftypes[fi])
+                            cs.line = l
+                            if not compat(at, cs.tds[ti].ftypes[fi]):
+                                _cerr(&cs, "field type mismatch: field '" + nm + "' of " + cs.tds[ti].name + " is " + _show(&cs, cs.tds[ti].ftypes[fi]) + ", got " + _show(&cs, at))
+                        else:
+                            _ex(&cs, k[0])
+                    _:
+                        _ex(&cs, a)
+        else:
+            for a in args:
+                _ex(&cs, a)
         cs.in_arg = keep
         # src/tychoc.c:7607-7609: once one field is named, every field is.
         if _any_named(args) and not _all_named(args):

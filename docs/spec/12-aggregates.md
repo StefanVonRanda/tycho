@@ -304,8 +304,12 @@ Its fixtures are in `tests/` and `tests/abort/` (Appendix E.2.1).
 
 A `struct` is the nominal product type of
 [§5.3.4](03-types.md#534-structs). It MUST be declared before it is used as a
-type. Construction is **positional in field-declaration order**: `Point(1, 2)`
-sets the first declared field to `1` and the second to `2`. Each argument's type
+type. Construction is **positional by default, in field-declaration order**:
+`Point(1, 2)` sets the first declared field to `1` and the second to `2`. A
+**named form** is also accepted: `Point(y: 2, x: 1)`. Once one field is named,
+every field MUST be named exactly once; an unknown, duplicate or missing field
+is rejected. Named construction supplies the field type to each argument, so an
+empty literal can infer it from the field (`edges: []`). Each argument's type
 MUST match its field's type. Binding a struct deep-copies its whole tree — every
 heap-owning field (`string`, array, map, nested struct, at any depth) is
 duplicated — so two struct variables never share storage.
@@ -316,7 +320,8 @@ struct Point:
     y: int
 
 a := Point(1, 2)         # positional, in declaration order
-_b := a                   # deep copy; b.x, b.y independent of a
+b := Point(y: 2, x: 1)   # named, any order; every field exactly once
+_c := a                   # deep copy; b.x, b.y independent of a
 ```
 
 As a complete program:
