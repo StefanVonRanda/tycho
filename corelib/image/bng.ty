@@ -1,0 +1,47 @@
+# BNG (Better than PNG) decode/encode over the Unlicense reference codec.
+# BNG stores premultiplied BGRA; core:image's Image is straight RGBA, so the
+# default entry points premultiply/unpremultiply at the boundary.
+package image
+
+extern fn imgx_bng_decode(data: bytes, premultiplied: int, status: inout int) -> ptr
+extern fn imgx_bng_encode(pixels: bytes, w: int, h: int, premultiplied: int, status: inout int) -> bytes
+
+fn is_bng(data: bytes) -> bool:
+    if len(data) < 8:
+        return false
+    return data[0] == 255 and data[1] == 14 and data[2] == 56 and data[3] == 48 and data[4] == 42 and data[5] == 26 and data[6] == 24 and data[7] == 1
+
+fn _decode_bng(data: bytes, premultiplied: int) -> Result(Image, ImgErr):
+    if len(data) == 0:
+        return Err(Empty)
+    st := 0
+    h := imgx_bng_decode(data, premultiplied, &st)
+    if is_null(h):
+        return Err(_cause(st))
+    img := Image(imgx_width(h), imgx_height(h), imgx_pixels(h))
+    imgx_free(h)
+    return Ok(img)
+
+# Decode BNG to straight RGBA (the same alpha convention as PNG/JPEG).
+fn decode_bng(data: bytes) -> Result(Image, ImgErr):
+    return _decode_bng(data, 0)
+
+# Decode BNG without unpremultiplying. Use this when the exact stored BGRA
+# samples matter; encode_bng_premultiplied consumes the same convention.
+fn decode_bng_premultiplied(data: bytes) -> Result(Image, ImgErr):
+    return _decode_bng(data, 1)
+
+fn _encode_bng(img: Image, premultiplied: int) -> Result(bytes, ImgErr):
+    st := 0
+    b := imgx_bng_encode(img.pixels, img.width, img.height, premultiplied, &st)
+    if st == IMG_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
+# Encode straight RGBA to BNG. The codec premultiplies internally.
+fn encode_bng(img: Image) -> Result(bytes, ImgErr):
+    return _encode_bng(img, 0)
+
+# Encode premultiplied RGBA, as returned by decode_bng_premultiplied.
+fn encode_bng_premultiplied(img: Image) -> Result(bytes, ImgErr):
+    return _encode_bng(img, 1)

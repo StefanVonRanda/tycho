@@ -1151,11 +1151,14 @@ plus four more:
   `decompress(bytes) -> Result(bytes, XzErr)`; `XzErr` is `Corrupt`, `Truncated`,
   `TooBig` (output over 1 GiB) or `Failed`.
 - **`image`** — PNG decode/encode over **libpng** (`deps: libpng`) plus baseline
-  JPEG decode through a vendored JPEG-only `stb_image`; `decode(bytes) ->
+  JPEG decode through a vendored JPEG-only `stb_image` and BNG decode/encode
+  through the Unlicense reference codec; `decode(bytes) ->
   Result(Image{width, height, pixels}, ImgErr)` (8-bit RGBA) and `encode(Image) ->
-  Result(bytes, ImgErr)`. `decode` dispatches PNG or baseline JPEG by magic;
-  `decode_jpeg(bytes)` is the explicit JPEG entry point, and `encode_jpeg(img)`
-  writes baseline JPEG at quality 90. `ImgErr` names which
+  Result(bytes, ImgErr)`. `decode` dispatches BNG, PNG or baseline JPEG by magic;
+  `decode_jpeg(bytes)` and `encode_jpeg(img)` are the explicit JPEG entry points,
+  and `decode_bng`/`encode_bng` are the BNG entry points.
+  `decode_bng_premultiplied`/`encode_bng_premultiplied` preserve the stored
+  premultiplied samples; `is_bng(data)` tests the signature. `ImgErr` names which
   failure: `Empty`, `NotPng`, `Corrupt` on the decode side, `BadDims`,
   `ShortPixels` on the encode side, `Failed` for an allocation or codec failure.
   PNG has no 0-dimension image, so an `Ok` always carries `width >= 1`.

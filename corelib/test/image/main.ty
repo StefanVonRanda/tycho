@@ -1,6 +1,7 @@
 package main
 import "core:base64"
 import "core:image"
+import "core:io"
 
 const JPEG_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAIBAQEBAQIBAQECAgICAgQDAgICAgUEBAMEBgUGBgYFBgYGBwkIBgcJBwYGCAsICQoKCgoKBggLDAsKDAkKCgr/2wBDAQICAgICAgUDAwUKBwYHCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgr/wAARCAAgACADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD4vooor+Uz/fw/Siiiiv5bP+Fc/Buiiiv+0w/1YP7iKKKK/wAAz9UP/9k="
 
@@ -34,7 +35,36 @@ fn why(e: image.ImgErr) -> string:
         image.ShortPixels: return "ShortPixels"
         image.Failed: return "Failed"
         image.TooBig: return "TooBig"
+        image.NotBng: return "NotBng"
     return "?"
+
+fn load(path: string) -> bytes:
+    match io.read_bytes(path):
+        Ok(b):
+            return b
+        Err(_):
+            return to_bytes([]int)
+
+fn same_bytes(a: bytes, b: bytes) -> bool:
+    if len(a) != len(b):
+        return false
+    for i := 0; i < len(a); i += 1:
+        if a[i] != b[i]:
+            return false
+    return true
+
+fn premultiply(src: bytes) -> bytes:
+    out := []int
+    for i := 0; i < len(src); i += 4:
+        r := src[i]
+        g := src[i + 1]
+        b := src[i + 2]
+        a := src[i + 3]
+        push(out, (r * a + 127) / 255)
+        push(out, (g * a + 127) / 255)
+        push(out, (b * a + 127) / 255)
+        push(out, a)
+    return to_bytes(out)
 
 # Report a decode that MUST fail: "Ok" here is the regression, not a pass.
 fn dec_err(label: string, data: bytes):
@@ -114,3 +144,83 @@ fn main():
                 Err(_): println("jpeg_enc_roundtrip=false")
         Err(_):
             println("jpeg_encoded=false")
+
+    # ---- BNG (Better than PNG) ----
+    bng_data := load("corelib/test/image/testcard.bng")
+    png_data := load("corelib/test/image/testcard.png")
+    match image.decode_bng_premultiplied(bng_data):
+        Ok(bi):
+            println("bng_dims=" + str(bi.width) + "x" + str(bi.height))
+            match image.decode(png_data):
+                Ok(pi):
+                    println("bng_premult=" + str(b2i(same_bytes(bi.pixels, premultiply(pi.pixels)))))
+                Err(_):
+                    println("bng_premult=false")
+            match image.encode_bng_premultiplied(bi):
+                Ok(enc):
+                    match image.decode_bng_premultiplied(enc):
+                        Ok(rt):
+                            println("bng_big_rt=" + str(b2i(same_bytes(rt.pixels, bi.pixels))))
+                        Err(_):
+                            println("bng_big_rt=false")
+                Err(_):
+                    println("bng_big_rt=false")
+        Err(_):
+            println("bng_dims=err")
+    match image.decode_bng(bng_data):
+        Ok(bi):
+            println("bng_straight=" + str(bi.width) + "x" + str(bi.height))
+        Err(_):
+            println("bng_straight=err")
+    match image.decode(bng_data):
+        Ok(bi):
+            println("bng_auto=" + str(b2i(bi.width == 512 and bi.height == 512)))
+        Err(_):
+            println("bng_auto=false")
+    op := load("corelib/test/image/opaque.bng")
+    match image.decode_bng(op):
+        Ok(oi):
+            ok := oi.width == 4 and oi.height == 4
+            for y := 0; y < 4; y += 1:
+                for x := 0; x < 4; x += 1:
+                    i := (y * 4 + x) * 4
+                    if oi.pixels[i] != x * 60 + y * 11 or oi.pixels[i + 1] != y * 50 + x * 7 or oi.pixels[i + 2] != x * 40 + y * 3 or oi.pixels[i + 3] != 255:
+                        ok = false
+            println("bng_opaque=" + str(b2i(ok)))
+            match image.encode_bng(oi):
+                Ok(enc):
+                    match image.decode_bng(enc):
+                        Ok(rt):
+                            println("bng_rt=" + str(b2i(same_bytes(rt.pixels, oi.pixels))))
+                        Err(_):
+                            println("bng_rt=false")
+                Err(_):
+                    println("bng_rt=false")
+        Err(_):
+            println("bng_opaque=false")
+    raw := load("corelib/test/image/opaque_raw.bng")
+    match image.decode_bng(raw):
+        Ok(ri):
+            want := [201, 57, 13, 255, 88, 3, 240, 255, 12, 190, 77, 255, 250, 99, 5, 255]
+            ok := len(ri.pixels) == 16
+            for i := 0; i < 16; i += 1:
+                if ri.pixels[i] != want[i]:
+                    ok = false
+            println("bng_raw=" + str(b2i(ok)))
+        Err(_):
+            println("bng_raw=false")
+    match image.decode_bng(to_bytes([0])):
+        Err(e):
+            println("bng_bad=" + why(e))
+        Ok(_):
+            println("bng_bad=Ok")
+    match image.encode_bng(image.make(2, 2, to_bytes([1, 2, 3]))):
+        Err(e):
+            println("bng_short=" + why(e))
+        Ok(_):
+            println("bng_short=Ok")
+    match image.decode_bng(bng_data[0:20]):
+        Err(e):
+            println("bng_truncated=" + why(e))
+        Ok(_):
+            println("bng_truncated=Ok")

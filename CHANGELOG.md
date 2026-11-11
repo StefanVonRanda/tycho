@@ -94,6 +94,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added `core:hxa`, a reader/writer for HxA 3D assets: `parse`/`write`,
   meta/layer/node constructors, typed layer and meta accessors, and a
   reference file that round-trips byte-for-byte.
+- Added BNG decode/encode to `core:image`: `decode_bng`,
+  `decode_bng_premultiplied`, `encode_bng` and `encode_bng_premultiplied`,
+  backed by the Unlicense reference codec and tested against the official
+  paired PNG fixture.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

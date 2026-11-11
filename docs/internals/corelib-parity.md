@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 89 packages, ~25.1k lines, 1265 locked
+lines). The current Tycho corelib is 89 packages, ~25.2k lines, 1270 locked
 public functions.
 
 Status values:
@@ -32,7 +32,7 @@ Status values:
 | `flags` | covered | `cli.parse`/`parse_spec` and `cli.flag` | none |
 | `fmt` | covered | `format_int`, `format_float`, `pad_left`/`pad_right` plus `str`/f-strings | none |
 | `hash` | covered | FNV-1a 32/64, djb2, sdbm, CRC16/32/64, Adler-32, Murmur3 and xxHash 32/64 | none |
-| `image` | partial | PNG encode/decode, baseline JPEG encode/decode, `raster` BMP/QOI/TGA/PPM/PGM/PBM | BNG |
+| `image` | covered | PNG encode/decode, baseline JPEG encode/decode, BNG decode/encode, `raster` BMP/QOI/TGA/PPM/PGM/PBM | none |
 | `io` | covered | file read/write/append/copy/stat/dirs, checked variants, stdin/stdout, line reader | no generic `Reader`/`Writer` interface; concrete values are the design |
 | `log` | covered | leveled logger, stderr/file choice, `new`/`line` | none |
 | `math` | covered | `math`, `fmath` (trig/exp/log/hypot), `decimal`, `bignum`, `rand`, `linalg`, `complex`, `fixed`, `ease`, `noise`, `bits` | none |
@@ -97,9 +97,6 @@ them blocks the application-facing surface above:
 
 - `dynlib` — Tycho has no callback/function-pointer call path, so symbols are
   opaque handles for C shims.
-- `encoding` — HXA (Odin's 3D asset container) is not a general encoding.
-- `image` — BNG (Odin's image format) is not implemented; PNG/JPEG/BMP/QOI/TGA/
-  Netpbm are.
 - `nbio` — `poll` is present; epoll/kqueue/IOCP completion loops are runtime work.
 - `prof` — manual spans are present; sampling needs runtime hooks.
 - `terminal` — cursor queries and some non-console Windows paths are absent.
@@ -118,8 +115,8 @@ them blocks the application-facing surface above:
    grapheme/word segmentation. i18n tables remain a residual partial.
 5. **Crypto** — done: SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF, AES-GCM/CTR/CBC,
    RSA, ECDSA, Ed25519, X25519, ML-DSA, ML-KEM, Argon2id and X.509.
-6. **Formats and media** — done: TGA, Netpbm PPM/PGM/PBM, LZ4 and baseline
-   JPEG encode/decode joined PNG/BMP/QOI. BNG remains a residual partial.
+6. **Formats and media** — done: TGA, Netpbm PPM/PGM/PBM, LZ4, baseline JPEG
+   encode/decode and BNG joined PNG/BMP/QOI/HXA.
 7. **Runtime and diagnostics** — done: `debug`, manual `prof` spans, `terminal`,
    `dynlib`, `nbio.poll`, `thread.id`/`yield_now`; raw SIMD intrinsics stay a
    non-goal because `vector[N]T` is the language surface.

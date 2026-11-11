@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include <stdatomic.h>
 #include "../tycho.h"
+#include "bng_reference.h"
 
 #include <stdio.h>
 
@@ -100,6 +101,7 @@ static Img *imgx_take(void *p) {
 #define IMG_SHORTPX  5
 #define IMG_FAILED   6
 #define IMG_TOOBIG   7   /* the decoded image passes IMG_MAX_OUT */
+#define IMG_NOTBNG   8   /* the BNG signature or version did not read */
 /* A ceiling on ONE decoded image. libpng's own limits allow dimensions whose
  * RGBA buffer is tens of gigabytes, and the header declaring them costs the
  * attacker nothing. Unlike the compress bomb this fails SAFELY today -- malloc
@@ -267,5 +269,96 @@ void imgx_jpeg_encode(const unsigned char *pixels, tycho_int plen, tycho_int w, 
     }
     *out = o.buf;
     *outlen = (tycho_int)o.len;
+    *status = IMG_OK;
+}
+
+/* ---- BNG (Better than PNG) ---------------------------------------------- */
+
+void *imgx_bng_decode(const unsigned char *data, tycho_int len, tycho_int premultiplied,
+                      tycho_int *status) {
+    *status = IMG_FAILED;
+    if (len <= 0) { *status = IMG_EMPTY; return NULL; }
+    int w = 0, h = 0;
+    if (!bng_ref_info(data, (size_t)len, &w, &h)) { *status = IMG_NOTBNG; return NULL; }
+    size_t n = (size_t)w * (size_t)h;
+    if (n > IMG_MAX_OUT / 4) { *status = IMG_TOOBIG; return NULL; }
+    size_t nbytes = 4 * n;
+    unsigned char *bgra = (unsigned char *)malloc(nbytes ? nbytes : 1);
+    size_t scratch_len = bng_ref_decode_scratch(w, h);
+    void *scratch = malloc(scratch_len ? scratch_len : 1);
+    if (!bgra || !scratch) { free(bgra); free(scratch); return NULL; }
+    if (!bng_ref_decode(data, (size_t)len, bgra, (size_t)w * 4, nbytes,
+                        scratch, scratch_len)) {
+        free(bgra); free(scratch); *status = IMG_CORRUPT; return NULL;
+    }
+    free(scratch);
+    unsigned char *rgba = (unsigned char *)malloc(nbytes ? nbytes : 1);
+    if (!rgba) { free(bgra); return NULL; }
+    for (size_t i = 0; i < n; i++) {
+        unsigned b = bgra[4 * i + 0];
+        unsigned g = bgra[4 * i + 1];
+        unsigned r = bgra[4 * i + 2];
+        unsigned a = bgra[4 * i + 3];
+        if (!premultiplied && a != 0 && a != 255) {
+            r = (r * 255 + a / 2) / a; if (r > 255) r = 255;
+            g = (g * 255 + a / 2) / a; if (g > 255) g = 255;
+            b = (b * 255 + a / 2) / a; if (b > 255) b = 255;
+        }
+        rgba[4 * i + 0] = (unsigned char)r;
+        rgba[4 * i + 1] = (unsigned char)g;
+        rgba[4 * i + 2] = (unsigned char)b;
+        rgba[4 * i + 3] = (unsigned char)a;
+    }
+    free(bgra);
+    Img *im = (Img *)malloc(sizeof *im);
+    if (!im) { free(rgba); return NULL; }
+    im->w = (tycho_int)w;
+    im->h = (tycho_int)h;
+    im->rgba = rgba;
+    im->nbytes = nbytes;
+    imgx_add(im);
+    *status = IMG_OK;
+    return (void *)(uintptr_t)im->id;
+}
+
+void imgx_bng_encode(const unsigned char *pixels, tycho_int plen, tycho_int w, tycho_int h,
+                     tycho_int premultiplied, tycho_int *status,
+                     unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = IMG_FAILED;
+    if (w <= 0 || h <= 0 || w > 100000 || h > 100000) { *status = IMG_BADDIMS; return; }
+    tycho_int need = w * h * 4;
+    if (plen < need) { *status = IMG_SHORTPX; return; }
+    size_t n = (size_t)w * (size_t)h;
+    if (n > IMG_MAX_OUT / 4) { *status = IMG_TOOBIG; return; }
+    unsigned char *bgra = (unsigned char *)malloc(n ? 4 * n : 1);
+    if (!bgra) return;
+    for (size_t i = 0; i < n; i++) {
+        unsigned r = pixels[4 * i + 0];
+        unsigned g = pixels[4 * i + 1];
+        unsigned b = pixels[4 * i + 2];
+        unsigned a = pixels[4 * i + 3];
+        if (!premultiplied && a != 255) {
+            r = (r * a + 127) / 255;
+            g = (g * a + 127) / 255;
+            b = (b * a + 127) / 255;
+        }
+        bgra[4 * i + 0] = (unsigned char)b;
+        bgra[4 * i + 1] = (unsigned char)g;
+        bgra[4 * i + 2] = (unsigned char)r;
+        bgra[4 * i + 3] = (unsigned char)a;
+    }
+    size_t cap = P4_HEADER + 4 * n;
+    unsigned char *buf = (unsigned char *)malloc(cap);
+    size_t scratch_len = bng_ref_encode_scratch(w, h);
+    void *scratch = malloc(scratch_len ? scratch_len : 1);
+    if (!buf || !scratch) { free(bgra); free(buf); free(scratch); return; }
+    size_t got = bng_ref_encode(bgra, w, h, (size_t)w * 4, buf, cap, scratch, scratch_len);
+    free(bgra);
+    free(scratch);
+    if (!got) { free(buf); return; }
+    *out = buf;
+    *outlen = (tycho_int)got;
     *status = IMG_OK;
 }
