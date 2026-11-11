@@ -1,0 +1,16 @@
+render=[
+| name  | n  |
+|-------|----|
+| alpha | 1  |
+| b     | 22 |
+| only  |    |
+]
+empty=[]
+header=[| a |
+|---|
+]
+wide=[
+| k    |       |
+|------|-------|
+| long | extra |
+]

@@ -1,0 +1,76 @@
+package table
+
+import "core:strings"
+
+struct Table:
+    headers: [string]
+    rows: [[string]]
+
+fn make(headers: [string], rows: [[string]]) -> Table:
+    return Table(headers, rows)
+
+fn _cols(t: Table) -> int:
+    n := len(t.headers)
+    for row in t.rows:
+        if len(row) > n:
+            n = len(row)
+    return n
+
+fn _cell(t: Table, r: int, c: int) -> string:
+    row := t.rows[r]
+    if c < len(row):
+        return row[c]
+    return ""
+
+fn _widths(t: Table) -> [int]:
+    n := _cols(t)
+    widths := []int
+    c := 0
+    for c < n:
+        w := 0
+        if c < len(t.headers):
+            w = len(t.headers[c])
+        r := 0
+        for r < len(t.rows):
+            x := len(_cell(t, r, c))
+            if x > w:
+                w = x
+            r += 1
+        push(widths, w)
+        c += 1
+    return widths
+
+fn _row_line(cells: [string], widths: [int]) -> string:
+    out := "|"
+    i := 0
+    for i < len(widths):
+        s := ""
+        if i < len(cells):
+            s = cells[i]
+        out = out + " " + strings.pad_right(s, widths[i], " ") + " |"
+        i += 1
+    return out + "\n"
+
+# Header, a `|---|` separator, then each row. Missing cells are empty; widths
+# are byte lengths, so non-ASCII text may need a wider column.
+fn render(t: Table) -> string:
+    n := _cols(t)
+    if n == 0:
+        return ""
+    widths := _widths(t)
+    out := _row_line(t.headers, widths)
+    i := 0
+    out = out + "|"
+    for i < n:
+        j := 0
+        for j < widths[i] + 2:
+            out = out + "-"
+            j += 1
+        out = out + "|"
+        i += 1
+    out = out + "\n"
+    r := 0
+    for r < len(t.rows):
+        out = out + _row_line(t.rows[r], widths)
+        r += 1
+    return out

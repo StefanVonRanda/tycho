@@ -1,0 +1,12 @@
+package main
+import "core:table"
+
+fn main():
+    t := table.make(["name", "n"], [["alpha", "1"], ["b", "22"], ["only"]])
+    println("render=[\n" + table.render(t) + "]")
+    e := table.make([]string, [][string])
+    println("empty=[" + table.render(e) + "]")
+    h := table.make(["a"], [][string])
+    println("header=[" + table.render(h) + "]")
+    wide := table.make(["k"], [["long", "extra"]])
+    println("wide=[\n" + table.render(wide) + "]")

@@ -128,6 +128,13 @@ expression-bodied; pass a named function where you need a multi-line body.
   and keeps trailing zeros. `format_int_base(n, base, upper)` and
   `parse_int_base(s, base)` cover bases 2..36 (`parse_int_base` is fail-closed
   like the decimal parser; `format_int_base` handles the minimum int).
+- **`glob`** — shell-style wildcard matching. `matches(pattern, s)` treats `*`
+  and `?` as matching any byte including `/`; `matches_path` stops them at `/`
+  but lets `**` cross it. Both support `[abc]`, `[a-z]` and `[!…]`/`[^…]`
+  classes and a backslash escape.
+- **`table`** — ASCII tables. `make(headers, rows)` then
+  `render(t) -> string`; columns are padded to the widest cell, missing cells
+  render empty, and widths are byte lengths.
 - **`bufio`** — an in-memory reader/writer for parsers and small protocols.
   `Reader` tracks a byte position: `new_reader(s)`, `peek`, `peek_at(r, n)`,
   `read_byte`, `unread`, `skip_ws`, `read_until(r, sep)`, `read_line`

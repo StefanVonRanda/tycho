@@ -1,0 +1,8 @@
+star=true,false,true
+q=true,false
+class=true,false,true,false
+literal=true,false,true
+path1=true,false
+path2=true,true
+path3=true,false
+empty=true,false,true

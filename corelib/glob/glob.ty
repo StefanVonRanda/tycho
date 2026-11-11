@@ -1,0 +1,70 @@
+package glob
+
+fn _class(p: string, at: int, ch: int) -> (bool, int):
+    i := at + 1
+    neg := false
+    if i < len(p) and (p[i] == 33 or p[i] == 94):      # '!' or '^'
+        neg = true
+        i += 1
+    matched := false
+    for i < len(p) and p[i] != 93:                     # ']'
+        if i + 2 < len(p) and p[i + 1] == 45 and p[i + 2] != 93:   # a-z
+            lo := p[i]
+            hi := p[i + 2]
+            if ch >= lo and ch <= hi:
+                matched = true
+            i += 3
+        else:
+            if p[i] == ch:
+                matched = true
+            i += 1
+    if i >= len(p) or p[i] != 93:
+        return (false, at + 1)                         # unmatched '[' is literal
+    if neg:
+        matched = not matched
+    return (matched, i + 1)
+
+fn _m(p: string, pi: int, s: string, si: int, sep: int) -> bool:
+    if pi >= len(p):
+        return si >= len(s)
+    c := p[pi]
+    if c == 42:                                        # '*'
+        j := pi + 1
+        cross := false
+        for j < len(p) and p[j] == 42:
+            cross = true
+            j += 1
+        k := si
+        for true:
+            if _m(p, j, s, k, sep):
+                return true
+            if k >= len(s):
+                return false
+            if sep >= 0 and not cross and s[k] == sep:
+                return false
+            k += 1
+        return false
+    if si >= len(s):
+        return false
+    if c == 63:                                        # '?'
+        if sep >= 0 and s[si] == sep:
+            return false
+        return _m(p, pi + 1, s, si + 1, sep)
+    if c == 91:                                        # '['
+        pair := _class(p, pi, s[si])
+        if pair.1 == pi + 1 and not pair.0:
+            return s[si] == 91 and _m(p, pi + 1, s, si + 1, sep)
+        if not pair.0:
+            return false
+        return _m(p, pair.1, s, si + 1, sep)
+    if c == 92 and pi + 1 < len(p):                    # '\\'
+        return s[si] == p[pi + 1] and _m(p, pi + 2, s, si + 1, sep)
+    return s[si] == c and _m(p, pi + 1, s, si + 1, sep)
+
+# Shell-style wildcard match. `*` and `?` match any byte, including '/'.
+fn matches(pattern: string, s: string) -> bool:
+    return _m(pattern, 0, s, 0, 0 - 1)
+
+# Path-style match: `*` and `?` stop at '/', while `**` crosses it.
+fn matches_path(pattern: string, s: string) -> bool:
+    return _m(pattern, 0, s, 0, 47)

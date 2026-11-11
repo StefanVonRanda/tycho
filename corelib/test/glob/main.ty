@@ -1,0 +1,12 @@
+package main
+import "core:glob"
+
+fn main():
+    println("star=" + str(glob.matches("*.txt", "a.txt")) + "," + str(glob.matches("*.txt", "a.md")) + "," + str(glob.matches("a*", "abc")))
+    println("q=" + str(glob.matches("a?c", "abc")) + "," + str(glob.matches("a?c", "ac")))
+    println("class=" + str(glob.matches("[a-c]x", "bx")) + "," + str(glob.matches("[a-c]x", "dx")) + "," + str(glob.matches("[!0-9]", "x")) + "," + str(glob.matches("[!0-9]", "5")))
+    println("literal=" + str(glob.matches("a\\*b", "a*b")) + "," + str(glob.matches("a\\*b", "axb")) + "," + str(glob.matches("[", "[")))
+    println("path1=" + str(glob.matches_path("src/*.ty", "src/main.ty")) + "," + str(glob.matches_path("src/*.ty", "src/a/main.ty")))
+    println("path2=" + str(glob.matches_path("src/**/*.ty", "src/a/main.ty")) + "," + str(glob.matches_path("src/**", "src/a/b")))
+    println("path3=" + str(glob.matches("*", "a/b")) + "," + str(glob.matches_path("*", "a/b")))
+    println("empty=" + str(glob.matches("", "")) + "," + str(glob.matches("", "a")) + "," + str(glob.matches("*", "")))
