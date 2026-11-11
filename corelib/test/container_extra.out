@@ -1,0 +1,23 @@
+avl_keys=1,2,3,5,7,8,9,10,11,12
+avl_get=v3,none
+avl_contains=true,false
+avl_first_last=1,12
+avl_remove=true,false
+avl_keys2=1,3,5,7,8,9,10,11,12 len=9
+hm=a,b
+hm_valid=true,false
+hm_remove=true,false
+hm_valid2=false len=1
+hm_reuse=true stale=false
+sa_push=true,false
+sa_len=16 cap=16 space=0
+sa_get=1,none
+sa_set=true,false
+sa_pop=16 len=15
+sa_clear=0
+xar_get=a,b
+xar_remove=true,false
+xar_reuse=true get=c
+xar_set=true,true
+xar_len=2
+xar_clear=0

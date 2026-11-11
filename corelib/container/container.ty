@@ -577,3 +577,372 @@ fn topo_sort(n: int, edges: [(int, int)]) -> Result([int], TopoErr):
     if len(out) != n:
         return Err(Cycle)
     return Ok(out)
+
+# ---- AVL tree (ordered key/value map) ----
+struct Avl($K, $V):
+    less: fn($K, $K) -> bool
+    keys: [$K]
+    vals: [$V]
+    left: [int]
+    right: [int]
+    height: [int]
+    root: int
+    count: int
+
+fn make_avl(less: fn($K, $K) -> bool, sample: $V) -> Avl($K, $V):
+    ks: [$K] = []
+    vs: [$V] = []
+    l := []int
+    r := []int
+    h := []int
+    return Avl(less, ks, vs, l, r, h, -1, 0)
+
+fn _avl_height(t: Avl($K, $V), i: int) -> int:
+    if i < 0:
+        return 0
+    return t.height[i]
+
+fn _avl_update(t: inout Avl($K, $V), i: int):
+    lh := _avl_height(t, t.left[i])
+    rh := _avl_height(t, t.right[i])
+    mh := lh
+    if rh > mh:
+        mh = rh
+    t.height[i] = 1 + mh
+
+fn _avl_balance(t: Avl($K, $V), i: int) -> int:
+    return _avl_height(t, t.left[i]) - _avl_height(t, t.right[i])
+
+fn _avl_rot_right(t: inout Avl($K, $V), y: int) -> int:
+    x := t.left[y]
+    t.left[y] = t.right[x]
+    t.right[x] = y
+    _avl_update(&t, y)
+    _avl_update(&t, x)
+    return x
+
+fn _avl_rot_left(t: inout Avl($K, $V), x: int) -> int:
+    y := t.right[x]
+    t.right[x] = t.left[y]
+    t.left[y] = x
+    _avl_update(&t, x)
+    _avl_update(&t, y)
+    return y
+
+fn _avl_rebalance(t: inout Avl($K, $V), i: int) -> int:
+    _avl_update(&t, i)
+    b := _avl_balance(t, i)
+    if b > 1:
+        if _avl_balance(t, t.left[i]) < 0:
+            t.left[i] = _avl_rot_left(&t, t.left[i])
+        return _avl_rot_right(&t, i)
+    if b < 0 - 1:
+        if _avl_balance(t, t.right[i]) > 0:
+            t.right[i] = _avl_rot_right(&t, t.right[i])
+        return _avl_rot_left(&t, i)
+    return i
+
+fn _avl_alloc(t: inout Avl($K, $V), k: $K, v: $V) -> int:
+    i := len(t.keys)
+    push(t.keys, k)
+    push(t.vals, v)
+    push(t.left, -1)
+    push(t.right, -1)
+    push(t.height, 1)
+    return i
+
+fn _avl_insert(t: inout Avl($K, $V), node: int, k: $K, v: $V) -> (int, bool):
+    if node < 0:
+        return (_avl_alloc$(K, V)(&t, k, v), true)
+    if t.less(k, t.keys[node]):
+        pair := _avl_insert$(K, V)(&t, t.left[node], k, v)
+        t.left[node] = pair.0
+        if pair.1:
+            node = _avl_rebalance$(K, V)(&t, node)
+        return node, pair.1
+    if t.less(t.keys[node], k):
+        pair := _avl_insert$(K, V)(&t, t.right[node], k, v)
+        t.right[node] = pair.0
+        if pair.1:
+            node = _avl_rebalance$(K, V)(&t, node)
+        return node, pair.1
+    t.vals[node] = v
+    return node, false
+
+fn avl_put(t: inout Avl($K, $V), k: $K, v: $V):
+    pair := _avl_insert$(K, V)(&t, t.root, k, v)
+    t.root = pair.0
+    if pair.1:
+        t.count += 1
+
+fn avl_get(t: Avl($K, $V), k: $K) -> Option($V):
+    node := t.root
+    for node >= 0:
+        if t.less(k, t.keys[node]):
+            node = t.left[node]
+        elif t.less(t.keys[node], k):
+            node = t.right[node]
+        else:
+            return Some(t.vals[node])
+    return None
+
+fn avl_contains(t: Avl($K, $V), k: $K) -> bool:
+    match avl_get(t, k):
+        Some(_): return true
+        None: return false
+
+fn _avl_min(t: Avl($K, $V), node: int) -> int:
+    for t.left[node] >= 0:
+        node = t.left[node]
+    return node
+
+fn _avl_remove_min(t: inout Avl($K, $V), node: int) -> (int, $K, $V):
+    if t.left[node] < 0:
+        return t.right[node], t.keys[node], t.vals[node]
+    tri := _avl_remove_min$(K, V)(&t, t.left[node])
+    t.left[node] = tri.0
+    node = _avl_rebalance$(K, V)(&t, node)
+    return node, tri.1, tri.2
+
+fn _avl_remove(t: inout Avl($K, $V), node: int, k: $K) -> (int, bool):
+    if node < 0:
+        return node, false
+    if t.less(k, t.keys[node]):
+        pair := _avl_remove$(K, V)(&t, t.left[node], k)
+        t.left[node] = pair.0
+        if pair.1:
+            node = _avl_rebalance$(K, V)(&t, node)
+        return node, pair.1
+    if t.less(t.keys[node], k):
+        pair := _avl_remove$(K, V)(&t, t.right[node], k)
+        t.right[node] = pair.0
+        if pair.1:
+            node = _avl_rebalance$(K, V)(&t, node)
+        return node, pair.1
+    if t.left[node] < 0:
+        return t.right[node], true
+    if t.right[node] < 0:
+        return t.left[node], true
+    tri := _avl_remove_min$(K, V)(&t, t.right[node])
+    t.right[node] = tri.0
+    t.keys[node] = tri.1
+    t.vals[node] = tri.2
+    node = _avl_rebalance$(K, V)(&t, node)
+    return node, true
+
+fn avl_remove(t: inout Avl($K, $V), k: $K) -> bool:
+    pair := _avl_remove$(K, V)(&t, t.root, k)
+    t.root = pair.0
+    if pair.1:
+        t.count -= 1
+    return pair.1
+
+fn avl_len(t: Avl($K, $V)) -> int:
+    return t.count
+
+fn avl_empty(t: Avl($K, $V)) -> bool:
+    return t.count == 0
+
+fn _avl_keys(t: Avl($K, $V), node: int, out: inout [$K]):
+    if node < 0:
+        return
+    _avl_keys$(K, V)(t, t.left[node], out)
+    push(out, t.keys[node])
+    _avl_keys$(K, V)(t, t.right[node], out)
+
+fn avl_keys(t: Avl($K, $V)) -> [$K]:
+    out: [$K] = []
+    _avl_keys(t, t.root, &out)
+    return out
+
+fn avl_first_key(t: Avl($K, $V)) -> Option($K):
+    if t.root < 0:
+        return None
+    return Some(t.keys[_avl_min(t, t.root)])
+
+fn avl_last_key(t: Avl($K, $V)) -> Option($K):
+    if t.root < 0:
+        return None
+    node := t.root
+    for t.right[node] >= 0:
+        node = t.right[node]
+    return Some(t.keys[node])
+
+fn avl_clear(t: inout Avl($K, $V)):
+    t.keys = t.keys[0:0]
+    t.vals = t.vals[0:0]
+    t.left = t.left[0:0]
+    t.right = t.right[0:0]
+    t.height = t.height[0:0]
+    t.root = -1
+    t.count = 0
+
+# ---- handle map: stable integer handles with generation checks ----
+struct HandleMap($V):
+    slots: [Option($V)]
+    gens: [int]
+    free: [int]
+    count: int
+
+fn make_handle_map(sample: $V) -> HandleMap($V):
+    s: [Option($V)] = []
+    g := []int
+    f := []int
+    return HandleMap(s, g, f, 0)
+
+fn _handle_index(h: int) -> int:
+    return h / 4294967296
+
+fn _handle_gen(h: int) -> int:
+    return h % 4294967296
+
+fn handle_map_add(m: inout HandleMap($V), item: $V) -> int:
+    idx := 0 - 1
+    if len(m.free) > 0:
+        idx = pop(m.free)
+        m.gens[idx] += 1
+        m.slots[idx] = Some(item)
+    else:
+        idx = len(m.slots)
+        push(m.slots, Some(item))
+        push(m.gens, 1)
+    m.count += 1
+    return idx * 4294967296 + m.gens[idx]
+
+fn handle_map_get(m: HandleMap($V), h: int) -> Option($V):
+    idx := _handle_index(h)
+    if idx < 0 or idx >= len(m.slots):
+        return None
+    if m.gens[idx] != _handle_gen(h):
+        return None
+    return m.slots[idx]
+
+fn handle_map_valid(m: HandleMap($V), h: int) -> bool:
+    match handle_map_get(m, h):
+        Some(_): return true
+        None: return false
+
+fn handle_map_remove(m: inout HandleMap($V), h: int) -> bool:
+    idx := _handle_index(h)
+    if idx < 0 or idx >= len(m.slots):
+        return false
+    if m.gens[idx] != _handle_gen(h):
+        return false
+    match m.slots[idx]:
+        Some(_):
+            m.slots[idx] = None
+            push(m.free, idx)
+            m.count -= 1
+            return true
+        None:
+            return false
+
+fn handle_map_len(m: HandleMap($V)) -> int:
+    return m.count
+
+fn handle_map_clear(m: inout HandleMap($V)):
+    m.slots = m.slots[0:0]
+    m.gens = m.gens[0:0]
+    m.free = m.free[0:0]
+    m.count = 0
+
+# ---- small array: fixed inline capacity ----
+const SMALL_ARRAY_CAP = 16
+
+struct SmallArray($T):
+    data: bounded[16]$T
+
+fn make_small_array(sample: $T) -> SmallArray($T):
+    d: bounded[16]$T = []
+    return SmallArray(d)
+
+fn small_array_len(a: SmallArray($T)) -> int:
+    return len(a.data)
+
+fn small_array_cap(a: SmallArray($T)) -> int:
+    return SMALL_ARRAY_CAP
+
+fn small_array_space(a: SmallArray($T)) -> int:
+    return SMALL_ARRAY_CAP - len(a.data)
+
+fn small_array_push(a: inout SmallArray($T), v: $T) -> bool:
+    if len(a.data) >= SMALL_ARRAY_CAP:
+        return false
+    push(a.data, v)
+    return true
+
+fn small_array_pop(a: inout SmallArray($T)) -> Option($T):
+    if len(a.data) == 0:
+        return None
+    return Some(pop(a.data))
+
+fn small_array_get(a: SmallArray($T), i: int) -> Option($T):
+    if i < 0 or i >= len(a.data):
+        return None
+    return Some(a.data[i])
+
+fn small_array_set(a: inout SmallArray($T), i: int, v: $T) -> bool:
+    if i < 0 or i >= len(a.data):
+        return false
+    a.data[i] = v
+    return true
+
+fn small_array_clear(a: inout SmallArray($T)):
+    a.data = a.data[0:0]
+
+# ---- xar: freelist-backed sparse array ----
+struct Xar($T):
+    slots: [Option($T)]
+    free: [int]
+    count: int
+
+fn make_xar(sample: $T) -> Xar($T):
+    s: [Option($T)] = []
+    f := []int
+    return Xar(s, f, 0)
+
+fn xar_add(x: inout Xar($T), item: $T) -> int:
+    idx := 0 - 1
+    if len(x.free) > 0:
+        idx = pop(x.free)
+        x.slots[idx] = Some(item)
+    else:
+        idx = len(x.slots)
+        push(x.slots, Some(item))
+    x.count += 1
+    return idx
+
+fn xar_get(x: Xar($T), i: int) -> Option($T):
+    if i < 0 or i >= len(x.slots):
+        return None
+    return x.slots[i]
+
+fn xar_set(x: inout Xar($T), i: int, item: $T) -> bool:
+    if i < 0 or i >= len(x.slots):
+        return false
+    match x.slots[i]:
+        Some(_):
+            x.slots[i] = Some(item)
+            return true
+        None:
+            return false
+
+fn xar_remove(x: inout Xar($T), i: int) -> bool:
+    if i < 0 or i >= len(x.slots):
+        return false
+    match x.slots[i]:
+        Some(_):
+            x.slots[i] = None
+            push(x.free, i)
+            x.count -= 1
+            return true
+        None:
+            return false
+
+fn xar_len(x: Xar($T)) -> int:
+    return x.count
+
+fn xar_clear(x: inout Xar($T)):
+    x.slots = x.slots[0:0]
+    x.free = x.free[0:0]
+    x.count = 0

@@ -1,0 +1,80 @@
+package main
+import "core:container"
+
+fn less_int(a: int, b: int) -> bool:
+    return a < b
+
+fn list_int(xs: [int]) -> string:
+    out := ""
+    for x in xs:
+        if out != "":
+            out = out + ","
+        out = out + str(x)
+    return out
+
+fn opt_str(o: Option(string)) -> string:
+    match o:
+        Some(v): return v
+        None: return "none"
+
+fn opt_int(o: Option(int)) -> string:
+    match o:
+        Some(v): return str(v)
+        None: return "none"
+
+fn main():
+    a := container.make_avl(less_int, "")
+    for k in [5, 2, 8, 1, 3, 7, 9, 10, 11, 12]:
+        container.avl_put(&a, k, "v" + str(k))
+    println("avl_keys=" + list_int(container.avl_keys(a)))
+    println("avl_get=" + opt_str(container.avl_get(a, 3)) + "," + opt_str(container.avl_get(a, 4)))
+    println("avl_contains=" + str(container.avl_contains(a, 8)) + "," + str(container.avl_contains(a, 4)))
+    println("avl_first_last=" + opt_int(container.avl_first_key(a)) + "," + opt_int(container.avl_last_key(a)))
+    ar1 := container.avl_remove(&a, 2)
+    ar2 := container.avl_remove(&a, 2)
+    println("avl_remove=" + str(ar1) + "," + str(ar2))
+    println("avl_keys2=" + list_int(container.avl_keys(a)) + " len=" + str(container.avl_len(a)))
+
+    hm := container.make_handle_map("")
+    h1 := container.handle_map_add(&hm, "a")
+    h2 := container.handle_map_add(&hm, "b")
+    println("hm=" + opt_str(container.handle_map_get(hm, h1)) + "," + opt_str(container.handle_map_get(hm, h2)))
+    println("hm_valid=" + str(container.handle_map_valid(hm, h1)) + "," + str(container.handle_map_valid(hm, h1 + 1)))
+    hr1 := container.handle_map_remove(&hm, h1)
+    hr2 := container.handle_map_remove(&hm, h1)
+    println("hm_remove=" + str(hr1) + "," + str(hr2))
+    println("hm_valid2=" + str(container.handle_map_valid(hm, h1)) + " len=" + str(container.handle_map_len(hm)))
+    h3 := container.handle_map_add(&hm, "c")
+    println("hm_reuse=" + str(container.handle_map_get(hm, h3) == Some("c")) + " stale=" + str(container.handle_map_valid(hm, h1)))
+
+    sa := container.make_small_array(0)
+    ok := true
+    for i := 0; i < 16; i += 1:
+        if not container.small_array_push(&sa, i + 1):
+            ok = false
+    println("sa_push=" + str(ok) + "," + str(container.small_array_push(&sa, 17)))
+    println("sa_len=" + str(container.small_array_len(sa)) + " cap=" + str(container.small_array_cap(sa)) + " space=" + str(container.small_array_space(sa)))
+    println("sa_get=" + opt_int(container.small_array_get(sa, 0)) + "," + opt_int(container.small_array_get(sa, 16)))
+    ss1 := container.small_array_set(&sa, 0, 99)
+    ss2 := container.small_array_set(&sa, 16, 1)
+    println("sa_set=" + str(ss1) + "," + str(ss2))
+    sp := container.small_array_pop(&sa)
+    println("sa_pop=" + opt_int(sp) + " len=" + str(container.small_array_len(sa)))
+    container.small_array_clear(&sa)
+    println("sa_clear=" + str(container.small_array_len(sa)))
+
+    x := container.make_xar("")
+    i1 := container.xar_add(&x, "a")
+    i2 := container.xar_add(&x, "b")
+    println("xar_get=" + opt_str(container.xar_get(x, i1)) + "," + opt_str(container.xar_get(x, i2)))
+    xr1 := container.xar_remove(&x, i1)
+    xr2 := container.xar_remove(&x, i1)
+    println("xar_remove=" + str(xr1) + "," + str(xr2))
+    i3 := container.xar_add(&x, "c")
+    println("xar_reuse=" + str(i3 == i1) + " get=" + opt_str(container.xar_get(x, i3)))
+    xs1 := container.xar_set(&x, i3, "cc")
+    xs2 := container.xar_set(&x, i1, "x")
+    println("xar_set=" + str(xs1) + "," + str(xs2))
+    println("xar_len=" + str(container.xar_len(x)))
+    container.xar_clear(&x)
+    println("xar_clear=" + str(container.xar_len(x)))

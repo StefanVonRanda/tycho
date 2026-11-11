@@ -302,8 +302,21 @@ expression-bodied; pass a named function where you need a multi-line body.
   `treap_empty`, `treap_keys` (in-order), `treap_first_key`, `treap_last_key`
   and `treap_clear`. `topo_sort(n, edges) -> Result([int], TopoErr)` is Kahn's
   deterministic topological sort (`Cycle` on a cycle or an out-of-range edge).
-  Every container is a deep value: copying one gives an independent container. `core:pool` is the
-  generational handle-map equivalent.
+  `Avl` is a balanced ordered map: `make_avl(less, sample)` (the sample only
+  fixes the value type), `avl_put`, `avl_get`, `avl_contains`, `avl_remove`,
+  `avl_len`, `avl_empty`, `avl_keys` (in-order), `avl_first_key`,
+  `avl_last_key` and `avl_clear`.
+  `HandleMap` is a generation-checked sparse map: `make_handle_map(sample)`,
+  `handle_map_add` (returns an int handle), `handle_map_get`, `handle_map_valid`,
+  `handle_map_remove`, `handle_map_len` and `handle_map_clear`; removing a handle
+  invalidates it even when its slot is reused. `SmallArray` is an inline
+  fixed-capacity array of 16: `make_small_array(sample)`, `small_array_len`,
+  `small_array_cap`, `small_array_space`, `small_array_push` (false when full),
+  `small_array_pop`, `small_array_get`, `small_array_set` and `small_array_clear`.
+  `Xar` is a freelist-backed sparse array: `make_xar(sample)`, `xar_add` (returns
+  an index), `xar_get`, `xar_set`, `xar_remove`, `xar_len` and `xar_clear`.
+  Every container is a deep value: copying one gives an independent container. `core:pool` remains
+  the arena-friendly node pool; `HandleMap` is the integer-handle map.
 - **`sync`** — pthreads/Win32 primitives and C11 atomics, for state shared by
   `spawn`/`parallel for` tasks. Every object is a C-owned `ptr` handle with an
   explicit free; free only after every task that uses it has been joined. All
