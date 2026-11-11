@@ -632,6 +632,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   (every column read as text), `errmsg(db)`. Parameters bind as text and
   coerce; fail-closed with sqlite's own messages.
   `exec_params(&d, sql, params)` is the parameter-binding form of `exec`, returning the affected-row count.
+- **`debug`** — diagnostics: `assert(cond, msg)` aborts with `debug: <msg>`,
+  `trace(msg)` writes `[debug] ...` to stderr, `enabled()` reads `TYCHO_DEBUG`,
+  and `stack_trace()` returns the platform's symbolized frames (addresses are
+  process-specific).
 - **`log`** — a leveled logger, state threaded like `core:rand`'s:
   `l := log.init(log.level_info(), false)`, then `log.debug/info/warn/error(&l,
   msg)` — each prints `[level] message`, dropping messages below the logger's

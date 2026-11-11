@@ -1,0 +1,4 @@
+[debug] hello
+assert=ok
+stack_nonempty=true
+enabled_len_ok=true

@@ -1,0 +1,9 @@
+package main
+import "core:debug"
+
+fn main():
+    debug.assert(true, "this must not fire")
+    debug.trace("hello")
+    println("assert=ok")
+    println("stack_nonempty=" + str(len(debug.stack_trace()) > 0))
+    println("enabled_len_ok=" + str(debug.enabled() == (len(getenv("TYCHO_DEBUG")) > 0)))

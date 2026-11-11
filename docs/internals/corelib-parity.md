@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 78 packages, ~15.1k lines, 975 locked
+lines). The current Tycho corelib is 79 packages, ~15.2k lines, 979 locked
 public functions.
 
 Status values:
@@ -25,7 +25,7 @@ Status values:
 | `compress` | partial | gzip/zlib via zlib: `compress`, `decompress`, `raw_compress`, `raw_decompress` | split gzip/zlib framing, add LZ4 and a streaming API |
 | `container` | partial | `Deque`/`Queue`, `PriorityQueue`, `BitArray`, `Lru`, ordered `Treap`, `topo_sort`; `pool` covers generational handles | small array (fixed arrays cover it) |
 | `crypto` | partial | OpenSSL shims: ChaCha20-Poly1305 and AES-GCM AEAD, AES-CTR, AES-CBC, RSA PKCS#1 v1.5, ECDSA P-256, Ed25519, X25519, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, Argon2id, CSPRNG; ASN.1 DER/BER and X.509 parsing/verification in their own packages | post-quantum algorithms (ML-KEM/ML-DSA) only if the OpenSSL provider exposes them |
-| `debug` | partial | runtime traps and `tycho-debug bt`; no library API | `trace`, stack-trace capture, assertion helpers |
+| `debug` | partial | `assert`, `trace`, `enabled`, `stack_trace`; runtime traps and `tycho-debug bt` | PE introspection |
 | `diff` | covered | `diff.lines` and `diff.unified` (LCS, bounded fallback) | none |
 | `dynlib` | partial | `open`, `symbol`, `close_lib` over `dlopen`/`LoadLibrary` | function-pointer invocation (Tycho has no callbacks into Tycho) |
 | `encoding` | partial | `base64`, `base32`, `hex`, `json`, `csv`, `uuid`, `pem`, `ini`, `varint`, `endian`, `xml`, `cbor`, `asn1` | entity tables, hxa |

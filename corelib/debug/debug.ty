@@ -1,0 +1,21 @@
+package debug
+
+extern fn dbgx_stack() -> string
+
+# Abort with `debug: <msg>` when `cond` is false.
+fn assert(cond: bool, msg: string):
+    if not cond:
+        die("debug: " + msg)
+
+# Write one `[debug] ...` line to stderr. Always on: gate calls with enabled().
+fn trace(msg: string):
+    eprintln("[debug] " + msg)
+
+# TYCHO_DEBUG set to a non-empty value.
+fn enabled() -> bool:
+    return len(getenv("TYCHO_DEBUG")) > 0
+
+# Symbolized frames where the platform provides them, one per line. Addresses
+# are process-specific and are for diagnostics, not stable output.
+fn stack_trace() -> string:
+    return dbgx_stack()
