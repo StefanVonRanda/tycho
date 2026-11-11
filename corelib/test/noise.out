@@ -1,0 +1,8 @@
+deterministic=true
+seed_differs=true
+range=true,true,true
+smooth=true
+continuity=true
+perlin_range=true perlin_det=true
+fbm_range=true fbm_det=true zero=true
+fbm3_range=true

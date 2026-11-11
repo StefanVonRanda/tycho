@@ -1,0 +1,142 @@
+package noise
+
+fn _mix(h0: int) -> int:
+    h := h0
+    h = h ^ (h >> 16)
+    h = h * 2246822519
+    h = h ^ (h >> 13)
+    h = h * 3266489917
+    h = h ^ (h >> 16)
+    return h
+
+fn _hash1(i: int, seed: int) -> int:
+    return _mix(i * 374761393 + seed * 668265263)
+
+fn _hash2(i: int, j: int, seed: int) -> int:
+    return _mix(i * 374761393 + j * 668265263 + seed * 1442695041)
+
+fn _hash3(i: int, j: int, k: int, seed: int) -> int:
+    return _mix(i * 374761393 + j * 668265263 + k * 2246822519 + seed * 1442695041)
+
+fn _unit(h: int) -> float:
+    return to_float(h & 65535) / 32767.5 - 1.0
+
+fn _smooth(t: float) -> float:
+    return t * t * (3.0 - 2.0 * t)
+
+fn value1(x: float, seed: int) -> float:
+    i := to_int(floor(x))
+    f := x - floor(x)
+    a := _unit(_hash1(i, seed))
+    b := _unit(_hash1(i + 1, seed))
+    return a + (b - a) * _smooth(f)
+
+fn value2(x: float, y: float, seed: int) -> float:
+    xi := to_int(floor(x))
+    yi := to_int(floor(y))
+    xf := x - floor(x)
+    yf := y - floor(y)
+    u := _smooth(xf)
+    v := _smooth(yf)
+    a := _unit(_hash2(xi, yi, seed))
+    b := _unit(_hash2(xi + 1, yi, seed))
+    c := _unit(_hash2(xi, yi + 1, seed))
+    d := _unit(_hash2(xi + 1, yi + 1, seed))
+    top := a + (b - a) * u
+    bot := c + (d - c) * u
+    return top + (bot - top) * v
+
+fn value3(x: float, y: float, z: float, seed: int) -> float:
+    xi := to_int(floor(x))
+    yi := to_int(floor(y))
+    zi := to_int(floor(z))
+    xf := x - floor(x)
+    yf := y - floor(y)
+    zf := z - floor(z)
+    u := _smooth(xf)
+    v := _smooth(yf)
+    w := _smooth(zf)
+    a := _unit(_hash3(xi, yi, zi, seed))
+    b := _unit(_hash3(xi + 1, yi, zi, seed))
+    c := _unit(_hash3(xi, yi + 1, zi, seed))
+    d := _unit(_hash3(xi + 1, yi + 1, zi, seed))
+    e := _unit(_hash3(xi, yi, zi + 1, seed))
+    f := _unit(_hash3(xi + 1, yi, zi + 1, seed))
+    g := _unit(_hash3(xi, yi + 1, zi + 1, seed))
+    h := _unit(_hash3(xi + 1, yi + 1, zi + 1, seed))
+    x00 := a + (b - a) * u
+    x10 := c + (d - c) * u
+    x01 := e + (f - e) * u
+    x11 := g + (h - g) * u
+    y0 := x00 + (x10 - x00) * v
+    y1 := x01 + (x11 - x01) * v
+    return y0 + (y1 - y0) * w
+
+fn _grad(h: int, x: float, y: float) -> float:
+    g := h & 7
+    if g == 0:
+        return x + y
+    if g == 1:
+        return 0.0 - x + y
+    if g == 2:
+        return x - y
+    if g == 3:
+        return 0.0 - x - y
+    if g == 4:
+        return x
+    if g == 5:
+        return 0.0 - x
+    if g == 6:
+        return y
+    return 0.0 - y
+
+fn perlin2(x: float, y: float, seed: int) -> float:
+    xi := to_int(floor(x))
+    yi := to_int(floor(y))
+    xf := x - floor(x)
+    yf := y - floor(y)
+    u := _smooth(xf)
+    v := _smooth(yf)
+    a := _grad(_hash2(xi, yi, seed), xf, yf)
+    b := _grad(_hash2(xi + 1, yi, seed), xf - 1.0, yf)
+    c := _grad(_hash2(xi, yi + 1, seed), xf, yf - 1.0)
+    d := _grad(_hash2(xi + 1, yi + 1, seed), xf - 1.0, yf - 1.0)
+    top := a + (b - a) * u
+    bot := c + (d - c) * u
+    return top + (bot - top) * v
+
+fn fbm2(x: float, y: float, octaves: int, lacunarity: float, gain: float, seed: int) -> float:
+    if octaves <= 0:
+        return 0.0
+    sum := 0.0
+    amp := 1.0
+    freq := 1.0
+    norm := 0.0
+    i := 0
+    for i < octaves:
+        sum = sum + value2(x * freq, y * freq, seed + i) * amp
+        norm = norm + amp
+        amp = amp * gain
+        freq = freq * lacunarity
+        i += 1
+    if norm == 0.0:
+        return 0.0
+    return sum / norm
+
+fn fbm3(x: float, y: float, z: float, octaves: int, lacunarity: float, gain: float, seed: int) -> float:
+    if octaves <= 0:
+        return 0.0
+    sum := 0.0
+    amp := 1.0
+    freq := 1.0
+    norm := 0.0
+    i := 0
+    for i < octaves:
+        sum = sum + value3(x * freq, y * freq, z * freq, seed + i) * amp
+        norm = norm + amp
+        amp = amp * gain
+        freq = freq * lacunarity
+        i += 1
+    if norm == 0.0:
+        return 0.0
+    return sum / norm

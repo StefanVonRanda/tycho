@@ -183,6 +183,16 @@ expression-bodied; pass a named function where you need a multi-line body.
   write inside the root. `resolve_under` narrows that window to an attacker with
   write access inside the root; a fully race-free form would need the open done
   inside the check.
+- **`complex`** — a float `Complex{re, im}`: `make`, `add`, `sub`, `neg`,
+  `scale`, `mul`, `div`, `conj`, `abs2`, `abs`, `arg`, `exp` and `log`
+  (trig/exp/hypot through `core:fmath`).
+- **`fixed`** — signed Q16.16 fixed point (`Fixed`): `from_int`, `from_float`,
+  `as_float`, `to_int_trunc`, `zero`, `one`, `add`, `sub`, `neg`, `abs`, `mul`,
+  `div`, `floor_fixed`, `frac`, `round`, `sign`.
+- **`noise`** — deterministic value noise: `value1(x, seed)`,
+  `value2(x, y, seed)`, `value3(x, y, z, seed)` in `[-1, 1]`, gradient
+  `perlin2(x, y, seed)`, and `fbm2`/`fbm3` with octaves, lacunarity, gain and
+  seed.
 - **`linalg`** — float vectors and 4×4 matrices. `Vec2`/`Vec3`/`Vec4` with
   `vec2`/`vec3`/`vec4`, `add2`/`add3`/`add4`, `sub2`/`sub3`/`sub4`,
   `scale2`/`scale3`/`scale4`, `dot2`/`dot3`/`dot4`, `length2`/`length3`/`length4`,

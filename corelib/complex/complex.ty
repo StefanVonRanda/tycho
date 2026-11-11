@@ -1,0 +1,50 @@
+package complex
+
+import "core:fmath"
+
+struct Complex:
+    re: float
+    im: float
+
+fn make(re: float, im: float) -> Complex:
+    return Complex(re, im)
+
+fn add(a: Complex, b: Complex) -> Complex:
+    return Complex(a.re + b.re, a.im + b.im)
+
+fn sub(a: Complex, b: Complex) -> Complex:
+    return Complex(a.re - b.re, a.im - b.im)
+
+fn neg(a: Complex) -> Complex:
+    return Complex(0.0 - a.re, 0.0 - a.im)
+
+fn scale(a: Complex, s: float) -> Complex:
+    return Complex(a.re * s, a.im * s)
+
+fn mul(a: Complex, b: Complex) -> Complex:
+    return Complex(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re)
+
+fn div(a: Complex, b: Complex) -> Complex:
+    d := b.re * b.re + b.im * b.im
+    if d == 0.0:
+        die("complex.div: division by zero")
+    return Complex((a.re * b.re + a.im * b.im) / d, (a.im * b.re - a.re * b.im) / d)
+
+fn conj(a: Complex) -> Complex:
+    return Complex(a.re, 0.0 - a.im)
+
+fn abs2(a: Complex) -> float:
+    return a.re * a.re + a.im * a.im
+
+fn abs(a: Complex) -> float:
+    return fmath.hypot(a.re, a.im)
+
+fn arg(a: Complex) -> float:
+    return fmath.atan2(a.im, a.re)
+
+fn exp(a: Complex) -> Complex:
+    r := fmath.exp(a.re)
+    return Complex(r * fmath.cos(a.im), r * fmath.sin(a.im))
+
+fn log(a: Complex) -> Complex:
+    return Complex(fmath.log(abs(a)), arg(a))

@@ -1,0 +1,10 @@
+tofloat=true
+add=true
+sub=true
+mul=true
+div=true
+neg=true abs=true
+floor=true frac=true
+round=true neground=true
+int=true one=true zero=true
+sign=-1,0,1

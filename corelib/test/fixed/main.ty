@@ -1,0 +1,21 @@
+package main
+
+import "core:fixed"
+import "core:fmath"
+
+fn near(a: float, b: float) -> bool:
+    return fmath.approx_eq(a, b, 0.00001)
+
+fn main():
+    a := fixed.from_float(1.5)
+    b := fixed.from_float(2.25)
+    println("tofloat=" + str(near(fixed.as_float(a), 1.5)))
+    println("add=" + str(near(fixed.as_float(fixed.add(a, b)), 3.75)))
+    println("sub=" + str(near(fixed.as_float(fixed.sub(b, a)), 0.75)))
+    println("mul=" + str(near(fixed.as_float(fixed.mul(a, b)), 3.375)))
+    println("div=" + str(near(fixed.as_float(fixed.div(b, a)), 1.5)))
+    println("neg=" + str(near(fixed.as_float(fixed.neg(a)), 0.0 - 1.5)) + " abs=" + str(near(fixed.as_float(fixed.abs(fixed.neg(a))), 1.5)))
+    println("floor=" + str(fixed.to_int_trunc(fixed.floor_fixed(fixed.from_float(2.75))) == 2) + " frac=" + str(near(fixed.as_float(fixed.frac(fixed.from_float(2.75))), 0.75)))
+    println("round=" + str(fixed.to_int_trunc(fixed.round(fixed.from_float(2.5))) == 3) + " neground=" + str(fixed.to_int_trunc(fixed.round(fixed.from_float(0.0 - 2.5))) == 0 - 3))
+    println("int=" + str(fixed.as_float(fixed.from_int(7)) == 7.0) + " one=" + str(fixed.as_float(fixed.one()) == 1.0) + " zero=" + str(fixed.as_float(fixed.zero()) == 0.0))
+    println("sign=" + str(fixed.sign(fixed.neg(a))) + "," + str(fixed.sign(fixed.zero())) + "," + str(fixed.sign(a)))

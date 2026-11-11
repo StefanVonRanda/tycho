@@ -1,0 +1,23 @@
+package main
+
+import "core:noise"
+
+fn in_range(v: float) -> bool:
+    return v >= 0.0 - 1.0 and v <= 1.0
+
+fn main():
+    println("deterministic=" + str(noise.value2(1.25, 2.5, 7) == noise.value2(1.25, 2.5, 7)))
+    println("seed_differs=" + str(noise.value2(1.25, 2.5, 7) != noise.value2(1.25, 2.5, 8)))
+    v1 := noise.value1(3.5, 9)
+    v2 := noise.value2(3.5, 4.5, 9)
+    v3 := noise.value3(3.5, 4.5, 5.5, 9)
+    println("range=" + str(in_range(v1)) + "," + str(in_range(v2)) + "," + str(in_range(v3)))
+    println("smooth=" + str(noise.value2(0.5, 0.5, 1) >= 0.0 - 1.0))
+    slope := noise.value2(0.5001, 0.5, 1) - noise.value2(0.5, 0.5, 1)
+    println("continuity=" + str(slope > 0.0 - 0.01 and slope < 0.01))
+    p := noise.perlin2(0.75, 1.25, 3)
+    println("perlin_range=" + str(in_range(p)) + " perlin_det=" + str(p == noise.perlin2(0.75, 1.25, 3)))
+    f := noise.fbm2(0.5, 0.5, 5, 2.0, 0.5, 11)
+    println("fbm_range=" + str(in_range(f)) + " fbm_det=" + str(f == noise.fbm2(0.5, 0.5, 5, 2.0, 0.5, 11)) + " zero=" + str(noise.fbm2(0.5, 0.5, 0, 2.0, 0.5, 11) == 0.0))
+    g := noise.fbm3(0.5, 0.5, 0.5, 4, 2.0, 0.5, 13)
+    println("fbm3_range=" + str(in_range(g)))

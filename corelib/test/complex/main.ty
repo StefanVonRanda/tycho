@@ -1,0 +1,25 @@
+package main
+
+import "core:complex"
+import "core:fmath"
+
+fn near(a: float, b: float) -> bool:
+    return fmath.approx_eq(a, b, 0.00001)
+
+fn main():
+    a := complex.make(1.0, 2.0)
+    b := complex.make(3.0, 0.0 - 4.0)
+    s := complex.add(a, b)
+    d := complex.sub(a, b)
+    m := complex.mul(a, b)
+    q := complex.div(m, b)
+    println("add=" + str(near(s.re, 4.0) and near(s.im, 0.0 - 2.0)))
+    println("sub=" + str(near(d.re, 0.0 - 2.0) and near(d.im, 6.0)))
+    println("mul=" + str(near(m.re, 11.0) and near(m.im, 2.0)))
+    println("div=" + str(near(q.re, 1.0) and near(q.im, 2.0)))
+    println("conj=" + str(near(complex.conj(a).im, 0.0 - 2.0)) + " abs=" + str(near(complex.abs(complex.make(3.0, 4.0)), 5.0)))
+    e := complex.exp(complex.make(0.0, fmath.pi()))
+    println("exp=" + str(near(e.re, 0.0 - 1.0) and near(e.im, 0.0)))
+    l := complex.log(complex.make(0.0 - 1.0, 0.0))
+    println("log=" + str(near(l.re, 0.0) and near(l.im, fmath.pi())))
+    println("scale=" + str(near(complex.scale(a, 2.0).re, 2.0)) + " neg=" + str(near(complex.neg(a).im, 0.0 - 2.0)) + " abs2=" + str(near(complex.abs2(a), 5.0)))
