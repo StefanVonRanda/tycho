@@ -1,0 +1,19 @@
+package main
+import "core:filepath"
+
+fn main():
+    println("clean1=" + filepath.clean("C:/a/./b/../c"))
+    println("clean2=" + filepath.clean("C:\\"))
+    println("clean3=" + filepath.clean("\\\\server\\share\\a\\..\\b"))
+    println("clean4=" + filepath.clean("a\\..\\..\\b"))
+    println("clean5=" + filepath.clean("C:foo\\..\\bar"))
+    println("vol=" + filepath.volume("C:\\a\\b") + "|" + filepath.volume("\\\\srv\\share\\d") + "|" + filepath.volume("a\\b"))
+    println("abs=" + str(filepath.is_abs("C:\\a")) + "," + str(filepath.is_abs("C:a")) + "," + str(filepath.is_abs("\\\\srv\\share")) + "," + str(filepath.is_abs("\\a")) + "," + str(filepath.is_abs("a")))
+    println("base=" + filepath.base("C:\\a\\b.txt") + "|" + filepath.base("/a/b/") + "|" + filepath.base("a"))
+    println("dir=" + filepath.dir("C:\\a\\b.txt") + "|" + filepath.dir("C:\\a") + "|" + filepath.dir("a"))
+    println("ext=" + filepath.ext("C:\\a\\b.txt") + "|" + filepath.ext(".bashrc") + "|" + filepath.ext("noext"))
+    println("stem=" + filepath.stem("C:\\a\\b.txt") + "|" + filepath.stem(".bashrc"))
+    println("join=" + filepath.join("C:\\a", "b") + "|" + filepath.join("C:\\a", "D:\\b") + "|" + filepath.join("", "a\\b") + "|" + filepath.join("C:\\a\\", "b"))
+    v1, r1 := filepath.split_volume("C:\\a\\b")
+    v2, r2 := filepath.split_volume("a\\b")
+    println("split=" + v1 + "|" + r1 + "|" + v2 + "|" + r2)

@@ -1,0 +1,13 @@
+clean1=C:\a\c
+clean2=C:\
+clean3=\\server\share\b
+clean4=..\b
+clean5=C:bar
+vol=C:|\\srv\share|
+abs=true,false,true,true,false
+base=b.txt|b|a
+dir=C:\a|C:\|.
+ext=.txt||
+stem=b|.bashrc
+join=C:\a\b|D:\b|a\b|C:\a\b
+split=C:|\a\b||a\b

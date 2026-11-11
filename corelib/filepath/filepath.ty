@@ -1,0 +1,168 @@
+package filepath
+
+fn _sep(c: int) -> bool:
+    return c == 92 or c == 47
+
+fn _alpha(c: int) -> bool:
+    return (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+
+fn _norm(p: string) -> string:
+    out := ""
+    for i := 0; i < len(p); i += 1:
+        if p[i] == 47:
+            out = out + "\\"
+        else:
+            out = out + chr(p[i])
+    return out
+
+fn _vol_len(n: string) -> int:
+    if len(n) >= 2 and _alpha(n[0]) and n[1] == 58:      # C:
+        return 2
+    if len(n) >= 2 and _sep(n[0]) and _sep(n[1]):        # \\server\share
+        i := 2
+        for i < len(n) and not _sep(n[i]):
+            i += 1
+        if i >= len(n):
+            return len(n)
+        i += 1
+        for i < len(n) and not _sep(n[i]):
+            i += 1
+        return i
+    if len(n) >= 1 and _sep(n[0]):
+        return 1
+    return 0
+
+fn volume(p: string) -> string:
+    n := _norm(p)
+    return n[0:_vol_len(n)]
+
+# Volume plus the rest, e.g. ("C:", "\a\b") or ("\\srv\share", "\d").
+fn split_volume(p: string) -> (string, string):
+    n := _norm(p)
+    vl := _vol_len(n)
+    return (n[0:vl], n[vl:len(n)])
+
+fn is_abs(p: string) -> bool:
+    n := _norm(p)
+    vl := _vol_len(n)
+    if vl == 0:
+        return false
+    if vl == 1:
+        return true
+    if n[0] == 92:
+        return true
+    return vl < len(n) and _sep(n[vl])
+
+fn clean(p: string) -> string:
+    n := _norm(p)
+    vl := _vol_len(n)
+    vol := n[0:vl]
+    rest := n[vl:len(n)]
+    rooted := false
+    if len(vol) > 0:
+        if vol[0] == 92:
+            rooted = true
+        elif len(rest) > 0 and _sep(rest[0]):
+            rooted = true
+    elif len(n) > 0 and _sep(n[0]):
+        rooted = true
+    parts := split(rest, "\\")
+    out := []string
+    for seg in parts:
+        if len(seg) == 0 or seg == ".":
+            pass
+        elif seg == "..":
+            if len(out) > 0 and out[len(out) - 1] != "..":
+                pop(out)
+            elif not rooted:
+                push(out, "..")
+        else:
+            push(out, seg)
+    r := ""
+    for i := 0; i < len(out); i += 1:
+        if i > 0:
+            r = r + "\\"
+        r = r + out[i]
+    if r == "":
+        if len(rest) == 0:
+            if len(vol) > 0:
+                return vol
+            return "."
+        if rooted:
+            if len(vol) > 0:
+                return vol + "\\"
+            return "\\"
+        return vol
+    if not rooted:
+        if len(vol) > 0:
+            return vol + r                # drive-relative C:foo
+        return r
+    if len(vol) > 0:
+        return vol + "\\" + r
+    return "\\" + r
+
+fn join(a: string, b: string) -> string:
+    if len(b) == 0:
+        return clean(a)
+    if is_abs(b) or len(volume(b)) > 0:
+        return clean(b)
+    if len(a) == 0:
+        return clean(b)
+    return clean(a + "\\" + b)
+
+fn _strip_trailing(n: string) -> int:
+    e := len(n)
+    for e > 0 and _sep(n[e - 1]):
+        e -= 1
+    return e
+
+fn base(p: string) -> string:
+    n := _norm(p)
+    e := _strip_trailing(n)
+    if e == 0:
+        if len(n) > 0:
+            return "\\"
+        return "."
+    if _vol_len(n[0:e]) == e:
+        if e < len(n):
+            return "\\"
+        return n[0:e]
+    i := e
+    for i > 0 and not _sep(n[i - 1]):
+        i -= 1
+    return n[i:e]
+
+fn dir(p: string) -> string:
+    n := _norm(p)
+    e := _strip_trailing(n)
+    if e == 0:
+        if len(n) > 0:
+            return "\\"
+        return "."
+    i := e
+    for i > 0 and not _sep(n[i - 1]):
+        i -= 1
+    if i == 0:
+        return "."
+    d := i - 1
+    for d > 0 and _sep(n[d - 1]):
+        d -= 1
+    if d == 0:
+        return "\\"
+    if _vol_len(n[0:d]) == d:
+        return n[0:d] + "\\"
+    return n[0:d]
+
+fn ext(p: string) -> string:
+    b := base(p)
+    i := len(b) - 1
+    for i > 0:
+        if b[i] == 46:
+            return b[i:len(b)]
+        i -= 1
+    return ""
+
+fn stem(p: string) -> string:
+    b := base(p)
+    e := ext(p)
+    return b[0:len(b) - len(e)]

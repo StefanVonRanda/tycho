@@ -150,6 +150,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   least one digit; advances only on success), `rest`, `remaining`, `pos`, `eof`.
   `Writer` accumulates text: `new_writer`, `write`, `write_byte`, `write_line`,
   `text`, `reset`. This is a string buffer, not an fd-buffering layer.
+- **`filepath`** — Windows-style lexical paths, independent of the host. Both
+  `/` and `\` are separators; `clean` preserves a drive (`C:`) or UNC
+  (`\\server\share`) volume and resolves `.`/`..` without climbing above the
+  root. `is_abs`, `volume`, `split_volume`, `join`, `base`, `dir`, `ext` and
+  `stem` are the corresponding operations. Use `core:path` for POSIX semantics.
 - **`path`** — POSIX path utilities (separator `/`). The pure functions below are
   string math only (no filesystem access, every function returns a fresh value):
   `base` (final element, trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir`
