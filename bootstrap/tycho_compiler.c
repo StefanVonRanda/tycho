@@ -4691,7 +4691,8 @@ static E_os__OsErr _sing_os__OsErr_1 = { 1 };
 static E_os__OsErr _sing_os__OsErr_2 = { 2 };
 static E_os__OsErr _sing_os__OsErr_3 = { 3 };
 static E_os__OsErr _sing_os__OsErr_4 = { 4 };
-static E_os__OsErr *const _sing_tab_os__OsErr[] = {&_sing_os__OsErr_0, &_sing_os__OsErr_1, &_sing_os__OsErr_2, &_sing_os__OsErr_3, &_sing_os__OsErr_4};
+static E_os__OsErr _sing_os__OsErr_5 = { 5 };
+static E_os__OsErr *const _sing_tab_os__OsErr[] = {&_sing_os__OsErr_0, &_sing_os__OsErr_1, &_sing_os__OsErr_2, &_sing_os__OsErr_3, &_sing_os__OsErr_4, &_sing_os__OsErr_5};
 struct E_io__IoErr { int tag; union { } u; };
 static E_io__IoErr _sing_io__IoErr_0 = { 0 };
 static E_io__IoErr _sing_io__IoErr_1 = { 1 };
@@ -7547,6 +7548,13 @@ extern char *osx_cwd(void);
 extern tycho_int osx_chdir(char *);
 extern tycho_int osx_pid(void);
 extern char *osx_hostname(void);
+extern tycho_int osx_chmod(char *, tycho_int );
+extern tycho_int osx_umask(tycho_int );
+extern tycho_int osx_getuid(void);
+extern tycho_int osx_geteuid(void);
+extern tycho_int osx_getgid(void);
+extern tycho_int osx_getegid(void);
+extern tycho_int osx_getppid(void);
 extern void *iox_open_lines(char *);
 extern void iox_read_line(void *, tycho_int *, unsigned char **, tycho_int *);
 extern void iox_close_lines(void *);
@@ -7591,6 +7599,7 @@ S_os__Output h_os__run(Arena *_parent, char *h_cmd);
 int h_os__is_windows(Arena *_parent);
 int h_os___bad_env_name(Arena *_parent, char *h_name);
 E__G6 *h_os__env(Arena *_parent, char *h_name);
+tycho_int h_os__uid(Arena *_parent);
 int h_io___has_nul(Arena *_parent, char *h_p);
 E__G9 *h_io__read_text(Arena *_parent, char *h_p);
 E__G10 *h_io__write_bytes(Arena *_parent, char *h_p, char *h_b);
@@ -9005,6 +9014,10 @@ E__G6 *h_os__env(Arena *_parent, char *h_name) {
         { E__G6 *_ret = (&_sing__G6_0); return _ret; }
     }
     { E__G6 *_ret = ({ const char *_x32 = osx_env_get(tycho_str_cstr(_parent, h_name));  E__G6 *_ov33 = &_sing__G6_0; if (_x32) { _ov33 = (E__G6 *)arena_alloc(_parent, offsetof(E__G6, u) + sizeof(TychoPayload__G6_Some)); _ov33->tag = 1; _ov33->u.V_Some.f0 = tycho_str_from_c(_parent, _x32); } _ov33; }); return _ret; }
+}
+
+tycho_int h_os__uid(Arena *_parent) {
+    { tycho_int _ret = osx_getuid(); return _ret; }
 }
 
 int h_io___has_nul(Arena *_parent, char *h_p) {

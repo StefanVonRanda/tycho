@@ -21,6 +21,8 @@
 #ifdef _WIN32
 #include <windows.h>            /* CreateProcessA / CreatePipe -- the argv path */
 #include <process.h>            /* _beginthreadex -- concurrent stdout/stderr drains */
+#include <errno.h>
+#include <sys/stat.h>           /* _chmod */
 #define TY_POPEN  _popen
 #define TY_PCLOSE _pclose
 static tycho_int ty_os_decode(int st) { return (tycho_int)st; }   /* Windows: system/_pclose return the code directly */
@@ -31,6 +33,7 @@ static tycho_int ty_os_decode(int st) { return (tycho_int)st; }   /* Windows: sy
 #include <fcntl.h>              /* O_CLOEXEC / F_SETFD -- the capture pipe */
 #include <poll.h>               /* drain stdout and stderr together */
 #include <errno.h>
+#include <sys/stat.h>           /* chmod */
 extern char **environ;          /* posix_spawnp inherits it, as execvp does */
 
 /* pipe2 is Linux/glibc + the BSDs; it is the only race-free spelling, since a
@@ -757,4 +760,72 @@ char *osx_hostname(void) {
     ty_os_host[sizeof ty_os_host - 1] = 0;
 #endif
     return ty_os_host;
+}
+
+/* ---- permissions and identity ---- */
+tycho_int osx_chmod(const char *p, tycho_int mode) {
+#ifdef _WIN32
+    if (_chmod(p, (int)mode) == 0) return 0;
+    switch (errno) {
+        case ENOENT: return 1;
+        case EACCES: return 2;
+        default:     return 4;
+    }
+#else
+    if (chmod(p, (mode_t)mode) == 0) return 0;
+    switch (errno) {
+        case ENOENT: return 1;
+        case EACCES:
+        case EPERM:  return 2;
+        default:     return 4;
+    }
+#endif
+}
+
+tycho_int osx_umask(tycho_int mask) {
+#ifdef _WIN32
+    return (tycho_int)_umask((int)mask);
+#else
+    return (tycho_int)umask((mode_t)mask);
+#endif
+}
+
+tycho_int osx_getuid(void) {
+#ifdef _WIN32
+    return -1;
+#else
+    return (tycho_int)getuid();
+#endif
+}
+
+tycho_int osx_geteuid(void) {
+#ifdef _WIN32
+    return -1;
+#else
+    return (tycho_int)geteuid();
+#endif
+}
+
+tycho_int osx_getgid(void) {
+#ifdef _WIN32
+    return -1;
+#else
+    return (tycho_int)getgid();
+#endif
+}
+
+tycho_int osx_getegid(void) {
+#ifdef _WIN32
+    return -1;
+#else
+    return (tycho_int)getegid();
+#endif
+}
+
+tycho_int osx_getppid(void) {
+#ifdef _WIN32
+    return -1;
+#else
+    return (tycho_int)getppid();
+#endif
 }

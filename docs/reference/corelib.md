@@ -713,6 +713,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `hostname() -> Option(string)` report the process identity; `home_dir()` tries
   `HOME`, then `USERPROFILE`, then `HOMEDRIVE`+`HOMEPATH`; `temp_dir()` tries
   `TMPDIR`, `TEMP`, then `TMP`, and falls back to `/tmp` on POSIX or `.` on Windows.
+  `chmod(path, mode) -> Result(void, OsErr)` sets permission bits (Windows maps
+  to the read-only bit and ignores the rest), `umask(mask) -> int` returns the
+  previous mask, and `uid`/`euid`/`gid`/`egid`/`ppid` report identity (`-1` on
+  Windows, which has no numeric ids).
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (POSIX sockets; no `deps`,
   nothing to install). **The transfer calls block; readiness does not.**
   `read`/`write`/`connect` block, so a worker-per-connection server still has its

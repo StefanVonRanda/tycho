@@ -36,6 +36,11 @@ chdir_temp=Ok cwd=Ok
 chdir_back=Ok
 chdir_missing=NotFound
 chdir_empty=BadName
+chmod=Ok
+chmod_missing=NotFound
+chmod_nul=BadPath
+umask_restore=true
+ids=true,true,true,true ppid=true
 pid_positive=true
 hostname_nonempty=true
 home_nonempty=true

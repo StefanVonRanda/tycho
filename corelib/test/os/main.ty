@@ -19,6 +19,8 @@ fn show_os(r: Result(void, os.OsErr)) -> string:
             return "BadName"
         Err(os.BadValue):
             return "BadValue"
+        Err(os.BadPath):
+            return "BadPath"
         Err(os.NotFound):
             return "NotFound"
         Err(os.Denied):
@@ -36,6 +38,8 @@ fn show_cwd(r: Result(string, os.OsErr)) -> string:
             return "BadName"
         Err(os.BadValue):
             return "BadValue"
+        Err(os.BadPath):
+            return "BadPath"
         Err(os.NotFound):
             return "NotFound"
         Err(os.Denied):
@@ -187,6 +191,20 @@ fn main():
     println("chdir_back=" + show_os(os.chdir(before)))
     println("chdir_missing=" + show_os(os.chdir(base + "/absent")))
     println("chdir_empty=" + show_os(os.chdir("")))
+    io.write(base + "/perm", "x")
+    println("chmod=" + show_os(os.chmod(base + "/perm", 384)))
+    println("chmod_missing=" + show_os(os.chmod(base + "/absent", 384)))
+    println("chmod_nul=" + show_os(os.chmod("x" + chr(0), 384)))
+    oldmask := os.umask(0)
+    restored := os.umask(oldmask)
+    println("umask_restore=" + str(restored == 0))
+    if posix:
+        println("ids=" + str(os.uid() >= 0) + "," + str(os.euid() >= 0) + "," + str(os.gid() >= 0) + "," + str(os.egid() >= 0) + " ppid=" + str(os.ppid() > 0))
+    else:
+        println("ids=windows")
+    match io.remove(base + "/perm"):
+        Ok(_): pass
+        Err(_): pass
     match io.remove(base):
         Ok(_): pass
         Err(_): pass

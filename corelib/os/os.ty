@@ -39,10 +39,18 @@ extern fn osx_cwd() -> Option(string)
 extern fn osx_chdir(p: string) -> int          # 0 ok, 1 not found, 2 denied, 3 not a dir, 4 failed
 extern fn osx_pid() -> int
 extern fn osx_hostname() -> Option(string)
+extern fn osx_chmod(p: string, mode: int) -> int
+extern fn osx_umask(mask: int) -> int
+extern fn osx_getuid() -> int
+extern fn osx_geteuid() -> int
+extern fn osx_getgid() -> int
+extern fn osx_getegid() -> int
+extern fn osx_getppid() -> int
 
 enum OsErr:
     BadName
     BadValue
+    BadPath
     NotFound
     Denied
     Failed
@@ -207,3 +215,41 @@ fn temp_dir() -> string:
     if is_windows():
         return "."
     return "/tmp"
+
+# chmod with the platform's permission-bit convention. On Windows only the
+# read-only bit is meaningful; other bits are accepted and ignored by the CRT.
+fn chmod(p: string, mode: int) -> Result(void, OsErr):
+    if _has_nul(p) or len(p) == 0:
+        return Err(BadPath)
+    if mode < 0:
+        return Err(BadValue)
+    k := osx_chmod(p, mode)
+    if k == 0:
+        return Ok()
+    if k == 1:
+        return Err(NotFound)
+    if k == 2:
+        return Err(Denied)
+    return Err(Failed)
+
+# Set the process umask and return the previous value.
+fn umask(mask: int) -> int:
+    if mask < 0:
+        die("os.umask: negative mask")
+    return osx_umask(mask)
+
+# POSIX identity. Windows has no numeric uid/gid and answers -1.
+fn uid() -> int:
+    return osx_getuid()
+
+fn euid() -> int:
+    return osx_geteuid()
+
+fn gid() -> int:
+    return osx_getgid()
+
+fn egid() -> int:
+    return osx_getegid()
+
+fn ppid() -> int:
+    return osx_getppid()
