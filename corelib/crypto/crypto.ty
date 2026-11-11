@@ -56,6 +56,14 @@ extern fn cx_ecdsa_key_to_pem(k: ptr) -> string
 extern fn cx_ecdsa_pubkey_to_pem(k: ptr) -> string
 extern fn cx_ecdsa_sign_sha256(k: ptr, msg_hex: string) -> string
 extern fn cx_ecdsa_verify_sha256(k: ptr, msg_hex: string, sig_hex: string) -> int
+extern fn cx_mldsa_key_random(level: int) -> ptr
+extern fn cx_mldsa_key_from_pem(pem: string) -> ptr
+extern fn cx_mldsa_pubkey_from_pem(pem: string) -> ptr
+extern fn cx_mldsa_key_free(k: ptr)
+extern fn cx_mldsa_key_to_pem(k: ptr) -> string
+extern fn cx_mldsa_pubkey_to_pem(k: ptr) -> string
+extern fn cx_mldsa_sign(k: ptr, msg_hex: string) -> string
+extern fn cx_mldsa_verify(k: ptr, msg_hex: string, sig_hex: string) -> int
 
 # Hex arguments cross to C strings; reject embedded NULs before strlen-based
 # decoding so distinct Tycho values can never collapse to the same prefix.
@@ -350,3 +358,36 @@ fn ecdsa_verify_sha256(k: ptr, msg_hex: string, sig_hex: string) -> bool:
     if _has_nul_hex(msg_hex) or _has_nul_hex(sig_hex):
         return false
     return cx_ecdsa_verify_sha256(k, msg_hex, sig_hex) == 1
+
+# ---- ML-DSA post-quantum signatures (levels 44, 65, 87) ----
+fn mldsa_key_random(level: int) -> ptr:
+    return cx_mldsa_key_random(level)
+
+fn mldsa_key_from_pem(pem: string) -> ptr:
+    if _has_nul_hex(pem):
+        return null
+    return cx_mldsa_key_from_pem(pem)
+
+fn mldsa_pubkey_from_pem(pem: string) -> ptr:
+    if _has_nul_hex(pem):
+        return null
+    return cx_mldsa_pubkey_from_pem(pem)
+
+fn mldsa_key_free(k: ptr):
+    cx_mldsa_key_free(k)
+
+fn mldsa_key_to_pem(k: ptr) -> string:
+    return cx_mldsa_key_to_pem(k)
+
+fn mldsa_pubkey_to_pem(k: ptr) -> string:
+    return cx_mldsa_pubkey_to_pem(k)
+
+fn mldsa_sign(k: ptr, msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_mldsa_sign(k, msg_hex)
+
+fn mldsa_verify(k: ptr, msg_hex: string, sig_hex: string) -> bool:
+    if _has_nul_hex(msg_hex) or _has_nul_hex(sig_hex):
+        return false
+    return cx_mldsa_verify(k, msg_hex, sig_hex) == 1

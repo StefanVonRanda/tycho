@@ -573,7 +573,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `rsa_verify_sha256`). ECDSA P-256/SHA-256 uses the same shape:
   `ecdsa_key_from_pem`, `ecdsa_pubkey_from_pem`, `ecdsa_key_random`,
   `ecdsa_key_bits`, `ecdsa_key_to_pem`, `ecdsa_pubkey_to_pem`,
-  `ecdsa_key_free`, `ecdsa_sign_sha256`, `ecdsa_verify_sha256`. Pure Tycho
+  `ecdsa_key_free`, `ecdsa_sign_sha256`, `ecdsa_verify_sha256`. Post-quantum
+  ML-DSA signatures are `mldsa_key_random(level)` (44/65/87),
+  `mldsa_key_from_pem`, `mldsa_pubkey_from_pem`, `mldsa_key_to_pem`,
+  `mldsa_pubkey_to_pem`, `mldsa_key_free`, `mldsa_sign`, `mldsa_verify`. Pure Tycho
   arithmetic cannot promise constant-time behavior, so these primitives bind OpenSSL
   rather than reimplementing them. Every value (keys, nonces, ciphertext, signatures,
   digests) crosses as lowercase hexadecimal text at this interface; use `core:hex`

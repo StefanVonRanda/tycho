@@ -222,3 +222,17 @@ fn main():
     println("aes_cbc_rt=" + str(yn(crypto.aes_cbc_decrypt(kcbc, civ2, cct2) == cpt2)))
     println("aes_cbc_bad=" + str(yn(crypto.aes_cbc_encrypt(kcbc, civ2, "00") == "!err")))
     crypto.key_free(kcbc)
+
+    # ---- ML-DSA post-quantum signatures ----
+    ml := crypto.mldsa_key_random(65)
+    msig := crypto.mldsa_sign(ml, "616263")
+    println("mldsa_siglen=" + str(len(msig) > 0) + " verify=" + str(crypto.mldsa_verify(ml, "616263", msig)))
+    println("mldsa_tamper=" + str(crypto.mldsa_verify(ml, "616264", msig) == false))
+    mpriv := crypto.mldsa_key_from_pem(crypto.mldsa_key_to_pem(ml))
+    mpub := crypto.mldsa_pubkey_from_pem(crypto.mldsa_pubkey_to_pem(ml))
+    println("mldsa_roundtrip=" + str(not is_null(mpriv) and not is_null(mpub)))
+    println("mldsa_pub_verify=" + str(crypto.mldsa_verify(mpub, "616263", msig)))
+    crypto.mldsa_key_free(mpriv)
+    crypto.mldsa_key_free(mpub)
+    crypto.mldsa_key_free(ml)
+    println("mldsa_badlevel=" + str(is_null(crypto.mldsa_key_random(50))) + " badpem=" + str(is_null(crypto.mldsa_key_from_pem("nope"))))

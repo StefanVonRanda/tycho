@@ -994,3 +994,114 @@ done:
     free(sig);
     return res;
 }
+
+/* =====================================================================
+ * ML-DSA (post-quantum signatures), OpenSSL provider.
+ * ===================================================================== */
+static const char *mldsa_name(tycho_int level) {
+    if (level == 44) return "ML-DSA-44";
+    if (level == 65) return "ML-DSA-65";
+    if (level == 87) return "ML-DSA-87";
+    return NULL;
+}
+
+void *cx_mldsa_key_random(tycho_int level) {
+    const char *name = mldsa_name(level);
+    if (!name) return NULL;
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, name, NULL);
+    if (!ctx) return NULL;
+    EVP_PKEY *pk = NULL;
+    int ok = EVP_PKEY_keygen_init(ctx) > 0 && EVP_PKEY_keygen(ctx, &pk) > 0;
+    EVP_PKEY_CTX_free(ctx);
+    if (!ok) {
+        if (pk) EVP_PKEY_free(pk);
+        return NULL;
+    }
+    return pk;
+}
+
+void *cx_mldsa_key_from_pem(const char *pem) {
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    if (!b) return NULL;
+    EVP_PKEY *pk = PEM_read_bio_PrivateKey(b, NULL, NULL, NULL);
+    BIO_free(b);
+    return pk;
+}
+
+void *cx_mldsa_pubkey_from_pem(const char *pem) {
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    if (!b) return NULL;
+    EVP_PKEY *pk = PEM_read_bio_PUBKEY(b, NULL, NULL, NULL);
+    BIO_free(b);
+    return pk;
+}
+
+void cx_mldsa_key_free(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (pk) EVP_PKEY_free(pk);
+}
+
+const char *cx_mldsa_key_to_pem(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk) return ERRTAG;
+    BIO *b = BIO_new(BIO_s_mem());
+    if (!b) return ERRTAG;
+    const char *res = ERRTAG;
+    if (PEM_write_bio_PrivateKey(b, pk, NULL, NULL, 0, NULL, NULL) == 1) res = pem_from_bio(b);
+    BIO_free(b);
+    return res;
+}
+
+const char *cx_mldsa_pubkey_to_pem(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk) return ERRTAG;
+    BIO *b = BIO_new(BIO_s_mem());
+    if (!b) return ERRTAG;
+    const char *res = ERRTAG;
+    if (PEM_write_bio_PUBKEY(b, pk) == 1) res = pem_from_bio(b);
+    BIO_free(b);
+    return res;
+}
+
+const char *cx_mldsa_sign(void *kp, const char *msg_hex) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    size_t ml = 0;
+    unsigned char *msg = hexdec(msg_hex, &ml);
+    const char *res = ERRTAG;
+    EVP_MD_CTX *md = NULL;
+    unsigned char *sig = NULL;
+    size_t siglen = 0;
+    if (!pk || !msg) goto done;
+    md = EVP_MD_CTX_new();
+    if (!md) goto done;
+    if (EVP_DigestSignInit(md, NULL, NULL, NULL, pk) != 1) goto done;
+    if (EVP_DigestSign(md, NULL, &siglen, msg, ml) != 1) goto done;
+    sig = malloc(siglen ? siglen : 1);
+    if (!sig) goto done;
+    if (EVP_DigestSign(md, sig, &siglen, msg, ml) != 1) goto done;
+    res = out_hex(sig, siglen);
+done:
+    if (md) EVP_MD_CTX_free(md);
+    free(msg);
+    free(sig);
+    return res;
+}
+
+tycho_int cx_mldsa_verify(void *kp, const char *msg_hex, const char *sig_hex) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    size_t ml = 0, sl = 0;
+    unsigned char *msg = hexdec(msg_hex, &ml);
+    unsigned char *sig = hexdec(sig_hex, &sl);
+    tycho_int res = 0;
+    EVP_MD_CTX *md = NULL;
+    if (!pk || !msg || !sig) goto done;
+    md = EVP_MD_CTX_new();
+    if (!md) goto done;
+    if (EVP_DigestVerifyInit(md, NULL, NULL, NULL, pk) != 1) goto done;
+    res = EVP_DigestVerify(md, sig, sl, msg, ml) == 1 ? 1 : 0;
+done:
+    if (md) EVP_MD_CTX_free(md);
+    free(msg);
+    free(sig);
+    return res;
+}

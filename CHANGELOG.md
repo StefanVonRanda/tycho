@@ -41,7 +41,7 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   base 2..36 integer parse/format, fixed-point float formatting,
   `testing.bench`/`subtest`, streaming gzip, POSIX Unix sockets, interface
   enumeration, terminal key decoding and Unicode case folding.
-- Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF-SHA256, AES-GCM, AES-CTR/CBC, RSA PKCS#1 v1.5/SHA-256, ECDSA P-256/SHA-256, Argon2id and X.509 parsing/verification.
+- Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF-SHA256, AES-GCM, AES-CTR/CBC, RSA PKCS#1 v1.5/SHA-256, ECDSA P-256/SHA-256, ML-DSA, Argon2id and X.509 parsing/verification.
 - Added the libm trig/exp/log surface to `core:fmath`.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM/PBM codecs to `core:raster`,
   and baseline JPEG encode/decode to `core:image`.

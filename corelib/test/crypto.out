@@ -80,3 +80,8 @@ argon2_nul=1
 aes_cbc=1
 aes_cbc_rt=1
 aes_cbc_bad=1
+mldsa_siglen=true verify=true
+mldsa_tamper=true
+mldsa_roundtrip=true
+mldsa_pub_verify=true
+mldsa_badlevel=true badpem=true
