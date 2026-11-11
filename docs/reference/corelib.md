@@ -527,7 +527,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   PKCS#1 v1.5 with SHA-256 (`rsa_key_from_pem`, `rsa_pubkey_from_pem`,
   `rsa_key_random(bits)`, `rsa_key_bits`, `rsa_key_to_pem`,
   `rsa_pubkey_to_pem`, `rsa_key_free`, `rsa_sign_sha256`,
-  `rsa_verify_sha256`). Pure Tycho
+  `rsa_verify_sha256`). ECDSA P-256/SHA-256 uses the same shape:
+  `ecdsa_key_from_pem`, `ecdsa_pubkey_from_pem`, `ecdsa_key_random`,
+  `ecdsa_key_bits`, `ecdsa_key_to_pem`, `ecdsa_pubkey_to_pem`,
+  `ecdsa_key_free`, `ecdsa_sign_sha256`, `ecdsa_verify_sha256`. Pure Tycho
   arithmetic cannot promise constant-time behavior, so these primitives bind OpenSSL
   rather than reimplementing them. Every value (keys, nonces, ciphertext, signatures,
   digests) crosses as lowercase hexadecimal text at this interface; use `core:hex`

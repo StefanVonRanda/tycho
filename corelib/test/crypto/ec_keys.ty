@@ -1,0 +1,7 @@
+package main
+
+const ECDSA_PRIV =
+    "-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIDumwX7KIwWl8/KwOI5vcVT0uWFMMK/MJw/6/peUv7+goAoGCCqGSM49\nAwEHoUQDQgAENGPpTZAnp33fugv2zndLEgk33bM6Tzjoxx68GYDMX/arjQhWVywg\nyp7S0My5QUSBgmZU+bETly6lXkTVMgPDQg==\n-----END EC PRIVATE KEY-----\n"
+
+const ECDSA_PUB =
+    "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENGPpTZAnp33fugv2zndLEgk33bM6\nTzjoxx68GYDMX/arjQhWVywgyp7S0My5QUSBgmZU+bETly6lXkTVMgPDQg==\n-----END PUBLIC KEY-----\n"

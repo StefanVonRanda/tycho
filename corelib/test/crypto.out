@@ -67,3 +67,10 @@ rsa_badpem=true
 rsa_badbits=-1
 rsa_nul=true
 rsa_gen=2048 verify=true
+ec_bits=256 pub_bits=256
+ec_verify=true tamper=true
+ec_roundtrip=true
+ec_pub_roundtrip=true
+ec_badpem=true
+ec_badbits=-1
+ec_gen=256 verify=true

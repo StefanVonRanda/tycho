@@ -44,6 +44,15 @@ extern fn cx_rsa_key_to_pem(k: ptr) -> string
 extern fn cx_rsa_pubkey_to_pem(k: ptr) -> string
 extern fn cx_rsa_sign_sha256(k: ptr, msg_hex: string) -> string
 extern fn cx_rsa_verify_sha256(k: ptr, msg_hex: string, sig_hex: string) -> int
+extern fn cx_ecdsa_key_from_pem(pem: string) -> ptr
+extern fn cx_ecdsa_pubkey_from_pem(pem: string) -> ptr
+extern fn cx_ecdsa_key_random() -> ptr
+extern fn cx_ecdsa_key_free(k: ptr)
+extern fn cx_ecdsa_key_bits(k: ptr) -> int
+extern fn cx_ecdsa_key_to_pem(k: ptr) -> string
+extern fn cx_ecdsa_pubkey_to_pem(k: ptr) -> string
+extern fn cx_ecdsa_sign_sha256(k: ptr, msg_hex: string) -> string
+extern fn cx_ecdsa_verify_sha256(k: ptr, msg_hex: string, sig_hex: string) -> int
 
 # Hex arguments cross to C strings; reject embedded NULs before strlen-based
 # decoding so distinct Tycho values can never collapse to the same prefix.
@@ -284,3 +293,39 @@ fn rsa_verify_sha256(k: ptr, msg_hex: string, sig_hex: string) -> bool:
     if _has_nul_hex(msg_hex) or _has_nul_hex(sig_hex):
         return false
     return cx_rsa_verify_sha256(k, msg_hex, sig_hex) == 1
+
+# ---- ECDSA P-256 (SHA-256, DER signatures) ----
+fn ecdsa_key_from_pem(pem: string) -> ptr:
+    if _has_nul_hex(pem):
+        return null
+    return cx_ecdsa_key_from_pem(pem)
+
+fn ecdsa_pubkey_from_pem(pem: string) -> ptr:
+    if _has_nul_hex(pem):
+        return null
+    return cx_ecdsa_pubkey_from_pem(pem)
+
+fn ecdsa_key_random() -> ptr:
+    return cx_ecdsa_key_random()
+
+fn ecdsa_key_free(k: ptr):
+    cx_ecdsa_key_free(k)
+
+fn ecdsa_key_bits(k: ptr) -> int:
+    return cx_ecdsa_key_bits(k)
+
+fn ecdsa_key_to_pem(k: ptr) -> string:
+    return cx_ecdsa_key_to_pem(k)
+
+fn ecdsa_pubkey_to_pem(k: ptr) -> string:
+    return cx_ecdsa_pubkey_to_pem(k)
+
+fn ecdsa_sign_sha256(k: ptr, msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_ecdsa_sign_sha256(k, msg_hex)
+
+fn ecdsa_verify_sha256(k: ptr, msg_hex: string, sig_hex: string) -> bool:
+    if _has_nul_hex(msg_hex) or _has_nul_hex(sig_hex):
+        return false
+    return cx_ecdsa_verify_sha256(k, msg_hex, sig_hex) == 1

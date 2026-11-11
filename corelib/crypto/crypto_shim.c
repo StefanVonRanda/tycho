@@ -2,6 +2,8 @@
 #include <openssl/kdf.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
+#include <openssl/ec.h>
+#include <openssl/obj_mac.h>
 #include <openssl/bio.h>
 #include <openssl/rand.h>
 #include <openssl/hmac.h>
@@ -761,4 +763,124 @@ done:
     if (me) EVP_PKEY_free(me);
     free(tp);
     return out;
+}
+
+/* =====================================================================
+ * ECDSA P-256 (SHA-256, DER signatures). Handle is an EVP_PKEY*.
+ * ===================================================================== */
+void *cx_ecdsa_key_from_pem(const char *pem) {
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    if (!b) return NULL;
+    EVP_PKEY *pk = PEM_read_bio_PrivateKey(b, NULL, NULL, NULL);
+    BIO_free(b);
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_EC) {
+        if (pk) EVP_PKEY_free(pk);
+        return NULL;
+    }
+    return pk;
+}
+
+void *cx_ecdsa_pubkey_from_pem(const char *pem) {
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    if (!b) return NULL;
+    EVP_PKEY *pk = PEM_read_bio_PUBKEY(b, NULL, NULL, NULL);
+    BIO_free(b);
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_EC) {
+        if (pk) EVP_PKEY_free(pk);
+        return NULL;
+    }
+    return pk;
+}
+
+void *cx_ecdsa_key_random(void) {
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
+    if (!ctx) return NULL;
+    EVP_PKEY *pk = NULL;
+    int ok = EVP_PKEY_keygen_init(ctx) > 0 &&
+             EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, NID_X9_62_prime256v1) > 0 &&
+             EVP_PKEY_keygen(ctx, &pk) > 0;
+    EVP_PKEY_CTX_free(ctx);
+    if (!ok) {
+        if (pk) EVP_PKEY_free(pk);
+        return NULL;
+    }
+    return pk;
+}
+
+void cx_ecdsa_key_free(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (pk) EVP_PKEY_free(pk);
+}
+
+tycho_int cx_ecdsa_key_bits(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_EC) return -1;
+    return (tycho_int)EVP_PKEY_bits(pk);
+}
+
+const char *cx_ecdsa_key_to_pem(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_EC) return ERRTAG;
+    BIO *b = BIO_new(BIO_s_mem());
+    if (!b) return ERRTAG;
+    const char *res = ERRTAG;
+    if (PEM_write_bio_PrivateKey(b, pk, NULL, NULL, 0, NULL, NULL) == 1) res = pem_from_bio(b);
+    BIO_free(b);
+    return res;
+}
+
+const char *cx_ecdsa_pubkey_to_pem(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_EC) return ERRTAG;
+    BIO *b = BIO_new(BIO_s_mem());
+    if (!b) return ERRTAG;
+    const char *res = ERRTAG;
+    if (PEM_write_bio_PUBKEY(b, pk) == 1) res = pem_from_bio(b);
+    BIO_free(b);
+    return res;
+}
+
+const char *cx_ecdsa_sign_sha256(void *kp, const char *msg_hex) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    size_t mlen = 0;
+    unsigned char *msg = hexdec(msg_hex, &mlen);
+    const char *res = ERRTAG;
+    EVP_MD_CTX *md = NULL;
+    unsigned char *sig = NULL;
+    size_t siglen = 0;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_EC || !msg) goto done;
+    md = EVP_MD_CTX_new();
+    if (!md) goto done;
+    if (EVP_DigestSignInit(md, NULL, EVP_sha256(), NULL, pk) != 1) goto done;
+    if (EVP_DigestSignUpdate(md, msg, mlen) != 1) goto done;
+    if (EVP_DigestSignFinal(md, NULL, &siglen) != 1) goto done;
+    sig = malloc(siglen ? siglen : 1);
+    if (!sig) goto done;
+    if (EVP_DigestSignFinal(md, sig, &siglen) != 1) goto done;
+    res = out_hex(sig, siglen);
+done:
+    if (md) EVP_MD_CTX_free(md);
+    free(msg);
+    free(sig);
+    return res;
+}
+
+tycho_int cx_ecdsa_verify_sha256(void *kp, const char *msg_hex, const char *sig_hex) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    size_t mlen = 0, slen = 0;
+    unsigned char *msg = hexdec(msg_hex, &mlen);
+    unsigned char *sig = hexdec(sig_hex, &slen);
+    tycho_int res = 0;
+    EVP_MD_CTX *md = NULL;
+    if (!pk || EVP_PKEY_base_id(pk) != EVP_PKEY_EC || !msg || !sig) goto done;
+    md = EVP_MD_CTX_new();
+    if (!md) goto done;
+    if (EVP_DigestVerifyInit(md, NULL, EVP_sha256(), NULL, pk) != 1) goto done;
+    if (EVP_DigestVerifyUpdate(md, msg, mlen) != 1) goto done;
+    res = EVP_DigestVerifyFinal(md, sig, slen) == 1 ? 1 : 0;
+done:
+    if (md) EVP_MD_CTX_free(md);
+    free(msg);
+    free(sig);
+    return res;
 }
