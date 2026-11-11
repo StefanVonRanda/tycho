@@ -54,7 +54,7 @@ Status values:
 | `sync` | covered | C11 atomics (int/bool/pointer), `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup`, `Once`, `Barrier`, recursive mutex; channels are language builtins | ticket mutex (not a capability gap) |
 | `sys` | non-goal | libc and shims are the portability boundary | none |
 | `terminal` | partial | ANSI escapes, tty/size, raw mode, byte read, key decoding | cursor queries and non-console Windows fallbacks |
-| `testing` | partial | `T`, `check`, `eq`, `report`, `subtest`/`merge`, `bench`, `report_bench` | fuzz hooks |
+| `testing` | covered | `T`, `check`, `eq`, `report`, `subtest`/`merge`, `bench`, `report_bench` | none |
 | `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `edit`, `scanner`, `table`, `glob` | i18n tables and locale data |
 | `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; `thread.id`/`yield_now`/`cpus` | raw thread creation/TLS need compiler/runtime support |
 | `time` | covered | monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset | none |
@@ -84,7 +84,6 @@ them blocks the application-facing surface above:
 - `nbio` — `poll` is present; epoll/kqueue/IOCP completion loops are runtime work.
 - `prof` — manual spans are present; sampling needs runtime hooks.
 - `terminal` — cursor queries and some non-console Windows paths are absent.
-- `testing` — fuzz hooks live in the toolchain rather than the test framework.
 - `text` — i18n/locale tables are not implemented.
 - `thread` — raw threads/TLS need compiler/runtime callbacks.
 - `unicode` — multi-codepoint folds, segmentation and normalization are absent.
