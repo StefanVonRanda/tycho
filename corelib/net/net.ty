@@ -524,3 +524,101 @@ fn is_ip6(s: string) -> bool:
     match parse_ip6(s):
         Some(_): return true
         None: return false
+
+struct Ip4Prefix:
+    addr: Ip4
+    bits: int
+
+struct Ip6Prefix:
+    addr: Ip6
+    bits: int
+
+fn _find_char(s: string, ch: int) -> int:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == ch:
+            return i
+    return -1
+
+# `a.b.c.d/N`. A bare address is the full-length prefix (`/32`).
+fn parse_ip4_prefix(s: string) -> Option(Ip4Prefix):
+    slash := _find_char(s, 47)
+    host := s
+    bits := 32
+    if slash >= 0:
+        host = s[0:slash]
+        bits = _dec_part(s, slash + 1, len(s), 32)
+        if bits < 0:
+            return None
+    match parse_ip4(host):
+        Some(ip):
+            return Some(Ip4Prefix(ip, bits))
+        None:
+            return None
+
+fn format_ip4_prefix(p: Ip4Prefix) -> string:
+    return format_ip4(p.addr) + "/" + str(p.bits)
+
+# `addr/N` for IPv6; a bare address is the full-length prefix (`/128`).
+fn parse_ip6_prefix(s: string) -> Option(Ip6Prefix):
+    slash := _find_char(s, 47)
+    host := s
+    bits := 128
+    if slash >= 0:
+        host = s[0:slash]
+        bits = _dec_part(s, slash + 1, len(s), 128)
+        if bits < 0:
+            return None
+    match parse_ip6(host):
+        Some(ip):
+            return Some(Ip6Prefix(ip, bits))
+        None:
+            return None
+
+fn format_ip6_prefix(p: Ip6Prefix) -> string:
+    return format_ip6(p.addr) + "/" + str(p.bits)
+
+fn _mask_ip4(ip: Ip4, bits: int) -> Ip4:
+    o: [4]int = [0, 0, 0, 0]
+    full := bits / 8
+    rem := bits % 8
+    for i := 0; i < 4; i += 1:
+        if i < full:
+            o[i] = ip.o[i]
+        elif i == full and rem > 0:
+            mask := 256 - (1 << (8 - rem))
+            o[i] = ip.o[i] & mask
+    return Ip4(o)
+
+fn _mask_ip6(ip: Ip6, bits: int) -> Ip6:
+    o: [16]int = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    full := bits / 8
+    rem := bits % 8
+    for i := 0; i < 16; i += 1:
+        if i < full:
+            o[i] = ip.o[i]
+        elif i == full and rem > 0:
+            mask := 256 - (1 << (8 - rem))
+            o[i] = ip.o[i] & mask
+    return Ip6(o)
+
+fn prefix_network_ip4(p: Ip4Prefix) -> Ip4:
+    return _mask_ip4(p.addr, p.bits)
+
+fn prefix_network_ip6(p: Ip6Prefix) -> Ip6:
+    return _mask_ip6(p.addr, p.bits)
+
+fn prefix_contains_ip4(p: Ip4Prefix, ip: Ip4) -> bool:
+    a := _mask_ip4(p.addr, p.bits)
+    b := _mask_ip4(ip, p.bits)
+    for i := 0; i < 4; i += 1:
+        if a.o[i] != b.o[i]:
+            return false
+    return true
+
+fn prefix_contains_ip6(p: Ip6Prefix, ip: Ip6) -> bool:
+    a := _mask_ip6(p.addr, p.bits)
+    b := _mask_ip6(ip, p.bits)
+    for i := 0; i < 16; i += 1:
+        if a.o[i] != b.o[i]:
+            return false
+    return true

@@ -854,6 +854,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `parse_ip6`/`format_ip6` (including `::` compression and a trailing IPv4 part),
   `parse_endpoint`/`join_endpoint` (`host:port`, IPv6 in brackets) and
   `is_ip4`/`is_ip6`; `Ip4`, `Ip6` and `Endpoint` are plain value structs.
+  Prefixes are `addr/N`: `parse_ip4_prefix`/`parse_ip6_prefix` and
+  `format_ip4_prefix`/`format_ip6_prefix` (a bare address is `/32` or `/128`);
+  `prefix_network_ip4`/`prefix_network_ip6` clear host bits and
+  `prefix_contains_ip4`/`prefix_contains_ip6` test containment.
 - **`nbio`** — readiness polling. `poll(fds, events, timeout_ms) -> Result([Ready],
   NbioErr)` waits on each fd with an event mask of `READ`/`WRITE`
   (`Ready{fd, events}` carries the revents mask; a negative timeout waits

@@ -302,6 +302,28 @@ fn main():
     println("ep_bare_v6=" + ep_str(net.parse_endpoint("2001:db8::1:443")))
     println("ep_bad=" + ep_str(net.parse_endpoint("host:70000")) + "," + ep_str(net.parse_endpoint("host")))
 
+    # ---- prefix parsing and containment ----
+    println("ip4p=" + ip4p_str(net.parse_ip4_prefix("192.168.1.0/24")))
+    println("ip4p_bare=" + ip4p_str(net.parse_ip4_prefix("192.168.1.55")))
+    println("ip4p_bad=" + ip4p_str(net.parse_ip4_prefix("10.0.0.0/33")))
+    match net.parse_ip4_prefix("192.168.1.0/24"):
+        Some(p):
+            println("ip4p_net=" + net.format_ip4(net.prefix_network_ip4(p)))
+            println("ip4p_hit=" + str(p4_contains(p, "192.168.1.55")))
+            println("ip4p_miss=" + str(p4_contains(p, "192.168.2.1")))
+        None:
+            println("ip4p_parse=bad")
+    println("ip6p=" + ip6p_str(net.parse_ip6_prefix("2001:db8::/32")))
+    println("ip6p_bare=" + ip6p_str(net.parse_ip6_prefix("::1")))
+    println("ip6p_bad=" + ip6p_str(net.parse_ip6_prefix("::/129")))
+    match net.parse_ip6_prefix("2001:db8::/32"):
+        Some(p):
+            println("ip6p_net=" + net.format_ip6(net.prefix_network_ip6(p)))
+            println("ip6p_hit=" + str(p6_contains(p, "2001:db8:1::1")))
+            println("ip6p_miss=" + str(p6_contains(p, "2001:db9::1")))
+        None:
+            println("ip6p_parse=bad")
+
 
 fn ip4_str(r: Option(net.Ip4)) -> string:
     match r:
@@ -317,3 +339,23 @@ fn ep_str(r: Option(net.Endpoint)) -> string:
     match r:
         Some(ep): return net.join_endpoint(ep)
         None: return "bad"
+
+fn ip4p_str(r: Option(net.Ip4Prefix)) -> string:
+    match r:
+        Some(p): return net.format_ip4_prefix(p)
+        None: return "bad"
+
+fn ip6p_str(r: Option(net.Ip6Prefix)) -> string:
+    match r:
+        Some(p): return net.format_ip6_prefix(p)
+        None: return "bad"
+
+fn p4_contains(p: net.Ip4Prefix, addr: string) -> bool:
+    match net.parse_ip4(addr):
+        Some(ip): return net.prefix_contains_ip4(p, ip)
+        None: return false
+
+fn p6_contains(p: net.Ip6Prefix, addr: string) -> bool:
+    match net.parse_ip6(addr):
+        Some(ip): return net.prefix_contains_ip6(p, ip)
+        None: return false
