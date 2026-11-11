@@ -1,5 +1,7 @@
 key_roundtrip=1
 key_len=1
+sha1=1
+sha1_empty=1
 sha256=1
 sha512=1
 hmac=1

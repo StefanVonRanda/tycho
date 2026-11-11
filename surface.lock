@@ -322,6 +322,7 @@
   "crypto.rsa_pubkey_to_pem": "(k: ptr)-> string",
   "crypto.rsa_sign_sha256": "(k: ptr, msg_hex: string)-> string",
   "crypto.rsa_verify_sha256": "(k: ptr, msg_hex: string, sig_hex: string)-> bool",
+  "crypto.sha1": "(msg_hex: string)-> string",
   "crypto.sha256": "(msg_hex: string)-> string",
   "crypto.sha3_256": "(msg_hex: string)-> string",
   "crypto.sha3_512": "(msg_hex: string)-> string",

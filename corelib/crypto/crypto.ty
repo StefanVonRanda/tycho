@@ -9,6 +9,7 @@ extern fn cx_key_len(k: ptr) -> int
 extern fn cx_key_free(k: ptr)
 extern fn cx_random_hex(n: int) -> string
 extern fn cx_sha256_hex(msg_hex: string) -> string
+extern fn cx_sha1_hex(msg_hex: string) -> string
 extern fn cx_sha512_hex(msg_hex: string) -> string
 extern fn cx_sha3_256_hex(msg_hex: string) -> string
 extern fn cx_sha3_512_hex(msg_hex: string) -> string
@@ -117,6 +118,11 @@ fn random_hex(n: int) -> string:
     return cx_random_hex(n)
 
 # ---- hashing (public data; message is hex) ----
+fn sha1(msg_hex: string) -> string:
+    if _has_nul_hex(msg_hex):
+        return "!err"
+    return cx_sha1_hex(msg_hex)
+
 fn sha256(msg_hex: string) -> string:
     if _has_nul_hex(msg_hex):
         return "!err"

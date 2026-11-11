@@ -561,7 +561,7 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`crypto`** — the security-grade module, a C-shim over OpenSSL `libcrypto` (see
   [C-shim modules](#c-shim-ffi-backed-modules); needs the OpenSSL dev package). Where the
   pure-Tycho `sha256`/`md5` are for non-adversarial integrity, this is what to reach for
-  when an attacker is in the threat model: CSPRNG (`random_hex`), `sha256`/`sha512`/
+  when an attacker is in the threat model: CSPRNG (`random_hex`), `sha1`/`sha256`/`sha512`/
   `sha3_256`/`sha3_512` of binary, extendable-output `shake128`/`shake256(msg,
   outlen)`, `blake2b`/`blake2s`, `hmac_sha256`/`hmac_sha512`, `pbkdf2_sha256`,
   `hkdf_sha256(ikm, salt_hex, info_hex, outlen) -> ptr` (derived key handle),

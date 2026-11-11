@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 87 packages, ~21.7k lines, 1122 locked
+lines). The current Tycho corelib is 87 packages, ~21.7k lines, 1123 locked
 public functions.
 
 Status values:

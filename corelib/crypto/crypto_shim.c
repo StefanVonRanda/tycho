@@ -176,6 +176,7 @@ static const char *digest_hex(const EVP_MD *md, const char *msg_hex) {
     return res;
 }
 const char *cx_sha256_hex(const char *msg_hex) { return digest_hex(EVP_sha256(), msg_hex); }
+const char *cx_sha1_hex(const char *msg_hex) { return digest_hex(EVP_sha1(), msg_hex); }
 const char *cx_sha512_hex(const char *msg_hex) { return digest_hex(EVP_sha512(), msg_hex); }
 const char *cx_sha3_256_hex(const char *msg_hex) { return digest_hex(EVP_sha3_256(), msg_hex); }
 const char *cx_sha3_512_hex(const char *msg_hex) { return digest_hex(EVP_sha3_512(), msg_hex); }
