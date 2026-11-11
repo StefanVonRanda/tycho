@@ -16,6 +16,8 @@ extern fn netx_set_nodelay(fd: int, on: int) -> int
 extern fn netx_set_keepalive(fd: int, on: int) -> int
 extern fn netx_set_broadcast(fd: int, on: int) -> int
 extern fn netx_set_nonblocking(fd: int, on: int) -> int
+extern fn netx_unix_listen(path: string) -> int
+extern fn netx_unix_connect(path: string) -> int
 
 fn _has_nul(host: string) -> bool:
     for i := 0; i < len(host); i += 1:
@@ -258,3 +260,20 @@ fn set_nonblocking(fd: int, on: bool) -> bool:
     if fd < 0:
         return false
     return netx_set_nonblocking(fd, _b(on)) == 1
+
+# Unix-domain stream sockets (POSIX; Windows returns Failed).
+fn unix_listen(path: string) -> Result(int, NetErr):
+    if _has_nul(path) or len(path) == 0:
+        return Err(BadAddr)
+    fd := netx_unix_listen(path)
+    if fd < 0:
+        return Err(Failed)
+    return Ok(fd)
+
+fn unix_connect(path: string) -> Result(int, NetErr):
+    if _has_nul(path) or len(path) == 0:
+        return Err(BadAddr)
+    fd := netx_unix_connect(path)
+    if fd < 0:
+        return Err(Failed)
+    return Ok(fd)

@@ -1,0 +1,50 @@
+package main
+import "core:io"
+import "core:net"
+import "core:os"
+
+fn path_join(dir: string, name: string) -> string:
+    if len(dir) > 0 and dir[len(dir) - 1] == 47:
+        return dir + name
+    return dir + "/" + name
+
+fn main():
+    if os.is_windows():
+        println("unix=skip")
+        return
+    path := path_join(os.temp_dir(), "tycho_net_unix_" + str(os.pid()) + ".sock")
+    match io.remove(path):
+        Ok(_): pass
+        Err(_): pass
+    lr := net.unix_listen(path)
+    lfd := -1
+    match lr:
+        Ok(v): lfd = v
+        Err(_): pass
+    println("listen=" + str(lfd >= 0))
+    cr := net.unix_connect(path)
+    cfd := -1
+    match cr:
+        Ok(v): cfd = v
+        Err(_): pass
+    println("connect=" + str(cfd >= 0))
+    afd := -1
+    match net.accept(lfd):
+        Ok(v): afd = v
+        Err(_): pass
+    println("accept=" + str(afd >= 0))
+    match net.write(cfd, to_bytes("hi")):
+        Ok(_): pass
+        Err(_): pass
+    got := ""
+    match net.read(afd, 16):
+        Ok(b): got = to_str(b)
+        Err(_): got = ""
+    println("read=" + got)
+    net.close_fd(cfd)
+    net.close_fd(afd)
+    net.close_fd(lfd)
+    match io.remove(path):
+        Ok(_): pass
+        Err(_): pass
+    println("cleanup=" + str(not io.exists(path)))

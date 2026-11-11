@@ -727,6 +727,8 @@
   "net.udp_read_checked": "(fd: int, max: int)-> Result(bytes, NetErr)",
   "net.udp_send": "(fd: int, host: string, port: int, data: bytes)-> int",
   "net.udp_send_checked": "(fd: int, host: string, port: int, data: bytes)-> Result(int, NetErr)",
+  "net.unix_connect": "(path: string)-> Result(int, NetErr)",
+  "net.unix_listen": "(path: string)-> Result(int, NetErr)",
   "net.wait_readable": "(fds: [int], ms: int)-> Result([int], NetErr)",
   "net.write": "(fd: int, data: bytes)-> Result(int, NetErr)",
   "noise.fbm2": "(x: float, y: float, octaves: int, lacunarity: float, gain: float, seed: int)-> float",

@@ -607,3 +607,34 @@ tycho_int netx_set_nonblocking(tycho_int fd, tycho_int on) {
     return fcntl((int)fd, F_SETFL, flags) == 0 ? 1 : 0;
 #endif
 }
+
+/* ---- Unix-domain sockets (POSIX only) ---- */
+#ifndef _WIN32
+#include <sys/un.h>
+tycho_int netx_unix_listen(const char *path) {
+    if (strlen(path) >= sizeof(((struct sockaddr_un *)0)->sun_path)) return -1;
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    struct sockaddr_un a;
+    memset(&a, 0, sizeof a);
+    a.sun_family = AF_UNIX;
+    strncpy(a.sun_path, path, sizeof a.sun_path - 1);
+    if (bind(fd, (struct sockaddr *)&a, sizeof a) != 0 ||
+        listen(fd, 16) != 0) { close(fd); return -1; }
+    return fd;
+}
+tycho_int netx_unix_connect(const char *path) {
+    if (strlen(path) >= sizeof(((struct sockaddr_un *)0)->sun_path)) return -1;
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    struct sockaddr_un a;
+    memset(&a, 0, sizeof a);
+    a.sun_family = AF_UNIX;
+    strncpy(a.sun_path, path, sizeof a.sun_path - 1);
+    if (connect(fd, (struct sockaddr *)&a, sizeof a) != 0) { close(fd); return -1; }
+    return fd;
+}
+#else
+tycho_int netx_unix_listen(const char *path) { (void)path; return -1; }
+tycho_int netx_unix_connect(const char *path) { (void)path; return -1; }
+#endif

@@ -6990,7 +6990,7 @@ Three errors in one sentence:
 | every call blocks | `accept_wait(fd, ms)` and `wait_readable(fds, ms)` take deadlines |
 | 12 exports | **15** |
 
-`corelib/net/net.ty:211@wait_readable` even carries the comment *"poll(2)
+`corelib/net/net.ty:213@wait_readable` even carries the comment *"poll(2)
 underneath, not select(2): select cannot represent a descriptor at or above
 1024"* — and `make net-poll-check` has been scoring exactly that behaviour on
 every sweep.
