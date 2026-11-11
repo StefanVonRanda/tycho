@@ -1,0 +1,28 @@
+package main
+import "core:textmatch"
+
+fn pair(o: Option((int, int))) -> string:
+    match o:
+        Some(p): return str(p.0) + "," + str(p.1)
+        None: return "none"
+
+fn list_of(xs: [string]) -> string:
+    out := ""
+    for x in xs:
+        out = out + "[" + x + "]"
+    return out
+
+fn main():
+    println("lit=" + pair(textmatch.find("hello world", "world", 0)))
+    println("digits=" + pair(textmatch.find("abc123", "%d+", 0)))
+    println("alpha=" + pair(textmatch.find("a1b2", "%a", 0)))
+    println("anchor=" + str(textmatch.matches("abc", "^a")) + "," + str(textmatch.matches("abc", "^b")))
+    println("gmatch=" + list_of(textmatch.gmatch("a1b2c3", "%d")))
+    println("gsub=" + textmatch.gsub("hello world", "o", "0"))
+    println("caps=" + textmatch.gsub("a1b2", "(%a)(%d)", "%2%1"))
+    println("pct=" + textmatch.gsub("abc", "b", "%%"))
+    println("dot=" + pair(textmatch.find("a.b", "%.", 0)))
+    println("plus=" + pair(textmatch.find("a+b", "%+", 0)))
+    println("unsupported=" + pair(textmatch.find("abc", "%b()", 0)))
+    println("class=" + pair(textmatch.find("a1b2", "[%d]", 0)))
+    println("init=" + pair(textmatch.find("a1b2", "%d", 2)))

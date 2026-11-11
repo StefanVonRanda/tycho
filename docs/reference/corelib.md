@@ -401,6 +401,13 @@ expression-bodied; pass a named function where you need a multi-line body.
   `post(url, body, content_type)` takes a `string` body and stops at the first interior
   `0x00`; `post_bytes(url, body, content_type)` is its binary-safe sibling, taking
   `bytes` and sending the whole length. Tests are skipped where libcurl is absent.
+- **`textmatch`** — Lua-style patterns translated to POSIX ERE over `core:regex`.
+  `find(s, pattern, init) -> Option((start, end))`, `matches(s, pattern)`,
+  `gmatch(s, pattern) -> [string]`, and `gsub(s, pattern, replacement)` with
+  `%0`..`%9` capture references and `%%` for a literal percent. Supports
+  `%a`/`%c`/`%d`/`%g`/`%l`/`%p`/`%s`/`%u`/`%w`/`%x`, `.`, `[...]`, `* + ?`,
+  `^ $` and captures. Non-greedy `-`, `%b` and `%f` are refused rather than
+  given different semantics.
 - **`xml`** — a self-contained XML parser and serializer. `Node` is
   `Element(name, [Attr], [Node])` or `Text(string)`; `parse(s) -> Result(Node,
   XmlErr)` accepts an XML declaration, comments, processing instructions, a

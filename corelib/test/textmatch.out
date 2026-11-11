@@ -1,0 +1,13 @@
+lit=6,11
+digits=3,6
+alpha=0,1
+anchor=true,false
+gmatch=[1][2][3]
+gsub=hell0 w0rld
+caps=1a2b
+pct=a%c
+dot=1,2
+plus=1,2
+unsupported=none
+class=1,2
+init=3,4

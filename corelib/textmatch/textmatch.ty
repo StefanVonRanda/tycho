@@ -1,0 +1,242 @@
+# Lua-style pattern matching over core:regex (POSIX ERE). The translation is
+# deliberately partial: `-` (non-greedy), `%b` and `%f` are refused rather than
+# silently given different semantics.
+package textmatch
+
+import "core:regex"
+
+enum TmErr:
+    BadPattern
+    Unsupported
+
+fn _class(c: int, negated: bool) -> string:
+    body := ""
+    if c == 97:                       # a
+        body = "[:alpha:]"
+    elif c == 99:                     # c
+        body = "[:cntrl:]"
+    elif c == 100:                    # d
+        body = "[:digit:]"
+    elif c == 103:                    # g
+        body = "[:graph:]"
+    elif c == 108:                    # l
+        body = "[:lower:]"
+    elif c == 112:                    # p
+        body = "[:punct:]"
+    elif c == 115:                    # s
+        body = "[:space:]"
+    elif c == 117:                    # u
+        body = "[:upper:]"
+    elif c == 119:                    # w
+        body = "[:alnum:]"
+    elif c == 120:                    # x
+        body = "[:xdigit:]"
+    if body == "":
+        return ""
+    if negated:
+        return "[^" + body + "]"
+    return "[" + body + "]"
+
+fn _class_in(c: int) -> string:
+    if c == 97:
+        return "[:alpha:]"
+    if c == 99:
+        return "[:cntrl:]"
+    if c == 100:
+        return "[:digit:]"
+    if c == 103:
+        return "[:graph:]"
+    if c == 108:
+        return "[:lower:]"
+    if c == 112:
+        return "[:punct:]"
+    if c == 115:
+        return "[:space:]"
+    if c == 117:
+        return "[:upper:]"
+    if c == 119:
+        return "[:alnum:]"
+    if c == 120:
+        return "[:xdigit:]"
+    return ""
+
+fn _ere_escape(c: int) -> string:
+    if c == 46 or c == 94 or c == 36 or c == 42 or c == 43 or c == 63 or
+            c == 40 or c == 41 or c == 91 or c == 93 or c == 123 or c == 125 or
+            c == 124 or c == 92:
+        return "\\" + chr(c)
+    return chr(c)
+
+# Translate the supported Lua-pattern subset to a POSIX ERE.
+fn _translate(pattern: string) -> Result(string, TmErr):
+    out := ""
+    i := 0
+    in_class := false
+    for i < len(pattern):
+        c := pattern[i]
+        if c == 37:                   # %
+            if i + 1 >= len(pattern):
+                return Err(BadPattern)
+            n := pattern[i + 1]
+            if in_class:
+                cl := _class_in(n)
+                if cl != "":
+                    out = out + cl
+                else:
+                    out = out + "\\" + chr(n)
+            else:
+                if n == 98 or n == 102:       # %b, %f
+                    return Err(Unsupported)
+                cl := _class(n, false)
+                if cl != "":
+                    out = out + cl
+                elif n >= 65 and n <= 90:
+                    cl2 := _class(n + 32, true)
+                    if cl2 != "":
+                        out = out + cl2
+                    else:
+                        out = out + "\\" + chr(n)
+                else:
+                    out = out + _ere_escape(n)
+            i += 2
+            continue
+        if in_class:
+            if c == 93:               # ]
+                in_class = false
+            out = out + chr(c)
+            i += 1
+            continue
+        if c == 91:                   # [
+            in_class = true
+            out = out + "["
+            i += 1
+            if i < len(pattern) and pattern[i] == 94:   # leading ^
+                out = out + "^"
+                i += 1
+            continue
+        if c == 45:                   # non-greedy -
+            return Err(Unsupported)
+        if c == 46 or c == 94 or c == 36 or c == 42 or c == 43 or c == 63 or
+                c == 40 or c == 41:
+            out = out + chr(c)
+        elif c == 123 or c == 125 or c == 124 or c == 92:
+            out = out + "\\" + chr(c)
+        else:
+            out = out + chr(c)
+        i += 1
+    if in_class:
+        return Err(BadPattern)
+    return Ok(out)
+
+fn _compile(pattern: string) -> Result(ptr, TmErr):
+    match _translate(pattern):
+        Ok(p):
+            re := regex.compile(p)
+            if not regex.ok(re):
+                return Err(BadPattern)
+            return Ok(re)
+        Err(e):
+            return Err(e)
+
+# First match at or after byte `init`, as (start, end). `^` still anchors to the
+# start of `s`, so an anchored pattern with init > 0 does not match.
+fn find(s: string, pattern: string, init: int) -> Option((int, int)):
+    if init < 0:
+        init = 0
+    if init > len(s):
+        return None
+    if len(pattern) > 0 and pattern[0] == 94 and init > 0:
+        return None
+    match _compile(pattern):
+        Ok(re):
+            sub := substr(s, init, len(s))
+            a := regex.find(re, sub)
+            b := regex.find_end(re, sub)
+            regex.release(re)
+            if a < 0:
+                return None
+            return Some((init + a, init + b))
+        Err(_):
+            return None
+
+fn matches(s: string, pattern: string) -> bool:
+    match find(s, pattern, 0):
+        Some(_): return true
+        None: return false
+
+# All non-overlapping matches, in order.
+fn gmatch(s: string, pattern: string) -> [string]:
+    out := []string
+    match _compile(pattern):
+        Ok(re):
+            pos := 0
+            for pos <= len(s):
+                sub := substr(s, pos, len(s))
+                a := regex.find(re, sub)
+                b := regex.find_end(re, sub)
+                if a < 0:
+                    break
+                push(out, substr(sub, a, b))
+                if b == a:
+                    if pos + a >= len(s):
+                        break
+                    pos = pos + a + 1
+                else:
+                    pos = pos + b
+            regex.release(re)
+        Err(_):
+            pass
+    return out
+
+fn _expand(re: ptr, sub: string, a: int, b: int, replacement: string) -> string:
+    out := ""
+    i := 0
+    for i < len(replacement):
+        c := replacement[i]
+        if c == 37 and i + 1 < len(replacement):
+            n := replacement[i + 1]
+            if n == 37:
+                out = out + "%"
+            elif n >= 48 and n <= 57:
+                idx := n - 48
+                if idx == 0:
+                    out = out + substr(sub, a, b)
+                else:
+                    out = out + regex.group(re, sub, idx)
+            else:
+                out = out + chr(n)
+            i += 2
+        else:
+            out = out + chr(c)
+            i += 1
+    return out
+
+# Replace every match. `%0`..`%9` in `replacement` name capture groups; `%%` is
+# a literal percent. An unsupported pattern leaves `s` unchanged.
+fn gsub(s: string, pattern: string, replacement: string) -> string:
+    match _compile(pattern):
+        Ok(re):
+            out := ""
+            pos := 0
+            for pos <= len(s):
+                sub := substr(s, pos, len(s))
+                a := regex.find(re, sub)
+                b := regex.find_end(re, sub)
+                if a < 0:
+                    break
+                out = out + substr(s, pos, pos + a)
+                out = out + _expand(re, sub, a, b, replacement)
+                if b == a:
+                    if pos + a >= len(s):
+                        pos = len(s) + 1
+                        break
+                    out = out + substr(s, pos + a, pos + a + 1)
+                    pos = pos + a + 1
+                else:
+                    pos = pos + b
+            if pos <= len(s):
+                out = out + substr(s, pos, len(s))
+            regex.release(re)
+            return out
+        Err(_):
+            return s

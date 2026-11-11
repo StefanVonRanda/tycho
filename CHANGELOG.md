@@ -57,7 +57,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM/PBM codecs to `core:raster`,
   and baseline JPEG encode/decode to `core:image`.
 - Added `strings.fields` for splitting on runs of ASCII whitespace.
-- The tree is now 87 corelib packages and 93 golden test trees.
+- Added `core:textmatch`, a Lua-pattern subset over POSIX ERE: `find`, `matches`,
+  `gmatch` and `gsub` with capture references; non-greedy `-`, `%b` and `%f`
+  are refused rather than given different semantics.
+- The tree is now 88 corelib packages and 94 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 
