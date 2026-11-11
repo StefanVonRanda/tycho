@@ -1,6 +1,16 @@
 package main
 import "core:compress"
 
+fn bytes_of(r: Result(bytes, compress.ZErr)) -> bytes:
+    match r:
+        Ok(v): return v
+        Err(_): return to_bytes([]int)
+
+fn deflater_why(r: Result(compress.Deflater, compress.ZErr)) -> string:
+    match r:
+        Ok(_): return "Ok"
+        Err(_): return "Err"
+
 fn b2i(b: bool) -> int:
     if b:
         return 1
@@ -62,3 +72,32 @@ fn main():
     rc := compress.raw_compress(ob)
     println("raw_ok=" + zwhy(compress.raw_decompress(rc)))
     println("raw_corrupt=" + zwhy(compress.raw_decompress(to_bytes("junk"))))
+
+    # ---- streaming gzip ----
+    df := compress.Deflater(null)
+    match compress.deflater_new(6):
+        Ok(v): df = v
+        Err(_): pass
+    c1 := compress.deflate_chunk(&df, to_bytes("hello "))
+    c2 := compress.deflate_chunk(&df, to_bytes("world"))
+    c3 := compress.deflate_finish(&df)
+    out := bytes_of(c1) + bytes_of(c2) + bytes_of(c3)
+    println("def stream_bytes=" + str(len(out) > 0))
+    decoded := compress.decompress(out)
+    match decoded:
+        Ok(v): println("def roundtrip=" + str(v == to_bytes("hello world")))
+        Err(_): println("def roundtrip=false")
+    compress.deflater_free(df)
+
+    inf := compress.Inflater(null)
+    match compress.inflater_new():
+        Ok(v): inf = v
+        Err(_): pass
+    half := len(out) / 2
+    i1 := compress.inflate_chunk(&inf, out[0:half])
+    i2 := compress.inflate_chunk(&inf, out[half:len(out)])
+    i3 := compress.inflate_finish(&inf)
+    plain := bytes_of(i1) + bytes_of(i2) + bytes_of(i3)
+    println("inflate roundtrip=" + str(plain == to_bytes("hello world")))
+    compress.inflater_free(inf)
+    println("deflater_bad=" + deflater_why(compress.deflater_new(99)))

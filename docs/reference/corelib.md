@@ -971,6 +971,9 @@ plus four more:
   output bound. Errors are `Truncated`, `BadOffset`, `OutputTooSmall` and
   `BadSize`. Frames and checksums are not implemented.
 - **`compress`** — gzip (RFC 1952) compress/decompress over **zlib** (`deps: zlib`).
+  Streaming: `deflater_new(level)`/`deflate_chunk`/`deflate_finish`/`deflater_free`
+  and `inflater_new`/`inflate_chunk`/`inflate_finish`/`inflater_free`; chunks may
+  produce empty bytes, and the inflater auto-detects gzip or zlib wrappers.
   `compress(bytes) -> bytes`; `decompress(bytes) -> Result(bytes, ZErr)` and
   `raw_decompress` likewise, where `ZErr` is `Corrupt` / `Truncated` / `Failed` /
   `TooBig` (decompressed output exceeds its limit).

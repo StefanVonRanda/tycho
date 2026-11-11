@@ -228,3 +228,112 @@ void zx_raw_inflate(const unsigned char *data, tycho_int len, tycho_int *status,
     }
     *outlen = (tycho_int)s.total_out; *out = buf; *status = ZD_OK; inflateEnd(&s);
 }
+
+/* ---- streaming gzip deflate / auto-wrapper inflate ---- */
+typedef struct { z_stream z; int ended; } ZxStream;
+
+static void zx_out_clear(unsigned char **out, tycho_int *outlen) {
+    *out = NULL; *outlen = 0;
+}
+
+void *zx_deflate_new(tycho_int level, tycho_int *status) {
+    *status = ZD_FAILED;
+    if (level < 0 || level > 9) return NULL;
+    ZxStream *s = (ZxStream *)calloc(1, sizeof *s);
+    if (!s) return NULL;
+    if (deflateInit2(&s->z, (int)level, Z_DEFLATED, GZIP_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        free(s); return NULL;
+    }
+    *status = ZD_OK;
+    return s;
+}
+
+void *zx_inflate_new(tycho_int *status) {
+    *status = ZD_FAILED;
+    ZxStream *s = (ZxStream *)calloc(1, sizeof *s);
+    if (!s) return NULL;
+    if (inflateInit2(&s->z, 15 + 32) != Z_OK) { free(s); return NULL; }
+    *status = ZD_OK;
+    return s;
+}
+
+static void zx_stream_free(void *vp, int inflating) {
+    ZxStream *s = (ZxStream *)vp;
+    if (!s) return;
+    if (inflating) inflateEnd(&s->z); else deflateEnd(&s->z);
+    free(s);
+}
+
+void zx_deflate_free(void *vp) { zx_stream_free(vp, 0); }
+void zx_inflate_free(void *vp) { zx_stream_free(vp, 1); }
+
+static int zx_do_chunk(ZxStream *s, const unsigned char *data, tycho_int len,
+                       int flush, int inflating, tycho_int *status,
+                       unsigned char **out, tycho_int *outlen) {
+    *status = ZD_FAILED;
+    zx_out_clear(out, outlen);
+    if (!s || len < 0 || (uint64_t)len > UINT_MAX) return -1;
+    size_t cap = (size_t)len + 65536;
+    if (cap < 65536) cap = 65536;
+    unsigned char *buf = (unsigned char *)malloc(cap);
+    if (!buf) return -1;
+    size_t used = 0;
+    s->z.next_in = (Bytef *)data;
+    s->z.avail_in = (uInt)len;
+    int rc = Z_OK;
+    for (;;) {
+        if (used == cap) {
+            size_t ncap = cap * 2;
+            unsigned char *nb = (unsigned char *)realloc(buf, ncap);
+            if (!nb) { free(buf); return -1; }
+            buf = nb; cap = ncap;
+        }
+        s->z.next_out = buf + used;
+        s->z.avail_out = (uInt)(cap - used);
+        uInt before = s->z.avail_out;
+        rc = inflating ? inflate(&s->z, flush) : deflate(&s->z, flush);
+        used += (size_t)(before - s->z.avail_out);
+        if (inflating) {
+            if (rc == Z_STREAM_END) { s->ended = 1; break; }
+            if (rc == Z_OK || rc == Z_BUF_ERROR) {
+                if (s->z.avail_in == 0 && s->z.avail_out != 0) break;
+                if (s->z.avail_out == 0) continue;
+                break;
+            }
+            *status = (rc == Z_DATA_ERROR || rc == Z_NEED_DICT) ? ZD_CORRUPT : ZD_TRUNCATED;
+            free(buf); return -1;
+        }
+        if (rc == Z_STREAM_END) { s->ended = 1; break; }
+        if (rc != Z_OK) { *status = ZD_FAILED; free(buf); return -1; }
+        if (s->z.avail_in == 0 && s->z.avail_out != 0) break;
+    }
+    *status = ZD_OK;
+    *out = buf;
+    *outlen = (tycho_int)used;
+    return 0;
+}
+
+void zx_deflate_chunk(void *vp, const unsigned char *data, tycho_int len,
+                      tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    zx_do_chunk((ZxStream *)vp, data, len, Z_NO_FLUSH, 0, status, out, outlen);
+}
+
+void zx_deflate_finish(void *vp, tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    zx_do_chunk((ZxStream *)vp, (const unsigned char *)"", 0, Z_FINISH, 0, status, out, outlen);
+}
+
+void zx_inflate_chunk(void *vp, const unsigned char *data, tycho_int len,
+                      tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    zx_do_chunk((ZxStream *)vp, data, len, Z_NO_FLUSH, 1, status, out, outlen);
+}
+
+void zx_inflate_finish(void *vp, tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    ZxStream *s = (ZxStream *)vp;
+    if (s && s->ended) {
+        *status = ZD_OK;
+        *out = (unsigned char *)malloc(1);
+        *outlen = 0;
+        return;
+    }
+    zx_do_chunk(s, (const unsigned char *)"", 0, Z_FINISH, 1, status, out, outlen);
+}

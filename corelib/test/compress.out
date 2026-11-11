@@ -8,3 +8,7 @@ gzip_concat=leftright
 gzip_trailing=Corrupt
 raw_ok=Ok
 raw_corrupt=Truncated
+def stream_bytes=true
+def roundtrip=true
+inflate roundtrip=true
+deflater_bad=Err

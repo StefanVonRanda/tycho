@@ -15,6 +15,14 @@ extern fn zx_compress(data: bytes) -> bytes
 extern fn zx_decompress(data: bytes, status: inout int) -> bytes
 extern fn zx_raw_deflate(data: bytes) -> bytes
 extern fn zx_raw_inflate(data: bytes, status: inout int) -> bytes
+extern fn zx_deflate_new(level: int, status: inout int) -> ptr
+extern fn zx_inflate_new(status: inout int) -> ptr
+extern fn zx_deflate_free(s: ptr)
+extern fn zx_inflate_free(s: ptr)
+extern fn zx_deflate_chunk(s: ptr, data: bytes, status: inout int) -> bytes
+extern fn zx_deflate_finish(s: ptr, status: inout int) -> bytes
+extern fn zx_inflate_chunk(s: ptr, data: bytes, status: inout int) -> bytes
+extern fn zx_inflate_finish(s: ptr, status: inout int) -> bytes
 
 const ZD_OK = 0
 const ZD_CORRUPT = 1
@@ -63,3 +71,60 @@ fn raw_decompress(data: bytes) -> Result(bytes, ZErr):
     if st == ZD_OK:
         return Ok(b)
     return Err(_cause(st))
+
+struct Deflater:
+    p: ptr
+
+struct Inflater:
+    p: ptr
+
+# Gzip-wrapped streaming deflater. Each chunk may produce zero bytes; finish
+# emits the trailer and marks the stream ended.
+fn deflater_new(level: int) -> Result(Deflater, ZErr):
+    st := 0
+    p := zx_deflate_new(level, &st)
+    if is_null(p):
+        return Err(_cause(st))
+    return Ok(Deflater(p))
+
+fn deflate_chunk(d: inout Deflater, data: bytes) -> Result(bytes, ZErr):
+    st := 0
+    b := zx_deflate_chunk(d.p, data, &st)
+    if st == ZD_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
+fn deflate_finish(d: inout Deflater) -> Result(bytes, ZErr):
+    st := 0
+    b := zx_deflate_finish(d.p, &st)
+    if st == ZD_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
+fn deflater_free(d: Deflater):
+    zx_deflate_free(d.p)
+
+# Inflater auto-detects gzip or zlib wrappers, matching decompress().
+fn inflater_new() -> Result(Inflater, ZErr):
+    st := 0
+    p := zx_inflate_new(&st)
+    if is_null(p):
+        return Err(_cause(st))
+    return Ok(Inflater(p))
+
+fn inflate_chunk(i: inout Inflater, data: bytes) -> Result(bytes, ZErr):
+    st := 0
+    b := zx_inflate_chunk(i.p, data, &st)
+    if st == ZD_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
+fn inflate_finish(i: inout Inflater) -> Result(bytes, ZErr):
+    st := 0
+    b := zx_inflate_finish(i.p, &st)
+    if st == ZD_OK:
+        return Ok(b)
+    return Err(_cause(st))
+
+fn inflater_free(i: Inflater):
+    zx_inflate_free(i.p)
