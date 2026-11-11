@@ -313,28 +313,29 @@ fn _pnm_token(s: string, pos: inout int) -> string:
 fn _pnm_header(s: string) -> (string, int, int, int, int):
     pos := 0
     magic := _pnm_token(s, &pos)
-    if magic != "P5" and magic != "P6":
+    if magic != "P4" and magic != "P5" and magic != "P6":
         return ("", 0, 0, 0, 0)
     ws := _pnm_token(s, &pos)
     hs := _pnm_token(s, &pos)
-    ms := _pnm_token(s, &pos)
     w := 0
     h := 0
-    maxv := 0
     match strings.parse_int(ws):
         Ok(v): w = v
         Err(_): return ("", 0, 0, 0, 0)
     match strings.parse_int(hs):
         Ok(v): h = v
         Err(_): return ("", 0, 0, 0, 0)
-    match strings.parse_int(ms):
-        Ok(v): maxv = v
-        Err(_): return ("", 0, 0, 0, 0)
+    maxv := 1
+    if magic != "P4":
+        ms := _pnm_token(s, &pos)
+        match strings.parse_int(ms):
+            Ok(v): maxv = v
+            Err(_): return ("", 0, 0, 0, 0)
     if w <= 0 or h <= 0 or maxv < 1 or maxv > 255:
         return ("", 0, 0, 0, 0)
     if pos >= len(s) or not _pnm_ws(s[pos]):
         return ("", 0, 0, 0, 0)
-    pos += 1                    # exactly one whitespace byte after maxval
+    pos += 1
     return (magic, w, h, maxv, pos)
 
 fn encode_ppm(img: Image) -> bytes:
@@ -430,6 +431,65 @@ fn decode_pgm(data: bytes) -> Image:
         push(px, g)
         push(px, 255)
         i += 1
+    return Image(w, h, to_bytes(px))
+
+fn encode_pbm(img: Image) -> bytes:
+    w := img.width
+    h := img.height
+    ps := to_str(img.pixels)
+    if w <= 0 or h <= 0 or len(ps) != w * h * 4:
+        return to_bytes([]int)
+    hdr := "P4\n" + str(w) + " " + str(h) + "\n"
+    out := []int
+    rowbytes := (w + 7) / 8
+    y := 0
+    for y < h:
+        x := 0
+        for x < rowbytes:
+            b := 0
+            k := 0
+            for k < 8:
+                px := x * 8 + k
+                if px < w:
+                    p := (y * w + px) * 4
+                    luma := (ps[p] * 299 + ps[p + 1] * 587 + ps[p + 2] * 114 + 500) / 1000
+                    if luma < 128:
+                        b = b | (128 >> k)
+                k += 1
+            push(out, b)
+            x += 1
+        y += 1
+    return to_bytes(hdr) + to_bytes(out)
+
+fn decode_pbm(data: bytes) -> Image:
+    s := to_str(data)
+    hd := _pnm_header(s)
+    if hd.0 != "P4":
+        return _empty_image()
+    w := hd.1
+    h := hd.2
+    off := hd.4
+    if too_big(w, h):
+        return _empty_image()
+    rowbytes := (w + 7) / 8
+    if off + rowbytes * h > len(s):
+        return _empty_image()
+    px := []int
+    y := 0
+    for y < h:
+        x := 0
+        for x < w:
+            b := s[off + y * rowbytes + x / 8]
+            bit := (b >> (7 - (x % 8))) & 1
+            v := 255
+            if bit == 1:
+                v = 0
+            push(px, v)
+            push(px, v)
+            push(px, v)
+            push(px, 255)
+            x += 1
+        y += 1
     return Image(w, h, to_bytes(px))
 
 # ---- QOI --------------------------------------------------------------------

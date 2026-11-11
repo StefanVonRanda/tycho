@@ -890,8 +890,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   32-bpp `BI_RGB`), `encode_qoi`/`decode_qoi` (all six QOI chunk types), and
   `encode_tga`/`decode_tga` (uncompressed 24/32-bpp, top-down write; reads type 2 and
   RLE type 10, top-down or bottom-up; color-mapped and grayscale TGA are refused),
-  and `encode_ppm`/`decode_ppm` (P6) plus `encode_pgm`/`decode_pgm` (P5), with
-  comments, CRLF and any maxval 1..255 scaled to 8-bit (PGM writes luma).
+  `encode_ppm`/`decode_ppm` (P6), `encode_pgm`/`decode_pgm` (P5) and
+  `encode_pbm`/`decode_pbm` (P4), with comments, CRLF and any maxval 1..255
+  scaled to 8-bit (PGM writes luma, PBM thresholds at 128).
   All **round-trip losslessly**; the decoders **fail closed** to a 0×0 Image on a
   malformed / truncated / wrong-format input (check `width > 0`). `too_big(w, h)` is
   the decode guard in front of every codec here: it answers whether a declared width

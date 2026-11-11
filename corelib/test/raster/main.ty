@@ -156,3 +156,11 @@ fn main():
     pgray := raster.decode_pgm(to_bytes("P5\n2 1\n15\n" + chr(0) + chr(15)))
     println("pgm scale=" + hex.encode(to_str(pgray.pixels)))
     println("ppm bad=" + str(raster.decode_ppm(to_bytes("P3\n1 1\n255\n")).width) + " pgm bad=" + str(raster.decode_pgm(to_bytes("P6\n1 1\n255\n")).width))
+
+    # ---- PBM P4 ----
+    bw := raster.make(8, 2, to_bytes([0,0,0,255, 255,255,255,255, 0,0,0,255, 255,255,255,255, 0,0,0,255, 255,255,255,255, 0,0,0,255, 255,255,255,255,
+                                       255,255,255,255, 0,0,0,255, 255,255,255,255, 0,0,0,255, 255,255,255,255, 0,0,0,255, 255,255,255,255, 0,0,0,255]))
+    pbm := raster.encode_pbm(bw)
+    pbm_back := raster.decode_pbm(pbm)
+    println("pbm hdr=" + str(len(pbm)) + " rt=" + str(b(pbm_back.width == 8 and pbm_back.height == 2 and pbm_back.pixels == bw.pixels)))
+    println("pbm bad=" + str(raster.decode_pbm(to_bytes("P5\n1 1\n255\n")).width))

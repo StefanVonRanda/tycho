@@ -24,3 +24,5 @@ pgm hdr=13 rt=1
 ppm comment=2x1 px=0088ffffffff00ff
 pgm scale=000000ffffffffff
 ppm bad=0 pgm bad=0
+pbm hdr=9 rt=1
+pbm bad=0
