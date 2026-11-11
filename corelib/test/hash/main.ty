@@ -45,3 +45,11 @@ fn main():
     println("ghash tup  = " + str(b2i(hash((1, "x")) == hash((1, "x")))))   # 1
     println("ghash nest = " + str(b2i(hash([["a"], ["b"]]) == hash([["a"], ["b"]]))))  # 1
     println("ghash det  = " + str(hash(7)) + " " + str(hash("ab")) + " " + str(hash((1, "x"))))
+
+    # ---- xxHash vectors ----
+    println("xxh32 empty=" + str(hash.xxh32("", 0) == to_u32(0x02CC5D05)))
+    println("xxh32 a=" + str(hash.xxh32("a", 0) == to_u32(0x550D7456)))
+    println("xxh32 abc=" + str(hash.xxh32("abc", 0) == to_u32(0x32D153FF)))
+    println("xxh64 empty=" + str(hash.xxh64("", 0) == ((to_u64(0xEF46DB37) << 32) | to_u64(0x51D8E999))))
+    println("xxh64 abc=" + str(hash.xxh64("abc", 0) == ((to_u64(0x44BC2CF5) << 32) | to_u64(0xAD770999))))
+    println("xxh64 long=" + str(hash.xxh64("0123456789abcdef0123456789abcdef0123456789abcdef", 0) != to_u64(0)))

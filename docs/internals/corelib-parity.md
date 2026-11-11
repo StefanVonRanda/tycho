@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 74 packages, ~14.4k lines, 933 locked
+lines). The current Tycho corelib is 74 packages, ~14.4k lines, 935 locked
 public functions.
 
 Status values:
@@ -31,7 +31,7 @@ Status values:
 | `encoding` | partial | `base64`, `base32`, `hex`, `json`, `csv`, `uuid`, `pem`, `ini`, `varint`, `endian`, `xml`, `cbor`, `asn1` | entity tables, hxa |
 | `flags` | partial | `cli` parses argv, but with no declarative flag set | decide whether to extend `cli` or add `flags` |
 | `fmt` | partial | `str`, `f"..."` interpolation, `strings.format_g17`; no general format-spec API | add width/base/precision formatting where interpolation is not enough |
-| `hash` | partial | FNV-1a, djb2, sdbm, CRC32 | add xxHash (Odin's only `core:hash` package) |
+| `hash` | covered | FNV-1a, djb2, sdbm, CRC32 and xxHash 32/64 | none |
 | `image` | partial | `image` is PNG; `raster` is BMP/QOI | JPEG, TGA, Netpbm, BNG |
 | `io` | covered | file read/write/append/copy/stat/dirs, checked variants, stdin/stdout, line reader | no generic `Reader`/`Writer` interface; concrete values are the design |
 | `log` | covered | leveled logger, stderr/file choice, `new`/`line` | none |

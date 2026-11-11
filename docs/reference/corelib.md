@@ -479,7 +479,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   exactly 32 hex digits), `format(bytes) -> string` (canonical 8-4-4-4-12),
   `is_valid` (strict), `version` (the version nibble, `-1` if invalid). v1 and the
   name-based v3/v5 are out of scope. Zero bytes survive formatting.
-- **`hash`** — non-cryptographic 32-bit hashes for hash tables / checksums / dedup (NOT for
+- **`hash`** — non-cryptographic hashes for hash tables / checksums / dedup
+  (NOT for cryptographic use): `fnv1a_32`, `djb2`, `sdbm`, `crc32`, and
+  xxHash `xxh32(s, seed)` / `xxh64(s, seed)`. The old 32-bit helpers remain.
   security): `fnv1a_32`, `djb2`, `sdbm`, and `crc32` (IEEE/zlib, bit-by-bit), plus `to_hex`
   (8-digit lowercase). All return a non-negative int in `[0, 2^32)`. Matches published vectors:
   `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`. For a hash of

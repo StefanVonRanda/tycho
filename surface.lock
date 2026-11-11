@@ -475,6 +475,8 @@
   "hash.fnv1a_32": "(s: string)-> int",
   "hash.sdbm": "(s: string)-> int",
   "hash.to_hex": "(h: int)-> string",
+  "hash.xxh32": "(s: string, seed: int)-> u32",
+  "hash.xxh64": "(s: string, seed: int)-> u64",
   "hex.decode": "(s: string)-> string",
   "hex.encode": "(s: string)-> string",
   "hex.encode_upper": "(s: string)-> string",

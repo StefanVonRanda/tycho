@@ -1,5 +1,7 @@
 package hash
 
+import "core:bits"
+
 fn _lo_hex(n: int) -> int:                  # nibble (0..15) -> lowercase hex byte
     if n < 10:
         return 48 + n
@@ -52,3 +54,116 @@ fn crc32(s: string) -> int:
             else:
                 crc = crc >> 1
     return to_int(crc ^ to_u32(4294967295))
+
+# ---- xxHash (32/64-bit), the hash Odin's core:hash exposes ----
+fn _rd32(s: string, i: int) -> u32:
+    return to_u32(s[i]) | (to_u32(s[i + 1]) << 8) | (to_u32(s[i + 2]) << 16) | (to_u32(s[i + 3]) << 24)
+
+fn _rd64(s: string, i: int) -> u64:
+    v := to_u64(0)
+    k := 0
+    for k < 8:
+        v = v | (to_u64(s[i + k]) << (k * 8))
+        k += 1
+    return v
+
+fn xxh32(s: string, seed: int) -> u32:
+    p1 := to_u32(2654435761)
+    p2 := to_u32(2246822519)
+    p3 := to_u32(3266489917)
+    p4 := to_u32(668265263)
+    p5 := to_u32(374761393)
+    n := len(s)
+    i := 0
+    h := to_u32(0)
+    if n >= 16:
+        v1 := to_u32(seed) + p1 + p2
+        v2 := to_u32(seed) + p2
+        v3 := to_u32(seed)
+        v4 := to_u32(seed) - p1
+        for i + 16 <= n:
+            v1 = bits.rotl32(v1 + _rd32(s, i) * p2, 13) * p1
+            v2 = bits.rotl32(v2 + _rd32(s, i + 4) * p2, 13) * p1
+            v3 = bits.rotl32(v3 + _rd32(s, i + 8) * p2, 13) * p1
+            v4 = bits.rotl32(v4 + _rd32(s, i + 12) * p2, 13) * p1
+            i += 16
+        h = bits.rotl32(v1, 1) + bits.rotl32(v2, 7) + bits.rotl32(v3, 12) + bits.rotl32(v4, 18)
+    else:
+        h = to_u32(seed) + p5
+    h = h + to_u32(n)
+    for i + 4 <= n:
+        h = bits.rotl32(h + _rd32(s, i) * p3, 17) * p4
+        i += 4
+    for i < n:
+        h = bits.rotl32(h + to_u32(s[i]) * p5, 11) * p1
+        i += 1
+    h = h ^ (h >> 15)
+    h = h * p2
+    h = h ^ (h >> 13)
+    h = h * p3
+    h = h ^ (h >> 16)
+    return h
+
+fn _p64_1() -> u64:
+    return (to_u64(0x9E3779B1) << 32) | to_u64(0x85EBCA87)
+
+fn _p64_2() -> u64:
+    return (to_u64(0xC2B2AE3D) << 32) | to_u64(0x27D4EB4F)
+
+fn _p64_3() -> u64:
+    return (to_u64(0x165667B1) << 32) | to_u64(0x9E3779F9)
+
+fn _p64_4() -> u64:
+    return (to_u64(0x85EBCA77) << 32) | to_u64(0xC2B2AE63)
+
+fn _p64_5() -> u64:
+    return (to_u64(0x27D4EB2F) << 32) | to_u64(0x165667C5)
+
+fn _round64(acc: u64, input: u64) -> u64:
+    return bits.rotl64(acc + input * _p64_2(), 31) * _p64_1()
+
+fn _merge64(h0: u64, v: u64) -> u64:
+    h := h0 ^ _round64(to_u64(0), v)
+    return h * _p64_1() + _p64_4()
+
+fn xxh64(s: string, seed: int) -> u64:
+    n := len(s)
+    i := 0
+    h := to_u64(0)
+    if n >= 32:
+        v1 := to_u64(seed) + _p64_1() + _p64_2()
+        v2 := to_u64(seed) + _p64_2()
+        v3 := to_u64(seed)
+        v4 := to_u64(seed) - _p64_1()
+        for i + 32 <= n:
+            v1 = _round64(v1, _rd64(s, i))
+            v2 = _round64(v2, _rd64(s, i + 8))
+            v3 = _round64(v3, _rd64(s, i + 16))
+            v4 = _round64(v4, _rd64(s, i + 24))
+            i += 32
+        h = bits.rotl64(v1, 1) + bits.rotl64(v2, 7) + bits.rotl64(v3, 12) + bits.rotl64(v4, 18)
+        h = _merge64(h, v1)
+        h = _merge64(h, v2)
+        h = _merge64(h, v3)
+        h = _merge64(h, v4)
+    else:
+        h = to_u64(seed) + _p64_5()
+    h = h + to_u64(n)
+    for i + 8 <= n:
+        h = h ^ _round64(to_u64(0), _rd64(s, i))
+        h = bits.rotl64(h, 27) * _p64_1() + _p64_4()
+        i += 8
+    if i + 4 <= n:
+        h = h ^ (to_u64(_rd32(s, i)) * _p64_1())
+        h = bits.rotl64(h, 23) * _p64_2() + _p64_3()
+        i += 4
+    for i < n:
+        h = h ^ (to_u64(s[i]) * _p64_5())
+        h = bits.rotl64(h, 11) * _p64_1()
+        i += 1
+    h = h ^ (h >> 33)
+    h = h * _p64_2()
+    h = h ^ (h >> 29)
+    h = h * _p64_3()
+    h = h ^ (h >> 32)
+    return h
