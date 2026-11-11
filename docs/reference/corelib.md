@@ -109,7 +109,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   `pad_right`. Bases are 2..36; floats keep trailing zeros.
 - **`strings`** — `to_upper`, `to_lower`, `starts_with`, `ends_with`, `contains`,
   `repeat(s, n)`, `trim` (ASCII whitespace), `parse_int`, `parse_u64`, `parse_int_prefix`,
-  `is_space`, `lines` (splits on `\n`, drops one trailing `\r` per line, trailing
+  `is_space`, `fields` (splits on runs of ASCII whitespace, dropping empty edge fields),
+  `lines` (splits on `\n`, drops one trailing `\r` per line, trailing
   newline adds no empty line), `replace`
   (non-overlapping, left to right; empty `old` returns the input unchanged), `count(s, sub)`,
   `strip_prefix`/`strip_suffix`, `pad_left`/`pad_right(s, width, pad)` (pad is one byte),

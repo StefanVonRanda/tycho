@@ -938,6 +938,7 @@
   "strings.contains": "(s: string, sub: string)-> bool",
   "strings.count": "(s: string, sub: string)-> int",
   "strings.ends_with": "(s: string, suffix: string)-> bool",
+  "strings.fields": "(s: string)-> [string]",
   "strings.format_float": "(v: float, digits: int)-> string",
   "strings.format_g17": "(v: float)-> string",
   "strings.format_int_base": "(n: int, base: int, upper: bool)-> string",

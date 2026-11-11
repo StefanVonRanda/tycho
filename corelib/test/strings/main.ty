@@ -78,6 +78,11 @@ fn main():
     println("rt -0.0     " + pfrt(-0.0) + " neg=" + pfneg(str(-0.0)))
     # is_space covers \v (11) and \f (12) too: trim strips them
     println("vt=[" + strings.trim(chr(11) + "x" + chr(12)) + "]")   # vt=[x]
+    # ---- fields: runs of ASCII whitespace, no empty edge fields ----
+    println("f1=[" + jn(strings.fields("  a  b\tc\n")) + "]")   # f1=[a|b|c]
+    println("f2=" + str(len(strings.fields("   "))))             # f2=0
+    println("f3=[" + jn(strings.fields("one")) + "]")            # f3=[one]
+    println("f4=[" + jn(strings.fields("a" + chr(11) + "b" + chr(12) + "c")) + "]")  # f4=[a|b|c]
     # ---- builtin split shapes (corelib composes with it; empty sep aborts by design) ----
     println("s1=[" + jn(split("a,b,c", ",")) + "]")            # s1=[a|b|c]
     println("s2=[" + jn(split(",a,", ",")) + "]")              # s2=[|a|] (empty pieces kept)

@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 87 packages, ~21.8k lines, 1137 locked
+lines). The current Tycho corelib is 87 packages, ~21.8k lines, 1138 locked
 public functions.
 
 Status values:
@@ -50,7 +50,7 @@ Status values:
 | `slice` | non-goal | `[T]` is the slice; no separate heap-slice type | none |
 | `sort` | covered | `sort` with generic ordering | none |
 | `strconv` | covered | decimal/base 2..36 parse and format, fixed float, widths via `fmt`, `format_g17`, builtin `str` | none |
-| `strings` | covered | case, trim, split, find, replace, pad, reverse, escapes, parsing | add a builder if measured concatenation cost demands it |
+| `strings` | covered | case, trim, split, fields, find, replace, pad, reverse, escapes, parsing | add a builder if measured concatenation cost demands it |
 | `sync` | covered | C11 atomics (int/bool/pointer), `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup`, `Once`, `Barrier`, recursive mutex; channels are language builtins | ticket mutex (not a capability gap) |
 | `sys` | non-goal | libc and shims are the portability boundary | none |
 | `terminal` | partial | ANSI escapes, tty/size, raw mode, byte read, key decoding | cursor queries and non-console Windows fallbacks |

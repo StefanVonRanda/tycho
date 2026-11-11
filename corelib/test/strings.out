@@ -33,6 +33,10 @@ rt 5e-324   yes
 rt 2^53     yes
 rt -0.0     yes neg=yes
 vt=[x]
+f1=[a|b|c]
+f2=0
+f3=[one]
+f4=[a|b|c]
 s1=[a|b|c]
 s2=[|a|]
 s3=[abc]

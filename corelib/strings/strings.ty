@@ -11,6 +11,21 @@ package strings
 fn is_space(c: int) -> bool:                 # ASCII whitespace: space \t \n \v \f \r
     return c == 32 or c == 9 or c == 10 or c == 11 or c == 12 or c == 13
 
+# Split on runs of ASCII whitespace. Leading/trailing runs are dropped and no
+# empty field is produced, so `fields("  a  b ")` is `["a", "b"]`.
+fn fields(s: string) -> [string]:
+    out := []string
+    i := 0
+    for i < len(s):
+        for i < len(s) and is_space(s[i]):
+            i += 1
+        start := i
+        for i < len(s) and not is_space(s[i]):
+            i += 1
+        if i > start:
+            push(out, s[start:i])
+    return out
+
 fn to_upper(s: string) -> string:
     cs := []int                              # build the bytes, materialize once (no per-char chr()+append)
     for i := 0; i < len(s); i += 1:
