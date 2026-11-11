@@ -109,6 +109,8 @@ See [Concurrency](concurrency.md) for semantics.
 | `clock()` | `-> int` | Monotonic nanoseconds (differences are meaningful; the absolute value is not). |
 | `now()` | `-> int` | Wall-clock seconds since the UNIX epoch. |
 
+`read_file` is **fail-open by design**: a missing file, an unreadable file and a genuinely empty file all return `""`. When that distinction matters, use `core:io.read_text(p) -> Result(string, io.IoErr)` or `read_bytes(p)` instead.
+
 ## Float math (libm)
 
 | Builtin | Type |

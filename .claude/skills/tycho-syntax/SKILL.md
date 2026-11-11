@@ -206,7 +206,6 @@ carries the fix, so read it before guessing:
 | `while cond:` | `for cond:` | `Tycho has no `while` — use `for cond:` for a conditional loop` |
 | `for i in range(n):` | `for i := 0; i < n; i += 1:` | ``range()` was removed` |
 | `for i in 0..<n:` (sequential) | the three-clause form | ``0..<N` counts only in a `parallel for`` |
-| `eprintln(s)` | `eprint(s + "\n")` | `stderr has no println` |
 | a named `fn` inside a `fn` | declare it at top level | `a named function cannot be declared inside another` |
 | `1 + 2.5` | convert one side | `arithmetic requires two ints or two floats (got int, float)` |
 | `match s:` with string arms | `if`/`elif` on strings | ``match` does not take a string arm — int, char, bool, a range and a const name do` |

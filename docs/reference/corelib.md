@@ -820,6 +820,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   `create_temp_file(prefix)` and `create_temp_dir(prefix)` return fresh paths in
   the system temp directory (the prefix may not contain a path separator), and
   `user_name()` is the account login name where the OS exposes one.
+  `exit(code)` and `die(msg)` are language builtins, not `core:os` members; see
+  [builtins](builtins.md).
   `pipe()` returns `(read_fd, write_fd)`; `read_fd(fd, max)` and `write_fd(fd, data)`
   cover descriptor I/O and `close_fd(fd)` releases one.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (POSIX sockets; no `deps`,
