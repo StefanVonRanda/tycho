@@ -1,0 +1,41 @@
+package main
+import "core:i18n"
+import "core:io"
+
+fn report(t: i18n.Translation):
+    println("hello=" + i18n.get(t, "hello"))
+    println("cat=" + i18n.get(t, "cat"))
+    println("missing=" + i18n.get(t, "missing"))
+    println("context=" + i18n.get(t, "File"))
+    println("plural1=" + i18n.get_n(t, "apple", 1))
+    println("plural2=" + i18n.get_n(t, "apple", 2))
+    println("header_ok=" + str(len(i18n.header(t)) > 0))
+
+fn main():
+    match io.read_bytes("corelib/test/i18n/fixture.mo"):
+        Ok(data):
+            match i18n.parse_mo_from_bytes(data):
+                Ok(t): report(t)
+                Err(_): println("parse=err")
+        Err(_):
+            println("read=err")
+
+    match io.read_bytes("corelib/test/i18n/fixture_be.mo"):
+        Ok(data):
+            match i18n.parse_mo_from_bytes(data):
+                Ok(t): println("be=" + i18n.get(t, "hello"))
+                Err(_): println("be=err")
+        Err(_):
+            println("be=read-err")
+
+    bad := to_bytes([1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    match i18n.parse_mo_from_bytes(bad):
+        Ok(_): println("bad=Ok")
+        Err(i18n.BadMagic): println("bad=BadMagic")
+        Err(_): println("bad=Other")
+
+    short := to_bytes([0, 0])
+    match i18n.parse_mo_from_bytes(short):
+        Ok(_): println("short=Ok")
+        Err(i18n.Truncated): println("short=Truncated")
+        Err(_): println("short=Other")

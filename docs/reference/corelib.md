@@ -684,6 +684,12 @@ expression-bodied; pass a named function where you need a multi-line body.
   `decode(b)` (BOM-aware, little-endian when absent) and `decode_be(b)`.
   `OddLength`, `BadSurrogate` and `BadUtf8` are refused rather than decoded
   leniently.
+- **`i18n`** — GNU gettext MO catalogs. `parse_mo_from_bytes(data) ->
+  Result(Translation, I18nErr)` accepts both byte orders; `get(t, key)` returns
+  the singular translation (or the key when absent), `get_n(t, key, n)` selects
+  the English one/other plural form, and `header(t)` is the catalog header.
+  Context entries use the msgid after the first NUL. Qt `.qm` catalogs and
+  locale data are not parsed.
 - **`unicode`** — case mapping/folding, normalization, segmentation and UCD
   classification. `to_upper(s)`, `to_lower(s)` and `to_casefold(s)` apply full
   one-to-many expansions (`ß -> SS`, `Straße -> strasse`); `to_upper_char`,
