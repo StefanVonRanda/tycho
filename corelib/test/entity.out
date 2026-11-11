@@ -1,0 +1,6 @@
+named=a & b < c > d "q" '
+numeric=AB😀
+unknown=&bogus; &
+common= ©…—€α
+encode=&lt;a &amp; b &quot;c&quot; &#39;d&#39;&gt;
+roundtrip=true

@@ -1,0 +1,10 @@
+package main
+import "core:entity"
+
+fn main():
+    println("named=" + entity.decode("a &amp; b &lt; c &gt; d &quot;q&quot; &apos;"))
+    println("numeric=" + entity.decode("&#65;&#x42;&#x1F600;"))
+    println("unknown=" + entity.decode("&bogus; &"))
+    println("common=" + entity.decode("&nbsp;&copy;&hellip;&mdash;&euro;&alpha;"))
+    println("encode=" + entity.encode("<a & b \"c\" 'd'>"))
+    println("roundtrip=" + str(entity.decode(entity.encode("<x>")) == "<x>"))

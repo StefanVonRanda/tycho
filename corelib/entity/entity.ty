@@ -1,0 +1,100 @@
+package entity
+
+import "core:utf8"
+
+fn _named(name: string) -> int:
+    m := ["amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39,
+          "nbsp": 160, "copy": 169, "reg": 174, "trade": 8482,
+          "hellip": 8230, "mdash": 8212, "ndash": 8211,
+          "lsquo": 8216, "rsquo": 8217, "ldquo": 8220, "rdquo": 8221,
+          "laquo": 171, "raquo": 187, "times": 215, "divide": 247,
+          "deg": 176, "plusmn": 177, "micro": 181, "para": 182,
+          "sect": 167, "middot": 183, "bull": 8226, "dagger": 8224,
+          "Dagger": 8225, "euro": 8364, "pound": 163, "yen": 165,
+          "cent": 162, "larr": 8592, "rarr": 8594, "uarr": 8593,
+          "darr": 8595, "harr": 8596, "infin": 8734, "ne": 8800,
+          "le": 8804, "ge": 8805, "asymp": 8776, "equiv": 8801,
+          "sum": 8721, "prod": 8719, "radic": 8730, "int": 8747,
+          "there4": 8756, "forall": 8704, "exist": 8707, "empty": 8709,
+          "isin": 8712, "notin": 8713, "cap": 8745, "cup": 8746,
+          "sub": 8834, "sup": 8835, "sube": 8838, "supe": 8839,
+          "and": 8743, "or": 8744, "not": 172, "alpha": 945,
+          "beta": 946, "gamma": 947, "delta": 948, "pi": 960,
+          "sigma": 963, "omega": 969]
+    return m.get(name, -1)
+
+fn _hex(c: int) -> int:
+    if c >= 48 and c <= 57:
+        return c - 48
+    if c >= 97 and c <= 102:
+        return c - 97 + 10
+    if c >= 65 and c <= 70:
+        return c - 65 + 10
+    return -1
+
+# Decode the common HTML4 named entities plus decimal/hex numeric references.
+# Unknown names are left verbatim.
+fn decode(s: string) -> string:
+    out := ""
+    i := 0
+    for i < len(s):
+        if s[i] != 38:
+            out = out + chr(s[i])
+            i += 1
+        else:
+            j := find(s[i + 1:len(s)], ";")
+            if j < 0 or j > 32:
+                out = out + "&"
+                i += 1
+            else:
+                name := s[i + 1:i + 1 + j]
+                cp := -1
+                if len(name) > 2 and name[0] == 35 and (name[1] == 120 or name[1] == 88):
+                    cp = 0
+                    ok := true
+                    for k := 2; k < len(name); k += 1:
+                        d := _hex(name[k])
+                        if d < 0:
+                            ok = false
+                        else:
+                            cp = cp * 16 + d
+                    if not ok:
+                        cp = -1
+                elif len(name) > 1 and name[0] == 35:
+                    cp = 0
+                    ok := true
+                    for k := 1; k < len(name); k += 1:
+                        c := name[k]
+                        if c < 48 or c > 57:
+                            ok = false
+                        else:
+                            cp = cp * 10 + (c - 48)
+                    if not ok:
+                        cp = -1
+                else:
+                    cp = _named(name)
+                if cp >= 1 and cp <= 1114111 and not (cp >= 55296 and cp <= 57343):
+                    out = out + utf8.encode(cp)
+                    i = i + 1 + j + 1
+                else:
+                    out = out + "&"
+                    i += 1
+    return out
+
+fn encode(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 38:
+            out = out + "&amp;"
+        elif c == 60:
+            out = out + "&lt;"
+        elif c == 62:
+            out = out + "&gt;"
+        elif c == 34:
+            out = out + "&quot;"
+        elif c == 39:
+            out = out + "&#39;"
+        else:
+            out = out + chr(c)
+    return out

@@ -466,6 +466,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   (no nested lists, reference links, tables, or setext headings) — targets a
   blog/wiki. `esc(s)` is that HTML escaper on its own, for callers assembling
   markup around rendered output.
+- **`entity`** — HTML entity text: `decode(s)` handles the common HTML4 named
+  entities plus decimal and hex numeric references (unknown names stay
+  verbatim), and `encode(s)` escapes `& < > " '`.
 - **`base64`** — Base64 (RFC 4648) `encode`/`decode`, plus `encode_url` (URL-safe
   `-`/`_` alphabet, no padding). `decode` is lenient: it skips any non-alphabet byte
   (padding `=`, whitespace, newlines in wrapped Base64) and accepts both alphabets.

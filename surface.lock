@@ -414,6 +414,8 @@
   "endian.put_u32_le": "(v: u32)-> bytes",
   "endian.put_u64_be": "(v: u64)-> bytes",
   "endian.put_u64_le": "(v: u64)-> bytes",
+  "entity.decode": "(s: string)-> string",
+  "entity.encode": "(s: string)-> string",
   "filepath.base": "(p: string)-> string",
   "filepath.clean": "(p: string)-> string",
   "filepath.dir": "(p: string)-> string",
