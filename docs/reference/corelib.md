@@ -684,11 +684,15 @@ expression-bodied; pass a named function where you need a multi-line body.
   `decode(b)` (BOM-aware, little-endian when absent) and `decode_be(b)`.
   `OddLength`, `BadSurrogate` and `BadUtf8` are refused rather than decoded
   leniently.
-- **`unicode`** — simple one-codepoint case mapping and folding:
-  `to_upper(s)`, `to_lower(s)`, `to_casefold(s)`, `to_upper_char(cp)`,
-  `to_lower_char(cp)` and `to_casefold_char(cp)`. Expansions such as `ß -> SS`
-  and locale-specific rules are not applied; invalid UTF-8 bytes are copied
-  through.
+- **`unicode`** — case mapping/folding plus normalization and segmentation.
+  `to_upper(s)`, `to_lower(s)` and `to_casefold(s)` apply full one-to-many
+  expansions (`ß -> SS`, `Straße -> strasse`); `to_upper_char`,
+  `to_lower_char` and `to_casefold_char` return the simple one-codepoint
+  mapping. `normalize_nfd`, `normalize_nfc`,
+  `normalize_nfkd` and `normalize_nfkc` implement UAX #15 (Hangul algorithmic,
+  canonical ordering, composition exclusions). `graphemes(s)` returns extended
+  grapheme clusters (CRLF, Hangul, RI pairs, emoji ZWJ, Indic conjuncts) and
+  `words(s)` returns UAX #29 word segments. Invalid UTF-8 bytes pass through.
 - **`io`** — filesystem helpers over the `read_file`/`write_file`/`list_dir` builtins.
   `read(p)` — **fail-open**: `""` for a missing file, an unreadable one and a genuinely
   empty one alike, so prefer `read_text(p) -> Result(string, IoErr)` or `read_bytes(p)`
@@ -786,6 +790,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   previous mask, and `uid`/`euid`/`gid`/`egid`/`ppid` report identity (`-1` on
   Windows, which has no numeric ids). `cache_dir`, `config_dir` and `data_dir`
   follow `XDG_*` on POSIX and `%LOCALAPPDATA%`/`%APPDATA%` on Windows.
+  `platform()` reports `Linux`/`Windows`/`MacOS`/`Android`/`IOS`/`Other`;
+  `is_linux`, `is_macos`, `is_android` and `is_ios` are the predicates.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (POSIX sockets; no `deps`,
   nothing to install). **The transfer calls block; readiness does not.**
   `read`/`write`/`connect` block, so a worker-per-connection server still has its

@@ -1,5 +1,6 @@
 package main
 import "core:unicode"
+import "core:utf8"
 
 fn main():
     println("ascii=" + unicode.to_upper("hello, world") + "|" + unicode.to_lower("HELLO"))
@@ -9,3 +10,48 @@ fn main():
     println("char=" + str(unicode.to_upper_char(0x00E9)) + "," + str(unicode.to_lower_char(0x00C9)) + "," + str(unicode.to_upper_char(97)))
     println("invalid=" + str(len(unicode.to_upper(chr(255)))))
     println("fold=" + unicode.to_casefold("Hello Σς") + " char=" + str(unicode.to_casefold_char(0x03C2)))
+    println("expand=" + unicode.to_upper("straße") + "|" + unicode.to_lower("İ") + "|" + unicode.to_casefold("Straße"))
+    main2()
+    main3()
+
+fn s_of(cps: [int]) -> string:
+    out := ""
+    for cp in cps:
+        out = out + utf8.encode(cp)
+    return out
+
+fn main2():
+    e_acute := "é"
+    e_comb := s_of([101, 769])
+    println("nfd_e=" + str(unicode.normalize_nfd(e_acute) == e_comb))
+    println("nfc_e=" + str(unicode.normalize_nfc(e_comb) == e_acute))
+    println("nfd_aring=" + str(unicode.normalize_nfd("Å") == s_of([65, 778])))
+    println("nfc_aring=" + str(unicode.normalize_nfc(s_of([65, 778])) == "Å"))
+    println("nfd_hangul=" + str(unicode.normalize_nfd("한") == s_of([0x1112, 0x1161, 0x11AB])))
+    println("nfc_hangul=" + str(unicode.normalize_nfc(s_of([0x1112, 0x1161, 0x11AB])) == "한"))
+    println("nfkd_fi=" + str(unicode.normalize_nfkd("ﬁ") == "fi"))
+    println("nfkc_one=" + str(unicode.normalize_nfkc("①") == "1"))
+    println("nfc_angstrom=" + str(unicode.normalize_nfc(s_of([0x212B])) == "Å"))
+    println("nfd_order=" + str(unicode.normalize_nfd(s_of([97, 0x323, 0x301])) == s_of([97, 0x323, 0x301])))
+    println("nfc_order=" + str(unicode.normalize_nfc(s_of([97, 0x323, 0x301])) == s_of([0x1EA1, 0x301])))
+    println("idempotent=" + str(unicode.normalize_nfc(unicode.normalize_nfd(e_acute)) == e_acute))
+    println("emoji=" + str(unicode.normalize_nfc("😀") == "😀"))
+
+fn list_of(xs: [string]) -> string:
+    out := ""
+    for x in xs:
+        out = out + "[" + x + "]"
+    return out
+
+fn main3():
+    println("g1=" + str(len(unicode.graphemes("a" + utf8.encode(769) + "b")) == 2))
+    println("g2=" + str(len(unicode.graphemes("👍🏽")) == 1))
+    println("g3=" + str(len(unicode.graphemes("🇺🇸")) == 1))
+    println("g4=" + str(len(unicode.graphemes("\r\n")) == 1))
+    println("g5=" + str(len(unicode.graphemes("👨‍👩‍👧‍👦")) == 1))
+    println("w1=" + list_of(unicode.words("Hello, world! 123 4.5 can't")))
+    println("w2=" + list_of(unicode.words("a_b 3.14")))
+    println("g6=" + str(len(unicode.graphemes("1️⃣")) == 1))
+    println("g7=" + str(len(unicode.graphemes("क्ष")) == 1))
+    println("w3=" + list_of(unicode.words("🇺🇸 3.14 can't a_b")))
+    println("w4=" + list_of(unicode.words("👨‍👩‍👧‍👦")))

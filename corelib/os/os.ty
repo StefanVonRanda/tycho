@@ -46,6 +46,15 @@ extern fn osx_geteuid() -> int
 extern fn osx_getgid() -> int
 extern fn osx_getegid() -> int
 extern fn osx_getppid() -> int
+extern fn osx_platform() -> int
+
+enum Platform:
+    Linux
+    Windows
+    MacOS
+    Android
+    IOS
+    Other
 
 enum OsErr:
     BadName
@@ -302,3 +311,29 @@ fn data_dir() -> string:
     if len(v) > 0:
         return v
     return _home_join("/.local/share")
+
+fn platform() -> Platform:
+    k := osx_platform()
+    if k == 0:
+        return Linux
+    if k == 1:
+        return Windows
+    if k == 2:
+        return MacOS
+    if k == 3:
+        return Android
+    if k == 4:
+        return IOS
+    return Other
+
+fn is_linux() -> bool:
+    return platform() == Linux
+
+fn is_macos() -> bool:
+    return platform() == MacOS
+
+fn is_android() -> bool:
+    return platform() == Android
+
+fn is_ios() -> bool:
+    return platform() == IOS

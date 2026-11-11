@@ -18,6 +18,9 @@
 #include <stdint.h>
 #include "../tycho.h"
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>            /* CreateProcessA / CreatePipe -- the argv path */
 #include <process.h>            /* _beginthreadex -- concurrent stdout/stderr drains */
@@ -827,5 +830,23 @@ tycho_int osx_getppid(void) {
     return -1;
 #else
     return (tycho_int)getppid();
+#endif
+}
+
+tycho_int osx_platform(void) {
+#if defined(__ANDROID__)
+    return 3;
+#elif defined(_WIN32)
+    return 1;
+#elif defined(__APPLE__)
+#if TARGET_OS_IPHONE
+    return 4;
+#else
+    return 2;
+#endif
+#elif defined(__linux__)
+    return 0;
+#else
+    return 5;
 #endif
 }

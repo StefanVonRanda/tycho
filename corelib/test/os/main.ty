@@ -222,3 +222,15 @@ fn main():
     println("home_nonempty=" + str(home))
     println("temp_nonempty=" + str(len(os.temp_dir()) > 0))
     println("dirs=" + str(len(os.cache_dir()) > 0) + "," + str(len(os.config_dir()) > 0) + "," + str(len(os.data_dir()) > 0))
+    if os.platform() == os.Linux:
+        println("platform=linux")
+    elif os.platform() == os.Windows:
+        println("platform=windows")
+    elif os.platform() == os.MacOS:
+        println("platform=macos")
+    elif os.platform() == os.Android:
+        println("platform=android")
+    elif os.platform() == os.IOS:
+        println("platform=ios")
+    else:
+        println("platform=other")

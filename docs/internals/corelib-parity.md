@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 84 packages, ~16.3k lines, 1055 locked
+lines). The current Tycho corelib is 84 packages, ~19.3k lines, 1066 locked
 public functions.
 
 Status values:
@@ -58,7 +58,7 @@ Status values:
 | `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `edit`, `scanner`, `table`, `glob` | i18n tables and locale data |
 | `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; `thread.id`/`yield_now`/`cpus` | raw thread creation/TLS need compiler/runtime support |
 | `time` | covered | monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset | none |
-| `unicode` | partial | `utf8`, `utf16`, simple case mapping and folding | multi-codepoint folds, segmentation, normalization |
+| `unicode` | covered | `utf8`, `utf16`, full case mapping/folding, UAX #15 normalization, UAX #29 grapheme/word segmentation | none |
 
 ## What parity does not mean
 
@@ -70,6 +70,25 @@ Status values:
 - No runtime type metadata solely to support `reflect`.
 - No package added without golden tests, reference docs and a `surface.lock`
   record.
+
+## Platform targets
+
+Odin's core also carries platform targets: `core/sys/android` (45 files, ~4k
+lines) and `core/sys/darwin` (122 files, ~48k lines), with Android/Darwin
+branches in `os`, `net`, `log`, `sync`, `thread` and `time`.
+
+| Target | Status | Evidence / gap |
+|---|---|---|
+| Linux x86-64 | supported | full `make ci`, release archive |
+| Windows x86-64 | supported | mingw build + Wine smoke, release archive |
+| macOS arm64 | supported | darwin-arm64 `make ci`, release archive |
+| Android | **missing** | no NDK target, JNI bridge, asset manager or APK packaging; `os`/`net` POSIX shims are untested there |
+| iOS | **missing** | no Xcode target or Objective-C/Darwin bridge; `core/sys/darwin` equivalents are not bound |
+
+Android/iOS support is a platform/toolchain project, not a package that can be
+added to this tree without an NDK/Xcode verification path. `os.platform()` and
+the `is_android`/`is_ios` predicates are present so code can branch, but they
+do not make those targets build or pass.
 
 ## Residual partials
 
@@ -86,7 +105,6 @@ them blocks the application-facing surface above:
 - `terminal` — cursor queries and some non-console Windows paths are absent.
 - `text` — i18n/locale tables are not implemented.
 - `thread` — raw threads/TLS need compiler/runtime callbacks.
-- `unicode` — multi-codepoint folds, segmentation and normalization are absent.
 
 ## Sequence
 
@@ -95,8 +113,9 @@ them blocks the application-facing surface above:
 3. **Platform** — done: environment, cwd, identities, cache/config/data dirs,
    `io.walk`, `path.relative`, Unix sockets, interface enumeration.
 4. **Data and text** — done: Base32, varint, endian, PEM, INI, UTF-16, edit,
-   XML, CBOR, ASN.1, scanner, `fmt`, `bufio`, `diff`, entity decoding and
-   simple Unicode case mapping/folding. i18n tables remain a residual partial.
+   XML, CBOR, ASN.1, scanner, `fmt`, `bufio`, `diff`, entity decoding, full
+   Unicode case mapping/folding, UAX #15 normalization and UAX #29
+   grapheme/word segmentation. i18n tables remain a residual partial.
 5. **Crypto** — done: SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF, AES-GCM/CTR/CBC,
    RSA, ECDSA, Ed25519, X25519, ML-DSA, ML-KEM, Argon2id and X.509.
 6. **Formats and media** — done: TGA, Netpbm PPM/PGM/PBM, LZ4 and baseline
