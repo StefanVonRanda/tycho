@@ -48,3 +48,6 @@ emoji=true,true,true
 alpha=true,false
 script=Latin,Greek,Han
 block=Basic Latin,Emoticons
+title_char=true
+title_ascii=true
+title_str=true

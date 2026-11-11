@@ -703,7 +703,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   classification. `to_upper(s)`, `to_lower(s)` and `to_casefold(s)` apply full
   one-to-many expansions (`ß -> SS`, `Straße -> strasse`); `to_upper_char`,
   `to_lower_char` and `to_casefold_char` return the simple one-codepoint
-  mapping. `normalize_nfd`, `normalize_nfc`, `normalize_nfkd` and
+  mapping, and `to_title_char`/`to_title` apply the simple titlecase mapping.
+  `normalize_nfd`, `normalize_nfc`, `normalize_nfkd` and
   `normalize_nfkc` implement UAX #15 (Hangul algorithmic, canonical ordering,
   composition exclusions). `graphemes(s)` returns extended grapheme clusters
   (CRLF, Hangul, RI pairs, emoji ZWJ, Indic conjuncts) and `words(s)` returns

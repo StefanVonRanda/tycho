@@ -14,6 +14,7 @@ fn main():
     main2()
     main3()
     main4()
+    main5()
 
 fn s_of(cps: [int]) -> string:
     out := ""
@@ -77,3 +78,9 @@ fn main4():
     println("alpha=" + str(unicode.is_alphabetic(0x0345)) + "," + str(unicode.is_letter(0x0345)))
     println("script=" + unicode.script(65) + "," + unicode.script(0x0391) + "," + unicode.script(0x4E00))
     println("block=" + unicode.block(65) + "," + unicode.block(0x1F600))
+
+
+fn main5():
+    println("title_char=" + str(unicode.to_title_char(0x01C6) == 0x01C5))
+    println("title_ascii=" + str(unicode.to_title_char(97) == 65))
+    println("title_str=" + str(unicode.to_title("ǆuro") == "ǅURO"))

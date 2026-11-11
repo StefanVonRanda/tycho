@@ -1122,6 +1122,8 @@
   "unicode.to_casefold_char": "(cp: int)-> int",
   "unicode.to_lower": "(s: string)-> string",
   "unicode.to_lower_char": "(cp: int)-> int",
+  "unicode.to_title": "(s: string)-> string",
+  "unicode.to_title_char": "(cp: int)-> int",
   "unicode.to_upper": "(s: string)-> string",
   "unicode.to_upper_char": "(cp: int)-> int",
   "unicode.words": "(s: string)-> [string]",
