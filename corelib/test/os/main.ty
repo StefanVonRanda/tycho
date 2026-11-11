@@ -47,6 +47,31 @@ fn show_cwd(r: Result(string, os.OsErr)) -> string:
         Err(os.Failed):
             return "Failed"
 
+fn wrote(r: Result(void, io.IoErr)) -> bool:
+    match r:
+        Ok(): return true
+        Err(_): return false
+
+fn text_of(r: Result(string, io.IoErr)) -> string:
+    match r:
+        Ok(v): return v
+        Err(_): return ""
+
+fn removed(r: Result(bool, io.IoErr)) -> bool:
+    match r:
+        Ok(v): return v
+        Err(_): return false
+
+fn is_dir_ok(r: Result(bool, io.IoErr)) -> bool:
+    match r:
+        Ok(v): return v
+        Err(_): return false
+
+fn is_none(o: Option(string)) -> bool:
+    match o:
+        Some(_): return false
+        None: return true
+
 fn main():
     # system(): exit code only. These commands write nothing to stdout, so they
     # never interleave with the println output below (ordering stays stable).
@@ -222,6 +247,31 @@ fn main():
     println("home_nonempty=" + str(home))
     println("temp_nonempty=" + str(len(os.temp_dir()) > 0))
     println("dirs=" + str(len(os.cache_dir()) > 0) + "," + str(len(os.config_dir()) > 0) + "," + str(len(os.data_dir()) > 0))
+    match os.create_temp_file("tycho-os-"):
+        Some(p):
+            println("temp_file_ok=" + str(len(p) > 0))
+            println("temp_file_write=" + str(wrote(io.write_text(p, "temp"))))
+            println("temp_file_read=" + str(text_of(io.read_text(p)) == "temp"))
+            println("temp_file_remove=" + str(removed(io.remove(p))))
+        None:
+            println("temp_file_ok=false")
+            println("temp_file_write=false")
+            println("temp_file_read=false")
+            println("temp_file_remove=false")
+    match os.create_temp_dir("tycho-os-"):
+        Some(p):
+            println("temp_dir_ok=" + str(len(p) > 0))
+            println("temp_dir_is_dir=" + str(is_dir_ok(io.is_dir(p))))
+            println("temp_dir_remove=" + str(removed(io.remove(p))))
+        None:
+            println("temp_dir_ok=false")
+            println("temp_dir_is_dir=false")
+            println("temp_dir_remove=false")
+    match os.user_name():
+        Some(n): println("user_name_nonempty=" + str(len(n) > 0))
+        None: println("user_name_nonempty=false")
+    println("temp_bad_prefix=" + str(is_none(os.create_temp_file("bad/prefix"))))
+
     if os.platform() == os.Linux:
         println("platform=linux")
     elif os.platform() == os.Windows:

@@ -37,6 +37,7 @@ static tycho_int ty_os_decode(int st) { return (tycho_int)st; }   /* Windows: sy
 #include <poll.h>               /* drain stdout and stderr together */
 #include <errno.h>
 #include <sys/stat.h>           /* chmod */
+#include <pwd.h>                /* getpwuid */
 extern char **environ;          /* posix_spawnp inherits it, as execvp does */
 
 /* pipe2 is Linux/glibc + the BSDs; it is the only race-free spelling, since a
@@ -712,6 +713,8 @@ tycho_int osx_env_unset(const char *name) {
  * The Tycho boundary copies the answer immediately. */
 static _Thread_local char ty_os_cwd[8192];
 static _Thread_local char ty_os_host[1024];
+static _Thread_local char ty_os_temp[4096];
+static _Thread_local char ty_os_user[256];
 
 char *osx_cwd(void) {
 #ifdef _WIN32
@@ -763,6 +766,64 @@ char *osx_hostname(void) {
     ty_os_host[sizeof ty_os_host - 1] = 0;
 #endif
     return ty_os_host;
+}
+
+char *osx_temp_file(const char *prefix) {
+#ifdef _WIN32
+    char dir[MAX_PATH + 1];
+    DWORD n = GetTempPathA((DWORD)sizeof dir, dir);
+    if (n == 0 || n > sizeof dir) return NULL;
+    char path[MAX_PATH + 1];
+    const char *pfx = prefix && *prefix ? prefix : "tmp";
+    if (GetTempFileNameA(dir, pfx, 0, path) == 0) return NULL;
+    if (strlen(path) >= sizeof ty_os_temp) return NULL;
+    strcpy(ty_os_temp, path);
+#else
+    const char *dir = getenv("TMPDIR");
+    if (!dir || !*dir) dir = "/tmp";
+    const char *pfx = prefix && *prefix ? prefix : "tmp";
+    int n = snprintf(ty_os_temp, sizeof ty_os_temp, "%s/%sXXXXXX", dir, pfx);
+    if (n < 0 || n >= (int)sizeof ty_os_temp) return NULL;
+    int fd = mkstemp(ty_os_temp);
+    if (fd < 0) return NULL;
+    close(fd);
+#endif
+    return ty_os_temp;
+}
+
+char *osx_temp_dir(const char *prefix) {
+#ifdef _WIN32
+    char dir[MAX_PATH + 1];
+    DWORD n = GetTempPathA((DWORD)sizeof dir, dir);
+    if (n == 0 || n > sizeof dir) return NULL;
+    char path[MAX_PATH + 1];
+    const char *pfx = prefix && *prefix ? prefix : "tmp";
+    if (GetTempFileNameA(dir, pfx, 0, path) == 0) return NULL;
+    if (!DeleteFileA(path)) return NULL;
+    if (!CreateDirectoryA(path, NULL)) return NULL;
+    if (strlen(path) >= sizeof ty_os_temp) return NULL;
+    strcpy(ty_os_temp, path);
+#else
+    const char *dir = getenv("TMPDIR");
+    if (!dir || !*dir) dir = "/tmp";
+    const char *pfx = prefix && *prefix ? prefix : "tmp";
+    int n = snprintf(ty_os_temp, sizeof ty_os_temp, "%s/%sXXXXXX", dir, pfx);
+    if (n < 0 || n >= (int)sizeof ty_os_temp) return NULL;
+    if (!mkdtemp(ty_os_temp)) return NULL;
+#endif
+    return ty_os_temp;
+}
+
+char *osx_user_name(void) {
+#ifdef _WIN32
+    DWORD n = (DWORD)sizeof ty_os_user;
+    if (!GetUserNameA(ty_os_user, &n)) return NULL;
+#else
+    struct passwd *pw = getpwuid(getuid());
+    if (!pw || !pw->pw_name) return NULL;
+    snprintf(ty_os_user, sizeof ty_os_user, "%s", pw->pw_name);
+#endif
+    return ty_os_user;
 }
 
 /* ---- permissions and identity ---- */

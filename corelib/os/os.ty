@@ -47,6 +47,9 @@ extern fn osx_getgid() -> int
 extern fn osx_getegid() -> int
 extern fn osx_getppid() -> int
 extern fn osx_platform() -> int
+extern fn osx_temp_file(prefix: string) -> Option(string)
+extern fn osx_temp_dir(prefix: string) -> Option(string)
+extern fn osx_user_name() -> Option(string)
 
 enum Platform:
     Linux
@@ -337,3 +340,27 @@ fn is_android() -> bool:
 
 fn is_ios() -> bool:
     return platform() == IOS
+
+fn _bad_temp_prefix(prefix: string) -> bool:
+    if _has_nul(prefix):
+        return true
+    for i := 0; i < len(prefix); i += 1:
+        if prefix[i] == 47 or prefix[i] == 92:
+            return true
+    return false
+
+# A fresh uniquely named file in the system temp directory. The caller owns it.
+fn create_temp_file(prefix: string) -> Option(string):
+    if _bad_temp_prefix(prefix):
+        return None
+    return osx_temp_file(prefix)
+
+# A fresh uniquely named directory in the system temp directory.
+fn create_temp_dir(prefix: string) -> Option(string):
+    if _bad_temp_prefix(prefix):
+        return None
+    return osx_temp_dir(prefix)
+
+# The current account's login name, or None where the OS cannot answer.
+fn user_name() -> Option(string):
+    return osx_user_name()

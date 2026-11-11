@@ -813,6 +813,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   follow `XDG_*` on POSIX and `%LOCALAPPDATA%`/`%APPDATA%` on Windows.
   `platform()` reports `Linux`/`Windows`/`MacOS`/`Android`/`IOS`/`Other`;
   `is_linux`, `is_macos`, `is_android` and `is_ios` are the predicates.
+  `create_temp_file(prefix)` and `create_temp_dir(prefix)` return fresh paths in
+  the system temp directory (the prefix may not contain a path separator), and
+  `user_name()` is the account login name where the OS exposes one.
 - **`net`** — TCP/UDP sockets over a **libc-only FFI shim** (POSIX sockets; no `deps`,
   nothing to install). **The transfer calls block; readiness does not.**
   `read`/`write`/`connect` block, so a worker-per-connection server still has its

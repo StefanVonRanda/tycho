@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 87 packages, ~21.7k lines, 1123 locked
+lines). The current Tycho corelib is 87 packages, ~21.5k lines, 1126 locked
 public functions.
 
 Status values:
@@ -40,7 +40,7 @@ Status values:
 | `nbio` | partial | `nbio.poll` over `poll(2)`/`WSAPoll` with READ/WRITE masks | epoll/kqueue/IOCP completion loops |
 | `net` | partial | TCP/UDP, timeouts, TLS, HTTP/HTTPD; DNS `resolve`; socket options; POSIX Unix sockets; `interfaces`; IPv4/IPv6/endpoint parse and format; prefix network/containment | DNS record types |
 | `odin` | non-goal | Tycho has its own compiler packages | none |
-| `os` | covered | process execution, environment, cwd/chdir, pid/ppid, hostname, home/temp/cache/config/data dirs, `chmod`/`umask`, uid/gid, `io.walk` | process signals live in `core:signal` |
+| `os` | covered | process execution, environment, cwd/chdir, pid/ppid, hostname, home/temp/cache/config/data dirs, temp files/dirs, user name, `chmod`/`umask`, uid/gid, `io.walk` | process signals live in `core:signal` |
 | `path` | covered | POSIX `path` plus Windows lexical `filepath` (clean/join/volume/base/dir/ext/stem) | native path opening still goes through `io` |
 | `prof` | partial | manual `Span` timing and `report` | sampling profiler and trace output |
 | `reflect` | non-goal | compile-time `typeof`, generics, `size_of$`; no runtime type metadata | keep runtime reflection out unless metadata is added deliberately |
