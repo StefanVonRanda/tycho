@@ -1105,3 +1105,142 @@ done:
     free(sig);
     return res;
 }
+
+/* =====================================================================
+ * ML-KEM (post-quantum KEM), OpenSSL provider.
+ * ===================================================================== */
+static const char *mlkem_name(tycho_int level) {
+    if (level == 512) return "ML-KEM-512";
+    if (level == 768) return "ML-KEM-768";
+    if (level == 1024) return "ML-KEM-1024";
+    return NULL;
+}
+
+void *cx_mlkem_key_random(tycho_int level) {
+    const char *name = mlkem_name(level);
+    if (!name) return NULL;
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, name, NULL);
+    if (!ctx) return NULL;
+    EVP_PKEY *pk = NULL;
+    int ok = EVP_PKEY_keygen_init(ctx) > 0 && EVP_PKEY_keygen(ctx, &pk) > 0;
+    EVP_PKEY_CTX_free(ctx);
+    if (!ok) { if (pk) EVP_PKEY_free(pk); return NULL; }
+    return pk;
+}
+
+void *cx_mlkem_key_from_pem(const char *pem) {
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    if (!b) return NULL;
+    EVP_PKEY *pk = PEM_read_bio_PrivateKey(b, NULL, NULL, NULL);
+    BIO_free(b);
+    return pk;
+}
+
+void *cx_mlkem_pubkey_from_pem(const char *pem) {
+    BIO *b = BIO_new_mem_buf(pem, -1);
+    if (!b) return NULL;
+    EVP_PKEY *pk = PEM_read_bio_PUBKEY(b, NULL, NULL, NULL);
+    BIO_free(b);
+    return pk;
+}
+
+void cx_mlkem_key_free(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (pk) EVP_PKEY_free(pk);
+}
+
+const char *cx_mlkem_key_to_pem(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk) return ERRTAG;
+    BIO *b = BIO_new(BIO_s_mem());
+    if (!b) return ERRTAG;
+    const char *res = ERRTAG;
+    if (PEM_write_bio_PrivateKey(b, pk, NULL, NULL, 0, NULL, NULL) == 1) res = pem_from_bio(b);
+    BIO_free(b);
+    return res;
+}
+
+const char *cx_mlkem_pubkey_to_pem(void *kp) {
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk) return ERRTAG;
+    BIO *b = BIO_new(BIO_s_mem());
+    if (!b) return ERRTAG;
+    const char *res = ERRTAG;
+    if (PEM_write_bio_PUBKEY(b, pk) == 1) res = pem_from_bio(b);
+    BIO_free(b);
+    return res;
+}
+
+typedef struct { unsigned char *ct; size_t ctlen; unsigned char *ss; size_t sslen; } KemResult;
+
+void *cx_mlkem_encapsulate(void *pub, tycho_int *status) {
+    *status = 0;
+    EVP_PKEY *pk = (EVP_PKEY *)pub;
+    if (!pk) return NULL;
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(pk, NULL);
+    if (!ctx) return NULL;
+    KemResult *r = NULL;
+    size_t ctlen = 0, sslen = 0;
+    if (EVP_PKEY_encapsulate_init(ctx, NULL) <= 0) goto done;
+    if (EVP_PKEY_encapsulate(ctx, NULL, &ctlen, NULL, &sslen) <= 0) goto done;
+    r = (KemResult *)calloc(1, sizeof *r);
+    if (!r) goto done;
+    r->ct = (unsigned char *)malloc(ctlen ? ctlen : 1);
+    r->ss = (unsigned char *)malloc(sslen ? sslen : 1);
+    if (!r->ct || !r->ss) { free(r->ct); free(r->ss); free(r); r = NULL; goto done; }
+    if (EVP_PKEY_encapsulate(ctx, r->ct, &ctlen, r->ss, &sslen) <= 0) {
+        free(r->ct); free(r->ss); free(r); r = NULL; goto done;
+    }
+    r->ctlen = ctlen; r->sslen = sslen;
+done:
+    EVP_PKEY_CTX_free(ctx);
+    return r;
+}
+
+void cx_mlkem_result_free(void *vp) {
+    KemResult *r = (KemResult *)vp;
+    if (!r) return;
+    if (r->ss) OPENSSL_cleanse(r->ss, r->sslen);
+    free(r->ct); free(r->ss); free(r);
+}
+
+void cx_mlkem_ct(void *vp, unsigned char **out, tycho_int *outlen) {
+    KemResult *r = (KemResult *)vp;
+    *out = NULL; *outlen = 0;
+    if (!r) return;
+    unsigned char *p = (unsigned char *)malloc(r->ctlen ? r->ctlen : 1);
+    if (!p) return;
+    memcpy(p, r->ct, r->ctlen);
+    *out = p; *outlen = (tycho_int)r->ctlen;
+}
+
+void cx_mlkem_ss(void *vp, unsigned char **out, tycho_int *outlen) {
+    KemResult *r = (KemResult *)vp;
+    *out = NULL; *outlen = 0;
+    if (!r) return;
+    unsigned char *p = (unsigned char *)malloc(r->sslen ? r->sslen : 1);
+    if (!p) return;
+    memcpy(p, r->ss, r->sslen);
+    *out = p; *outlen = (tycho_int)r->sslen;
+}
+
+void cx_mlkem_decapsulate(void *kp, const unsigned char *ct, tycho_int ctlen,
+                          tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    *status = 0; *out = NULL; *outlen = 0;
+    EVP_PKEY *pk = (EVP_PKEY *)kp;
+    if (!pk || !ct || ctlen <= 0) { *status = 1; return; }
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(pk, NULL);
+    if (!ctx) { *status = 1; return; }
+    size_t sslen = 0;
+    if (EVP_PKEY_decapsulate_init(ctx, NULL) <= 0 ||
+        EVP_PKEY_decapsulate(ctx, NULL, &sslen, ct, (size_t)ctlen) <= 0) {
+        EVP_PKEY_CTX_free(ctx); *status = 1; return;
+    }
+    unsigned char *ss = (unsigned char *)malloc(sslen ? sslen : 1);
+    if (!ss) { EVP_PKEY_CTX_free(ctx); *status = 1; return; }
+    if (EVP_PKEY_decapsulate(ctx, ss, &sslen, ct, (size_t)ctlen) <= 0) {
+        free(ss); EVP_PKEY_CTX_free(ctx); *status = 1; return;
+    }
+    EVP_PKEY_CTX_free(ctx);
+    *out = ss; *outlen = (tycho_int)sslen;
+}

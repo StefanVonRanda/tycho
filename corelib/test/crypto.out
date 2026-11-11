@@ -85,3 +85,5 @@ mldsa_tamper=true
 mldsa_roundtrip=true
 mldsa_pub_verify=true
 mldsa_badlevel=true badpem=true
+mlkem_ss=true ctlen=1088 sslen=32
+mlkem_badlevel=true

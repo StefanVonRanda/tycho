@@ -64,6 +64,17 @@ extern fn cx_mldsa_key_to_pem(k: ptr) -> string
 extern fn cx_mldsa_pubkey_to_pem(k: ptr) -> string
 extern fn cx_mldsa_sign(k: ptr, msg_hex: string) -> string
 extern fn cx_mldsa_verify(k: ptr, msg_hex: string, sig_hex: string) -> int
+extern fn cx_mlkem_key_random(level: int) -> ptr
+extern fn cx_mlkem_key_from_pem(pem: string) -> ptr
+extern fn cx_mlkem_pubkey_from_pem(pem: string) -> ptr
+extern fn cx_mlkem_key_free(k: ptr)
+extern fn cx_mlkem_key_to_pem(k: ptr) -> string
+extern fn cx_mlkem_pubkey_to_pem(k: ptr) -> string
+extern fn cx_mlkem_encapsulate(pub: ptr, status: inout int) -> ptr
+extern fn cx_mlkem_result_free(r: ptr)
+extern fn cx_mlkem_ct(r: ptr) -> bytes
+extern fn cx_mlkem_ss(r: ptr) -> bytes
+extern fn cx_mlkem_decapsulate(k: ptr, ct: bytes, status: inout int) -> bytes
 
 # Hex arguments cross to C strings; reject embedded NULs before strlen-based
 # decoding so distinct Tycho values can never collapse to the same prefix.
@@ -391,3 +402,55 @@ fn mldsa_verify(k: ptr, msg_hex: string, sig_hex: string) -> bool:
     if _has_nul_hex(msg_hex) or _has_nul_hex(sig_hex):
         return false
     return cx_mldsa_verify(k, msg_hex, sig_hex) == 1
+
+enum KemErr:
+    Failed
+
+struct Encapsulated:
+    p: ptr
+
+# ---- ML-KEM key encapsulation (levels 512, 768, 1024) ----
+fn mlkem_key_random(level: int) -> ptr:
+    return cx_mlkem_key_random(level)
+
+fn mlkem_key_from_pem(pem: string) -> ptr:
+    if _has_nul_hex(pem):
+        return null
+    return cx_mlkem_key_from_pem(pem)
+
+fn mlkem_pubkey_from_pem(pem: string) -> ptr:
+    if _has_nul_hex(pem):
+        return null
+    return cx_mlkem_pubkey_from_pem(pem)
+
+fn mlkem_key_free(k: ptr):
+    cx_mlkem_key_free(k)
+
+fn mlkem_key_to_pem(k: ptr) -> string:
+    return cx_mlkem_key_to_pem(k)
+
+fn mlkem_pubkey_to_pem(k: ptr) -> string:
+    return cx_mlkem_pubkey_to_pem(k)
+
+fn mlkem_encapsulate(pub: ptr) -> Result(Encapsulated, KemErr):
+    st := 0
+    r := cx_mlkem_encapsulate(pub, &st)
+    if is_null(r):
+        return Err(Failed)
+    return Ok(Encapsulated(r))
+
+fn mlkem_ciphertext(e: Encapsulated) -> bytes:
+    return cx_mlkem_ct(e.p)
+
+fn mlkem_shared_secret(e: Encapsulated) -> bytes:
+    return cx_mlkem_ss(e.p)
+
+fn mlkem_free(e: Encapsulated):
+    cx_mlkem_result_free(e.p)
+
+fn mlkem_decapsulate(k: ptr, ct: bytes) -> Result(bytes, KemErr):
+    st := 0
+    ss := cx_mlkem_decapsulate(k, ct, &st)
+    if st != 0:
+        return Err(Failed)
+    return Ok(ss)

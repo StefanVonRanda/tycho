@@ -236,3 +236,20 @@ fn main():
     crypto.mldsa_key_free(mpub)
     crypto.mldsa_key_free(ml)
     println("mldsa_badlevel=" + str(is_null(crypto.mldsa_key_random(50))) + " badpem=" + str(is_null(crypto.mldsa_key_from_pem("nope"))))
+
+    # ---- ML-KEM key encapsulation ----
+    mk := crypto.mlkem_key_random(768)
+    mpub2 := crypto.mlkem_pubkey_from_pem(crypto.mlkem_pubkey_to_pem(mk))
+    match crypto.mlkem_encapsulate(mpub2):
+        Ok(enc):
+            ct := crypto.mlkem_ciphertext(enc)
+            ss1 := crypto.mlkem_shared_secret(enc)
+            match crypto.mlkem_decapsulate(mk, ct):
+                Ok(ss2): println("mlkem_ss=" + str(ss1 == ss2) + " ctlen=" + str(len(ct)) + " sslen=" + str(len(ss1)))
+                Err(_): println("mlkem_ss=false")
+            crypto.mlkem_free(enc)
+        Err(_):
+            println("mlkem_ss=false")
+    crypto.mlkem_key_free(mpub2)
+    crypto.mlkem_key_free(mk)
+    println("mlkem_badlevel=" + str(is_null(crypto.mlkem_key_random(600))))
