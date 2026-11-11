@@ -3972,6 +3972,7 @@ typedef struct S_emit__C_ S_emit__C;
 typedef struct E_strings__IntErr E_strings__IntErr;
 typedef struct E_strings__FloatErr E_strings__FloatErr;
 typedef struct E_strings__SliceErr E_strings__SliceErr;
+typedef struct E_os__Platform E_os__Platform;
 typedef struct E_os__OsErr E_os__OsErr;
 typedef struct E_io__IoErr E_io__IoErr;
 typedef struct E_io__FileKind E_io__FileKind;
@@ -4685,6 +4686,14 @@ struct E_strings__SliceErr { int tag; union { } u; };
 static E_strings__SliceErr _sing_strings__SliceErr_0 = { 0 };
 static E_strings__SliceErr _sing_strings__SliceErr_1 = { 1 };
 static E_strings__SliceErr *const _sing_tab_strings__SliceErr[] = {&_sing_strings__SliceErr_0, &_sing_strings__SliceErr_1};
+struct E_os__Platform { int tag; union { } u; };
+static E_os__Platform _sing_os__Platform_0 = { 0 };
+static E_os__Platform _sing_os__Platform_1 = { 1 };
+static E_os__Platform _sing_os__Platform_2 = { 2 };
+static E_os__Platform _sing_os__Platform_3 = { 3 };
+static E_os__Platform _sing_os__Platform_4 = { 4 };
+static E_os__Platform _sing_os__Platform_5 = { 5 };
+static E_os__Platform *const _sing_tab_os__Platform[] = {&_sing_os__Platform_0, &_sing_os__Platform_1, &_sing_os__Platform_2, &_sing_os__Platform_3, &_sing_os__Platform_4, &_sing_os__Platform_5};
 struct E_os__OsErr { int tag; union { } u; };
 static E_os__OsErr _sing_os__OsErr_0 = { 0 };
 static E_os__OsErr _sing_os__OsErr_1 = { 1 };
@@ -5023,6 +5032,7 @@ static S_lex__DNote tycho_copy_S_lex__DNote(Arena *, S_lex__DNote);
 static S_emit__VD tycho_copy_S_emit__VD(Arena *, S_emit__VD);
 static E_strings__FloatErr *tycho_copy_E_strings__FloatErr(Arena *, E_strings__FloatErr *);
 static E_strings__SliceErr *tycho_copy_E_strings__SliceErr(Arena *, E_strings__SliceErr *);
+static E_os__Platform *tycho_copy_E_os__Platform(Arena *, E_os__Platform *);
 static E_io__IoErr *tycho_copy_E_io__IoErr(Arena *, E_io__IoErr *);
 static E_io__FileKind *tycho_copy_E_io__FileKind(Arena *, E_io__FileKind *);
 static int tycho_eq_E_io__FileKind(E_io__FileKind *, E_io__FileKind *);
@@ -6276,6 +6286,9 @@ static E_strings__FloatErr *tycho_copy_E_strings__FloatErr(Arena *a, E_strings__
     return v;
 }
 static E_strings__SliceErr *tycho_copy_E_strings__SliceErr(Arena *a, E_strings__SliceErr *v) {
+    return v;
+}
+static E_os__Platform *tycho_copy_E_os__Platform(Arena *a, E_os__Platform *v) {
     return v;
 }
 static E_io__IoErr *tycho_copy_E_io__IoErr(Arena *a, E_io__IoErr *v) {
@@ -7555,6 +7568,7 @@ extern tycho_int osx_geteuid(void);
 extern tycho_int osx_getgid(void);
 extern tycho_int osx_getegid(void);
 extern tycho_int osx_getppid(void);
+extern tycho_int osx_platform(void);
 extern void *iox_open_lines(char *);
 extern void iox_read_line(void *, tycho_int *, unsigned char **, tycho_int *);
 extern void iox_close_lines(void *);
@@ -7603,6 +7617,7 @@ E__G6 *h_os__home_dir(Arena *_parent);
 tycho_int h_os__uid(Arena *_parent);
 char *h_os___env_value(Arena *_parent, char *h_name);
 char *h_os___home_join(Arena *_parent, char *h_suffix);
+E_os__Platform *h_os__platform(Arena *_parent);
 int h_io___has_nul(Arena *_parent, char *h_p);
 E__G9 *h_io__read_text(Arena *_parent, char *h_p);
 E__G10 *h_io__write_bytes(Arena *_parent, char *h_p, char *h_b);
@@ -9106,6 +9121,26 @@ char *h_os___home_join(Arena *_parent, char *h_suffix) {
         else { fprintf(stderr, "tycho: non-exhaustive match\n"); TYCHO_EXIT(); }
     }
     { char *_ret = TYCHO_LIT(""); arena_free(&_scope); return _ret; }
+}
+
+E_os__Platform *h_os__platform(Arena *_parent) {
+    tycho_int h_k = osx_platform();
+    if (h_k == 0LL) {
+        { E_os__Platform *_ret = tycho_copy_E_os__Platform(_parent, (&_sing_os__Platform_0)); return _ret; }
+    }
+    if (h_k == 1LL) {
+        { E_os__Platform *_ret = tycho_copy_E_os__Platform(_parent, (&_sing_os__Platform_1)); return _ret; }
+    }
+    if (h_k == 2LL) {
+        { E_os__Platform *_ret = tycho_copy_E_os__Platform(_parent, (&_sing_os__Platform_2)); return _ret; }
+    }
+    if (h_k == 3LL) {
+        { E_os__Platform *_ret = tycho_copy_E_os__Platform(_parent, (&_sing_os__Platform_3)); return _ret; }
+    }
+    if (h_k == 4LL) {
+        { E_os__Platform *_ret = tycho_copy_E_os__Platform(_parent, (&_sing_os__Platform_4)); return _ret; }
+    }
+    { E_os__Platform *_ret = tycho_copy_E_os__Platform(_parent, (&_sing_os__Platform_5)); return _ret; }
 }
 
 int h_io___has_nul(Arena *_parent, char *h_p) {
