@@ -1,5 +1,7 @@
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
+#include <openssl/core_names.h>
+#include <openssl/params.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/ec.h>
@@ -270,6 +272,40 @@ void *cx_hkdf_sha256(void *ikm, const char *salt_hex, const char *info_hex, tych
     return out;
 }
 
+/* Argon2id (OpenSSL 3 KDF provider): password is length-counted, salt is hex. */
+void *cx_argon2id(const char *password, tycho_int pwlen, const char *salt_hex,
+                  tycho_int iters, tycho_int memcost, tycho_int lanes, tycho_int dklen) {
+    if (!password || pwlen < 0 || pwlen > 1048576) return NULL;
+    if (iters < 1 || memcost < 8 || lanes < 1 || lanes > 64) return NULL;
+    if (dklen < 1 || dklen > 1024) return NULL;
+    size_t slen = 0;
+    unsigned char *salt = hexdec(salt_hex, &slen);
+    if (!salt || slen < 8) { free(salt); return NULL; }
+    CxKey *k = key_new((size_t)dklen);
+    if (!k) { free(salt); return NULL; }
+    EVP_KDF *kdf = EVP_KDF_fetch(NULL, "ARGON2ID", NULL);
+    EVP_KDF_CTX *ctx = kdf ? EVP_KDF_CTX_new(kdf) : NULL;
+    int ok = 0;
+    if (ctx) {
+        unsigned int it = (unsigned int)iters;
+        unsigned int mc = (unsigned int)memcost;
+        unsigned int ln = (unsigned int)lanes;
+        OSSL_PARAM params[6];
+        params[0] = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_PASSWORD, (void *)password, (size_t)pwlen);
+        params[1] = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SALT, salt, slen);
+        params[2] = OSSL_PARAM_construct_uint(OSSL_KDF_PARAM_ITER, &it);
+        params[3] = OSSL_PARAM_construct_uint(OSSL_KDF_PARAM_ARGON2_MEMCOST, &mc);
+        params[4] = OSSL_PARAM_construct_uint(OSSL_KDF_PARAM_ARGON2_LANES, &ln);
+        params[5] = OSSL_PARAM_construct_end();
+        ok = EVP_KDF_derive(ctx, k->buf, (size_t)dklen, params) > 0;
+    }
+    if (ctx) EVP_KDF_CTX_free(ctx);
+    if (kdf) EVP_KDF_free(kdf);
+    free(salt);
+    if (!ok) { cx_key_free(k); return NULL; }
+    return k;
+}
+
 void *cx_pbkdf2_sha256(const char *password, tycho_int pwlen, const char *salt_hex, tycho_int iters, tycho_int dklen) {
     /* PKCS5_PBKDF2_HMAC takes `int iter`. Refuse rather than truncate: 2^32+1
      * silently derived a key at ONE iteration, and every caller still worked. */
@@ -394,6 +430,80 @@ done:
     if (ctx) EVP_CIPHER_CTX_free(ctx);
     if (pt) OPENSSL_cleanse(pt, ctlen);
     free(nonce); free(ctt); free(aad); free(pt);
+    return res;
+}
+
+static const EVP_CIPHER *aes_cbc_cipher(size_t klen) {
+    if (klen == 16) return EVP_aes_128_cbc();
+    if (klen == 24) return EVP_aes_192_cbc();
+    if (klen == 32) return EVP_aes_256_cbc();
+    return NULL;
+}
+
+/* AES-CBC, no padding (the input length must be a multiple of 16). */
+const char *cx_aes_cbc_encrypt(void *kp, const char *iv_hex, const char *pt_hex) {
+    CxKey *k = kp;
+    cxk_live(k, 0);
+    size_t ivlen = 0, plen = 0;
+    unsigned char *iv = hexdec(iv_hex, &ivlen);
+    unsigned char *pt = hexdec(pt_hex, &plen);
+    const char *res = ERRTAG;
+    EVP_CIPHER_CTX *ctx = NULL;
+    unsigned char *out = NULL;
+    const EVP_CIPHER *cipher = NULL;
+    int len = 0, outlen = 0;
+    if (!k || !iv || !pt || ivlen != 16 || plen == 0 || plen % 16 != 0) goto done;
+    if (plen > (size_t)INT_MAX) goto done;
+    cipher = aes_cbc_cipher(k->len);
+    if (!cipher) goto done;
+    out = malloc(plen);
+    if (!out) goto done;
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) goto done;
+    if (EVP_EncryptInit_ex(ctx, cipher, NULL, k->buf, iv) != 1) goto done;
+    if (EVP_CIPHER_CTX_set_padding(ctx, 0) != 1) goto done;
+    if (EVP_EncryptUpdate(ctx, out, &len, pt, (int)plen) != 1) goto done;
+    outlen = len;
+    if (EVP_EncryptFinal_ex(ctx, out + outlen, &len) != 1) goto done;
+    outlen += len;
+    res = out_hex(out, (size_t)outlen);
+done:
+    if (ctx) EVP_CIPHER_CTX_free(ctx);
+    if (pt) OPENSSL_cleanse(pt, plen);
+    free(iv); free(pt); free(out);
+    return res;
+}
+
+const char *cx_aes_cbc_decrypt(void *kp, const char *iv_hex, const char *ct_hex) {
+    CxKey *k = kp;
+    cxk_live(k, 0);
+    size_t ivlen = 0, clen = 0;
+    unsigned char *iv = hexdec(iv_hex, &ivlen);
+    unsigned char *ct = hexdec(ct_hex, &clen);
+    const char *res = ERRTAG;
+    EVP_CIPHER_CTX *ctx = NULL;
+    unsigned char *out = NULL;
+    const EVP_CIPHER *cipher = NULL;
+    int len = 0, outlen = 0;
+    if (!k || !iv || !ct || ivlen != 16 || clen == 0 || clen % 16 != 0) goto done;
+    if (clen > (size_t)INT_MAX) goto done;
+    cipher = aes_cbc_cipher(k->len);
+    if (!cipher) goto done;
+    out = malloc(clen);
+    if (!out) goto done;
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) goto done;
+    if (EVP_DecryptInit_ex(ctx, cipher, NULL, k->buf, iv) != 1) goto done;
+    if (EVP_CIPHER_CTX_set_padding(ctx, 0) != 1) goto done;
+    if (EVP_DecryptUpdate(ctx, out, &len, ct, (int)clen) != 1) goto done;
+    outlen = len;
+    if (EVP_DecryptFinal_ex(ctx, out + outlen, &len) != 1) goto done;
+    outlen += len;
+    res = out_hex(out, (size_t)outlen);
+done:
+    if (ctx) EVP_CIPHER_CTX_free(ctx);
+    if (out) OPENSSL_cleanse(out, clen);
+    free(iv); free(ct); free(out);
     return res;
 }
 

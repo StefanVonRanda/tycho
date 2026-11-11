@@ -528,6 +528,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   (`aead_encrypt`/`aead_decrypt`, `"!err"` on auth failure), AES-GCM
   (`aes_gcm_encrypt`/`aes_gcm_decrypt`, 16/24/32-byte keys, 12-byte nonce,
   ciphertext plus 16-byte tag), AES-CTR (`aes_ctr`, 16-byte counter block),
+  AES-CBC (`aes_cbc_encrypt`/`aes_cbc_decrypt`, no padding, input length a
+  multiple of 16), Argon2id (`argon2id(password, salt_hex, iterations,
+  memcost, lanes, dklen)` returning a key handle),
   Ed25519
   (`ed25519_pubkey`/`sign`/`verify`), X25519 (`x25519_pubkey`/`shared`), and RSA
   PKCS#1 v1.5 with SHA-256 (`rsa_key_from_pem`, `rsa_pubkey_from_pem`,

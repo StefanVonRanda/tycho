@@ -74,3 +74,9 @@ ec_pub_roundtrip=true
 ec_badpem=true
 ec_badbits=-1
 ec_gen=256 verify=true
+argon2id=1
+argon2_bad=1
+argon2_nul=1
+aes_cbc=1
+aes_cbc_rt=1
+aes_cbc_bad=1

@@ -20,12 +20,15 @@ extern fn cx_hmac_sha256_hex(k: ptr, msg_hex: string) -> string
 extern fn cx_hmac_sha512_hex(k: ptr, msg_hex: string) -> string
 extern fn cx_hkdf_sha256(ikm: ptr, salt_hex: string, info_hex: string, outlen: int) -> ptr
 extern fn cx_pbkdf2_sha256(password: string, pwlen: int, salt_hex: string, iters: int, dklen: int) -> ptr
+extern fn cx_argon2id(password: string, pwlen: int, salt_hex: string, iters: int, memcost: int, lanes: int, dklen: int) -> ptr
 extern fn cx_ct_equal(a_hex: string, alen: int, b_hex: string, blen: int) -> int
 extern fn cx_aead_encrypt(k: ptr, nonce_hex: string, pt_hex: string, aad_hex: string) -> string
 extern fn cx_aead_decrypt(k: ptr, nonce_hex: string, ct_hex: string, aad_hex: string) -> string
 extern fn cx_aes_gcm_encrypt(k: ptr, nonce_hex: string, pt_hex: string, aad_hex: string) -> string
 extern fn cx_aes_gcm_decrypt(k: ptr, nonce_hex: string, ct_hex: string, aad_hex: string) -> string
 extern fn cx_aes_ctr_hex(k: ptr, iv_hex: string, data_hex: string) -> string
+extern fn cx_aes_cbc_encrypt(k: ptr, iv_hex: string, pt_hex: string) -> string
+extern fn cx_aes_cbc_decrypt(k: ptr, iv_hex: string, ct_hex: string) -> string
 extern fn cx_ed25519_key_random() -> ptr
 extern fn cx_ed25519_key_from_seed(seed_hex: string) -> ptr
 extern fn cx_ed25519_pubkey_hex(k: ptr) -> string
@@ -164,6 +167,13 @@ fn pbkdf2_sha256(password: string, salt_hex: string, iters: int, dklen: int) -> 
         return null
     return cx_pbkdf2_sha256(password, len(password), salt_hex, iters, dklen)
 
+# Argon2id -> derived KEY handle. `memcost` is in 1 KiB blocks, `lanes` is the
+# parallelism parameter, and the salt must be at least 8 bytes. Free the handle.
+fn argon2id(password: string, salt_hex: string, iterations: int, memcost: int, lanes: int, dklen: int) -> ptr:
+    if _has_nul_hex(salt_hex):
+        return null
+    return cx_argon2id(password, len(password), salt_hex, iterations, memcost, lanes, dklen)
+
 # Constant-time equality of two hex byte strings (compare MACs this way so the
 # timing does not leak how much matched).
 fn ct_equal(a_hex: string, b_hex: string) -> bool:
@@ -200,6 +210,17 @@ fn aes_gcm_decrypt(key: ptr, nonce_hex: string, ciphertext_hex: string, aad_hex:
     if _has_nul_hex(nonce_hex) or _has_nul_hex(ciphertext_hex) or _has_nul_hex(aad_hex):
         return "!err"
     return cx_aes_gcm_decrypt(key, nonce_hex, ciphertext_hex, aad_hex)
+
+# AES-CBC without padding: the input must be a non-empty multiple of 16 bytes.
+fn aes_cbc_encrypt(key: ptr, iv_hex: string, plaintext_hex: string) -> string:
+    if _has_nul_hex(iv_hex) or _has_nul_hex(plaintext_hex):
+        return "!err"
+    return cx_aes_cbc_encrypt(key, iv_hex, plaintext_hex)
+
+fn aes_cbc_decrypt(key: ptr, iv_hex: string, ciphertext_hex: string) -> string:
+    if _has_nul_hex(iv_hex) or _has_nul_hex(ciphertext_hex):
+        return "!err"
+    return cx_aes_cbc_decrypt(key, iv_hex, ciphertext_hex)
 
 # AES-CTR keystream (encrypt and decrypt are the same call). 16/24/32-byte key,
 # 16-byte counter block; output length equals input length.

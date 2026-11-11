@@ -205,3 +205,20 @@ fn main():
     egsig := crypto.ecdsa_sign_sha256(egen, "616263")
     println("ec_gen=" + str(crypto.ecdsa_key_bits(egen)) + " verify=" + str(crypto.ecdsa_verify_sha256(egen, "616263", egsig)))
     crypto.ecdsa_key_free(egen)
+
+    # ---- Argon2id (OpenSSL KDF provider) ----
+    a2 := crypto.argon2id("password", "736f6d6573616c74", 2, 16, 1, 32)
+    println("argon2id=" + str(yn(crypto.key_export_hex(a2) == "058202c0723cd88c24408ccac1cbf828dee63bcf3843a150ea364a1e0b4e1ff8")))
+    crypto.key_free(a2)
+    println("argon2_bad=" + str(yn(is_null(crypto.argon2id("password", "736f6d6573616c74", 0, 16, 1, 32)))))
+    println("argon2_nul=" + str(yn(is_null(crypto.argon2id("password", "736f" + nz + "6d65", 2, 16, 1, 32)))))
+
+    # ---- AES-CBC (NIST SP 800-38A F.2.1, no padding) ----
+    kcbc := crypto.key_from_hex("2b7e151628aed2a6abf7158809cf4f3c")
+    civ2 := "000102030405060708090a0b0c0d0e0f"
+    cpt2 := "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51"
+    cct2 := crypto.aes_cbc_encrypt(kcbc, civ2, cpt2)
+    println("aes_cbc=" + str(yn(cct2 == "7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b2")))
+    println("aes_cbc_rt=" + str(yn(crypto.aes_cbc_decrypt(kcbc, civ2, cct2) == cpt2)))
+    println("aes_cbc_bad=" + str(yn(crypto.aes_cbc_encrypt(kcbc, civ2, "00") == "!err")))
+    crypto.key_free(kcbc)
