@@ -21,7 +21,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `docs/internals/corelib-parity.md`, with explicit non-goals and the staged
   order for the remaining gaps.
 - Added `core:container`: `Deque`, `Queue`, binary-heap `PriorityQueue`,
-  `BitArray` and an LRU cache, all value-semantic and golden-tested.
+  `BitArray`, an LRU cache and an ordered `Treap`, all value-semantic and
+  golden-tested.
 - Added `core:sync`: C11 atomics (`AtomicInt`/`AtomicBool`/atomic pointer),
   non-recursive `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup` and `Once`
   over pthreads/Win32.
@@ -39,7 +40,7 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Widened `core:crypto` with SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF-SHA256, AES-GCM, AES-CTR/CBC, RSA PKCS#1 v1.5/SHA-256, ECDSA P-256/SHA-256, Argon2id and X.509 parsing/verification.
 - Added the libm trig/exp/log surface to `core:fmath`.
 - Added uncompressed/RLE TGA and Netpbm PPM/PGM codecs to `core:raster`.
-- The tree is now 74 corelib packages and 75 golden test trees.
+- The tree is now 74 corelib packages and 76 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

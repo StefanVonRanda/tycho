@@ -279,8 +279,12 @@ expression-bodied; pass a named function where you need a multi-line body.
   `bits_none`, `bits_resize`, `bits_len`. `Lru` is a capacity-bounded cache:
   `make_lru$(K, V)(cap)`, `lru_put`, `lru_get` (promotes the hit), `lru_peek`
   (does not), `lru_remove`, `lru_contains`, `lru_keys` (most recently used
-  first), `lru_len`, `lru_empty`, `lru_cap`, `lru_clear`. Every container is a
-  deep value: copying one gives an independent container. `core:pool` is the
+  first), `lru_len`, `lru_empty`, `lru_cap`, `lru_clear`. `Treap` is an ordered
+  map: `treap_make(less, sample)` (the sample only fixes the value type),
+  `treap_put`, `treap_get`, `treap_contains`, `treap_remove`, `treap_len`,
+  `treap_empty`, `treap_keys` (in-order), `treap_first_key`, `treap_last_key`
+  and `treap_clear`. Every container is a deep value: copying one gives an
+  independent container. `core:pool` is the
   generational handle-map equivalent.
 - **`sync`** — pthreads/Win32 primitives and C11 atomics, for state shared by
   `spawn`/`parallel for` tasks. Every object is a C-owned `ptr` handle with an

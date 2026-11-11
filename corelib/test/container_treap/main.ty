@@ -1,0 +1,42 @@
+package main
+import "core:container"
+
+fn lt(a: int, b: int) -> bool:
+    return a < b
+
+fn show_keys(xs: [int]) -> string:
+    out := ""
+    for x in xs:
+        out = out + str(x) + " "
+    return out
+
+fn show_s(o: Option(string)) -> string:
+    match o:
+        Some(v): return v
+        None: return "none"
+
+fn show(o: Option(int)) -> string:
+    match o:
+        Some(v): return str(v)
+        None: return "none"
+
+fn main():
+    t := container.treap_make(lt, "")
+    container.treap_put(&t, 5, "five")
+    container.treap_put(&t, 2, "two")
+    container.treap_put(&t, 8, "eight")
+    container.treap_put(&t, 1, "one")
+    container.treap_put(&t, 9, "nine")
+    container.treap_put(&t, 5, "FIVE")
+    println("len=" + str(container.treap_len(t)) + " keys=" + show_keys(container.treap_keys(t)))
+    println("get5=" + show_s(container.treap_get(t, 5)) + " get3=" + show_s(container.treap_get(t, 3)) + " has8=" + str(container.treap_contains(t, 8)))
+    println("first=" + show(container.treap_first_key(t)) + " last=" + show(container.treap_last_key(t)))
+    d1 := container.treap_remove(&t, 5)
+    d2 := container.treap_remove(&t, 5)
+    dl := container.treap_len(t)
+    println("del5=" + str(d1) + " del5b=" + str(d2) + " len=" + str(dl))
+    println("keys2=" + show_keys(container.treap_keys(t)))
+    container.treap_put(&t, 5, "five")
+    println("reinsert=" + show_s(container.treap_get(t, 5)) + " keys3=" + show_keys(container.treap_keys(t)))
+    container.treap_clear(&t)
+    println("clear len=" + str(container.treap_len(t)) + " empty=" + str(container.treap_empty(t)))

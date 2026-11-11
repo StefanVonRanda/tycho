@@ -367,3 +367,168 @@ fn lru_clear(l: inout Lru($K, $V)) where hashable(K):
     l.free = l.free[0:0]
     l.head = -1
     l.tail = -1
+
+# Ordered map backed by a treap (randomized BST). Keys are ordered by the
+# caller's `less`; duplicate keys update the value in place.
+struct Treap($K, $V):
+    less: fn($K, $K) -> bool
+    keys: [$K]
+    vals: [$V]
+    left: [int]
+    right: [int]
+    prio: [int]
+    root: int
+    count: int
+    rng: int
+
+fn treap_make(less: fn($K, $K) -> bool, sample: $V) -> Treap($K, $V):
+    ks: [$K] = []
+    vs: [$V] = []
+    l := []int
+    r := []int
+    p := []int
+    return Treap(less, ks, vs, l, r, p, -1, 0, 2463534242)
+
+fn _treap_next(t: inout Treap($K, $V)) -> int:
+    x := t.rng
+    x = x ^ (x << 13)
+    x = x ^ (x >> 17)
+    x = x ^ (x << 5)
+    t.rng = x
+    return x & 2147483647
+
+fn _treap_alloc(t: inout Treap($K, $V), k: $K, v: $V) -> int:
+    i := len(t.keys)
+    push(t.keys, k)
+    push(t.vals, v)
+    push(t.left, -1)
+    push(t.right, -1)
+    push(t.prio, _treap_next(&t))
+    return i
+
+fn _treap_rot_right(t: inout Treap($K, $V), y: int) -> int:
+    x := t.left[y]
+    t.left[y] = t.right[x]
+    t.right[x] = y
+    return x
+
+fn _treap_rot_left(t: inout Treap($K, $V), x: int) -> int:
+    y := t.right[x]
+    t.right[x] = t.left[y]
+    t.left[y] = x
+    return y
+
+fn _treap_insert(t: inout Treap($K, $V), node: int, k: $K, v: $V) -> (int, bool):
+    if node < 0:
+        return (_treap_alloc$(K, V)(&t, k, v), true)
+    if t.less(k, t.keys[node]):
+        pair := _treap_insert$(K, V)(&t, t.left[node], k, v)
+        t.left[node] = pair.0
+        if t.prio[t.left[node]] < t.prio[node]:
+            node = _treap_rot_right(&t, node)
+        return (node, pair.1)
+    if t.less(t.keys[node], k):
+        pair := _treap_insert$(K, V)(&t, t.right[node], k, v)
+        t.right[node] = pair.0
+        if t.prio[t.right[node]] < t.prio[node]:
+            node = _treap_rot_left(&t, node)
+        return (node, pair.1)
+    t.vals[node] = v
+    return (node, false)
+
+fn treap_put(t: inout Treap($K, $V), k: $K, v: $V):
+    pair := _treap_insert(&t, t.root, k, v)
+    t.root = pair.0
+    if pair.1:
+        t.count += 1
+
+fn treap_get(t: Treap($K, $V), k: $K) -> Option($V):
+    node := t.root
+    for node >= 0:
+        if t.less(k, t.keys[node]):
+            node = t.left[node]
+        elif t.less(t.keys[node], k):
+            node = t.right[node]
+        else:
+            return Some(t.vals[node])
+    return None
+
+fn treap_contains(t: Treap($K, $V), k: $K) -> bool:
+    match treap_get(t, k):
+        Some(_): return true
+        None: return false
+
+fn _treap_delete(t: inout Treap($K, $V), node: int, k: $K) -> (int, bool):
+    if node < 0:
+        return (-1, false)
+    if t.less(k, t.keys[node]):
+        pair := _treap_delete$(K, V)(&t, t.left[node], k)
+        t.left[node] = pair.0
+        return (node, pair.1)
+    if t.less(t.keys[node], k):
+        pair := _treap_delete$(K, V)(&t, t.right[node], k)
+        t.right[node] = pair.0
+        return (node, pair.1)
+    if t.left[node] < 0:
+        return (t.right[node], true)
+    if t.right[node] < 0:
+        return (t.left[node], true)
+    if t.prio[t.left[node]] < t.prio[t.right[node]]:
+        node = _treap_rot_right(&t, node)
+        pair := _treap_delete$(K, V)(&t, t.right[node], k)
+        t.right[node] = pair.0
+        return (node, pair.1)
+    node = _treap_rot_left(&t, node)
+    pair := _treap_delete$(K, V)(&t, t.left[node], k)
+    t.left[node] = pair.0
+    return (node, pair.1)
+
+fn treap_remove(t: inout Treap($K, $V), k: $K) -> bool:
+    pair := _treap_delete$(K, V)(&t, t.root, k)
+    t.root = pair.0
+    if pair.1:
+        t.count -= 1
+    return pair.1
+
+fn treap_len(t: Treap($K, $V)) -> int:
+    return t.count
+
+fn treap_empty(t: Treap($K, $V)) -> bool:
+    return t.count == 0
+
+fn _treap_keys(t: Treap($K, $V), node: int, out: inout [$K]):
+    if node < 0:
+        return
+    _treap_keys$(K, V)(t, t.left[node], &out)
+    push(out, t.keys[node])
+    _treap_keys$(K, V)(t, t.right[node], &out)
+
+fn treap_keys(t: Treap($K, $V)) -> [$K]:
+    out: [$K] = []
+    _treap_keys$(K, V)(t, t.root, &out)
+    return out
+
+fn treap_first_key(t: Treap($K, $V)) -> Option($K):
+    node := t.root
+    if node < 0:
+        return None
+    for t.left[node] >= 0:
+        node = t.left[node]
+    return Some(t.keys[node])
+
+fn treap_last_key(t: Treap($K, $V)) -> Option($K):
+    node := t.root
+    if node < 0:
+        return None
+    for t.right[node] >= 0:
+        node = t.right[node]
+    return Some(t.keys[node])
+
+fn treap_clear(t: inout Treap($K, $V)):
+    t.keys = t.keys[0:0]
+    t.vals = t.vals[0:0]
+    t.left = t.left[0:0]
+    t.right = t.right[0:0]
+    t.prio = t.prio[0:0]
+    t.root = -1
+    t.count = 0

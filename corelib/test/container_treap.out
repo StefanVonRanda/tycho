@@ -1,0 +1,7 @@
+len=5 keys=1 2 5 8 9 
+get5=FIVE get3=none has8=true
+first=1 last=9
+del5=true del5b=false len=4
+keys2=1 2 8 9 
+reinsert=five keys3=1 2 5 8 9 
+clear len=0 empty=true
