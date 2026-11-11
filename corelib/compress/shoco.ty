@@ -1,0 +1,274 @@
+package compress
+
+# core:compress -- shoco short-string compression.
+#
+# A port of Christian Schramm's shoco, using the English model from
+# shoco_model.h. The model tables are stored as printable strings:
+# `ids_by_character` and `successors_by_bigram` use '~' for -1 and chr(32+v)
+# for the index v; `successors_reversed` uses '~' for the zero/unused byte.
+
+struct ShocoPack:
+    word: int
+    bytes_packed: int
+    bytes_unpacked: int
+    offsets: [8]int
+    masks: [8]int
+    header_mask: int
+    header: int
+
+struct ShocoModel:
+    min_char: int
+    max_char: int
+    characters_by_id: string
+    ids_by_character: string
+    successors_by_bigram: string
+    successors_reversed: string
+    character_count: int
+    successor_count: int
+    max_successor_n: int
+    packs: [3]ShocoPack
+
+fn shoco_default_model() -> ShocoModel:
+    return ShocoModel(
+        39, 122,
+        ("eaiothnrslucwmdbpfgvyk-HMT'BxIWL"),
+        ("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~:~~~~~6~~~~~~~~~~~~~~~~~~"
+         "~~;~~~~~7=~~?8~~~~~~9~~>~~~~~~~~~!/+. 12%\"~5)-&#0~'($*3,<4~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"),
+        ("'$,~&~! #%~)~(\"~/.~*+~~~~~~~-~~~!~&~!~ #\"$/+~)%*-~,('.~~~~~~~~~~"
+         ")+~$\"~ (!%~&~#'/~,*-~~~~~~~~~~~~~~.'%~!\"() /&$+~,#~*~-~~~~~~~~~~"
+         "\"$#!% ~&*)',+~~~~-~~(~/~~~.~~~~~ !\"#$~~%)*&~~(/+~.~~'~-~~~,~~~~~"
+         "\"('$#~)~&+~%~~ ~~.!/*,~~~~-~~~~~ #!\"&~)($,-*~+'~~/.~%~~~~~~~~~~~"
+         " &#$!\"~~%*')+,~~(.~~/-~~~~~~~~~~ &\"%)~~~*!(~,.$~/'~-#+~~~~~~~~~~"
+         "(*)/!~$ #\"~&~,+-'.%~~~~~~~~~~~~~!#& $\"~'-()+~~/~~~~~*%.~~~~~~~~~"
+         "# !$~\"%&'(~.~~)/~,~~~*+~~~-~~~~~ !#\"/~,~'.$~~)~(%*~~&~-~~~+~~~~~"
+         " #!\"~~,&$)'~~.(~~/+-%~*~~~~~~~~~ %'\"*-~&(!#~~./+~~~,$~~~~~~~~~~~"
+         " \"&#'*~!)$(~~/~,%~~~+~-~~~.~~~~~!#$ '~,\"+(&-~~~~~%~~*/)~~~.~~~~~"
+         "!#%\"- )$'&(~~/~+~~*~.~,~~~~~~~~~ \"!#~~~&~~%~~~~~~~~~$~~~~~~~~~~~"
+         "!+$ #~-,\"'~~/*%(.~~~~~)~~~&~~~~~ )\"./$!-#%~~*~~~~&,~'~(~~~+~~~~~"
+         "~\".~!%('$,~&)+-#*/~~~~ ~~~~~~~~~ !#\"~~~~~~$~~~~~~~~~&~~~~~~~~~~~"
+         "$#!%~~~ ~~&~~~~~~~~~\"~~~~~~~~~~~\"($!~ ~&~~%~'~~~~~~~*~~)~~~~~~~~"
+         ",%~~!~~' #~\"~$&~~~~(~~/~-)~~~~~+!#\"$~~~%~' ~~~~~~~~~&~~~~~~~~(~~"
+         "%#$,!&~~~~(\"~~~~ )~~+~*~~~~~~~~~~~~~ ~!,#~~~~%~~~\"~~~~~~~~$~~&~*"
+         "\"#!$~ ~%~~~~~~~~~~~~'~~~~~~~~&~~%!# ~~~~~~$~~~~~~~~~\"~~~~~)~~&~'"),
+        ("stclmadrvTALeMY-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~-tabshcrnwpmldif~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ueiaorylIER~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~eaoiuAyE~~~~~~~~tnfs'mINAELZrVRC~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~oayiueILD'EY~~~~riyaeouY~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~hoeEiurwaHyRZ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "hieaorIy~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ntsrldiyvmbcgpkuelouyarisjtbvhmd"
+         "oehatkirluycqs-deioasyrudl-gnvmfrndsaltemcvyixfpoeraifutl-ysnc'k"
+         "heoarilsungb-tymeaiotruymslb'-fdnstmolcdregafvzb~~~~~~~~~~~~~~~~"
+         "enishlfy-aw'groteliydoafutskwvmpeaoiupysbmf'n-ltdgetocsianylk'fv"
+         "unrfmtwoslvdpkiceraolpitushyb-'m~~~~~~~~~~~~~~~~eioasytdrncmlugf"
+         "ethiosaupclwmkfyhoeiatruylswcf'-rtlsngcpeiadmbfoeiaoyur~~~~~~~~~"
+         "aiheonrsldk-f'cbptcaiehquf-yo~~~oestid'lb-marnpw"),
+        32, 16, 7,
+        [
+            ShocoPack(0x80000000, 1, 2, [26, 24, 24, 24, 24, 24, 24, 24], [15, 3, 0, 0, 0, 0, 0, 0], 0xc0, 0x80),
+            ShocoPack(0xc0000000, 2, 4, [25, 22, 19, 16, 16, 16, 16, 16], [15, 7, 7, 7, 0, 0, 0, 0], 0xe0, 0xc0),
+            ShocoPack(0xe0000000, 4, 8, [23, 19, 15, 11, 8, 5, 2, 0], [31, 15, 15, 15, 7, 7, 7, 3], 0xf0, 0xe0),
+        ],
+    )
+
+fn shoco_compress_bound(uncompressed_size: int) -> int:
+    if uncompressed_size < 0:
+        return -1
+    return uncompressed_size * 2
+
+fn _shoco_decompress_bound(compressed_size: int, model: ShocoModel) -> int:
+    most := 0
+    for p in model.packs:
+        v := (compressed_size * p.bytes_unpacked) / p.bytes_packed
+        if v > most:
+            most = v
+    return most
+
+fn shoco_decompress_bound(compressed_size: int) -> int:
+    if compressed_size < 0:
+        return -1
+    return compressed_size * 2
+
+fn _shoco_validate(model: ShocoModel) -> bool:
+    if len(model.characters_by_id) != model.character_count:
+        return false
+    if len(model.ids_by_character) != 256:
+        return false
+    if len(model.successors_by_bigram) != model.character_count * model.character_count:
+        return false
+    if len(model.successors_reversed) != model.successor_count * (model.max_char - model.min_char):
+        return false
+    return true
+
+fn _shoco_id(model: ShocoModel, c: int) -> int:
+    if c < 0 or c >= 256:
+        return -1
+    v := model.ids_by_character[c]
+    if v == 126:
+        return -1
+    return v - 32
+
+fn _shoco_succ(model: ShocoModel, idx: int) -> int:
+    if idx < 0 or idx >= len(model.successors_by_bigram):
+        return -1
+    v := model.successors_by_bigram[idx]
+    if v == 126:
+        return -1
+    return v - 32
+
+fn _shoco_succ_rev(model: ShocoModel, idx: int) -> int:
+    if idx < 0 or idx >= len(model.successors_reversed):
+        return -1
+    v := model.successors_reversed[idx]
+    if v == 126:
+        return 0
+    return v
+
+fn _shoco_find_best(indices: [8]int, n_consecutive: int, model: ShocoModel) -> int:
+    p := len(model.packs) - 1
+    for p >= 0:
+        pack := model.packs[p]
+        if n_consecutive >= pack.bytes_unpacked:
+            ok := true
+            for i := 0; i < pack.bytes_unpacked; i += 1:
+                if indices[i] > pack.masks[i]:
+                    ok = false
+                    break
+            if ok:
+                return p
+        p -= 1
+    return -1
+
+fn _shoco_compress(data: bytes, model: ShocoModel) -> Result(bytes, CodecErr):
+    if len(data) == 0:
+        return Err(CodecTruncated)
+    if not _shoco_validate(model):
+        return Err(CodecInvalidProps)
+    bound := shoco_compress_bound(len(data))
+    out := []int
+    inp := 0
+    last_resort := false
+    for inp < len(data):
+        if last_resort:
+            last_resort = false
+            if (data[inp] & 128) == 128:
+                if len(out) + 2 > bound:
+                    return Err(CodecTooBig)
+                push(out, 0)
+            else:
+                if len(out) + 1 > bound:
+                    return Err(CodecTooBig)
+            push(out, data[inp])
+            inp += 1
+        else:
+            indices: [8]int = [0, 0, 0, 0, 0, 0, 0, 0]
+            first := _shoco_id(model, data[inp])
+            indices[0] = first
+            last_idx := first
+            if last_idx < 0:
+                last_resort = true
+                continue
+            rest := len(data) - inp
+            n := 1
+            for n <= model.max_successor_n:
+                if n == rest:
+                    break
+                current := _shoco_id(model, data[inp + n])
+                if current < 0:
+                    break
+                succ := _shoco_succ(model, last_idx * model.character_count + current)
+                if succ < 0:
+                    break
+                indices[n] = succ
+                last_idx = current
+                n += 1
+            if n < 2:
+                last_resort = true
+                continue
+            pack_n := _shoco_find_best(indices, n, model)
+            if pack_n < 0:
+                last_resort = true
+                continue
+            pack := model.packs[pack_n]
+            if len(out) + pack.bytes_packed > bound:
+                return Err(CodecTooBig)
+            code := pack.word
+            for i := 0; i < pack.bytes_unpacked; i += 1:
+                code = code | (indices[i] << pack.offsets[i])
+            for i := 0; i < pack.bytes_packed; i += 1:
+                shift := 8 * (3 - i)
+                push(out, (code >> shift) & 255)
+            inp += pack.bytes_unpacked
+    return Ok(to_bytes(out))
+
+fn _shoco_decompress(data: bytes, model: ShocoModel) -> Result(bytes, CodecErr):
+    if len(data) == 0:
+        return Err(CodecTruncated)
+    if not _shoco_validate(model):
+        return Err(CodecInvalidProps)
+    max_out := _shoco_decompress_bound(len(data), model)
+    out := []int
+    inp := 0
+    for inp < len(data):
+        val := data[inp]
+        mark := -1
+        for val >= 128:
+            val = (val << 1) & 255
+            mark += 1
+        if mark >= len(model.packs):
+            return Err(CodecCorrupt)
+        if mark < 0:
+            if len(out) >= max_out:
+                return Err(CodecTooBig)
+            if data[inp] == 0:
+                inp += 1
+                if inp >= len(data):
+                    return Err(CodecTruncated)
+            push(out, data[inp])
+            inp += 1
+        else:
+            pack := model.packs[mark]
+            if len(out) + pack.bytes_unpacked > max_out:
+                return Err(CodecTooBig)
+            if inp + pack.bytes_packed > len(data):
+                return Err(CodecTruncated)
+            code := 0
+            for i := 0; i < pack.bytes_packed; i += 1:
+                code = (code << 8) | data[inp + i]
+            code = code << (8 * (4 - pack.bytes_packed))
+            offset := pack.offsets[0]
+            mask := pack.masks[0]
+            last := model.characters_by_id[(code >> offset) & mask]
+            push(out, last)
+            for i := 1; i < pack.bytes_unpacked; i += 1:
+                offset = pack.offsets[i]
+                mask = pack.masks[i]
+                idx := (last - model.min_char) * model.successor_count + ((code >> offset) & mask)
+                last = _shoco_succ_rev(model, idx)
+                if last < 0:
+                    return Err(CodecCorrupt)
+                push(out, last)
+            inp += pack.bytes_packed
+    return Ok(to_bytes(out))
+
+fn shoco_compress(data: bytes) -> Result(bytes, CodecErr):
+    return _shoco_compress(data, shoco_default_model())
+
+fn shoco_compress_with(data: bytes, model: ShocoModel) -> Result(bytes, CodecErr):
+    return _shoco_compress(data, model)
+
+fn shoco_decompress(data: bytes) -> Result(bytes, CodecErr):
+    return _shoco_decompress(data, shoco_default_model())
+
+fn shoco_decompress_with(data: bytes, model: ShocoModel) -> Result(bytes, CodecErr):
+    return _shoco_decompress(data, model)

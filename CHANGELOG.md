@@ -81,7 +81,11 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added Deflate64 (ZIP method 9) to `core:compress`: `deflate64_compress`,
   `deflate64_decompress` and `deflate64_bound`, using zlib's `infback9`
   decoder for the full 64 KiB format.
-- The tree is now 88 corelib packages and 99 golden test trees.
+- Added shoco short-string compression to `core:compress`:
+  `shoco_compress`, `shoco_decompress`, the `_with` model variants,
+  `shoco_default_model` and the two bounds, with the English model and
+  golden vectors from the reference C implementation.
+- The tree is now 88 corelib packages and 100 golden test trees.
 
 ## [0.9.1] — 2026-11-10
 

@@ -1120,6 +1120,13 @@ plus four more:
   raw-deflate path and verifies it with the same decoder. The encoder uses the
   standard 32 KiB/257-byte subset, so it does not exercise the extended 64 KiB
   window. `deflate64_bound(len)` is a conservative output bound.
+  **shoco** short-string compression: `shoco_compress(data)` and
+  `shoco_decompress(data)` use the English model; `shoco_compress_with` and
+  `shoco_decompress_with` take a `ShocoModel`, and `shoco_default_model()`
+  returns the built-in one. `shoco_compress_bound`/`shoco_decompress_bound`
+  give the 2x worst-case bounds. Empty input is `CodecTruncated`; non-ASCII
+  bytes are escaped with a `0x00` sentinel, and a truncated sentinel or packed
+  code fails closed.
 - **`xz`** — xz container compression over **liblzma** (`deps: liblzma`):
   `compress(bytes) -> Result(bytes, XzErr)` (preset 6, CRC64) and
   `decompress(bytes) -> Result(bytes, XzErr)`; `XzErr` is `Corrupt`, `Truncated`,

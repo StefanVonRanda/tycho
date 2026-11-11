@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 88 packages, ~24.0k lines, 1228 locked
+lines). The current Tycho corelib is 88 packages, ~24.3k lines, 1235 locked
 public functions.
 
 Status values:
@@ -22,7 +22,7 @@ Status values:
 | `bufio` | covered | `core:bufio` in-memory reader/writer plus `core:scanner` | none |
 | `bytes` | covered | immutable `bytes` plus mutable `core:buffer` | none |
 | `c` | non-goal | `extern fn` FFI plus internal `*_shim.c` files | none |
-| `compress` | partial | gzip/zlib, raw DEFLATE, LZ4, xz, bzip2, PPMd7/PPMd8, PKZIP Shrink/Reduce/Implode, Deflate64 (ZIP method 9), delta, BCJ for x86/ARM/ARM Thumb/ARM64/PowerPC/SPARC/IA64/RISC-V, and swap2/swap4 | shoco and BCJ2 |
+| `compress` | partial | gzip/zlib, raw DEFLATE, LZ4, xz, bzip2, PPMd7/PPMd8, PKZIP Shrink/Reduce/Implode, Deflate64 (ZIP method 9), shoco, delta, BCJ for x86/ARM/ARM Thumb/ARM64/PowerPC/SPARC/IA64/RISC-V, and swap2/swap4 | BCJ2 |
 | `container` | covered | `Deque`/`Queue`, `PriorityQueue`, `BitArray`, `Lru`, ordered `Treap`/`Avl`/`RbTree`, `HandleMap`, `SmallArray`, `Xar`, `topo_sort` | intrusive containers need references (non-goal) |
 | `crypto` | covered | OpenSSL shims: ChaCha20-Poly1305 and AES-GCM AEAD, AES-CTR, AES-CBC, RSA PKCS#1 v1.5, ECDSA P-256, Ed25519, X25519, ML-DSA, ML-KEM, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, Argon2id, CSPRNG; ASN.1 DER/BER and X.509 in their own packages | none |
 | `debug` | covered | `assert`, `trace`, `enabled`, `stack_trace`; runtime traps and `tycho-debug bt` | PE introspection is platform-specific tooling |

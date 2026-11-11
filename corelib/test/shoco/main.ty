@@ -1,0 +1,105 @@
+package main
+
+import "core:compress"
+import "core:hex"
+
+fn why(e: compress.CodecErr) -> string:
+    match e:
+        compress.CodecInvalidProps:
+            return "InvalidProps"
+        compress.CodecBadOption:
+            return "BadOption"
+        compress.CodecCorrupt:
+            return "Corrupt"
+        compress.CodecTruncated:
+            return "Truncated"
+        compress.CodecTooBig:
+            return "TooBig"
+        compress.CodecFailed:
+            return "Failed"
+
+fn show(s: string):
+    match compress.shoco_compress(to_bytes(s)):
+        Ok(b):
+            println(s + "|" + hex.encode(to_str(b)))
+            match compress.shoco_decompress(b):
+                Ok(d):
+                    println("rt=" + str(to_str(d) == s))
+                Err(_):
+                    println("rt=err")
+        Err(_):
+            println(s + "|err")
+
+fn main():
+    show("hello")
+    show("world")
+    show("The quick brown fox jumps over the lazy dog")
+    show("compression")
+    show("shoco")
+    show("testing")
+    show("a")
+    show("ab")
+    show("abc")
+    show("abcd")
+    show("abcdefgh")
+    show("Hello, World!")
+    show("hello, world!")
+    show("OpenAI")
+    show("Tycho")
+    show("corelib")
+    show("the")
+    show("and")
+    show("of")
+    show("to")
+    show("in")
+    show("xyz")
+    show("12345")
+    show("café")
+
+    match compress.shoco_compress(to_bytes("")):
+        Err(compress.CodecTruncated):
+            println("empty_compress=Truncated")
+        Err(_):
+            println("empty_compress=other")
+        Ok(_):
+            println("empty_compress=Ok")
+    match compress.shoco_decompress(to_bytes("")):
+        Err(compress.CodecTruncated):
+            println("empty_decompress=Truncated")
+        Err(_):
+            println("empty_decompress=other")
+        Ok(_):
+            println("empty_decompress=Ok")
+    match compress.shoco_decompress(to_bytes([192])):
+        Err(e):
+            println("short_decompress=" + why(e))
+        Ok(_):
+            println("short_decompress=Ok")
+    match compress.shoco_decompress(to_bytes([0])):
+        Err(e):
+            println("sentinel_decompress=" + why(e))
+        Ok(_):
+            println("sentinel_decompress=Ok")
+    match compress.shoco_decompress(to_bytes([240])):
+        Err(compress.CodecCorrupt):
+            println("bad_header=Corrupt")
+        Err(_):
+            println("bad_header=other")
+        Ok(_):
+            println("bad_header=Ok")
+
+    println("compress_bound=" + str(compress.shoco_compress_bound(10)))
+    println("decompress_bound=" + str(compress.shoco_decompress_bound(10)))
+    println("compress_bound_neg=" + str(compress.shoco_compress_bound(-1)))
+    println("decompress_bound_neg=" + str(compress.shoco_decompress_bound(-1)))
+
+    model := compress.shoco_default_model()
+    match compress.shoco_compress_with(to_bytes("hello"), model):
+        Ok(b):
+            match compress.shoco_decompress_with(b, model):
+                Ok(d):
+                    println("with_model=" + str(to_str(d) == "hello"))
+                Err(_):
+                    println("with_model=err")
+        Err(_):
+            println("with_model=err")
