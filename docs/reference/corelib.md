@@ -837,6 +837,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `ioctlsocket`). `unix_listen(path)` / `unix_connect(path)` are POSIX
   Unix-domain stream sockets (Windows answers `Failed`). `interfaces()` returns
   `Interface{name, addr}` records from `getifaddrs` (POSIX; Windows `Failed`).
+  Address text is handled without a resolver: `parse_ip4`/`format_ip4`,
+  `parse_ip6`/`format_ip6` (including `::` compression and a trailing IPv4 part),
+  `parse_endpoint`/`join_endpoint` (`host:port`, IPv6 in brackets) and
+  `is_ip4`/`is_ip6`; `Ip4`, `Ip6` and `Endpoint` are plain value structs.
 - **`nbio`** — readiness polling. `poll(fds, events, timeout_ms) -> Result([Ready],
   NbioErr)` waits on each fd with an event mask of `READ`/`WRITE`
   (`Ready{fd, events}` carries the revents mask; a negative timeout waits

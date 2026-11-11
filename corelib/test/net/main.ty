@@ -284,3 +284,36 @@ fn main():
     println("opt_broadcast=" + str(net.set_broadcast(ufd, true)) + " opt_udp_nonblock=" + str(net.set_nonblocking(ufd, true)))
     println("opt_badfd=" + str(net.set_reuse_addr(0 - 1, true)) + "," + str(net.set_nonblocking(0 - 1, true)))
     net.close_fd(ufd)
+
+    # ---- address parsing and formatting ----
+    println("ip4=" + ip4_str(net.parse_ip4("127.0.0.1")))
+    println("ip4_lead=" + ip4_str(net.parse_ip4("001.002.003.004")))
+    println("ip4_bad=" + ip4_str(net.parse_ip4("256.1.1.1")) + "," + ip4_str(net.parse_ip4("1.2.3")) + "," + ip4_str(net.parse_ip4("1.2.3.4.5")))
+    println("ip4_flags=" + str(net.is_ip4("1.2.3.4")) + "," + str(net.is_ip4("1.2.3")))
+    println("ip6_loop=" + ip6_str(net.parse_ip6("::1")))
+    println("ip6_mid=" + ip6_str(net.parse_ip6("2001:db8::1")))
+    println("ip6_full=" + ip6_str(net.parse_ip6("2001:0db8:0000:0000:0000:0000:0000:0001")))
+    println("ip6_v4=" + ip6_str(net.parse_ip6("::ffff:192.168.0.1")))
+    println("ip6_all=" + ip6_str(net.parse_ip6("::")))
+    println("ip6_bad=" + ip6_str(net.parse_ip6("1:2:3:4:5:6:7:8:9")) + "," + ip6_str(net.parse_ip6("1::2::3")) + "," + ip6_str(net.parse_ip6(":::")))
+    println("ip6_flags=" + str(net.is_ip6("::1")) + "," + str(net.is_ip6("1:2:3")))
+    println("ep_host=" + ep_str(net.parse_endpoint("example.com:80")))
+    println("ep_v6=" + ep_str(net.parse_endpoint("[2001:db8::1]:443")))
+    println("ep_bare_v6=" + ep_str(net.parse_endpoint("2001:db8::1:443")))
+    println("ep_bad=" + ep_str(net.parse_endpoint("host:70000")) + "," + ep_str(net.parse_endpoint("host")))
+
+
+fn ip4_str(r: Option(net.Ip4)) -> string:
+    match r:
+        Some(ip): return net.format_ip4(ip)
+        None: return "bad"
+
+fn ip6_str(r: Option(net.Ip6)) -> string:
+    match r:
+        Some(ip): return net.format_ip6(ip)
+        None: return "bad"
+
+fn ep_str(r: Option(net.Endpoint)) -> string:
+    match r:
+        Some(ep): return net.join_endpoint(ep)
+        None: return "bad"

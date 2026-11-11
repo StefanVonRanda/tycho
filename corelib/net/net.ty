@@ -296,3 +296,231 @@ fn interfaces() -> Result([Interface], NetErr):
             return Ok(out)
         None:
             return Err(Failed)
+
+# ---- address parsing and formatting ----
+
+struct Ip4:
+    o: [4]int
+
+struct Ip6:
+    o: [16]int
+
+struct Endpoint:
+    host: string
+    port: int
+
+fn _dec_part(s: string, start: int, stop: int, max: int) -> int:
+    if start >= stop:
+        return -1
+    v := 0
+    for i := start; i < stop; i += 1:
+        c := s[i]
+        if c < 48 or c > 57:
+            return -1
+        v = v * 10 + (c - 48)
+        if v > max:
+            return -1
+    return v
+
+fn _hex_part(s: string) -> int:
+    if len(s) == 0 or len(s) > 4:
+        return -1
+    v := 0
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        d := -1
+        if c >= 48 and c <= 57:
+            d = c - 48
+        elif c >= 97 and c <= 102:
+            d = c - 87
+        elif c >= 65 and c <= 70:
+            d = c - 55
+        if d < 0:
+            return -1
+        v = v * 16 + d
+    return v
+
+fn _has_colon(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 58:
+            return true
+    return false
+
+fn _has_dot(s: string) -> bool:
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 46:
+            return true
+    return false
+
+# Dotted-decimal IPv4. Four 0..255 parts, no signs, no whitespace.
+fn parse_ip4(s: string) -> Option(Ip4):
+    o: [4]int = [0, 0, 0, 0]
+    part := 0
+    start := 0
+    for i := 0; i <= len(s); i += 1:
+        if i == len(s) or s[i] == 46:
+            if part >= 4:
+                return None
+            v := _dec_part(s, start, i, 255)
+            if v < 0:
+                return None
+            o[part] = v
+            part += 1
+            start = i + 1
+    if part != 4:
+        return None
+    return Some(Ip4(o))
+
+fn format_ip4(ip: Ip4) -> string:
+    return str(ip.o[0]) + "." + str(ip.o[1]) + "." + str(ip.o[2]) + "." + str(ip.o[3])
+
+fn _ip6_side(s: string) -> ([int], bool):
+    out := []int
+    if len(s) == 0:
+        return out, true
+    start := 0
+    for i := 0; i <= len(s); i += 1:
+        if i == len(s) or s[i] == 58:
+            if i == start:
+                return out, false
+            tok := s[start:i]
+            if _has_dot(tok):
+                if i != len(s):
+                    return out, false
+                match parse_ip4(tok):
+                    Some(ip):
+                        push(out, ip.o[0])
+                        push(out, ip.o[1])
+                        push(out, ip.o[2])
+                        push(out, ip.o[3])
+                    None:
+                        return out, false
+            else:
+                v := _hex_part(tok)
+                if v < 0:
+                    return out, false
+                push(out, v)
+            start = i + 1
+    return out, true
+
+# RFC 4291 text form, including `::` compression and a trailing IPv4 part.
+fn parse_ip6(s: string) -> Option(Ip6):
+    if len(s) == 0:
+        return None
+    dc := -1
+    for i := 0; i + 1 < len(s); i += 1:
+        if s[i] == 58 and s[i + 1] == 58:
+            if dc >= 0:
+                return None
+            dc = i
+    left := s
+    right := ""
+    if dc >= 0:
+        left = s[0:dc]
+        right = s[dc + 2:len(s)]
+    lg, lok := _ip6_side(left)
+    rg, rok := _ip6_side(right)
+    if not lok or not rok:
+        return None
+    total := len(lg) + len(rg)
+    if dc >= 0:
+        if total > 7:
+            return None
+    else:
+        if total != 8:
+            return None
+    o: [16]int = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    gi := 0
+    for g in lg:
+        o[gi * 2] = g / 256
+        o[gi * 2 + 1] = g % 256
+        gi += 1
+    if dc >= 0:
+        gi = gi + (8 - total)
+    for g in rg:
+        o[gi * 2] = g / 256
+        o[gi * 2 + 1] = g % 256
+        gi += 1
+    return Some(Ip6(o))
+
+fn _hex_group(v: int) -> string:
+    return strings.format_int_base(v, 16, false)
+
+fn format_ip6(ip: Ip6) -> string:
+    groups := [0, 0, 0, 0, 0, 0, 0, 0]
+    for i := 0; i < 8; i += 1:
+        groups[i] = ip.o[i * 2] * 256 + ip.o[i * 2 + 1]
+    best := -1
+    best_len := 0
+    i := 0
+    for i < 8:
+        if groups[i] == 0:
+            j := i
+            for j < 8 and groups[j] == 0:
+                j += 1
+            if j - i > best_len:
+                best = i
+                best_len = j - i
+            i = j
+        else:
+            i += 1
+    out := ""
+    i = 0
+    for i < 8:
+        if best >= 0 and best_len >= 2 and i == best:
+            out = out + "::"
+            i = i + best_len
+        else:
+            if len(out) > 0 and out[len(out) - 1] != 58:
+                out = out + ":"
+            out = out + _hex_group(groups[i])
+            i += 1
+    return out
+
+# `host:port`, with IPv6 hosts in brackets. A bare IPv6 address is not an
+# endpoint: its colons make the port ambiguous.
+fn parse_endpoint(s: string) -> Option(Endpoint):
+    if len(s) == 0:
+        return None
+    if s[0] == 91:
+        close := -1
+        for i := 1; i < len(s); i += 1:
+            if s[i] == 93:
+                close = i
+                break
+        if close < 0:
+            return None
+        if close + 1 >= len(s) or s[close + 1] != 58:
+            return None
+        host := s[1:close]
+        port := _dec_part(s, close + 2, len(s), 65535)
+        if port < 0:
+            return None
+        return Some(Endpoint(host, port))
+    colon := -1
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 58:
+            colon = i
+    if colon <= 0 or colon + 1 >= len(s):
+        return None
+    if _has_colon(s[0:colon]):
+        return None
+    port := _dec_part(s, colon + 1, len(s), 65535)
+    if port < 0:
+        return None
+    return Some(Endpoint(s[0:colon], port))
+
+fn join_endpoint(ep: Endpoint) -> string:
+    if _has_colon(ep.host):
+        return "[" + ep.host + "]:" + str(ep.port)
+    return ep.host + ":" + str(ep.port)
+
+fn is_ip4(s: string) -> bool:
+    match parse_ip4(s):
+        Some(_): return true
+        None: return false
+
+fn is_ip6(s: string) -> bool:
+    match parse_ip6(s):
+        Some(_): return true
+        None: return false
