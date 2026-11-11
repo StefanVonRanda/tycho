@@ -1,0 +1,5 @@
+dag=0 1 2 3 4 
+isolated=0 1 2 
+cycle=Cycle
+empty=
+bad=Cycle

@@ -532,3 +532,48 @@ fn treap_clear(t: inout Treap($K, $V)):
     t.prio = t.prio[0:0]
     t.root = -1
     t.count = 0
+
+enum TopoErr:
+    Cycle
+
+# Kahn topological sort of a graph with `n` nodes and directed edges (from, to).
+# The result is deterministic for a fixed edge order: zero-indegree nodes are
+# released in increasing index order.
+fn topo_sort(n: int, edges: [(int, int)]) -> Result([int], TopoErr):
+    if n < 0:
+        return Err(Cycle)
+    indeg := []int
+    i := 0
+    for i < n:
+        push(indeg, 0)
+        i += 1
+    adj := [][int]
+    empty: [int] = []
+    i = 0
+    for i < n:
+        push(adj, empty)
+        i += 1
+    for e in edges:
+        if e.0 < 0 or e.0 >= n or e.1 < 0 or e.1 >= n:
+            return Err(Cycle)
+        push(adj[e.0], e.1)
+        indeg[e.1] += 1
+    q := []int
+    i = 0
+    for i < n:
+        if indeg[i] == 0:
+            push(q, i)
+        i += 1
+    out := []int
+    head := 0
+    for head < len(q):
+        v := q[head]
+        head += 1
+        push(out, v)
+        for w in adj[v]:
+            indeg[w] -= 1
+            if indeg[w] == 0:
+                push(q, w)
+    if len(out) != n:
+        return Err(Cycle)
+    return Ok(out)

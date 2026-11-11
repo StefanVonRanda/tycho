@@ -231,6 +231,7 @@
   "container.queue_peek": "(q: Queue($T))-> Option($T)",
   "container.queue_pop": "(q: inout Queue($T))-> Option($T)",
   "container.queue_push": "(q: inout Queue($T), v: $T)",
+  "container.topo_sort": "(n: int, edges: [(int, int)])-> Result([int], TopoErr)",
   "container.treap_clear": "(t: inout Treap($K, $V))",
   "container.treap_contains": "(t: Treap($K, $V), k: $K)-> bool",
   "container.treap_empty": "(t: Treap($K, $V))-> bool",

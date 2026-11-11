@@ -283,8 +283,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   map: `treap_make(less, sample)` (the sample only fixes the value type),
   `treap_put`, `treap_get`, `treap_contains`, `treap_remove`, `treap_len`,
   `treap_empty`, `treap_keys` (in-order), `treap_first_key`, `treap_last_key`
-  and `treap_clear`. Every container is a deep value: copying one gives an
-  independent container. `core:pool` is the
+  and `treap_clear`. `topo_sort(n, edges) -> Result([int], TopoErr)` is Kahn's
+  deterministic topological sort (`Cycle` on a cycle or an out-of-range edge).
+  Every container is a deep value: copying one gives an independent container. `core:pool` is the
   generational handle-map equivalent.
 - **`sync`** — pthreads/Win32 primitives and C11 atomics, for state shared by
   `spawn`/`parallel for` tasks. Every object is a C-owned `ptr` handle with an
