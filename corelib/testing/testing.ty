@@ -52,3 +52,11 @@ fn report_bench(b: Bench) -> string:
     if b.iters > 0:
         per = b.ns / b.iters
     return b.name + ": " + str(b.iters) + " iters, " + str(b.ns) + " ns, " + str(per) + " ns/op"
+
+# A child test named `parent/name`; merge its counters back when it finishes.
+fn subtest(parent: T, name: string) -> T:
+    return T(parent.name + "/" + name, 0, 0)
+
+fn merge(parent: inout T, child: T):
+    parent.nchecks += child.nchecks
+    parent.nfail += child.nfail

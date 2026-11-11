@@ -5,3 +5,4 @@ FAIL failing (2 of 3 checks failed)
 0 1
 bench=true
 report=x: 10 iters, 1000 ns, 100 ns/op
+subtest_checks=true sub_fail=true

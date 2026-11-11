@@ -616,6 +616,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   plus `FAIL name (N of M checks failed)` and returns 0/1 for the exit code.
   `bench(name, iters, f)` times a microbenchmark into a `Bench`, and
   `report_bench(b)` formats it as `name: N iters, T ns, P ns/op`.
+  `subtest(parent, name)` makes a child `T` named `parent/name`, and
+  `merge(&parent, child)` folds its counters back.
 - **`toml`** — a TOML v1.0-subset parser: `parse(s) -> Result(Value, string)`
   (fail-closed), a recursive `Value` enum (TStr/TInt/TFloat/TBool/TArr/TTable;
   tables are parallel keys/values arrays), and `get(t, "a.b.c") -> Option(Value)`

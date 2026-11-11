@@ -21,3 +21,7 @@ fn main():
     b := testing.bench("noop", 100, noop)
     println("bench=" + str(b.iters == 100 and b.ns >= 0))
     println("report=" + testing.report_bench(testing.Bench("x", 10, 1000)))
+    sub := testing.subtest(pass, "child")
+    testing.eq(&sub, 3, 3, "sub eq")
+    testing.merge(&pass, sub)
+    println("subtest_checks=" + str(pass.nchecks == 5) + " sub_fail=" + str(pass.nfail == 0))
