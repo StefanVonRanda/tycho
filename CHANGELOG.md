@@ -62,7 +62,7 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   are refused rather than given different semantics.
 - `core:tz` now parses the POSIX TZ footer, so timestamps after the last TZif
   transition keep DST (including southern-hemisphere rules); leap-second
-  records remain ignored.
+  records were not yet exposed.
 - Added runtime-loaded bzip2 support to `core:compress`: `bzip2_available`,
   `bzip2_compress` and `bzip2_decompress`, with no hard libbz2 link dependency.
 - Added the remaining `core:container` breadth: an AVL ordered map, a
@@ -88,6 +88,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added BCJ2 to `core:compress`: `bcj2_encode`, `bcj2_encode_with`,
   `bcj2_decode` and `bcj2_decode_to`, byte-identical to the LZMA SDK for the
   four-stream reference vector.
+- Added leap-second records to `core:tz`: `Zone.leaps`, `leap_count`,
+  `leap_at` and `leap_correction_at`, with monotonicity and correction-step
+  validation.
 - The tree is now 88 corelib packages and 100 golden test trees.
 
 ## [0.9.1] — 2026-11-10

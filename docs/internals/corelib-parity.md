@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 88 packages, ~24.6k lines, 1239 locked
+lines). The current Tycho corelib is 88 packages, ~24.7k lines, 1242 locked
 public functions.
 
 Status values:
@@ -57,7 +57,7 @@ Status values:
 | `testing` | covered | `T`, `check`, `eq`, `report`, `subtest`/`merge`, `bench`, `report_bench` | none |
 | `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `textmatch`, `edit`, `scanner`, `table`, `glob`, GNU MO `i18n` | Qt `.qm` catalogs, locale data, Lua `%b`/`%f`/non-greedy `-` |
 | `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; `thread.id`/`yield_now`/`cpus` | raw thread creation/TLS need compiler/runtime support |
-| `time` | partial | monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset, IANA TZif zones via `core:tz` including the POSIX footer | leap-second records |
+| `time` | covered | monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset, IANA TZif zones via `core:tz` including the POSIX footer and leap-second records | none |
 | `unicode` | covered | `utf8`, `utf16`, full case mapping/folding, titlecase mapping, UAX #15 normalization, UAX #29 grapheme/word segmentation, UCD general-category/script/block/emoji classification | none |
 
 ## What parity does not mean

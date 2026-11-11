@@ -15,6 +15,14 @@ fn why(e: tz.TzErr) -> string:
         return "TooBig"
     return "?"
 
+fn mutate(data: bytes, off: int, val: int) -> bytes:
+    xs := []int
+    for i := 0; i < len(data); i += 1:
+        push(xs, data[i])
+    if off >= 0 and off < len(xs):
+        xs[off] = val
+    return to_bytes(xs)
+
 fn main():
     match io.read_bytes("corelib/test/tz/Europe_Copenhagen.tzif"):
         Ok(data):
@@ -28,6 +36,7 @@ fn main():
                     println("future_winter=" + str(tz.offset_at(z, 2209032000)) + " " + tz.abbreviation_at(z, 2209032000))
                     println("future_summer=" + str(tz.offset_at(z, 2224756800)) + " " + tz.abbreviation_at(z, 2224756800))
                     println("future_far=" + str(tz.offset_at(z, 2540289600)) + " " + tz.abbreviation_at(z, 2540289600))
+                    println("copenhagen_leaps=" + str(tz.leap_count(z)))
                 Err(e):
                     println("parse=" + why(e))
         Err(_):
@@ -53,6 +62,43 @@ fn main():
                     println("sydney_parse=" + why(e))
         Err(_):
             println("sydney_read=err")
+
+    match io.read_bytes("corelib/test/tz/right_UTC.tzif"):
+        Ok(data):
+            match tz.parse_tzif(data, "right/UTC"):
+                Ok(z):
+                    println("leap_count=" + str(tz.leap_count(z)))
+                    match tz.leap_at(z, 0):
+                        Ok(l):
+                            println("leap0=" + str(l.occurrence) + ":" + str(l.correction))
+                        Err(e):
+                            println("leap0=" + why(e))
+                    match tz.leap_at(z, 26):
+                        Ok(l):
+                            println("leap26=" + str(l.occurrence) + ":" + str(l.correction))
+                        Err(e):
+                            println("leap26=" + why(e))
+                    println("leap_before=" + str(tz.leap_correction_at(z, 78796799)))
+                    println("leap_first=" + str(tz.leap_correction_at(z, 78796800)))
+                    println("leap_last=" + str(tz.leap_correction_at(z, 1483228826)))
+                    println("leap_after=" + str(tz.leap_correction_at(z, 2000000000)))
+                    match tz.leap_at(z, 27):
+                        Err(e):
+                            println("leap_oob=" + why(e))
+                        Ok(_):
+                            println("leap_oob=Ok")
+                Err(e):
+                    println("right_parse=" + why(e))
+            bad_leap := data
+            for i := 336; i < 344; i += 1:
+                bad_leap = mutate(bad_leap, i, 0)
+            match tz.parse_tzif(bad_leap, "bad/leap"):
+                Err(e):
+                    println("bad_leap=" + why(e))
+                Ok(_):
+                    println("bad_leap=Ok")
+        Err(_):
+            println("right_read=err")
 
     bad := to_bytes([88, 88, 88, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
     match tz.parse_tzif(bad, "bad"):

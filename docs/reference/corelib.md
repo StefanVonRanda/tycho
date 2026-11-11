@@ -398,7 +398,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   `offset_at(z, unix)` and `abbreviation_at(z, unix)` binary-search transitions,
   fall back to the initial type before the first one, and apply the POSIX TZ
   footer after the last transition (including southern-hemisphere rules).
-  Leap-second records are still ignored.
+  Leap-second records are parsed into `Zone.leaps` as `Leap{occurrence,
+  correction}`; `leap_count(z)`, `leap_at(z, i)` and
+  `leap_correction_at(z, unix)` expose them. Occurrences must increase and
+  corrections must change by exactly one, so malformed records fail as
+  `Corrupt`.
 - **`regex`** — POSIX extended regular expressions (ERE) over libc. `compile(pat) ->
   ptr` (opaque handle; `ok`/`is_null` to check), `is_match`, `find` / `find_end`
   (offset or −1), `matched` (first match substring). **Capture groups** of the first
