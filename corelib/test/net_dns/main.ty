@@ -10,6 +10,40 @@ fn serve_dns(fd: int, client_port: int, response: bytes) -> int:
         net.udp_send(fd, "127.0.0.1", client_port, response)
     return 0
 
+fn read_exact(fd: int, n: int) -> bytes:
+    out := to_bytes([]int)
+    for len(out) < n:
+        match net.read(fd, n - len(out)):
+            Ok(b):
+                if len(b) == 0:
+                    return out
+                out = out + b
+            Err(_):
+                return out
+    return out
+
+fn serve_dns_tcp(srv: int, response: bytes) -> int:
+    match net.accept(srv):
+        Ok(conn):
+            h := read_exact(conn, 2)
+            if len(h) == 2:
+                n := (h[0] << 8) | h[1]
+                q := read_exact(conn, n)
+                if len(q) == n:
+                    framed := to_bytes([(len(response) >> 8) & 255, len(response) & 255]) + response
+                    match net.write(conn, framed):
+                        Ok(_): pass
+                        Err(_): pass
+            net.close_fd(conn)
+        Err(_): pass
+    return 0
+
+fn serve_dns_tc(fd: int, client_port: int, response: bytes) -> int:
+    q := net.udp_read(fd, 512)
+    if len(q) > 0:
+        net.udp_send(fd, "127.0.0.1", client_port, response)
+    return 0
+
 fn why(e: net.DnsErr) -> string:
     if e == net.Truncated:
         return "Truncated"
@@ -121,3 +155,62 @@ fn main():
                     println("resp_read=err")
         Err(e):
             println("query_build_err=" + why(e))
+
+    match io.read_bytes("corelib/test/net_dns/mx.bin"):
+        Ok(resp):
+            match net.listen("127.0.0.1", 0):
+                Ok(tsrv):
+                    tport := result.unwrap_or(net.port_of(tsrv), -1)
+                    net.set_read_timeout_ms(tsrv, 2000)
+                    ttask := spawn serve_dns_tcp(tsrv, resp)
+                    match net.dns_query_tcp("127.0.0.1", tport, "example.com", 15, 0x1234):
+                        Ok(rs):
+                            println("tcp_count=" + str(len(rs)))
+                        Err(e):
+                            println("tcp_err=" + why(e))
+                    tn := wait(ttask)
+                    println("tcp_server=" + str(tn))
+                    net.close_fd(tsrv)
+                Err(_):
+                    println("tcp_listen=err")
+        Err(_):
+            println("tcp_read=err")
+
+    match io.read_bytes("corelib/test/net_dns/mx_tc.bin"):
+        Ok(tc_resp):
+            match io.read_bytes("corelib/test/net_dns/mx.bin"):
+                Ok(resp):
+                    match net.udp_bind_checked("127.0.0.1", 0):
+                        Ok(cfd):
+                            cport := result.unwrap_or(net.port_of(cfd), -1)
+                            match net.udp_bind_checked("127.0.0.1", 0):
+                                Ok(ufd):
+                                    uport := result.unwrap_or(net.port_of(ufd), -1)
+                                    match net.listen("127.0.0.1", uport):
+                                        Ok(tsrv):
+                                            net.set_read_timeout_ms(cfd, 2000)
+                                            net.set_read_timeout_ms(ufd, 2000)
+                                            net.set_read_timeout_ms(tsrv, 2000)
+                                            ut := spawn serve_dns_tc(ufd, cport, tc_resp)
+                                            tt := spawn serve_dns_tcp(tsrv, resp)
+                                            match net.dns_query_fallback_on(cfd, "127.0.0.1", uport, "example.com", 15, 0x1234):
+                                                Ok(rs):
+                                                    println("fallback_count=" + str(len(rs)))
+                                                Err(e):
+                                                    println("fallback_err=" + why(e))
+                                            un := wait(ut)
+                                            tn2 := wait(tt)
+                                            println("fallback_server=" + str(un) + "," + str(tn2))
+                                            net.close_fd(tsrv)
+                                        Err(_):
+                                            println("fallback_listen=err")
+                                    net.close_fd(ufd)
+                                Err(_):
+                                    println("fallback_udp_srv=err")
+                            net.close_fd(cfd)
+                        Err(_):
+                            println("fallback_udp_cli=err")
+                Err(_):
+                    println("fallback_read=err")
+        Err(_):
+            println("fallback_tc_read=err")

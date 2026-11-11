@@ -845,31 +845,95 @@ fn dns_query_on(fd: int, server: string, port: int, query: bytes, id: int) -> Re
         return Err(Network)
     match udp_read_checked(fd, 4096):
         Ok(b):
-            if len(b) < 12:
-                return Err(Truncated)
-            rid := (b[0] << 8) | b[1]
-            if rid != id or (b[2] & 128) == 0:
-                return Err(Corrupt)
-            if (b[3] & 15) != 0:
-                return Err(Corrupt)
-            return parse_dns(b)
+            return _dns_response(b, id)
         Err(_):
             return Err(Network)
 
-# Bind an ephemeral UDP socket, send a query to `server:port`, and parse it.
-fn dns_query(server: string, port: int, name: string, qtype: int, id: int) -> Result([DnsRecord], DnsErr):
+fn _dns_response(b: bytes, id: int) -> Result([DnsRecord], DnsErr):
+    if len(b) < 12:
+        return Err(Truncated)
+    rid := (b[0] << 8) | b[1]
+    if rid != id or (b[2] & 128) == 0:
+        return Err(Corrupt)
+    if (b[2] & 2) != 0:                    # TC: retry over TCP
+        return Err(Truncated)
+    if (b[3] & 15) != 0:
+        return Err(Corrupt)
+    return parse_dns(b)
+
+fn _dns_read_exact(fd: int, n: int) -> Result(bytes, DnsErr):
+    out := to_bytes([]int)
+    for len(out) < n:
+        match read(fd, n - len(out)):
+            Ok(b):
+                if len(b) == 0:
+                    return Err(Truncated)
+                out = out + b
+            Err(Eof):
+                return Err(Truncated)
+            Err(_):
+                return Err(Network)
+    return Ok(out)
+
+# DNS over TCP: a two-byte length prefix frames the query and the response.
+fn dns_query_tcp(server: string, port: int, name: string, qtype: int, id: int) -> Result([DnsRecord], DnsErr):
     match build_query(name, qtype, id):
         Ok(q):
-            match udp_bind_checked("0.0.0.0", 0):
+            match connect(server, port):
                 Ok(fd):
                     set_read_timeout_ms(fd, 2000)
-                    r := dns_query_on(fd, server, port, q, id)
-                    close_fd(fd)
-                    return r
+                    set_write_timeout_ms(fd, 2000)
+                    framed := to_bytes([(len(q) >> 8) & 255, len(q) & 255]) + q
+                    match write(fd, framed):
+                        Ok(_): pass
+                        Err(_):
+                            close_fd(fd)
+                            return Err(Network)
+                    match _dns_read_exact(fd, 2):
+                        Ok(h):
+                            n := (h[0] << 8) | h[1]
+                            if n < 12:
+                                close_fd(fd)
+                                return Err(Truncated)
+                            match _dns_read_exact(fd, n):
+                                Ok(b):
+                                    close_fd(fd)
+                                    return _dns_response(b, id)
+                                Err(e):
+                                    close_fd(fd)
+                                    return Err(e)
+                        Err(e):
+                            close_fd(fd)
+                            return Err(e)
                 Err(_):
                     return Err(Network)
         Err(e):
             return Err(e)
+
+# UDP first; a TC response (or a short datagram) retries the same query over TCP.
+fn dns_query_fallback_on(fd: int, server: string, port: int, name: string, qtype: int, id: int) -> Result([DnsRecord], DnsErr):
+    match build_query(name, qtype, id):
+        Ok(q):
+            match dns_query_on(fd, server, port, q, id):
+                Ok(rs):
+                    return Ok(rs)
+                Err(Truncated):
+                    return dns_query_tcp(server, port, name, qtype, id)
+                Err(e):
+                    return Err(e)
+        Err(e):
+            return Err(e)
+
+# Bind an ephemeral UDP socket, query `server:port`, and fall back to TCP on TC.
+fn dns_query(server: string, port: int, name: string, qtype: int, id: int) -> Result([DnsRecord], DnsErr):
+    match udp_bind_checked("0.0.0.0", 0):
+        Ok(fd):
+            set_read_timeout_ms(fd, 2000)
+            r := dns_query_fallback_on(fd, server, port, name, qtype, id)
+            close_fd(fd)
+            return r
+        Err(_):
+            return Err(Network)
 
 fn query_mx(server: string, port: int, host: string, id: int) -> Result([DnsMx], DnsErr):
     match dns_query(server, port, host, 15, id):

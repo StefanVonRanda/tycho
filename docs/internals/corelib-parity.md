@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 88 packages, ~23.3k lines, 1200 locked
+lines). The current Tycho corelib is 88 packages, ~23.4k lines, 1202 locked
 public functions.
 
 Status values:
@@ -38,7 +38,7 @@ Status values:
 | `math` | covered | `math`, `fmath` (trig/exp/log/hypot), `decimal`, `bignum`, `rand`, `linalg`, `complex`, `fixed`, `ease`, `noise`, `bits` | none |
 | `mem` | non-goal | implicit arenas; no public allocator API | none — explicit allocators, virtual memory and TLSF are a different memory model |
 | `nbio` | partial | `nbio.poll` over `poll(2)`/`WSAPoll` with READ/WRITE masks | epoll/kqueue/IOCP completion loops |
-| `net` | partial | TCP/UDP, timeouts, TLS, HTTP/HTTPD; DNS `resolve` plus MX/TXT/SRV parsing and UDP query/resolution; socket options; POSIX Unix sockets; `interfaces`; IPv4/IPv6/endpoint parse and format; prefix network/containment | DNS-over-TCP fallback for truncated responses |
+| `net` | covered | TCP/UDP, timeouts, TLS, HTTP/HTTPD; DNS `resolve` plus MX/TXT/SRV parsing, UDP querying and TCP fallback; socket options; POSIX Unix sockets; `interfaces`; IPv4/IPv6/endpoint parse and format; prefix network/containment | none |
 | `odin` | non-goal | Tycho has its own compiler packages | none |
 | `os` | covered | process execution, environment, cwd/chdir, pid/ppid, hostname, home/temp/cache/config/data dirs, temp files/dirs, user name, pipes/fd I/O, `chmod`/`umask`, uid/gid, `io.walk` | process signals live in `core:signal` |
 | `path` | covered | POSIX `path` plus Windows lexical `filepath` (clean/join/volume/base/dir/ext/stem) | native path opening still goes through `io` |

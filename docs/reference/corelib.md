@@ -903,8 +903,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   query; `dns_query_on` sends a built query on a bound UDP descriptor,
   `dns_query` binds an ephemeral socket and uses a 2s read timeout, and
   `query_mx`/`query_txt`/`query_srv` return the filtered records. `DnsErr` adds
-  `Network` for a send failure, timeout or short datagram. There is no
-  DNS-over-TCP fallback yet.
+  `Network` for a send failure, timeout or short datagram. `dns_query_tcp`
+  sends the same query over a length-prefixed TCP stream, and
+  `dns_query_fallback_on` retries over TCP when the UDP response has the TC bit
+  set; `dns_query` uses that fallback automatically.
 - **`nbio`** — readiness polling. `poll(fds, events, timeout_ms) -> Result([Ready],
   NbioErr)` waits on each fd with an event mask of `READ`/`WRITE`
   (`Ready{fd, events}` carries the revents mask; a negative timeout waits

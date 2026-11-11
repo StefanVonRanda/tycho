@@ -17,3 +17,7 @@ query_count=2
 query_mx=10:mail.example.com
 query_mx=20:mail2.example.com
 query_server=0
+tcp_count=2
+tcp_server=0
+fallback_count=2
+fallback_server=0,0
