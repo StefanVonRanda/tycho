@@ -141,6 +141,12 @@ fn _compile(pattern: string) -> Result(ptr, TmErr):
 # First match at or after byte `init`, as (start, end). `^` still anchors to the
 # start of `s`, so an anchored pattern with init > 0 does not match.
 fn find(s: string, pattern: string, init: int) -> Option((int, int)):
+    if _needs_native(pattern):
+        match _lua_find(s, pattern, init):
+            Some(m):
+                return Some((m.start, m.end))
+            None:
+                return None
     if init < 0:
         init = 0
     if init > len(s):
@@ -167,6 +173,24 @@ fn matches(s: string, pattern: string) -> bool:
 # All non-overlapping matches, in order.
 fn gmatch(s: string, pattern: string) -> [string]:
     out := []string
+    if _needs_native(pattern):
+        pos := 0
+        for pos <= len(s):
+            match _lua_find(s, pattern, pos):
+                Some(m):
+                    push(out, substr(s, m.start, m.end))
+                    if m.end == m.start:
+                        if m.start >= len(s):
+                            break
+                        _, w := _lua_peek(s, m.start)
+                        if w <= 0:
+                            break
+                        pos = m.start + w
+                    else:
+                        pos = m.end
+                None:
+                    break
+        return out
     match _compile(pattern):
         Ok(re):
             pos := 0
@@ -214,6 +238,31 @@ fn _expand(re: ptr, sub: string, a: int, b: int, replacement: string) -> string:
 # Replace every match. `%0`..`%9` in `replacement` name capture groups; `%%` is
 # a literal percent. An unsupported pattern leaves `s` unchanged.
 fn gsub(s: string, pattern: string, replacement: string) -> string:
+    if _needs_native(pattern):
+        out := ""
+        pos := 0
+        for pos <= len(s):
+            match _lua_find(s, pattern, pos):
+                Some(m):
+                    out = out + substr(s, pos, m.start)
+                    out = out + _lua_expand(s, m, replacement)
+                    if m.end == m.start:
+                        if m.start >= len(s):
+                            pos = len(s) + 1
+                            break
+                        _, w := _lua_peek(s, m.start)
+                        if w <= 0:
+                            pos = len(s) + 1
+                            break
+                        out = out + substr(s, m.start, m.start + w)
+                        pos = m.start + w
+                    else:
+                        pos = m.end
+                None:
+                    break
+        if pos <= len(s):
+            out = out + substr(s, pos, len(s))
+        return out
     match _compile(pattern):
         Ok(re):
             out := ""

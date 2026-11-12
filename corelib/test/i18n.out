@@ -8,3 +8,19 @@ header_ok=true
 be=bonjour
 bad=BadMagic
 short=Truncated
+qm_lang=
+qm_welcome=Herzlich willkommen
+qm_language=Sprache
+qm_main=Hauptfenster
+qm_changed=Aktuelle Sprache geändert in %1
+qm_missing=missing
+qm_en=Welcome
+locale_de=de_DE
+locale_unknown=none
+de_month=März day=Montag
+de_number=1.234.567 neg=-1.234.567
+de_plural=0,1
+fr_number=1 234 567
+fr_plural=0,0,1
+ja_month=1月 plural=0
+system_locale=true

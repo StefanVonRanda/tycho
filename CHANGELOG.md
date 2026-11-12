@@ -105,6 +105,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `sample_spans`, `encode_trace` and `decode_trace`.
 - Added cursor queries to `core:terminal`: `parse_cursor_response`,
   `cursor_query` and `cursor_position`, plus non-console Windows tty fallbacks.
+- Completed the `core:text` gaps: Qt `.qm` catalogs (`parse_qm_from_bytes`,
+  `qm_translate`, `qm_language`), locale data (`locale`, `system_locale`,
+  `month_name`, `weekday_name`, `format_number`, `plural_slot`) and native Lua
+  `%b`/`%f`/non-greedy `-` patterns in `core:textmatch`.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

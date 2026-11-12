@@ -26,3 +26,9 @@ fn main():
     println("unsupported=" + pair(textmatch.find("abc", "%b()", 0)))
     println("class=" + pair(textmatch.find("a1b2", "[%d]", 0)))
     println("init=" + pair(textmatch.find("a1b2", "%d", 2)))
+
+    println("balance=" + pair(textmatch.find("a(b(c)d)e", "%b()", 0)))
+    println("balance_gsub=" + textmatch.gsub("a(b(c)d)e", "%b()", "<%0>"))
+    println("frontier=" + list_of(textmatch.gmatch("hello world", "%f[%a]%a+")))
+    println("nongreedy=" + pair(textmatch.find("aXXbYYb", "a.-b", 0)))
+    println("nongreedy_gsub=" + textmatch.gsub("aXXbYYb", "a.-b", "Z"))

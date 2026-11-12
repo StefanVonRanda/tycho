@@ -11,6 +11,11 @@ fn report(t: i18n.Translation):
     println("plural2=" + i18n.get_n(t, "apple", 2))
     println("header_ok=" + str(len(i18n.header(t)) > 0))
 
+fn locale_name(o: Option(i18n.Locale)) -> string:
+    match o:
+        Some(l): return l.name
+        None: return "none"
+
 fn main():
     match io.read_bytes("corelib/test/i18n/fixture.mo"):
         Ok(data):
@@ -39,3 +44,51 @@ fn main():
         Ok(_): println("short=Ok")
         Err(i18n.Truncated): println("short=Truncated")
         Err(_): println("short=Other")
+
+    # ---- Qt .qm catalogs ----
+    match io.read_bytes("corelib/test/i18n/TranslationExample_de.qm"):
+        Ok(data):
+            match i18n.parse_qm_from_bytes(data):
+                Ok(c):
+                    println("qm_lang=" + c.language)
+                    println("qm_welcome=" + i18n.qm_translate(c, "MainWindow", "Welcome", "", 0 - 1))
+                    println("qm_language=" + i18n.qm_translate(c, "MainWindow", "Language", "", 0 - 1))
+                    println("qm_main=" + i18n.qm_translate(c, "MainWindow", "MainWindow", "", 0 - 1))
+                    println("qm_changed=" + i18n.qm_translate(c, "MainWindow", "Current Language changed to %1", "", 0 - 1))
+                    println("qm_missing=" + i18n.qm_translate(c, "MainWindow", "missing", "", 0 - 1))
+                Err(_):
+                    println("qm=parse-err")
+        Err(_):
+            println("qm=read-err")
+    match io.read_bytes("corelib/test/i18n/TranslationExample_en.qm"):
+        Ok(data):
+            match i18n.parse_qm_from_bytes(data):
+                Ok(c):
+                    println("qm_en=" + i18n.qm_translate(c, "", "Welcome", "", 0 - 1))
+                Err(_):
+                    println("qm_en=parse-err")
+        Err(_):
+            println("qm_en=read-err")
+
+    # ---- locale data ----
+    println("locale_de=" + locale_name(i18n.locale("de_DE.UTF-8")))
+    println("locale_unknown=" + locale_name(i18n.locale("xx_YY")))
+    match i18n.locale("de_DE"):
+        Some(l):
+            println("de_month=" + i18n.month_name(l, 3) + " day=" + i18n.weekday_name(l, 1))
+            println("de_number=" + i18n.format_number(l, 1234567) + " neg=" + i18n.format_number(l, 0 - 1234567))
+            println("de_plural=" + str(i18n.plural_slot(l, 1)) + "," + str(i18n.plural_slot(l, 2)))
+        None:
+            println("de=missing")
+    match i18n.locale("fr_FR"):
+        Some(l):
+            println("fr_number=" + i18n.format_number(l, 1234567))
+            println("fr_plural=" + str(i18n.plural_slot(l, 0)) + "," + str(i18n.plural_slot(l, 1)) + "," + str(i18n.plural_slot(l, 2)))
+        None:
+            println("fr=missing")
+    match i18n.locale("ja_JP"):
+        Some(l):
+            println("ja_month=" + i18n.month_name(l, 1) + " plural=" + str(i18n.plural_slot(l, 5)))
+        None:
+            println("ja=missing")
+    println("system_locale=" + str(len(i18n.system_locale().name) > 0))

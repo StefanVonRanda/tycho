@@ -426,8 +426,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   `gmatch(s, pattern) -> [string]`, and `gsub(s, pattern, replacement)` with
   `%0`..`%9` capture references and `%%` for a literal percent. Supports
   `%a`/`%c`/`%d`/`%g`/`%l`/`%p`/`%s`/`%u`/`%w`/`%x`, `.`, `[...]`, `* + ?`,
-  `^ $` and captures. Non-greedy `-`, `%b` and `%f` are refused rather than
-  given different semantics.
+  `^ $` and captures. `%bxy` balanced matches, `%f[set]` frontier matches and
+  non-greedy `-` use a native matcher; every other pattern keeps the POSIX ERE
+  fast path.
 - **`xml`** — a self-contained XML parser and serializer. `Node` is
   `Element(name, [Attr], [Node])` or `Text(string)`; `parse(s) -> Result(Node,
   XmlErr)` accepts an XML declaration, comments, processing instructions, a
@@ -741,8 +742,14 @@ expression-bodied; pass a named function where you need a multi-line body.
   Result(Translation, I18nErr)` accepts both byte orders; `get(t, key)` returns
   the singular translation (or the key when absent), `get_n(t, key, n)` selects
   the English one/other plural form, and `header(t)` is the catalog header.
-  Context entries use the msgid after the first NUL. Qt `.qm` catalogs and
-  locale data are not parsed.
+  Context entries use the msgid after the first NUL. Qt `.qm` catalogs are
+  parsed by `parse_qm_from_bytes` (magic, contexts, hashes, messages and
+  numerus rules); `qm_translate(c, context, source, comment, n)` applies the
+  catalog's elf-hash lookup and plural rule, and `qm_language(c)` returns its
+  language. Locale data: `locale(name) -> Option(Locale)` and
+  `system_locale()` resolve `en`, `de`, `fr`, `sv` and `ja` variants;
+  `month_name`, `weekday_name`, `format_number` and `plural_slot` use the
+  locale's names, separators and one/other rule.
 - **`unicode`** — case mapping/folding, normalization, segmentation and UCD
   classification. `to_upper(s)`, `to_lower(s)` and `to_casefold(s)` apply full
   one-to-many expansions (`ß -> SS`, `Straße -> strasse`); `to_upper_char`,

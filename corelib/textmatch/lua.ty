@@ -1,0 +1,389 @@
+# Native Lua-pattern matcher for the constructs POSIX ERE cannot express:
+# `%bxy`, `%f[set]` and non-greedy `-`. The regex translation remains the
+# fast path for every other pattern.
+package textmatch
+
+import "core:char"
+import "core:unicode"
+import "core:utf8"
+
+const LUA_CAP_UNFINISHED = 0 - 1
+const LUA_CAP_POSITION = 0 - 2
+
+struct LuaCap:
+    init: int
+    len: int
+
+struct LuaMatch:
+    start: int
+    end: int
+    caps: [32]LuaCap
+    ncap: int
+
+struct LuaState:
+    src: string
+    pat: string
+    level: int
+    caps: [32]LuaCap
+
+fn _lua_peek(s: string, i: int) -> (int, int):
+    if i < 0 or i >= len(s):
+        return (0, 0)
+    return utf8.decode(s, i)
+
+fn _lua_prev(s: string, i: int) -> (int, int):
+    if i <= 0:
+        return (0, 0)
+    j := i - 1
+    for j > 0 and (s[j] & 192) == 128:
+        j -= 1
+    return utf8.decode(s, j)
+
+fn _lua_class(cp: int, cl: int) -> bool:
+    lc := cl
+    if lc >= 65 and lc <= 90:
+        lc = lc + 32
+    res := false
+    if lc == 97:                       # a
+        res = unicode.is_alpha(cp)
+    elif lc == 99:                     # c
+        res = unicode.is_control(cp)
+    elif lc == 100:                    # d
+        res = cp >= 48 and cp <= 57
+    elif lc == 103:                    # g
+        res = unicode.is_graphic(cp) and not unicode.is_space(cp)
+    elif lc == 108:                    # l
+        res = unicode.is_lower(cp)
+    elif lc == 112:                    # p
+        res = unicode.is_punct(cp)
+    elif lc == 115:                    # s
+        res = unicode.is_space(cp)
+    elif lc == 117:                    # u
+        res = unicode.is_upper(cp)
+    elif lc == 119:                    # w
+        res = unicode.is_alnum(cp) or (cp >= 48 and cp <= 57)
+    elif lc == 120:                    # x
+        res = char.is_hex(cp)
+    elif lc == 122:                    # z
+        res = cp == 0
+    else:
+        return cp == cl
+    if cl >= 65 and cl <= 90:
+        return not res
+    return res
+
+fn _lua_class_end(ms: LuaState, p: int) -> int:
+    if p < 0 or p >= len(ms.pat):
+        return 0 - 1
+    c := ms.pat[p]
+    if c == 37:
+        if p + 1 >= len(ms.pat):
+            return 0 - 1
+        return p + 2
+    if c == 91:
+        i := p + 1
+        if i < len(ms.pat) and ms.pat[i] == 94:
+            i += 1
+        if i < len(ms.pat) and ms.pat[i] == 93:
+            i += 1
+        for i < len(ms.pat):
+            if ms.pat[i] == 37:
+                i += 2
+            elif ms.pat[i] == 93:
+                return i + 1
+            else:
+                _, w := _lua_peek(ms.pat, i)
+                if w <= 0:
+                    return 0 - 1
+                i += w
+        return 0 - 1
+    _, w := _lua_peek(ms.pat, p)
+    if w <= 0:
+        return 0 - 1
+    return p + w
+
+fn _lua_bracket(ms: LuaState, cp: int, p: int, ep: int) -> bool:
+    i := p + 1
+    neg := false
+    if i < ep and ms.pat[i] == 94:
+        neg = true
+        i += 1
+    matched := false
+    for i < ep - 1:
+        if ms.pat[i] == 37 and i + 1 < ep - 1:
+            if _lua_class(cp, ms.pat[i + 1]):
+                matched = true
+            i += 2
+            continue
+        cp1, w1 := _lua_peek(ms.pat, i)
+        if w1 <= 0:
+            break
+        i += w1
+        if i + 1 < ep - 1 and ms.pat[i] == 45:
+            cp2, w2 := _lua_peek(ms.pat, i + 1)
+            if w2 > 0:
+                if cp >= cp1 and cp <= cp2:
+                    matched = true
+                i += 1 + w2
+                continue
+        if cp == cp1:
+            matched = true
+    if neg:
+        return not matched
+    return matched
+
+fn _lua_single(ms: LuaState, s: int, p: int, ep: int) -> (bool, int):
+    if s >= len(ms.src):
+        return (false, 0)
+    scp, sw := _lua_peek(ms.src, s)
+    if sw <= 0:
+        return (false, 0)
+    pc := ms.pat[p]
+    if pc == 46:
+        return (true, sw)
+    if pc == 37:
+        return (_lua_class(scp, ms.pat[p + 1]), sw)
+    if pc == 91:
+        return (_lua_bracket(ms, scp, p, ep), sw)
+    pcp, _ := _lua_peek(ms.pat, p)
+    return (scp == pcp, sw)
+
+fn _lua_start_capture(ms: inout LuaState, s: int, p: int, what: int) -> int:
+    if ms.level >= 32:
+        return 0 - 1
+    ms.caps[ms.level] = LuaCap(s, what)
+    ms.level += 1
+    res := _lua_match(&ms, s, p)
+    if res < 0:
+        ms.level -= 1
+    return res
+
+fn _lua_end_capture(ms: inout LuaState, s: int, p: int) -> int:
+    l := ms.level - 1
+    for l >= 0:
+        if ms.caps[l].len == LUA_CAP_UNFINISHED:
+            ms.caps[l].len = s - ms.caps[l].init
+            res := _lua_match(&ms, s, p)
+            if res < 0:
+                ms.caps[l].len = LUA_CAP_UNFINISHED
+            return res
+        l -= 1
+    return 0 - 1
+
+fn _lua_match_capture(ms: LuaState, s: int, digit: int) -> int:
+    idx := digit - 49
+    if idx < 0 or idx >= ms.level or ms.caps[idx].len < 0:
+        return 0 - 1
+    n := ms.caps[idx].len
+    if s + n > len(ms.src):
+        return 0 - 1
+    for i := 0; i < n; i += 1:
+        if ms.src[s + i] != ms.src[ms.caps[idx].init + i]:
+            return 0 - 1
+    return s + n
+
+fn _lua_balance(ms: LuaState, s: int, p: int) -> int:
+    if p + 1 >= len(ms.pat):
+        return 0 - 1
+    x := ms.pat[p]
+    y := ms.pat[p + 1]
+    if s >= len(ms.src) or ms.src[s] != x:
+        return 0 - 1
+    count := 1
+    i := s + 1
+    for i < len(ms.src):
+        cp, w := _lua_peek(ms.src, i)
+        if w <= 0:
+            return 0 - 1
+        if cp == y:
+            count -= 1
+            if count == 0:
+                return i + w
+        elif cp == x:
+            count += 1
+        i += w
+    return 0 - 1
+
+fn _lua_max_expand(ms: inout LuaState, s: int, p: int, ep: int) -> int:
+    ends := []int
+    cur := s
+    for true:
+        matched, w := _lua_single(ms, cur, p, ep)
+        if not matched:
+            break
+        cur += w
+        push(ends, cur)
+    k := len(ends)
+    for k >= 0:
+        pos := s
+        if k > 0:
+            pos = ends[k - 1]
+        res := _lua_match(&ms, pos, ep + 1)
+        if res >= 0:
+            return res
+        k -= 1
+    return 0 - 1
+
+fn _lua_min_expand(ms: inout LuaState, s: int, p: int, ep: int) -> int:
+    cur := s
+    for true:
+        res := _lua_match(&ms, cur, ep + 1)
+        if res >= 0:
+            return res
+        matched, w := _lua_single(ms, cur, p, ep)
+        if not matched:
+            return 0 - 1
+        cur += w
+    return 0 - 1
+
+fn _lua_match_default(ms: inout LuaState, s: int, p: int) -> int:
+    ep := _lua_class_end(ms, p)
+    if ep < 0:
+        return 0 - 1
+    matched, w := _lua_single(ms, s, p, ep)
+    epc := 0
+    if ep < len(ms.pat):
+        epc = ms.pat[ep]
+    if not matched:
+        if epc == 42 or epc == 63 or epc == 45:
+            return _lua_match(&ms, s, ep + 1)
+        return 0 - 1
+    if epc == 63:
+        res := _lua_match(&ms, s + w, ep + 1)
+        if res < 0:
+            res = _lua_match(&ms, s, ep + 1)
+        return res
+    if epc == 43:
+        return _lua_max_expand(&ms, s + w, p, ep)
+    if epc == 42:
+        return _lua_max_expand(&ms, s, p, ep)
+    if epc == 45:
+        return _lua_min_expand(&ms, s, p, ep)
+    return _lua_match(&ms, s + w, ep)
+
+fn _lua_match(ms: inout LuaState, s: int, p: int) -> int:
+    if p >= len(ms.pat):
+        return s
+    c := ms.pat[p]
+    if c == 40:                        # (
+        if p + 1 < len(ms.pat) and ms.pat[p + 1] == 41:
+            return _lua_start_capture(&ms, s, p + 2, LUA_CAP_POSITION)
+        return _lua_start_capture(&ms, s, p + 1, LUA_CAP_UNFINISHED)
+    if c == 41:                        # )
+        return _lua_end_capture(&ms, s, p + 1)
+    if c == 36:                        # $
+        if p + 1 == len(ms.pat):
+            if s == len(ms.src):
+                return s
+            return 0 - 1
+        return _lua_match_default(&ms, s, p)
+    if c == 37:                        # %
+        if p + 1 >= len(ms.pat):
+            return 0 - 1
+        n := ms.pat[p + 1]
+        if n == 98:                    # b
+            s2 := _lua_balance(ms, s, p + 2)
+            if s2 < 0:
+                return 0 - 1
+            return _lua_match(&ms, s2, p + 4)
+        if n == 102:                   # f
+            if p + 2 >= len(ms.pat) or ms.pat[p + 2] != 91:
+                return 0 - 1
+            ep := _lua_class_end(ms, p + 2)
+            if ep < 0:
+                return 0 - 1
+            prev, pw := _lua_prev(ms.src, s)
+            cur, cw := _lua_peek(ms.src, s)
+            if pw < 0 or cw < 0:
+                return 0 - 1
+            if not _lua_bracket(ms, prev, p + 2, ep) and _lua_bracket(ms, cur, p + 2, ep):
+                return _lua_match(&ms, s, ep)
+            return 0 - 1
+        if n >= 48 and n <= 57:
+            s2 := _lua_match_capture(ms, s, n)
+            if s2 < 0:
+                return 0 - 1
+            return _lua_match(&ms, s2, p + 2)
+        return _lua_match_default(&ms, s, p)
+    return _lua_match_default(&ms, s, p)
+
+fn _lua_match_at(src: string, pat: string, start: int, anchored: bool) -> Option(LuaMatch):
+    ms := LuaState(src, pat, 0, [LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0), LuaCap(0, 0)])
+    p := 0
+    if anchored:
+        p = 1
+    end := _lua_match(&ms, start, p)
+    if end < 0:
+        return None
+    out := LuaMatch(start, end, ms.caps, ms.level)
+    return Some(out)
+
+fn _lua_find(s: string, pattern: string, init: int) -> Option(LuaMatch):
+    if init < 0:
+        init = 0
+    if init > len(s):
+        return None
+    anchored := len(pattern) > 0 and pattern[0] == 94
+    if anchored:
+        if init > 0:
+            return None
+        return _lua_match_at(s, pattern, init, true)
+    i := init
+    for i <= len(s):
+        match _lua_match_at(s, pattern, i, false):
+            Some(m):
+                return Some(m)
+            None:
+                pass
+        if i == len(s):
+            break
+        _, w := _lua_peek(s, i)
+        if w <= 0:
+            break
+        i += w
+    return None
+
+fn _needs_native(pattern: string) -> bool:
+    i := 0
+    in_class := false
+    for i < len(pattern):
+        c := pattern[i]
+        if c == 37 and i + 1 < len(pattern):
+            n := pattern[i + 1]
+            if not in_class and (n == 98 or n == 102):
+                return true
+            i += 2
+            continue
+        if c == 91:
+            in_class = true
+        elif c == 93:
+            in_class = false
+        elif c == 45 and not in_class:
+            return true
+        i += 1
+    return false
+
+fn _lua_expand(s: string, m: LuaMatch, replacement: string) -> string:
+    out := ""
+    i := 0
+    for i < len(replacement):
+        c := replacement[i]
+        if c == 37 and i + 1 < len(replacement):
+            n := replacement[i + 1]
+            if n == 37:
+                out = out + "%"
+            elif n >= 48 and n <= 57:
+                idx := n - 48
+                if idx == 0:
+                    out = out + substr(s, m.start, m.end)
+                elif idx - 1 < m.ncap:
+                    cap := m.caps[idx - 1]
+                    if cap.len >= 0:
+                        out = out + substr(s, cap.init, cap.init + cap.len)
+            else:
+                out = out + chr(n)
+            i += 2
+        else:
+            out = out + chr(c)
+            i += 1
+    return out

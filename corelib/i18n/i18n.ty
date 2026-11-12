@@ -1,6 +1,9 @@
 # GNU gettext MO catalogs. Qt .qm and locale data are not parsed here.
 package i18n
 
+import "core:os"
+import "core:utf16"
+
 enum I18nErr:
     BadMagic
     Truncated
@@ -121,3 +124,431 @@ fn get_n(t: Translation, key: string, n: int) -> string:
                 idx = len(p.forms) - 1
             return p.forms[idx]
     return get(t, key)
+
+# ---- Qt .qm catalogs ----
+
+fn _qm_magic(i: int) -> int:
+    if i == 0:
+        return 60
+    if i == 1:
+        return 184
+    if i == 2:
+        return 100
+    if i == 3:
+        return 24
+    if i == 4:
+        return 202
+    if i == 5:
+        return 239
+    if i == 6:
+        return 156
+    if i == 7:
+        return 149
+    if i == 8:
+        return 205
+    if i == 9:
+        return 33
+    if i == 10:
+        return 28
+    if i == 11:
+        return 191
+    if i == 12:
+        return 96
+    if i == 13:
+        return 161
+    if i == 14:
+        return 189
+    if i == 15:
+        return 221
+    return 221
+
+struct QmCatalog:
+    language: string
+    contexts: bytes
+    hashes: bytes
+    messages: bytes
+    numerus: bytes
+
+fn _u16be(data: bytes, off: int) -> int:
+    if off < 0 or off + 2 > len(data):
+        return -1
+    return (data[off] << 8) | data[off + 1]
+
+fn _elf_continue(h: int, s: string) -> int:
+    for i := 0; i < len(s); i += 1:
+        h = ((h << 4) + s[i]) & 4294967295
+        g := h & 4026531840
+        if g != 0:
+            h = (h ^ (g >> 24)) & 4294967295
+            h = h & ((~g) & 4294967295)
+    return h
+
+fn _elf_hash(s: string) -> int:
+    h := _elf_continue(0, s)
+    if h == 0:
+        return 1
+    return h
+
+fn _qm_match(found: bytes, target: string) -> bool:
+    n := len(found)
+    if n > 0 and found[n - 1] == 0:
+        n -= 1
+    if n != len(target):
+        return false
+    for i := 0; i < n; i += 1:
+        if found[i] != target[i]:
+            return false
+    return true
+
+fn parse_qm_from_bytes(data: bytes) -> Result(QmCatalog, I18nErr):
+    if len(data) < 16:
+        return Err(Truncated)
+    for i := 0; i < 16; i += 1:
+        if data[i] != _qm_magic(i):
+            return Err(BadMagic)
+    p := 16
+    language := ""
+    contexts := to_bytes([]int)
+    hashes := to_bytes([]int)
+    messages := to_bytes([]int)
+    numerus := to_bytes([]int)
+    for p + 5 <= len(data):
+        tag := data[p]
+        p += 1
+        n := _u32(data, p, true)
+        p += 4
+        if n < 0 or p + n > len(data):
+            return Err(Truncated)
+        if tag == 0:
+            break
+        if tag == 47:                    # Contexts
+            contexts = data[p:p + n]
+        elif tag == 66:                  # Hashes
+            hashes = data[p:p + n]
+        elif tag == 105:                 # Messages
+            messages = data[p:p + n]
+        elif tag == 136:                 # NumerusRules
+            numerus = data[p:p + n]
+        elif tag == 167:                 # Language
+            language = to_str(data[p:p + n])
+        p += n
+    if len(hashes) % 8 != 0:
+        return Err(Corrupt)
+    if len(contexts) > 0 and len(contexts) < 2:
+        return Err(Corrupt)
+    return Ok(QmCatalog(language, contexts, hashes, messages, numerus))
+
+fn qm_language(c: QmCatalog) -> string:
+    return c.language
+
+fn _qm_context_ok(c: QmCatalog, context: string) -> bool:
+    if len(c.contexts) == 0:
+        return true
+    size := _u16be(c.contexts, 0)
+    if size <= 0:
+        return false
+    g := _elf_hash(context) % size
+    off := _u16be(c.contexts, 2 + g * 2)
+    if off < 0 or off == 0:
+        return false
+    p := 2 + size * 2 + off * 2
+    for p < len(c.contexts):
+        n := c.contexts[p]
+        p += 1
+        if n == 0:
+            return false
+        if p + n > len(c.contexts):
+            return false
+        if _qm_match(c.contexts[p:p + n], context):
+            return true
+        p += n
+    return false
+
+fn _qm_message(c: QmCatalog, off: int, context: string, source: string, comment: string, numerus: int) -> string:
+    if off < 0 or off >= len(c.messages):
+        return ""
+    p := off
+    out := ""
+    found := false
+    num := numerus
+    for p < len(c.messages):
+        tag := c.messages[p]
+        p += 1
+        if tag == 0 or tag == 1:         # Tag_End
+            break
+        if tag == 3:                     # Tag_Translation
+            n := _u32(c.messages, p, true)
+            p += 4
+            if n < 0 or n % 2 != 0 or p + n > len(c.messages):
+                return ""
+            if num <= 0:
+                match utf16.decode_be(c.messages[p:p + n]):
+                    Ok(s):
+                        out = s
+                        found = true
+                    Err(_):
+                        return ""
+            else:
+                num -= 1
+            p += n
+        elif tag == 6:                   # Tag_SourceText
+            n := _u32(c.messages, p, true)
+            p += 4
+            if n < 0 or p + n > len(c.messages) or not _qm_match(c.messages[p:p + n], source):
+                return ""
+            p += n
+        elif tag == 7:                   # Tag_Context
+            n := _u32(c.messages, p, true)
+            p += 4
+            if n < 0 or p + n > len(c.messages) or not _qm_match(c.messages[p:p + n], context):
+                return ""
+            p += n
+        elif tag == 8:                   # Tag_Comment
+            n := _u32(c.messages, p, true)
+            p += 4
+            if n < 0 or p + n > len(c.messages):
+                return ""
+            if n > 0 and c.messages[p] != 0 and not _qm_match(c.messages[p:p + n], comment):
+                return ""
+            p += n
+        elif tag == 5:                   # Tag_Obsolete1
+            p += 4
+        else:
+            return ""
+    if found:
+        return out
+    return ""
+
+fn _qm_numerus(rules: bytes, n: int) -> int:
+    if len(rules) == 0:
+        return 0
+    i := 0
+    result := 0
+    for true:
+        or_true := false
+        for true:
+            and_true := true
+            for true:
+                if i >= len(rules):
+                    return result
+                opcode := rules[i]
+                i += 1
+                left := n
+                if (opcode & 16) != 0:
+                    left = left % 10
+                elif (opcode & 32) != 0:
+                    left = left % 100
+                elif (opcode & 64) != 0:
+                    for left >= 1000:
+                        left = left / 1000
+                op := opcode & 7
+                if i >= len(rules):
+                    return result
+                right := rules[i]
+                i += 1
+                truth := false
+                if op == 1:
+                    truth = left == right
+                elif op == 2:
+                    truth = left < right
+                elif op == 3:
+                    truth = left <= right
+                elif op == 4:
+                    if i >= len(rules):
+                        return result
+                    top := rules[i]
+                    i += 1
+                    truth = left >= right and left <= top
+                if (opcode & 8) != 0:
+                    truth = not truth
+                and_true = and_true and truth
+                if i == len(rules) or rules[i] != 253:
+                    break
+                i += 1
+            or_true = or_true or and_true
+            if i == len(rules) or rules[i] != 254:
+                break
+            i += 1
+        if or_true:
+            return result
+        result += 1
+        if i == len(rules):
+            return result
+        if rules[i] != 255:
+            return result
+        i += 1
+    return result
+
+fn _qm_find(c: QmCatalog, context: string, source: string, comment: string, numerus: int) -> string:
+    if len(c.hashes) == 0:
+        return ""
+    h := _elf_continue(0, source)
+    h = _elf_continue(h, comment)
+    if h == 0:
+        h = 1
+    n := len(c.hashes) / 8
+    lo := 0
+    hi := n - 1
+    first := 0 - 1
+    for lo <= hi:
+        mid := (lo + hi) / 2
+        hv := _u32(c.hashes, mid * 8, true)
+        if hv < h:
+            lo = mid + 1
+        elif hv > h:
+            hi = mid - 1
+        else:
+            first = mid
+            hi = mid - 1
+    if first < 0:
+        return ""
+    i := first
+    for i < n:
+        hv := _u32(c.hashes, i * 8, true)
+        if hv != h:
+            break
+        off := _u32(c.hashes, i * 8 + 4, true)
+        s := _qm_message(c, off, context, source, comment, numerus)
+        if s != "":
+            return s
+        i += 1
+    return ""
+
+# Translate a Qt .qm source string. `n` < 0 selects the singular form; otherwise
+# the catalog's numerus rules choose the plural slot. Returns `source` when the
+# catalog has no match.
+fn qm_translate(c: QmCatalog, context: string, source: string, comment: string, n: int) -> string:
+    if not _qm_context_ok(c, context):
+        return source
+    numerus := 0
+    if n >= 0:
+        numerus = _qm_numerus(c.numerus, n)
+    s := _qm_find(c, context, source, comment, numerus)
+    if s == "":
+        return source
+    return s
+
+# ---- locale data ----
+
+struct Locale:
+    name: string
+    language: string
+    decimal: string
+    thousands: string
+    months: [12]string
+    weekdays: [7]string
+
+fn _locale_en() -> Locale:
+    return Locale("en_US", "en", ".", ",",
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+        ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"])
+
+fn _locale_de() -> Locale:
+    return Locale("de_DE", "de", ",", ".",
+        ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"],
+        ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"])
+
+fn _locale_fr() -> Locale:
+    return Locale("fr_FR", "fr", ",", " ",
+        ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
+        ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"])
+
+fn _locale_sv() -> Locale:
+    return Locale("sv_SE", "sv", ",", " ",
+        ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"],
+        ["söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"])
+
+fn _locale_ja() -> Locale:
+    return Locale("ja_JP", "ja", ".", ",",
+        ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
+        ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"])
+
+# Resolve a POSIX-ish locale name such as `de_DE.UTF-8`, `fr-FR`, or `ja_JP`.
+# Returns None for an unsupported locale.
+fn locale(name: string) -> Option(Locale):
+    base := name
+    end := 0
+    for end < len(base) and base[end] != 46 and base[end] != 64:
+        end += 1
+    base = base[0:end]
+    norm := ""
+    for i := 0; i < len(base); i += 1:
+        if base[i] == 45:
+            norm = norm + "_"
+        else:
+            norm = norm + chr(base[i])
+    lang := norm
+    for i := 0; i < len(norm); i += 1:
+        if norm[i] == 95:
+            lang = norm[0:i]
+            break
+    if lang == "en":
+        return Some(_locale_en())
+    if lang == "de":
+        return Some(_locale_de())
+    if lang == "fr":
+        return Some(_locale_fr())
+    if lang == "sv":
+        return Some(_locale_sv())
+    if lang == "ja":
+        return Some(_locale_ja())
+    return None
+
+# The first supported locale named by LC_ALL, LC_MESSAGES or LANG; en_US when
+# none is set or supported.
+fn system_locale() -> Locale:
+    keys := ["LC_ALL", "LC_MESSAGES", "LANG"]
+    for key in keys:
+        match os.env(key):
+            Some(v):
+                match locale(v):
+                    Some(l):
+                        return l
+                    None:
+                        pass
+            None:
+                pass
+    return _locale_en()
+
+fn month_name(l: Locale, month: int) -> string:
+    if month < 1 or month > 12:
+        return ""
+    return l.months[month - 1]
+
+fn weekday_name(l: Locale, weekday: int) -> string:
+    if weekday < 0 or weekday > 6:
+        return ""
+    return l.weekdays[weekday]
+
+fn format_number(l: Locale, value: int) -> string:
+    neg := value < 0
+    v := value
+    if neg:
+        v = 0 - v
+    digits := []int
+    if v == 0:
+        push(digits, 0)
+    for v > 0:
+        push(digits, v % 10)
+        v = v / 10
+    out := ""
+    for i := len(digits) - 1; i >= 0; i -= 1:
+        out = out + chr(48 + digits[i])
+        if i > 0 and i % 3 == 0:
+            out = out + l.thousands
+    if neg:
+        out = "-" + out
+    return out
+
+# Plural slot for the common one/other rule; French treats 0 and 1 as singular,
+# Japanese has one form.
+fn plural_slot(l: Locale, n: int) -> int:
+    if l.language == "ja":
+        return 0
+    if l.language == "fr":
+        if n == 0 or n == 1:
+            return 0
+        return 1
+    if n == 1:
+        return 0
+    return 1
