@@ -385,6 +385,9 @@ make -s hash-check
 step "[3u4/27] sh scripts/fuzz_shims.sh  (fuzz the corelib paths that take UNTRUSTED BYTES -- compress.decompress and regex.compile/is_match -- under ASan+UBSan. fuzz/run.py targets the COMPILER; nothing fuzzed the shims a running program feeds attacker data to. A deliberate heap overflow must be caught FIRST, because a fuzzer reporting zero findings is indistinguishable from one that is not running)"
 sh scripts/fuzz_shims.sh
 
+step "[3u4b/27] sh scripts/fuzz_newcomers.sh  (the codecs added during the parity push -- HXA parse, BNG decode, shoco, PPMd7/PPMd8, PKZIP Shrink/Reduce/Implode, Deflate64 and BCJ2 -- fed mutated valid fixtures and random bytes under ASan+UBSan. Each decoder has a valid seed that reaches its output, so a clean run is not a run over headers only; the control overflow must still fire first)"
+sh scripts/fuzz_newcomers.sh
+
 step "[3u5/27] make fold-check  (tycho-fold: over 200 generated lines mixing ASCII/Latin-1/CJK/emoji at widths 3..30, nothing is lost, no line exceeds the width in CODEPOINTS and every line stays valid UTF-8 -- and the byte-counting mode agrees on pure ASCII while differing on non-ASCII, which is what makes those three mean anything)"
 make -s fold-check
 

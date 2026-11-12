@@ -126,6 +126,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added the iOS target gate: `make ios-check` builds and runs 81
   dependency-free corelib tests in the Xcode iOS Simulator, and builds the
   same emitted C against the arm64 device SDK.
+- Added `make fuzz-newcomers`: HXA parse, BNG decode, shoco, PPMd7/PPMd8,
+  PKZIP Shrink/Reduce/Implode, Deflate64 and BCJ2 are fed mutated valid
+  fixtures and random bytes under ASan+UBSan. Each decoder has a valid seed
+  that reaches its output; the lane runs in `make ci`.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

@@ -117,4 +117,5 @@ None. Every row above is either **covered** or an explicit **non-goal**.
    surface.
 8. **Continuous gates** — every package lands with `corelib/test/<pkg>`,
    `docs/reference/corelib.md` entries, and a deliberate `surface.lock`
-   update. `make check-fast` per change; full CI at milestones.
+   update. `make check-fast` per change; full CI at milestones. The new
+   byte-decoding codecs are fuzzed by `make fuzz-newcomers` under ASan+UBSan.
