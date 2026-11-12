@@ -67,7 +67,7 @@ their own `FUZZ_SHIMS_N`/`FUZZ_NEWCOMERS_N` counts and run real inputs in CI.
 
 On the 0.9.2 tree:
 
-- `make ci N=0` — green, recorded for the exact tree (1135 s)
+- `make ci N=0` — green, recorded for the exact tree
 - `make corelib` — 101 test trees, all green
 - `make check-fast` — green
 - `make fuzz N=200` — 200/200
