@@ -41,3 +41,5 @@ codec. The vendored codecs add no runtime library dependency.
 - Tycho is pre-1.0. The language surface and corelib API may change before 1.0.
 
 Prebuilt archives and checksums are attached to this release.
+
+Tycho 0.9.2 is pre-1.0; the language surface and corelib API may change.
