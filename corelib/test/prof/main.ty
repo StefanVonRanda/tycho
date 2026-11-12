@@ -1,4 +1,5 @@
 package main
+import "core:hex"
 import "core:prof"
 
 fn main():
@@ -8,3 +9,53 @@ fn main():
     fixed := [prof.Span("a", 100, 250), prof.Span("b", 1000, 1300)]
     println("report=[\n" + prof.report(fixed) + "]")
     println("total=" + str(prof.total_ns(fixed)) + " running=" + str(prof.elapsed_ns(prof.Span("r", 100, 0))) + " finished_running=" + str(prof.finished(prof.Span("r", 100, 0))))
+
+    spans := [prof.Span("a", 100, 300), prof.Span("b", 200, 250), prof.Span("c", 400, 500)]
+    match prof.sample_spans(spans, 50):
+        Ok(xs):
+            line := ""
+            for x in xs:
+                line = line + str(x.ts_ns) + ":" + x.name + " "
+            println("samples=" + line)
+        Err(_):
+            println("samples=err")
+    match prof.sample_spans(spans, 0):
+        Err(prof.BadInterval):
+            println("bad_interval=BadInterval")
+        Err(_):
+            println("bad_interval=other")
+        Ok(_):
+            println("bad_interval=Ok")
+
+    trace := prof.encode_trace(spans, 7, 8)
+    println("trace=" + hex.encode(to_str(trace)))
+    match prof.decode_trace(trace):
+        Ok(t):
+            println("trace_scale=" + str(t.timestamp_scale) + " buffers=" + str(len(t.buffers)))
+            b := t.buffers[0]
+            println("trace_buffer=" + str(b.tid) + ":" + str(b.pid) + ":" + str(b.first_ts) + ":" + str(len(b.events)))
+            ok := len(b.events) == 6
+            if ok:
+                ok = b.events[0].kind == prof.TraceBegin and b.events[0].ts == 100 and b.events[0].name == "a"
+                ok = ok and b.events[1].kind == prof.TraceEnd and b.events[1].ts == 300
+                ok = ok and b.events[2].kind == prof.TraceBegin and b.events[2].ts == 200 and b.events[2].name == "b"
+                ok = ok and b.events[3].kind == prof.TraceEnd and b.events[3].ts == 250
+                ok = ok and b.events[4].kind == prof.TraceBegin and b.events[4].ts == 400 and b.events[4].name == "c"
+                ok = ok and b.events[5].kind == prof.TraceEnd and b.events[5].ts == 500
+            println("trace_events=" + str(ok))
+        Err(_):
+            println("trace=err")
+    match prof.decode_trace(to_bytes([0])):
+        Err(prof.Truncated):
+            println("trace_short=Truncated")
+        Err(_):
+            println("trace_short=other")
+        Ok(_):
+            println("trace_short=Ok")
+    match prof.decode_trace(to_bytes([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])):
+        Err(prof.BadMagic):
+            println("trace_magic=BadMagic")
+        Err(_):
+            println("trace_magic=other")
+        Ok(_):
+            println("trace_magic=Ok")

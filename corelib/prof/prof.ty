@@ -31,3 +31,232 @@ fn report(spans: [Span]) -> string:
     for s in spans:
         out = out + s.name + ": " + str(elapsed_ns(s)) + " ns\n"
     return out
+
+# ---- deterministic span sampling and Spall trace output ----
+
+enum ProfErr:
+    BadInterval
+    BadMagic
+    UnsupportedVersion
+    Truncated
+    Corrupt
+    TooBig
+
+struct Sample:
+    ts_ns: int
+    name: string
+
+# Sample the recorded spans at `interval_ns` boundaries from the earliest
+# start to the latest end. The innermost (last-started) active span wins.
+# Unfinished spans are ignored.
+fn sample_spans(spans: [Span], interval_ns: int) -> Result([Sample], ProfErr):
+    if interval_ns <= 0:
+        return Err(BadInterval)
+    start := 0
+    end := 0
+    have := false
+    for s in spans:
+        if s.end_ns == 0:
+            continue
+        if not have or s.start_ns < start:
+            start = s.start_ns
+        if not have or s.end_ns > end:
+            end = s.end_ns
+        have = true
+    if not have:
+        return Ok([]Sample)
+    out := []Sample
+    t := start
+    for t < end:
+        name := ""
+        best := 0 - 1
+        for s in spans:
+            if s.end_ns == 0:
+                continue
+            if s.start_ns <= t and t < s.end_ns:
+                if s.start_ns >= best:
+                    best = s.start_ns
+                    name = s.name
+        push(out, Sample(t, name))
+        t += interval_ns
+    return Ok(out)
+
+const TRACE_MAGIC = 0x0BADF00D
+const TRACE_VERSION = 3
+const TRACE_BEGIN = 3
+const TRACE_END = 4
+const TRACE_INSTANT = 5
+const TRACE_PAD_SKIP = 7
+const TRACE_NAME_PROCESS = 8
+const TRACE_NAME_THREAD = 9
+
+enum TraceKind:
+    TraceBegin
+    TraceEnd
+    TraceInstant
+    TracePadSkip
+    TraceNameProcess
+    TraceNameThread
+
+struct TraceEvent:
+    kind: TraceKind
+    ts: int
+    name: string
+    args: string
+
+struct TraceBuffer:
+    tid: int
+    pid: int
+    first_ts: int
+    events: [TraceEvent]
+
+struct Trace:
+    timestamp_scale: float
+    buffers: [TraceBuffer]
+
+extern fn prx_f64_bits(v: float) -> u64
+extern fn prx_f64_from_bits(u: u64) -> float
+
+fn _w8(out: inout [int], v: int):
+    push(out, v & 255)
+
+fn _w32(out: inout [int], v: int):
+    push(out, v & 255)
+    push(out, (v >> 8) & 255)
+    push(out, (v >> 16) & 255)
+    push(out, (v >> 24) & 255)
+
+fn _w64(out: inout [int], v: int):
+    for i := 0; i < 8; i += 1:
+        push(out, (v >> (8 * i)) & 255)
+
+fn _wbytes(out: inout [int], b: bytes):
+    for i := 0; i < len(b); i += 1:
+        push(out, b[i])
+
+fn _wbegin(out: inout [int], ts: int, name: string):
+    n := len(name)
+    if n > 255:
+        n = 255
+    _w8(&out, TRACE_BEGIN)
+    _w64(&out, ts)
+    _w8(&out, n)
+    _w8(&out, 0)
+    _wbytes(&out, to_bytes(name[0:n]))
+
+fn _wend(out: inout [int], ts: int):
+    _w8(&out, TRACE_END)
+    _w64(&out, ts)
+
+# Encode completed spans as one Spall manual stream with a single buffer.
+# Timestamps are nanoseconds and the stream scale is 1.0.
+fn encode_trace(spans: [Span], tid: int, pid: int) -> bytes:
+    events := []int
+    first_ts := 0
+    have := false
+    for s in spans:
+        if s.end_ns == 0:
+            continue
+        if not have:
+            first_ts = s.start_ns
+            have = true
+        _wbegin(&events, s.start_ns, s.name)
+        _wend(&events, s.end_ns)
+    out := []int
+    _w64(&out, TRACE_MAGIC)
+    _w64(&out, TRACE_VERSION)
+    _w64(&out, to_int(prx_f64_bits(1.0)))
+    _w64(&out, 0)
+    _w32(&out, len(events))
+    _w32(&out, tid)
+    _w32(&out, pid)
+    _w64(&out, first_ts)
+    _wbytes(&out, to_bytes(events))
+    return to_bytes(out)
+
+fn _r32(data: bytes, p: int) -> int:
+    return data[p] | (data[p + 1] << 8) | (data[p + 2] << 16) | (data[p + 3] << 24)
+
+fn _r64(data: bytes, p: int) -> int:
+    v := 0
+    for i := 0; i < 8; i += 1:
+        v = v | (data[p + i] << (8 * i))
+    return v
+
+# Decode a Spall manual stream. Pad-skip events are consumed and not returned.
+fn decode_trace(data: bytes) -> Result(Trace, ProfErr):
+    if len(data) < 32:
+        return Err(Truncated)
+    if _r64(data, 0) != TRACE_MAGIC:
+        return Err(BadMagic)
+    if _r64(data, 8) != TRACE_VERSION:
+        return Err(UnsupportedVersion)
+    scale := prx_f64_from_bits(to_u64(_r64(data, 16)))
+    p := 32
+    buffers := []TraceBuffer
+    for p < len(data):
+        if p + 20 > len(data):
+            return Err(Truncated)
+        size := _r32(data, p)
+        tid := _r32(data, p + 4)
+        pid := _r32(data, p + 8)
+        first_ts := _r64(data, p + 12)
+        p += 20
+        if size < 0 or p + size > len(data):
+            return Err(Truncated)
+        end := p + size
+        events := []TraceEvent
+        for p < end:
+            kind := data[p]
+            p += 1
+            if kind == TRACE_BEGIN or kind == TRACE_INSTANT:
+                if p + 10 > end:
+                    return Err(Truncated)
+                ts := _r64(data, p)
+                p += 8
+                name_len := data[p]
+                args_len := data[p + 1]
+                p += 2
+                if p + name_len + args_len > end:
+                    return Err(Truncated)
+                name := to_str(data[p:p + name_len])
+                p += name_len
+                args := to_str(data[p:p + args_len])
+                p += args_len
+                if kind == TRACE_BEGIN:
+                    push(events, TraceEvent(TraceBegin, ts, name, args))
+                else:
+                    push(events, TraceEvent(TraceInstant, ts, name, args))
+            elif kind == TRACE_END:
+                if p + 8 > end:
+                    return Err(Truncated)
+                ts := _r64(data, p)
+                p += 8
+                push(events, TraceEvent(TraceEnd, ts, "", ""))
+            elif kind == TRACE_PAD_SKIP:
+                if p + 4 > end:
+                    return Err(Truncated)
+                n := _r32(data, p)
+                p += 4
+                if n < 0 or p + n > end:
+                    return Err(Truncated)
+                p += n
+            elif kind == TRACE_NAME_PROCESS or kind == TRACE_NAME_THREAD:
+                if p + 1 > end:
+                    return Err(Truncated)
+                n := data[p]
+                p += 1
+                if p + n > end:
+                    return Err(Truncated)
+                name := to_str(data[p:p + n])
+                p += n
+                if kind == TRACE_NAME_PROCESS:
+                    push(events, TraceEvent(TraceNameProcess, 0, name, ""))
+                else:
+                    push(events, TraceEvent(TraceNameThread, 0, name, ""))
+            else:
+                return Err(Corrupt)
+        if p != end:
+            return Err(Corrupt)
+        push(buffers, TraceBuffer(tid, pid, first_ts, events))
+    return Ok(Trace(scale, buffers))

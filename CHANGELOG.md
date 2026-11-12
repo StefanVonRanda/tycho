@@ -101,6 +101,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added `CompletionLoop` to `core:nbio`: epoll, kqueue and IOCP backends
   with fd readiness, `loop_post`/`loop_wait` completions and thread-safe
   cross-thread wakeups.
+- Added deterministic sampling and Spall trace output to `core:prof`:
+  `sample_spans`, `encode_trace` and `decode_trace`.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

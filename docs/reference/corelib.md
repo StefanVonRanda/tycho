@@ -708,8 +708,15 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`thread`** — the OS-thread facts the task model still needs: `id()` (opaque
   current-thread id), `yield_now()`, and `cpus()` (`ncpu()`). Creating raw
   threads is `spawn`/`wait`; Tycho has no callback entry point for pthreads.
-- **`prof`** — manual instrumentation, not sampling: `start(name) -> Span`,
-  `stop(&span)`, `finished`, `elapsed_ns`, `total_ns` and `report(spans)`.
+- **`prof`** — manual instrumentation plus deterministic sampling and trace
+  output: `start(name) -> Span`, `stop(&span)`, `finished`, `elapsed_ns`,
+  `total_ns` and `report(spans)`. `sample_spans(spans, interval_ns)` walks
+  completed spans at fixed boundaries and returns `Sample{ts_ns, name}` (the
+  innermost active span wins); `encode_trace(spans, tid, pid)` writes a Spall
+  manual stream with nanosecond timestamps, and `decode_trace(data)` returns
+  `Trace{timestamp_scale, buffers}` with `TraceBuffer{tid, pid, first_ts,
+  events}`. `ProfErr` is `BadInterval`, `BadMagic`, `UnsupportedVersion`,
+  `Truncated`, `Corrupt` or `TooBig`.
 - **`debug`** — diagnostics: `assert(cond, msg)` aborts with `debug: <msg>`,
   `trace(msg)` writes `[debug] ...` to stderr, `enabled()` reads `TYCHO_DEBUG`,
   and `stack_trace()` returns the platform's symbolized frames (addresses are
