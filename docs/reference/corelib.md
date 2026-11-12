@@ -582,8 +582,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `call_i32_0`/`call_i32_1`/`call_i32_2`/`call_i32_3`, `call_i64_1`,
   `call_f64_1`, `call_i32_str`, `call_i32_str_str`, `call_ptr_i64`,
   `call_void_ptr` or `call_ptr_1`. Windows uses
-  `LoadLibraryA`/`GetProcAddress`. Passing a Tycho function *to* C still needs
-  compiler callback support.
+  `LoadLibraryA`/`GetProcAddress`. `apply_i32_i32(f, a, b)` passes a Tycho
+  function to C: the compiler emits a C-ABI trampoline for a named
+  non-capturing function with scalar/`ptr` parameters and a scalar/`ptr`/`void`
+  result. Closures and function variables are not accepted as C callbacks.
 - **`x509`** — X.509 certificate inspection and verification over OpenSSL
   (`deps: openssl`). `parse_pem`/`parse_der` return a `Certificate` handle;
   `subject`, `issuer`, `serial`, `not_before`/`not_after` (UNIX seconds),

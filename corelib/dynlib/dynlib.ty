@@ -104,3 +104,10 @@ fn call_ptr_1(f: ptr, p: ptr) -> ptr:
     if is_null(f):
         return null
     return dlx_call_ptr_1(f, p)
+
+# Call a Tycho function from C. The compiler emits a C-ABI trampoline for the
+# named function and hands its address to `apply_i32_i32`. Only named
+# non-capturing functions with scalar/ptr parameters are accepted; closures and
+# function variables have no C ABI without an environment slot, so a wrapper
+# that takes a function value cannot forward it here.
+extern fn apply_i32_i32(f: fn(int, int) -> int, a: int, b: int) -> int

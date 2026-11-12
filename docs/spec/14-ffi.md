@@ -60,6 +60,17 @@ struct (the `examples/gfx` `Event` decodes `SDL_Event` this way).
   same reason an `inout string` out-parameter is rejected below.
 - **`ptr`** — an opaque `void*` Tycho never dereferences; the `null` literal and
   `is_null(p)` apply.
+- **C callback function pointers** — an `extern` parameter may be a function
+  type `fn(T, ...) -> R` when every `T` and `R` is a scalar, `ptr`, or `void`.
+  The argument must be a **named Tycho function**; the compiler emits a C-ABI
+  trampoline that allocates a fresh arena for each invocation, calls the
+  function, and releases the arena. The pointer is valid for the program's
+  lifetime, so C may retain it and call it later or from another thread.
+  **Closures and function variables are rejected**: a Tycho function value is a
+  descriptor with an environment, and there is no C-side environment slot to
+  carry. `string`, `bytes`, arrays, handles, maps and aggregates are also
+  rejected as callback parameters or results because they need a length header
+  or a Tycho descriptor, not a raw C value.
 - **POD structs** — a non-packed, non-aligned struct of numeric scalar fields.
   It crosses by value, as a return, and as an `inout` pointer; a dynamic array of
   one (`[T]`) crosses as `(const T*, int64_t)` in the parameter direction,

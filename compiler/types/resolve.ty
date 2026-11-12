@@ -602,7 +602,15 @@ fn _prefix_for(rs: inout R, q: string) -> string:
 fn _pkg_sym(rs: inout R, q: string, n: string) -> string:
     if len(n) > 0 and n[0] == 95:
         _err(&rs, "'" + q + "." + n + "' is package-private: a leading-underscore name is not accessible from another package")
-    return _prefix_for(&rs, q) + n
+    pfx := _prefix_for(&rs, q)
+    m := pfx + n
+    # A C symbol is registered UNMANGLED because it is global in the linked
+    # binary, but the declaring package still owns the qualified spelling.
+    if _kindof(&rs, m) == "" and len(pfx) > 2:
+        si := _sym(&rs, n)
+        if si >= 0 and rs.syms[si].kind == "extern" and rs.syms[si].pkg == pfx[0:len(pfx) - 2]:
+            return n
+    return m
 
 # A type is not RESOLVED here -- `unknown type` is Phase 6 (the reject corpus
 # still classes it SEMANTIC). Two things a type does decide at this layer: a

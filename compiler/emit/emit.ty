@@ -3348,6 +3348,64 @@ fn _need_clo(cs: inout C, fi: int):
             return
     push(cs.clos, cs.fds[fi].name)
 
+# A C callback parameter is a raw function pointer, not a 24-byte Tycho
+# descriptor. Only scalar/ptr arguments and results have a C ABI Tycho can
+# reproduce without a length header or arena.
+fn _cb_scalar(t: string) -> bool:
+    if t == "ptr" or t == "char" or t == "bool" or t == "float" or t == "f32":
+        return true
+    return t == "int" or _is_uint(t) or _is_sint(t)
+
+fn _cb_fnty(cs: inout C, t: string) -> string:
+    s := _cty(&cs, _fret(&cs, t)) + " (*)("
+    ps := _fps(&cs, t)
+    if len(ps) == 0:
+        s = s + "void"
+    for i := 0; i < len(ps); i += 1:
+        if i > 0:
+            s = s + ", "
+        s = s + _cty(&cs, ps[i])
+    return s + ")"
+
+fn _cb_fi(cs: inout C, e: ast.Expr) -> int:
+    match e:
+        ast.Name(l, n):
+            if len(_vtype(&cs, n)) > 0:
+                return -1
+            return _fidx(&cs, n)
+        ast.Field(l, r, f):
+            match r[0]:
+                ast.Name(l2, q):
+                    if _ispkg(&cs, q):
+                        return _fidx(&cs, _qpfx(&cs, q) + f)
+                _: pass
+        _: pass
+    return -1
+
+fn _need_cb(cs: inout C, fi: int):
+    _need_clo(&cs, fi)
+    cs.used["cb:" + cs.fds[fi].name] = true
+
+fn _cb_arg(cs: inout C, e: ast.Expr, want: string) -> string:
+    fi := _cb_fi(&cs, e)
+    if fi < 0:
+        _bad("a C callback argument must be a named Tycho function; closures and function variables are not supported")
+    f := cs.fds[fi]
+    if f.pvar:
+        _bad("a C callback cannot be a variadic Tycho function")
+    for j := 0; j < len(f.pinout); j += 1:
+        if f.pinout[j]:
+            _bad("a C callback cannot have an inout parameter")
+    if not _cb_scalar(f.ret) and f.ret != "void":
+        _bad("a C callback must return a scalar or void")
+    for j := 0; j < len(f.ptypes); j += 1:
+        if not _cb_scalar(f.ptypes[j]):
+            _bad("a C callback parameter must be a scalar or ptr")
+    if _fn_of(&cs, f.ret, f.ptypes) != want:
+        _bad("a C callback argument does not match the declared function type")
+    _need_cb(&cs, fi)
+    return f.name + "__cb"
+
 fn _clo_defs(cs: inout C) -> (string, string):
     if cs.thin:
         return ("", "")
@@ -3368,6 +3426,26 @@ fn _clo_defs(cs: inout C) -> (string, string):
             r = "    " + call + ";\n"
         pr = pr + sig + ";\n"
         bd = bd + sig + " {\n    (void)_env;\n" + r + "}\n"
+        if cs.used["cb:" + nm]:
+            csig := _ctyz(&cs, rt) + nm + "__cb("
+            ccall := "h_" + nm + "(&_cb_a"
+            for j := 0; j < len(cs.fds[fi].ptypes); j += 1:
+                if j > 0:
+                    csig = csig + ", "
+                csig = csig + _ctyz(&cs, cs.fds[fi].ptypes[j]) + "_a" + str(j)
+                ccall = ccall + ", _a" + str(j)
+            if len(cs.fds[fi].ptypes) == 0:
+                csig = csig + "void"
+            csig = csig + ")"
+            ccall = ccall + ")"
+            cbd := "    Arena _cb_a = arena_new(0);\n"
+            if rt == "void":
+                cbd = cbd + "    " + ccall + ";\n    arena_free(&_cb_a);\n"
+            else:
+                cbd = cbd + "    " + _ctyz(&cs, rt) + "_r = " + ccall +
+                    ";\n    arena_free(&_cb_a);\n    return _r;\n"
+            pr = pr + csig + ";\n"
+            bd = bd + csig + " {\n" + cbd + "}\n"
     return (pr, bd)
 
 fn _fn_defs(cs: inout C) -> string:
@@ -4889,7 +4967,10 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
                 qei := _eidx(&cs, _tname(qgv))
                 if qei >= 0:
                     return _variant(&cs, qei, n, args)
-            return _call(&cs, l, "", pfx + n, tas, args)
+            m := pfx + n
+            if _fidx(&cs, m) < 0 and _isext(&cs, n):
+                m = n
+            return _call(&cs, l, "", m, tas, args)
         _bad("package-qualified call '" + q + "." + n + "' -- Phase 8")
     if _is_fn(_vtype(&cs, n)):
         # `f(5)` where f is a LOCAL of fn type: the parser cannot tell this from
@@ -5107,6 +5188,9 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
                     out2 = out2 + ", " + ow8
                 if not xtn and (pt == "string" or pt == "bytes"):
                     out2 = out2 + ", " + _append_arg(&cs, args[i])
+                continue
+            if xtn and _is_fn(pt):
+                out2 = out2 + ", " + _cb_arg(&cs, args[i], pt)
                 continue
             sw := cs.want
             cs.want = pt
@@ -5342,7 +5426,10 @@ fn _call_type(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [a
             qgv := _gen_variant_in(&cs, pfx, n, qta, args)
             if len(qgv) > 0:
                 return qgv
-            return _call_type(&cs, l, "", pfx + n, tas, args, [])
+            m := pfx + n
+            if _fidx(&cs, m) < 0 and _isext(&cs, n):
+                m = n
+            return _call_type(&cs, l, "", m, tas, args, [])
         _bad("unknown call qualifier '" + q + "'")
     ft0 := _vtype(&cs, n)
     if _is_fn(ft0):
@@ -11766,6 +11853,9 @@ fn program_in(program: types.Program, dbgf: string) -> string:
             # A `bytes` PARAMETER is (data, len), matching the call site.
             if cs.fds[xi].ptypes[xj] == "bytes" and not cs.fds[xi].pinout[xj]:
                 xps = xps + "const unsigned char *, tycho_int"
+                continue
+            if _is_fn(cs.fds[xi].ptypes[xj]) and not cs.fds[xi].pinout[xj]:
+                xps = xps + _cb_fnty(&cs, cs.fds[xi].ptypes[xj])
                 continue
             # So is an ARRAY: the shim gets the element pointer and the count,
             # never the array struct by value (`osx_exec(argv: [string])`).

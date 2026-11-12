@@ -11,3 +11,5 @@ getpid=true
 malloc=true
 free=ok
 cos=true
+callback=true
+callback2=true

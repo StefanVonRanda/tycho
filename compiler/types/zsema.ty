@@ -240,6 +240,28 @@ fn _ffi_inout_ok(cs: inout C, t: string) -> bool:
         return true
     return _ffi_pod_struct(&cs, t)
 
+# A C callback is a function pointer, so only an ABI-stable shape may cross:
+# scalar/ptr parameters and a scalar/ptr/void result. Tycho strings are
+# length-headered and arrays/maps are descriptors, so neither can be called
+# with a raw C signature.
+fn _ffi_cb_scalar(t: string) -> bool:
+    if t == "ptr" or t == "char" or t == "bool" or t == "float" or t == "f32":
+        return true
+    return _is_int(t)
+
+fn _ffi_cb_ok(t: string) -> bool:
+    if _head(t) != "fun":
+        return false
+    a := _targs(t)
+    if len(a) == 0:
+        return false
+    if a[0] != "void" and not _ffi_cb_scalar(a[0]):
+        return false
+    for i := 1; i < len(a); i += 1:
+        if not _ffi_cb_scalar(a[i]):
+            return false
+    return true
+
 fn _ffi_param_ok(cs: inout C, t: string) -> bool:
     if not known(t):
         return true
@@ -248,6 +270,8 @@ fn _ffi_param_ok(cs: inout C, t: string) -> bool:
     if t == "arr(int)" or t == "arr(float)" or t == "arr(string)":
         return true
     if _head(t) == "arr" and _ffi_pod_struct(&cs, _elem_of(&cs, t)):
+        return true
+    if _ffi_cb_ok(t):
         return true
     return _aff_kind(&cs, t) == "handle"
 

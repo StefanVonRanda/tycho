@@ -347,8 +347,11 @@ world.
   never touches what it points at. A `ptr` rides the scalar paths, so it can
   also be a local, a struct field, or an array element (copied by value).
 - **No variadics.** A `printf`-style function needs a fixed-arity C wrapper.
-- **No non-POD struct-by-value and no callbacks into Tycho** — a Tycho function
-  value cannot cross out.
+- **No non-POD struct-by-value.**
+- **Callbacks into Tycho are limited to named functions with scalar/`ptr`/`void`
+  shapes.** The compiler emits a C-ABI trampoline with its own per-call arena,
+  so C may retain the pointer. A closure or a function variable is rejected:
+  its environment has no C-side slot.
 
 What can still go wrong, plainly: passing a bad handle crashes inside C, not in
 Tycho; C code with shared state races across tasks (see [Threads](#threads));
@@ -425,8 +428,9 @@ These limits are deliberate:
 - **No non-POD struct-by-value.** Pass an opaque `ptr` handle instead.
 - **No variadics.** Wrap variadic C functions (like `printf`) in a fixed-arity C
   shim.
-- **No callbacks into Tycho.** A Tycho function value cannot cross out, so C
-  cannot call back into Tycho.
+- **No closure callbacks.** A named Tycho function can cross out as a C callback
+  (`fn(T, ...) -> R` with scalar/`ptr`/`void` shapes); a closure or function
+  variable cannot, because its captured environment has no C-side slot.
 - **No automatic binding generation.** Each C function used is declared by hand
   as an `extern fn`.
 - **`ptr` is opaque.** No dereference and no pointer arithmetic on the Tycho side

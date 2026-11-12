@@ -2527,6 +2527,13 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
             _walk_args(&cs, args)
             return "?"
         m := _prefix_of(&cs, q) + n
+        # A C symbol is global and therefore registered UNMANGLED, but the
+        # package that declared the extern still owns it. Let `pkg.symbol`
+        # reach it without exposing another package's same-named extern.
+        if _sigidx(&cs, m) < 0 and n in cs.extfn:
+            si := _sigidx(&cs, n)
+            if si >= 0 and cs.sg[si].pfx == _prefix_of(&cs, q):
+                m = n
         return _call_named(&cs, l, m, n, args, want)
     # The shape-directed builtins are resolved BEFORE the Sig table, exactly as
     # src/tychoc.c:7645-7913 sits before its sig_find at src/tychoc.c:6104@sig_find -- a user `fn len`

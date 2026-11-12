@@ -93,3 +93,11 @@ void *dlx_call_ptr_1(void *fp, void *p) {
     DlxPtr1 f; memcpy(&f, &fp, sizeof f);
     return f(p);
 }
+
+/* C-to-Tycho callback probe. The compiler emits a C-ABI trampoline for a
+ * named Tycho function and passes its address here; this calls back into
+ * Tycho with ordinary C integers. */
+tycho_int apply_i32_i32(tycho_int (*fn)(tycho_int, tycho_int), tycho_int a, tycho_int b) {
+    if (!fn) return 0;
+    return fn(a, b);
+}

@@ -115,6 +115,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added typed C function-pointer invocation to `core:dynlib`:
   `call_i32_0` through `call_ptr_1`, so a `dlsym`/`GetProcAddress` result can
   be called directly.
+- Added C-to-Tycho callbacks to `core:dynlib`: `apply_i32_i32` passes a named
+  Tycho function to C through a compiler-generated C-ABI trampoline. Callback
+  parameters and results are limited to scalars, `ptr` and `void`; closures and
+  function variables are rejected.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10
