@@ -638,7 +638,7 @@ fuzz-leak: tychoc1
 
 # The codecs added during the parity push: HXA, BNG, shoco, PPMd, PKZIP
 # legacy, Deflate64 and BCJ2, all fed attacker-controlled bytes under
-# ASan+UBSan. N=80 by default; `N=1000 make fuzz-newcomers` for a deeper run.
+# ASan+UBSan. 80 by default; `FUZZ_NEWCOMERS_N=1000 make fuzz-newcomers` for a deeper run.
 fuzz-newcomers: tychoc1
 	@sh scripts/fuzz_newcomers.sh
 

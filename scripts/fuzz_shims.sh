@@ -1,7 +1,8 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-N=${N:-150}
+N=${FUZZ_SHIMS_N:-150}
+[ "$N" -gt 0 ] || { echo "fuzz-shims: FUZZ_SHIMS_N must be > 0" >&2; exit 2; }
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 

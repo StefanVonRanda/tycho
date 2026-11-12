@@ -130,6 +130,10 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   PKZIP Shrink/Reduce/Implode, Deflate64 and BCJ2 are fed mutated valid
   fixtures and random bytes under ASan+UBSan. Each decoder has a valid seed
   that reaches its output; the lane runs in `make ci`.
+- Fixed `make ci N=0` silently running the shim fuzzers with zero mutations:
+  `fuzz_shims.sh` and `fuzz_newcomers.sh` now use their own
+  `FUZZ_SHIMS_N`/`FUZZ_NEWCOMERS_N` defaults instead of inheriting the
+  compiler fuzz count.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

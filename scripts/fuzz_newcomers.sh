@@ -7,7 +7,8 @@ set -eu
 # behaviour, and the Python mutator is deterministic so a finding reproduces.
 
 cd "$(dirname "$0")/.."
-N=${N:-80}
+N=${FUZZ_NEWCOMERS_N:-80}
+[ "$N" -gt 0 ] || { echo "fuzz-newcomers: FUZZ_NEWCOMERS_N must be > 0" >&2; exit 2; }
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 mkdir -p build/fuzz-newcomers
