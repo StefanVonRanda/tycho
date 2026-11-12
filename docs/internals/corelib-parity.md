@@ -91,9 +91,7 @@ NDK/qemu-user, `make ios-check` on macOS with Xcode and a simulator runtime.
 
 ## Residual partials
 
-These are the remaining rows that are not complete capability parity. None of
-them blocks the application-facing surface above:
-
+None. Every row above is either **covered** or an explicit **non-goal**.
 
 ## Sequence
 
