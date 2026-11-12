@@ -155,3 +155,79 @@ fn parse_key(data: bytes) -> Key:
     if cp >= 0:
         return Char(cp)
     return Char(b)
+
+# ---- cursor position query (ANSI DSR / Windows console) ----
+
+enum TermErr:
+    BadArg
+    NotTty
+    Timeout
+    BadResponse
+    Failed
+
+struct CursorPos:
+    row: int
+    col: int
+
+extern fn termx_cursor_query(out_fd: int, in_fd: int, timeout_ms: int, row: inout int, col: inout int) -> int
+
+# Parse a terminal's `ESC [ row ; col R` (or `ESC [ ? row ; col R`) reply.
+fn parse_cursor_response(data: bytes) -> Option(CursorPos):
+    i := 0
+    for i < len(data):
+        if data[i] != 27:
+            i += 1
+            continue
+        i += 1
+        if i >= len(data) or data[i] != 91:
+            continue
+        i += 1
+        if i < len(data) and data[i] == 63:
+            i += 1
+        row := 0
+        have_row := false
+        for i < len(data) and data[i] >= 48 and data[i] <= 57:
+            row = row * 10 + (data[i] - 48)
+            i += 1
+            have_row = true
+        if not have_row or i >= len(data) or data[i] != 59:
+            continue
+        i += 1
+        col := 0
+        have_col := false
+        for i < len(data) and data[i] >= 48 and data[i] <= 57:
+            col = col * 10 + (data[i] - 48)
+            i += 1
+            have_col = true
+        if not have_col or i >= len(data) or data[i] != 82:
+            continue
+        if row > 0 and col > 0:
+            return Some(CursorPos(row, col))
+        return None
+    return None
+
+fn _cursor_cause(st: int) -> TermErr:
+    if st == 1:
+        return NotTty
+    if st == 2:
+        return Timeout
+    if st == 3:
+        return BadResponse
+    return Failed
+
+# Query the cursor position. `out_fd` receives the DSR request; `in_fd` is the
+# terminal input. On a Windows console the position is read directly; a
+# non-console Windows tty (MSYS pty) falls back to the ANSI query.
+fn cursor_query(out_fd: int, in_fd: int, timeout_ms: int) -> Result(CursorPos, TermErr):
+    if out_fd < 0 or in_fd < 0 or timeout_ms < 0:
+        return Err(BadArg)
+    row := 0
+    col := 0
+    st := termx_cursor_query(out_fd, in_fd, timeout_ms, &row, &col)
+    if st == 0:
+        return Ok(CursorPos(row, col))
+    return Err(_cursor_cause(st))
+
+# Query on one bidirectional terminal descriptor (e.g. /dev/tty).
+fn cursor_position(fd: int) -> Result(CursorPos, TermErr):
+    return cursor_query(fd, fd, 1000)

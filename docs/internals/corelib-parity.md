@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 89 packages, ~25.5k lines, 1280 locked
+lines). The current Tycho corelib is 89 packages, ~25.6k lines, 1283 locked
 public functions.
 
 Status values:
@@ -53,7 +53,7 @@ Status values:
 | `strings` | covered | case, trim, split, fields, find, replace, pad, reverse, escapes, parsing | add a builder if measured concatenation cost demands it |
 | `sync` | covered | C11 atomics (int/bool/pointer), `Mutex`, `RwLock`, `Cond`, `Semaphore`, `WaitGroup`, `Once`, `Barrier`, recursive mutex; channels are language builtins | ticket mutex (not a capability gap) |
 | `sys` | non-goal | libc and shims are the portability boundary | none |
-| `terminal` | partial | ANSI escapes, tty/size, raw mode, byte read, key decoding | cursor queries and non-console Windows fallbacks |
+| `terminal` | covered | ANSI escapes, tty/size, raw mode, byte read, key decoding, `cursor_query`/`cursor_position` with DSR parsing, and non-console Windows tty fallbacks | none |
 | `testing` | covered | `T`, `check`, `eq`, `report`, `subtest`/`merge`, `bench`, `report_bench` | none |
 | `text` | partial | `strings`, `utf8`, `utf16`, `char`, `regex`, `textmatch`, `edit`, `scanner`, `table`, `glob`, GNU MO `i18n` | Qt `.qm` catalogs, locale data, Lua `%b`/`%f`/non-greedy `-` |
 | `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; `thread.id`/`yield_now`/`cpus` | raw thread creation/TLS need compiler/runtime support |
@@ -97,7 +97,6 @@ them blocks the application-facing surface above:
 
 - `dynlib` — Tycho has no callback/function-pointer call path, so symbols are
   opaque handles for C shims.
-- `terminal` — cursor queries and some non-console Windows paths are absent.
 - `text` — i18n/locale tables are not implemented.
 - `thread` — raw threads/TLS need compiler/runtime callbacks.
 
@@ -116,9 +115,10 @@ them blocks the application-facing surface above:
 6. **Formats and media** — done: TGA, Netpbm PPM/PGM/PBM, LZ4, baseline JPEG
    encode/decode and BNG joined PNG/BMP/QOI/HXA.
 7. **Runtime and diagnostics** — done: `debug`, `prof` spans plus deterministic
-   sampling and Spall trace output, `terminal`, `dynlib`, `nbio.poll` plus
-   epoll/kqueue/IOCP completion loops, `thread.id`/`yield_now`; raw SIMD
-   intrinsics stay a non-goal because `vector[N]T` is the language surface.
+   sampling and Spall trace output, `terminal` including cursor queries,
+   `dynlib`, `nbio.poll` plus epoll/kqueue/IOCP completion loops,
+   `thread.id`/`yield_now`; raw SIMD intrinsics stay a non-goal because
+   `vector[N]T` is the language surface.
 8. **Continuous gates** — every package lands with `corelib/test/<pkg>`,
    `docs/reference/corelib.md` entries, and a deliberate `surface.lock`
    update. `make check-fast` per change; full CI at milestones.

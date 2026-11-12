@@ -1,7 +1,9 @@
 package main
 
 import "core:hex"
+import "core:os"
 import "core:terminal"
+import "core:time"
 
 fn size_none(o: Option((int, int))) -> bool:
     match o:
@@ -29,6 +31,30 @@ fn key_name(k: terminal.Key) -> string:
         terminal.Delete: return "del"
         terminal.Unknown: return "?"
 
+fn cursor_str(o: Option(terminal.CursorPos)) -> string:
+    match o:
+        Some(p): return str(p.row) + ":" + str(p.col)
+        None: return "none"
+
+fn serve_cursor(fd: int) -> int:
+    h := terminal.raw_enter(fd)
+    buf := []int
+    for len(buf) < 4:
+        match terminal.read_byte(fd):
+            Some(b): push(buf, b)
+            None: break
+    if len(buf) == 4 and buf[0] == 27 and buf[1] == 91 and buf[2] == 54 and buf[3] == 110:
+        match os.write_fd(fd, to_bytes([27, 91, 53, 59, 55, 82])):
+            Ok(_): pass
+            Err(_): pass
+    terminal.raw_leave(h)
+    return len(buf)
+
+extern fn termx_pty_open() -> ptr
+extern fn termx_pty_master(h: ptr) -> int
+extern fn termx_pty_slave(h: ptr) -> int
+extern fn termx_pty_close(h: ptr)
+
 fn hx(s: string) -> string:
     return hex.encode(s)
 
@@ -50,3 +76,39 @@ fn main():
     println("key_nav=" + key_name(terminal.parse_key(to_bytes([27, 91, 65]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 66]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 67]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 68]))))
     println("key_edit=" + key_name(terminal.parse_key(to_bytes([27, 91, 72]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 70]))) + "," + key_name(terminal.parse_key(to_bytes([27, 91, 51, 126]))) + "," + key_name(terminal.parse_key(to_bytes([127]))))
     println("key_unknown=" + key_name(terminal.parse_key(to_bytes([27, 91, 90]))))
+
+    # ---- cursor queries ----
+    println("cursor_parse=" + cursor_str(terminal.parse_cursor_response(to_bytes([27, 91, 49, 50, 59, 51, 52, 82]))))
+    println("cursor_parse_q=" + cursor_str(terminal.parse_cursor_response(to_bytes([27, 91, 63, 49, 59, 50, 82]))))
+    println("cursor_parse_bad=" + cursor_str(terminal.parse_cursor_response(to_bytes("not a response"))))
+    println("cursor_parse_zero=" + cursor_str(terminal.parse_cursor_response(to_bytes([27, 91, 48, 59, 48, 82]))))
+    match terminal.cursor_query(999, 999, 10):
+        Err(terminal.NotTty):
+            println("cursor_notty=NotTty")
+        Err(_):
+            println("cursor_notty=other")
+        Ok(_):
+            println("cursor_notty=Ok")
+    match terminal.cursor_query(-1, 0, 10):
+        Err(terminal.BadArg):
+            println("cursor_bad=BadArg")
+        Err(_):
+            println("cursor_bad=other")
+        Ok(_):
+            println("cursor_bad=Ok")
+    ph := termx_pty_open()
+    if is_null(ph):
+        println("cursor_pty=skip")
+    else:
+        m := termx_pty_master(ph)
+        sl := termx_pty_slave(ph)
+        t := spawn serve_cursor(sl)
+        time.sleep_ms(20)
+        match terminal.cursor_query(m, m, 1000):
+            Ok(p):
+                println("cursor_query=" + str(p.row) + ":" + str(p.col))
+            Err(_):
+                println("cursor_query=err")
+        n := wait(t)
+        println("cursor_server=" + str(n))
+        termx_pty_close(ph)

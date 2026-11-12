@@ -1037,6 +1037,12 @@ expression-bodied; pass a named function where you need a multi-line body.
   `raw_leave(h)` restores and frees it, `read_byte(fd) -> Option(int)` reads
   one byte from a raw descriptor, and `parse_key(bytes) -> Key` decodes printable
   UTF-8, Enter/Tab/Backspace/Escape and the common CSI arrows/Home/End/Delete.
+  Cursor queries: `parse_cursor_response(bytes) -> Option(CursorPos)` accepts
+  `ESC[row;colR` and `ESC[?row;colR`; `cursor_query(out_fd, in_fd, timeout_ms)`
+  sends DSR and waits for the reply; `cursor_position(fd)` is the one-fd
+  convenience form. `TermErr` is `BadArg`, `NotTty`, `Timeout`, `BadResponse`
+  or `Failed`. Windows consoles read the cursor directly; non-console Windows
+  ttys (MSYS pty) use the ANSI fallback.
 - **`signal`** — **clean shutdown on SIGTERM/SIGINT, and nothing else**: a libc-only shim
   with nothing to install and nothing to link.
   `on_shutdown(fd) -> bool` installs one handler for both signals whose **only** action is
