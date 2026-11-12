@@ -14,3 +14,49 @@ fn main():
     println("emptysym=" + str(is_null(dynlib.symbol(null, ""))))
     dynlib.close_lib(null)
     println("close_null=ok")
+
+    lib := null
+    names := ["libc.so.6", "libSystem.B.dylib", "msvcrt.dll"]
+    for name in names:
+        match dynlib.open(name):
+            Ok(h):
+                lib = h
+                break
+            Err(_):
+                pass
+    if is_null(lib):
+        println("lib=skip")
+    else:
+        abs := dynlib.symbol(lib, "abs")
+        println("abs=" + str(dynlib.call_i32_1(abs, 0 - 5) == 5))
+        strlen := dynlib.symbol(lib, "strlen")
+        println("strlen=" + str(dynlib.call_i32_str(strlen, "hello") == 5))
+        strcmp := dynlib.symbol(lib, "strcmp")
+        println("strcmp=" + str(dynlib.call_i32_str_str(strcmp, "a", "b") < 0))
+        labs := dynlib.symbol(lib, "labs")
+        println("labs=" + str(dynlib.call_i64_1(labs, 0 - 1234567890123) == 1234567890123))
+        getpid := dynlib.symbol(lib, "getpid")
+        if is_null(getpid):
+            getpid = dynlib.symbol(lib, "_getpid")
+        if is_null(getpid):
+            println("getpid=skip")
+        else:
+            println("getpid=" + str(dynlib.call_i32_0(getpid) > 0))
+        malloc := dynlib.symbol(lib, "malloc")
+        free := dynlib.symbol(lib, "free")
+        p := dynlib.call_ptr_i64(malloc, 16)
+        println("malloc=" + str(not is_null(p)))
+        dynlib.call_void_ptr(free, p)
+        println("free=ok")
+        cos := dynlib.symbol(lib, "cos")
+        if not is_null(cos):
+            println("cos=" + str(dynlib.call_f64_1(cos, 0.0) == 1.0))
+        else:
+            match dynlib.open("libm.so.6"):
+                Ok(m):
+                    c2 := dynlib.symbol(m, "cos")
+                    println("cos=" + str(dynlib.call_f64_1(c2, 0.0) == 1.0))
+                    dynlib.close_lib(m)
+                Err(_):
+                    println("cos=skip")
+        dynlib.close_lib(lib)

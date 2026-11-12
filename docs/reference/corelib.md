@@ -576,10 +576,14 @@ expression-bodied; pass a named function where you need a multi-line body.
   it and returns the digest — the same answer `hex(s)` gives for the concatenation.
   `hex_bytes(b)` hashes one complete `bytes` buffer through the runtime C fast path
   (SHA-NI, OpenSSL, or scalar) and returns the same 64-char digest.
-- **`dynlib`** — shared-library loading: `open(path) -> Result(ptr, DynErr)`,
-  `symbol(h, name) -> ptr` (null when absent), and `close_lib(h)`. The symbol
-  pointer is opaque: Tycho cannot call it directly, so hand it to a C shim or
-  use it as a library handle. Windows uses `LoadLibraryA`/`GetProcAddress`.
+- **`dynlib`** — shared-library loading and typed C function-pointer calls:
+  `open(path) -> Result(ptr, DynErr)`, `symbol(h, name) -> ptr` (null when
+  absent), and `close_lib(h)`. Call a resolved C function with
+  `call_i32_0`/`call_i32_1`/`call_i32_2`/`call_i32_3`, `call_i64_1`,
+  `call_f64_1`, `call_i32_str`, `call_i32_str_str`, `call_ptr_i64`,
+  `call_void_ptr` or `call_ptr_1`. Windows uses
+  `LoadLibraryA`/`GetProcAddress`. Passing a Tycho function *to* C still needs
+  compiler callback support.
 - **`x509`** — X.509 certificate inspection and verification over OpenSSL
   (`deps: openssl`). `parse_pem`/`parse_der` return a `Certificate` handle;
   `subject`, `issuer`, `serial`, `not_before`/`not_after` (UNIX seconds),

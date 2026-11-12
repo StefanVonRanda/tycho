@@ -112,6 +112,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 - Added thread-local storage and a synchronous OS-thread runner to
   `core:thread`: `local_set`/`local_get` over 32 per-thread slots and
   `run(f) -> int`.
+- Added typed C function-pointer invocation to `core:dynlib`:
+  `call_i32_0` through `call_ptr_1`, so a `dlsym`/`GetProcAddress` result can
+  be called directly.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

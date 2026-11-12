@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 89 packages, ~26.5k lines, 1295 locked
+lines). The current Tycho corelib is 89 packages, ~26.5k lines, 1306 locked
 public functions.
 
 Status values:
@@ -27,7 +27,7 @@ Status values:
 | `crypto` | covered | OpenSSL shims: ChaCha20-Poly1305 and AES-GCM AEAD, AES-CTR, AES-CBC, RSA PKCS#1 v1.5, ECDSA P-256, Ed25519, X25519, ML-DSA, ML-KEM, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, Argon2id, CSPRNG; ASN.1 DER/BER and X.509 in their own packages | none |
 | `debug` | covered | `assert`, `trace`, `enabled`, `stack_trace`; runtime traps and `tycho-debug bt` | PE introspection is platform-specific tooling |
 | `diff` | covered | `diff.lines` and `diff.unified` (LCS, bounded fallback) | none |
-| `dynlib` | partial | `open`, `symbol`, `close_lib` over `dlopen`/`LoadLibrary` | function-pointer invocation (Tycho has no callbacks into Tycho) |
+| `dynlib` | covered | `open`, `symbol`, `close_lib` over `dlopen`/`LoadLibrary`, plus typed invocation of C function pointers (`call_i32_0`..`call_ptr_1`); C-to-Tycho callbacks remain a language limitation | none |
 | `encoding` | covered | `base64`, `base32`, `hex`, `json`, `csv`, `uuid`, `pem`, `ini`, `varint`, `endian`, `xml`, `cbor`, `asn1`, `entity`, `hxa` | none |
 | `flags` | covered | `cli.parse`/`parse_spec` and `cli.flag` | none |
 | `fmt` | covered | `format_int`, `format_float`, `pad_left`/`pad_right` plus `str`/f-strings | none |
@@ -95,8 +95,6 @@ do not make those targets build or pass.
 These are the remaining rows that are not complete capability parity. None of
 them blocks the application-facing surface above:
 
-- `dynlib` — Tycho has no callback/function-pointer call path, so symbols are
-  opaque handles for C shims.
 
 ## Sequence
 
@@ -115,9 +113,10 @@ them blocks the application-facing surface above:
    encode/decode and BNG joined PNG/BMP/QOI/HXA.
 7. **Runtime and diagnostics** — done: `debug`, `prof` spans plus deterministic
    sampling and Spall trace output, `terminal` including cursor queries,
-   `dynlib`, `nbio.poll` plus epoll/kqueue/IOCP completion loops,
-   `thread` raw task threads and TLS; raw SIMD intrinsics stay a non-goal
-   because `vector[N]T` is the language surface.
+   `dynlib` including C function-pointer invocation, `nbio.poll` plus
+   epoll/kqueue/IOCP completion loops, `thread` raw task threads and TLS;
+   raw SIMD intrinsics stay a non-goal because `vector[N]T` is the language
+   surface.
 8. **Continuous gates** — every package lands with `corelib/test/<pkg>`,
    `docs/reference/corelib.md` entries, and a deliberate `surface.lock`
    update. `make check-fast` per change; full CI at milestones.

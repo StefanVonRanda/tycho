@@ -34,3 +34,73 @@ fn close_lib(h: ptr):
     if is_null(h):
         return
     dlx_close(h)
+
+# ---- typed invocation of C function pointers ----
+# These call a C function pointer resolved by `symbol`. They do not pass Tycho
+# functions to C; callbacks from C into Tycho still need compiler support.
+
+extern fn dlx_call_i32_0(f: ptr) -> int
+extern fn dlx_call_i32_1(f: ptr, a: int) -> int
+extern fn dlx_call_i32_2(f: ptr, a: int, b: int) -> int
+extern fn dlx_call_i32_3(f: ptr, a: int, b: int, c: int) -> int
+extern fn dlx_call_i64_1(f: ptr, a: int) -> int
+extern fn dlx_call_f64_1(f: ptr, a: float) -> float
+extern fn dlx_call_i32_str(f: ptr, s: string) -> int
+extern fn dlx_call_i32_str_str(f: ptr, a: string, b: string) -> int
+extern fn dlx_call_ptr_i64(f: ptr, n: int) -> ptr
+extern fn dlx_call_void_ptr(f: ptr, p: ptr)
+extern fn dlx_call_ptr_1(f: ptr, p: ptr) -> ptr
+
+fn call_i32_0(f: ptr) -> int:
+    if is_null(f):
+        return 0
+    return dlx_call_i32_0(f)
+
+fn call_i32_1(f: ptr, a: int) -> int:
+    if is_null(f):
+        return 0
+    return dlx_call_i32_1(f, a)
+
+fn call_i32_2(f: ptr, a: int, b: int) -> int:
+    if is_null(f):
+        return 0
+    return dlx_call_i32_2(f, a, b)
+
+fn call_i32_3(f: ptr, a: int, b: int, c: int) -> int:
+    if is_null(f):
+        return 0
+    return dlx_call_i32_3(f, a, b, c)
+
+fn call_i64_1(f: ptr, a: int) -> int:
+    if is_null(f):
+        return 0
+    return dlx_call_i64_1(f, a)
+
+fn call_f64_1(f: ptr, a: float) -> float:
+    if is_null(f):
+        return 0.0
+    return dlx_call_f64_1(f, a)
+
+fn call_i32_str(f: ptr, s: string) -> int:
+    if is_null(f):
+        return 0
+    return dlx_call_i32_str(f, s)
+
+fn call_i32_str_str(f: ptr, a: string, b: string) -> int:
+    if is_null(f):
+        return 0
+    return dlx_call_i32_str_str(f, a, b)
+
+fn call_ptr_i64(f: ptr, n: int) -> ptr:
+    if is_null(f):
+        return null
+    return dlx_call_ptr_i64(f, n)
+
+fn call_void_ptr(f: ptr, p: ptr):
+    if not is_null(f):
+        dlx_call_void_ptr(f, p)
+
+fn call_ptr_1(f: ptr, p: ptr) -> ptr:
+    if is_null(f):
+        return null
+    return dlx_call_ptr_1(f, p)
