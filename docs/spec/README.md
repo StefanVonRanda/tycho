@@ -1,6 +1,6 @@
 # The Tycho language specification
 
-> **Status: ratified — Tycho 0.5, maintained against the current release (0.9.1).
+> **Status: ratified — Tycho 0.5, maintained against the current release (0.9.2).
 > Where the two differ, `CHANGELOG.md` records the change.**
 > This document is the normative contract a conforming implementation must satisfy.
 >

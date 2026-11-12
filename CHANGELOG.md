@@ -15,6 +15,8 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-11-12
+
 ### Compiler
 
 - `read_file` now warns that it is fail-open and points at `core:io.read_text`
