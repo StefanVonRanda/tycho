@@ -920,11 +920,16 @@ expression-bodied; pass a named function where you need a multi-line body.
   sends the same query over a length-prefixed TCP stream, and
   `dns_query_fallback_on` retries over TCP when the UDP response has the TC bit
   set; `dns_query` uses that fallback automatically.
-- **`nbio`** — readiness polling. `poll(fds, events, timeout_ms) -> Result([Ready],
-  NbioErr)` waits on each fd with an event mask of `READ`/`WRITE`
-  (`Ready{fd, events}` carries the revents mask; a negative timeout waits
-  forever). POSIX uses `poll(2)`, Windows `WSAPoll`; `BadArg` covers a
-  length mismatch or timeout below -1.
+- **`nbio`** — readiness polling and completion loops. `poll(fds, events,
+  timeout_ms) -> Result([Ready], NbioErr)` waits on each fd with an event mask
+  of `READ`/`WRITE` (`Ready{fd, events}` carries the revents mask; a negative
+  timeout waits forever). POSIX uses `poll(2)`, Windows `WSAPoll`; `BadArg`
+  covers a length mismatch or timeout below -1. `CompletionLoop` adds
+  `loop_new`, `loop_free`, `loop_add`, `loop_modify`, `loop_remove`,
+  `loop_post` and `loop_wait(timeout_ms, max_events) -> Result([Completion],
+  NbioErr)`, where `Completion{fd, events, user}` carries `fd == -1` for a
+  posted completion. Linux uses epoll, BSD/macOS kqueue, Windows IOCP; posted
+  completions are thread-safe.
 - **`httpd`** — a minimal HTTP/1.1 **server** toolkit over `core:net` (no external
   dependency — net is libc-only). The request/response plumbing is pure Tycho; the accept
   loop is the caller's. `parse_request(raw) -> Result(Request, httpd.ReqErr)`

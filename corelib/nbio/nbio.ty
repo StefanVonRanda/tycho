@@ -36,3 +36,88 @@ fn poll(fds: [int], events: [int], timeout_ms: int) -> Result([Ready], NbioErr):
         i += 1
     nbx_free(r)
     return Ok(out)
+
+# ---- completion loop: epoll / kqueue / IOCP ----
+
+const ERROR = 4
+
+struct Completion:
+    fd: int            # -1 for a posted completion
+    events: int        # READ/WRITE/ERROR for fd readiness, or the posted mask
+    user: int          # caller token from add/modify/post
+
+struct CompletionLoop:
+    h: ptr
+
+extern fn nbx_loop_new() -> ptr
+extern fn nbx_loop_free(l: ptr)
+extern fn nbx_loop_add(l: ptr, fd: int, events: int, user: int) -> int
+extern fn nbx_loop_modify(l: ptr, fd: int, events: int, user: int) -> int
+extern fn nbx_loop_remove(l: ptr, fd: int) -> int
+extern fn nbx_loop_post(l: ptr, user: int, events: int) -> int
+extern fn nbx_loop_wait(l: ptr, timeout_ms: int, max_events: int) -> ptr
+extern fn nbx_loop_count(r: ptr) -> int
+extern fn nbx_loop_fd(r: ptr, i: int) -> int
+extern fn nbx_loop_events(r: ptr, i: int) -> int
+extern fn nbx_loop_user(r: ptr, i: int) -> int
+extern fn nbx_loop_result_free(r: ptr)
+
+# Create a completion loop. Linux uses epoll, BSD/macOS kqueue, Windows IOCP.
+# The handle has one owner; do not copy a CompletionLoop value.
+fn loop_new() -> Result(CompletionLoop, NbioErr):
+    h := nbx_loop_new()
+    if is_null(h):
+        return Err(Failed)
+    return Ok(CompletionLoop(h))
+
+fn loop_free(l: CompletionLoop):
+    if not is_null(l.h):
+        nbx_loop_free(l.h)
+
+# Register `fd` for READ and/or WRITE readiness. `user` is returned with each
+# completion and may be any int.
+fn loop_add(l: CompletionLoop, fd: int, events: int, user: int) -> Result(void, NbioErr):
+    if is_null(l.h) or fd < 0 or events <= 0 or (events & ~(READ | WRITE)) != 0:
+        return Err(BadArg)
+    if nbx_loop_add(l.h, fd, events, user) != 0:
+        return Err(Failed)
+    return Ok()
+
+fn loop_modify(l: CompletionLoop, fd: int, events: int, user: int) -> Result(void, NbioErr):
+    if is_null(l.h) or fd < 0 or events <= 0 or (events & ~(READ | WRITE)) != 0:
+        return Err(BadArg)
+    if nbx_loop_modify(l.h, fd, events, user) != 0:
+        return Err(Failed)
+    return Ok()
+
+fn loop_remove(l: CompletionLoop, fd: int) -> Result(void, NbioErr):
+    if is_null(l.h) or fd < 0:
+        return Err(BadArg)
+    if nbx_loop_remove(l.h, fd) != 0:
+        return Err(Failed)
+    return Ok()
+
+# Queue a completion from any thread. It is returned by loop_wait with fd=-1.
+fn loop_post(l: CompletionLoop, user: int, events: int) -> Result(void, NbioErr):
+    if is_null(l.h) or events < 0:
+        return Err(BadArg)
+    if nbx_loop_post(l.h, user, events) != 0:
+        return Err(Failed)
+    return Ok()
+
+# Wait up to `timeout_ms` (negative waits forever) for up to `max_events`
+# completions. An empty result means the timeout expired.
+fn loop_wait(l: CompletionLoop, timeout_ms: int, max_events: int) -> Result([Completion], NbioErr):
+    if is_null(l.h) or timeout_ms < -1 or max_events <= 0 or max_events > 65536:
+        return Err(BadArg)
+    r := nbx_loop_wait(l.h, timeout_ms, max_events)
+    if is_null(r):
+        return Err(Failed)
+    out := []Completion
+    n := nbx_loop_count(r)
+    i := 0
+    for i < n:
+        push(out, Completion(nbx_loop_fd(r, i), nbx_loop_events(r, i), nbx_loop_user(r, i)))
+        i += 1
+    nbx_loop_result_free(r)
+    return Ok(out)

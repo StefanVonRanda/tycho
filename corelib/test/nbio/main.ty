@@ -1,11 +1,20 @@
 package main
 import "core:nbio"
 import "core:net"
+import "core:time"
 
 fn fd_of(r: Result(int, net.NetErr)) -> int:
     match r:
         Ok(v): return v
         Err(_): return -1
+
+fn post_worker(l: nbio.CompletionLoop) -> int:
+    time.sleep_ms(10)
+    match nbio.loop_post(l, 99, nbio.WRITE):
+        Ok:
+            return 0
+        Err(_):
+            return 1
 
 fn main():
     a := fd_of(net.udp_bind_checked("127.0.0.1", 0))
@@ -40,5 +49,98 @@ fn main():
         Ok(_): println("bad=Ok")
         Err(nbio.BadArg): println("bad=BadArg")
         Err(nbio.Failed): println("bad=Failed")
+    match nbio.loop_new():
+        Ok(l):
+            match nbio.loop_post(l, 42, nbio.READ):
+                Ok:
+                    match nbio.loop_wait(l, 1000, 8):
+                        Ok(xs):
+                            if len(xs) == 1:
+                                println("loop_post=" + str(xs[0].fd == -1 and xs[0].user == 42 and (xs[0].events & nbio.READ) != 0))
+                            else:
+                                println("loop_post=false")
+                        Err(_):
+                            println("loop_post=false")
+                Err(_):
+                    println("loop_post=false")
+            t := spawn post_worker(l)
+            match nbio.loop_wait(l, 1000, 8):
+                Ok(xs):
+                    if len(xs) == 1:
+                        println("loop_spawn=" + str(xs[0].fd == -1 and xs[0].user == 99 and (xs[0].events & nbio.WRITE) != 0))
+                    else:
+                        println("loop_spawn=false")
+                Err(_):
+                    println("loop_spawn=false")
+            n := wait(t)
+            println("loop_spawn_worker=" + str(n == 0))
+
+            c := fd_of(net.udp_bind_checked("127.0.0.1", 0))
+            d := fd_of(net.udp_bind_checked("127.0.0.1", 0))
+            cport := 0
+            match net.port_of(c):
+                Ok(p): cport = p
+                Err(_): pass
+            match nbio.loop_add(l, c, nbio.READ, 7):
+                Ok:
+                    net.udp_send(d, "127.0.0.1", cport, to_bytes("z"))
+                    match nbio.loop_wait(l, 1000, 8):
+                        Ok(xs):
+                            if len(xs) >= 1:
+                                println("loop_read=" + str(xs[0].fd == c and xs[0].user == 7 and (xs[0].events & nbio.READ) != 0))
+                            else:
+                                println("loop_read=false")
+                        Err(_):
+                            println("loop_read=false")
+                    net.udp_read(c, 64)
+                    match nbio.loop_modify(l, c, nbio.WRITE, 8):
+                        Ok:
+                            match nbio.loop_wait(l, 1000, 8):
+                                Ok(xs):
+                                    if len(xs) >= 1:
+                                        println("loop_write=" + str(xs[0].fd == c and xs[0].user == 8 and (xs[0].events & nbio.WRITE) != 0))
+                                    else:
+                                        println("loop_write=false")
+                                Err(_):
+                                    println("loop_write=false")
+                        Err(_):
+                            println("loop_write=false")
+                    match nbio.loop_remove(l, c):
+                        Ok:
+                            net.udp_send(d, "127.0.0.1", cport, to_bytes("q"))
+                            match nbio.loop_wait(l, 50, 8):
+                                Ok(xs):
+                                    println("loop_remove=" + str(len(xs) == 0))
+                                Err(_):
+                                    println("loop_remove=false")
+                        Err(_):
+                            println("loop_remove=false")
+                Err(_):
+                    println("loop_read=false")
+            match nbio.loop_wait(l, 10, 8):
+                Ok(xs):
+                    println("loop_timeout=" + str(len(xs) == 0))
+                Err(_):
+                    println("loop_timeout=false")
+            match nbio.loop_add(l, -1, nbio.READ, 0):
+                Err(nbio.BadArg):
+                    println("loop_bad_add=BadArg")
+                Err(_):
+                    println("loop_bad_add=other")
+                Ok:
+                    println("loop_bad_add=Ok")
+            match nbio.loop_wait(l, -2, 8):
+                Err(nbio.BadArg):
+                    println("loop_bad_wait=BadArg")
+                Err(_):
+                    println("loop_bad_wait=other")
+                Ok(_):
+                    println("loop_bad_wait=Ok")
+            nbio.loop_free(l)
+            net.close_fd(c)
+            net.close_fd(d)
+        Err(_):
+            println("loop_new=false")
+
     net.close_fd(a)
     net.close_fd(b)

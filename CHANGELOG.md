@@ -98,6 +98,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `decode_bng_premultiplied`, `encode_bng` and `encode_bng_premultiplied`,
   backed by the Unlicense reference codec and tested against the official
   paired PNG fixture.
+- Added `CompletionLoop` to `core:nbio`: epoll, kqueue and IOCP backends
+  with fd readiness, `loop_post`/`loop_wait` completions and thread-safe
+  cross-thread wakeups.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

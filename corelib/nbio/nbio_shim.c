@@ -90,3 +90,5 @@ void nbx_free(void *vp) {
     free(r->v);
     free(r);
 }
+
+#include "nbio_loop_impl.c"

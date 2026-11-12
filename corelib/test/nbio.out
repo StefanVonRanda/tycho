@@ -2,3 +2,12 @@ empty=0
 ready fd=true read=true
 write=2 all=true
 bad=BadArg
+loop_post=true
+loop_spawn=true
+loop_spawn_worker=true
+loop_read=true
+loop_write=true
+loop_remove=true
+loop_timeout=true
+loop_bad_add=BadArg
+loop_bad_wait=BadArg

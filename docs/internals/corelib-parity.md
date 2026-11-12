@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 89 packages, ~25.2k lines, 1270 locked
+lines). The current Tycho corelib is 89 packages, ~25.3k lines, 1277 locked
 public functions.
 
 Status values:
@@ -37,7 +37,7 @@ Status values:
 | `log` | covered | leveled logger, stderr/file choice, `new`/`line` | none |
 | `math` | covered | `math`, `fmath` (trig/exp/log/hypot), `decimal`, `bignum`, `rand`, `linalg`, `complex`, `fixed`, `ease`, `noise`, `bits` | none |
 | `mem` | non-goal | implicit arenas; no public allocator API | none — explicit allocators, virtual memory and TLSF are a different memory model |
-| `nbio` | partial | `nbio.poll` over `poll(2)`/`WSAPoll` with READ/WRITE masks | epoll/kqueue/IOCP completion loops |
+| `nbio` | covered | `nbio.poll` over `poll(2)`/`WSAPoll`; `CompletionLoop` with epoll (Linux), kqueue (BSD/macOS) and IOCP (Windows), including posted completions and fd readiness. epoll and IOCP are runtime-tested here; kqueue is implemented but has no BSD host in this tree | none |
 | `net` | covered | TCP/UDP, timeouts, TLS, HTTP/HTTPD; DNS `resolve` plus MX/TXT/SRV parsing, UDP querying and TCP fallback; socket options; POSIX Unix sockets; `interfaces`; IPv4/IPv6/endpoint parse and format; prefix network/containment | none |
 | `odin` | non-goal | Tycho has its own compiler packages | none |
 | `os` | covered | process execution, environment, cwd/chdir, pid/ppid, hostname, home/temp/cache/config/data dirs, temp files/dirs, user name, pipes/fd I/O, `chmod`/`umask`, uid/gid, `io.walk` | process signals live in `core:signal` |
@@ -97,7 +97,6 @@ them blocks the application-facing surface above:
 
 - `dynlib` — Tycho has no callback/function-pointer call path, so symbols are
   opaque handles for C shims.
-- `nbio` — `poll` is present; epoll/kqueue/IOCP completion loops are runtime work.
 - `prof` — manual spans are present; sampling needs runtime hooks.
 - `terminal` — cursor queries and some non-console Windows paths are absent.
 - `text` — i18n/locale tables are not implemented.
@@ -118,8 +117,9 @@ them blocks the application-facing surface above:
 6. **Formats and media** — done: TGA, Netpbm PPM/PGM/PBM, LZ4, baseline JPEG
    encode/decode and BNG joined PNG/BMP/QOI/HXA.
 7. **Runtime and diagnostics** — done: `debug`, manual `prof` spans, `terminal`,
-   `dynlib`, `nbio.poll`, `thread.id`/`yield_now`; raw SIMD intrinsics stay a
-   non-goal because `vector[N]T` is the language surface.
+   `dynlib`, `nbio.poll` plus epoll/kqueue/IOCP completion loops,
+   `thread.id`/`yield_now`; raw SIMD intrinsics stay a non-goal because
+   `vector[N]T` is the language surface.
 8. **Continuous gates** — every package lands with `corelib/test/<pkg>`,
    `docs/reference/corelib.md` entries, and a deliberate `surface.lock`
    update. `make check-fast` per change; full CI at milestones.
