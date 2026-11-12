@@ -21,6 +21,9 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <time.h>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #endif
 
 tycho_int termx_is_tty(tycho_int fd) {
@@ -128,6 +131,19 @@ typedef struct {
     struct termios old;
 } TermRaw;
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+/* iOS does not declare cfmakeraw. This is the same raw-mode transition. */
+static void termx_cfmakeraw(struct termios *t) {
+    t->c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
+    t->c_oflag &= ~OPOST;
+    t->c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+    t->c_cflag &= ~(CSIZE | PARENB);
+    t->c_cflag |= CS8;
+    t->c_cc[VMIN] = 1;
+    t->c_cc[VTIME] = 0;
+}
+#endif
+
 void *termx_raw_enter(tycho_int fd) {
     if (!isatty((int)fd)) return NULL;
     TermRaw *r = (TermRaw *)malloc(sizeof *r);
@@ -135,7 +151,11 @@ void *termx_raw_enter(tycho_int fd) {
     r->fd = (int)fd;
     if (tcgetattr((int)fd, &r->old) != 0) { free(r); return NULL; }
     struct termios raw = r->old;
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    termx_cfmakeraw(&raw);
+#else
     cfmakeraw(&raw);
+#endif
     if (tcsetattr((int)fd, TCSAFLUSH, &raw) != 0) { free(r); return NULL; }
     return r;
 }

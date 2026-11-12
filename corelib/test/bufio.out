@@ -11,7 +11,7 @@ unread ok=true bytes=97,97,98 eof=true
 until=[a] rest=[b c]
 empty: eof=true byte=none line=none
 badint=none pos=0
-negint=-12 rest=[-12x]
+negint=-12 rest=[x]
 writer=[aBc
 ]
 reset=[]

@@ -69,12 +69,21 @@ static tycho_int ty_os_decode(int st) {                       /* POSIX wait-stat
 #endif
 
 tycho_int osx_system(const char *cmd) {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    (void)cmd;
+    return -1;                 /* iOS has no shell; fail closed */
+#else
     return ty_os_decode(system(cmd));
+#endif
 }
 
 typedef struct { tycho_int code; char *out; size_t out_len; char *err; size_t err_len; } OsRun;
 
 void *osx_run(const char *cmd) {
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+    (void)cmd;
+    return NULL;               /* iOS has no popen/shell; fail closed */
+#else
     FILE *f = TY_POPEN(cmd, "r");
     if (!f) return NULL;                              /* fail closed: shell could not start */
     size_t cap = 4096, len = 0;
@@ -102,6 +111,7 @@ void *osx_run(const char *cmd) {
     r->err_len = 0;
     r->code = ty_os_decode(TY_PCLOSE(f));            /* pclose exactly once, on every path */
     return r;
+#endif
 }
 
 tycho_int osx_run_code(void *p) { return p ? ((OsRun *)p)->code : -1; }

@@ -845,7 +845,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   through the shell with stdout/stderr inherited, returning its exit code (0..255,
   `128+signal` if killed, `-1` if the shell won't start); `os.run(cmd)` additionally
   captures stdout into `Output{code, out}`. `cmd` is a `/bin/sh -c` line — shell
-  metacharacters are active, so quote untrusted input yourself.
+  metacharacters are active, so quote untrusted input yourself. On iOS there is no
+  shell: `system` and `run` fail closed (`-1`, empty output), while the array-argv
+  `exec` family still uses `posix_spawnp`.
   **`os.exec(argv)` / `os.exec_out(argv)`** are the array-argv pair and take a
   `[string]`: no shell is started at all, so an argument of `"; rm -rf /"` is one
   ordinary argument rather than a second command — prefer them whenever the arguments

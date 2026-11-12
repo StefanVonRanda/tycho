@@ -21,6 +21,9 @@
 #else
 #include <pthread.h>
 #include <errno.h>
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #endif
 
 typedef struct { _Atomic uint64_t v; } SyncAtomicInt;
@@ -746,8 +749,68 @@ tycho_int syncx_recursive_mutex_unlock(void *vp) {
 
 #else
 
-typedef struct { pthread_barrier_t b; } SyncBarrier;
 typedef struct { pthread_mutex_t m; } SyncRecursiveMutex;
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+/* iOS does not ship pthread_barrier_t. A mutex/condvar generation barrier has
+ * the same contract: every caller blocks until the last arrival releases the
+ * generation, and exactly one caller returns 1. */
+typedef struct {
+    pthread_mutex_t m;
+    pthread_cond_t cv;
+    tycho_int n;
+    tycho_int count;
+    tycho_int generation;
+} SyncBarrier;
+
+void *syncx_barrier_new(tycho_int n) {
+    if (n < 1) return NULL;
+    SyncBarrier *b = (SyncBarrier *)malloc(sizeof *b);
+    if (!b) return NULL;
+    if (pthread_mutex_init(&b->m, NULL) != 0) { free(b); return NULL; }
+    if (pthread_cond_init(&b->cv, NULL) != 0) {
+        pthread_mutex_destroy(&b->m);
+        free(b);
+        return NULL;
+    }
+    b->n = n;
+    b->count = 0;
+    b->generation = 0;
+    return b;
+}
+
+tycho_int syncx_barrier_free(void *vp) {
+    SyncBarrier *b = (SyncBarrier *)vp;
+    if (!b) return 0;
+    pthread_cond_destroy(&b->cv);
+    pthread_mutex_destroy(&b->m);
+    free(b);
+    return 0;
+}
+
+tycho_int syncx_barrier_wait(void *vp) {
+    SyncBarrier *b = (SyncBarrier *)vp;
+    if (pthread_mutex_lock(&b->m) != 0) return -1;
+    tycho_int gen = b->generation;
+    b->count += 1;
+    if (b->count == b->n) {
+        b->count = 0;
+        b->generation += 1;
+        pthread_cond_broadcast(&b->cv);
+        pthread_mutex_unlock(&b->m);
+        return 1;
+    }
+    while (gen == b->generation) {
+        if (pthread_cond_wait(&b->cv, &b->m) != 0) {
+            pthread_mutex_unlock(&b->m);
+            return -1;
+        }
+    }
+    pthread_mutex_unlock(&b->m);
+    return 0;
+}
+#else
+typedef struct { pthread_barrier_t b; } SyncBarrier;
 
 void *syncx_barrier_new(tycho_int n) {
     if (n < 1) return NULL;
@@ -771,6 +834,7 @@ tycho_int syncx_barrier_wait(void *vp) {
     if (rc == PTHREAD_BARRIER_SERIAL_THREAD) return 1;
     return rc == 0 ? 0 : -1;
 }
+#endif
 
 void *syncx_recursive_mutex_new(void) {
     SyncRecursiveMutex *m = (SyncRecursiveMutex *)malloc(sizeof *m);

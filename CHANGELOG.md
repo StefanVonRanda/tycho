@@ -119,6 +119,13 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   Tycho function to C through a compiler-generated C-ABI trampoline. Callback
   parameters and results are limited to scalars, `ptr` and `void`; closures and
   function variables are rejected.
+- Added the Android target gate: `make android-check` cross-compiles the
+  dependency-free corelib tests with the NDK and runs the static bionic
+  binaries under qemu-user. It is green for 84 tests on both x86_64 and
+  aarch64 at API 34.
+- Added the iOS target gate: `make ios-check` builds and runs 81
+  dependency-free corelib tests in the Xcode iOS Simulator, and builds the
+  same emitted C against the arm64 device SDK.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

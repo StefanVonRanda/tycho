@@ -82,13 +82,12 @@ branches in `os`, `net`, `log`, `sync`, `thread` and `time`.
 | Linux x86-64 | supported | full `make ci`, release archive |
 | Windows x86-64 | supported | mingw build + Wine smoke, release archive |
 | macOS arm64 | supported | darwin-arm64 `make ci`, release archive |
-| Android | **missing** | no NDK target, JNI bridge, asset manager or APK packaging; `os`/`net` POSIX shims are untested there |
-| iOS | **missing** | no Xcode target or Objective-C/Darwin bridge; `core/sys/darwin` equivalents are not bound |
+| Android | **supported** | NDK r28c cross-compile + qemu-user runtime: `make android-check` is green for 84 corelib tests on x86_64 and aarch64 at API 34. The host emulator 37.2.12 segfaults on this Fedora kernel, so runtime evidence is qemu-user with bionic, not the emulator. JNI/asset-manager/APK bindings are not part of corelib parity |
+| iOS | **supported** | Xcode 27.2 iOS Simulator: `make ios-check` is green for 81 corelib tests; the same emitted C also builds for the arm64 device SDK (platform 2). No signed physical-device run. `core/sys/darwin` raw bindings are not part of corelib parity |
 
-Android/iOS support is a platform/toolchain project, not a package that can be
-added to this tree without an NDK/Xcode verification path. `os.platform()` and
-the `is_android`/`is_ios` predicates are present so code can branch, but they
-do not make those targets build or pass.
+Android and iOS are separate target gates: `make android-check` on Linux with the
+NDK/qemu-user, `make ios-check` on macOS with Xcode and a simulator runtime.
+`os.platform()` and the `is_android`/`is_ios` predicates are exercised by both.
 
 ## Residual partials
 

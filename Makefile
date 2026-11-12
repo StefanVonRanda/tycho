@@ -17,7 +17,7 @@ RUNTIME := runtime/tycho_rt.c
 BOOTSTRAP_C     := bootstrap/tycho_compiler.c
 BOOTSTRAP_SHIMS := corelib/strings/strings_shim.c corelib/os/os_shim.c corelib/io/io_shim.c
 
-.PHONY: shadercross preflight prunner-check ci-linux bootstrap-check single-compiler-check fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check fstr-hole-file-check script-check builtin-qualified parity-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check docs-counts-check all tools tools-check demo test test-fast check-fast parse-check prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+.PHONY: shadercross preflight prunner-check ci-linux bootstrap-check single-compiler-check fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check fstr-hole-file-check script-check builtin-qualified parity-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check docs-counts-check all tools tools-check demo test test-fast check-fast parse-check prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak corelib corelib-examples android-check ios-check shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
 
 # The self-hosted compiler is the only maintained compiler. `tychoc` is a copy
 # of it so the CLI and tools keep one spelling.
@@ -356,6 +356,15 @@ bench-suite-backends: $(TYCHOC)
 
 corelib: tychoc1
 	@sh corelib/run.sh
+
+# Android target: NDK cross-compile + qemu-user runtime. Optional toolchain, so
+# this is a standalone gate rather than part of `make ci`.
+android-check: tychoc1
+	@sh scripts/android_check.sh
+
+# iOS target: Xcode simulator run + device-SDK build. macOS only.
+ios-check: tychoc1
+	@sh scripts/ios_check.sh
 
 # Optional SDL_GPU support. The pinned translator is a separate runtime, not part
 # of the compiler archive; build it before compiling core:gfxgpu programs.

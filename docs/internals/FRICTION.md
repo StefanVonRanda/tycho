@@ -6450,7 +6450,7 @@ The `<file>` was `corelib/os/os_shim.c` at the `osx_is_batch_ref` definition,
 which this entry's fix deleted — so it is named rather than cited, the citation
 gate quite correctly refusing a live reference to a symbol that no longer
 exists. The line carrying the replacement is
-`corelib/os/os_shim.c:170@unused`.
+`corelib/os/os_shim.c:180@unused`.
 
 **Measured, same tree, same command:** gcc 16.2.1 — *"14 shim(s) compiled with
 `-Wall -Wextra -Wdeprecated-declarations`, 0 skipped; 0 warning line(s),
@@ -6459,8 +6459,8 @@ matching `scripts/shim.warn`"*. clang 22.1.8 — the line above.
 which is a narrower claim than it looks.
 
 **The warning is aimed at a suppression, not at a defect.** `osx_is_batch`
-(`corelib/os/os_shim.c:171@osx_is_batch`) is called from the `_WIN32` spawn
-paths (`corelib/os/os_shim.c:485@osx_is_batch` and `corelib/os/os_shim.c:603@osx_is_batch`). On a POSIX build nothing calls it, so the
+(`corelib/os/os_shim.c:181@osx_is_batch`) is called from the `_WIN32` spawn
+paths (`corelib/os/os_shim.c:495@osx_is_batch` and `corelib/os/os_shim.c:613@osx_is_batch`). On a POSIX build nothing calls it, so the
 file takes its address at file scope to keep gcc's `-Wunused-function` quiet:
 
 ```c
@@ -6506,7 +6506,7 @@ have put that gate back to scoring a hand-copy — the precise defect the functi
 was moved out of the `#ifdef` to fix. **The recommendation was made without
 reading the eight lines above the function.**
 
-**What was done instead — option 1, the attribute** (`corelib/os/os_shim.c:170@unused`):
+**What was done instead — option 1, the attribute** (`corelib/os/os_shim.c:180@unused`):
 
 ```c
 __attribute__((unused))
@@ -6516,7 +6516,7 @@ static int osx_is_batch(const char *name) {
 and the `osx_is_batch_ref` pointer deleted. The dodge converted an unused
 *function* into an unused *variable*; the attribute states the same fact and
 creates nothing for either compiler to warn about. It is harmless where the
-function IS used — the Windows spawn path at `:341`, and the unit gate. The
+function IS used — the Windows spawn path at `:495`, and the unit gate. The
 tree already uses `__attribute__` (`runtime/tycho_rt.c:247@constructor`,
 `:959@noinline`), and the Windows build is mingw, which is gcc, so no target
 loses it. Option 3 stays rejected for the reason given above.

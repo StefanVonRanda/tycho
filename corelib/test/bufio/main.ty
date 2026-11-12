@@ -43,7 +43,8 @@ fn main():
     bad := bufio.new_reader("x12")
     println("badint=" + showb(bufio.read_int(&bad)) + " pos=" + str(bufio.pos(bad)))
     neg := bufio.new_reader("-12x")
-    println("negint=" + showb(bufio.read_int(&neg)) + " rest=[" + bufio.rest(neg) + "]")
+    nv := bufio.read_int(&neg)
+    println("negint=" + showb(nv) + " rest=[" + bufio.rest(neg) + "]")
 
     w := bufio.new_writer()
     bufio.write(&w, "a")

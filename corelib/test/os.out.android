@@ -1,0 +1,63 @@
+true=0
+false=1
+exit7=7
+out=[hello] code=0
+out2=[a-b-c]
+out3=[] code=1
+posix=true
+e_exit7=7
+e_out=[hello] code=0
+sh_arg=[INJECTED]
+e_arg=[; printf INJECTED]
+e_space=[a b c]
+e_argc=[1]
+cap=[out][err] code=3
+cap_big_out=[out] errlen=200000 err0=101 code=0
+e_empty=-1
+e_nosuch=127
+e_nosuch_out=[] code=127
+e_cap_empty=[][] code=-1
+e_cap_nosuch=[][] code=127
+nul_system=-1
+nul_run=[] code=-1
+nul_exec=-1
+nul_exec_out=[] code=-1
+nul_child_run=3,true,66
+nul_child_exec=3,true,66
+env_clear=Ok
+env_absent=none
+env_set=Ok value=[v1]
+env_empty=Ok value=[]
+env_unset=Ok value=none
+env_badname=none set=BadName eq=BadName
+env_nulvalue=BadValue value=none
+cwd_ok=Ok
+chdir_temp=Ok cwd=Ok
+chdir_back=Ok
+chdir_missing=NotFound
+chdir_empty=BadName
+chmod=Ok
+chmod_missing=NotFound
+chmod_nul=BadPath
+umask_restore=true
+ids=true,true,true,true ppid=true
+pid_positive=true
+hostname_nonempty=true
+home_nonempty=true
+temp_nonempty=true
+dirs=true,true,true
+temp_file_ok=true
+temp_file_write=true
+temp_file_read=true
+temp_file_remove=true
+temp_dir_ok=true
+temp_dir_is_dir=true
+temp_dir_remove=true
+user_name_nonempty=true
+temp_bad_prefix=true
+pipe_ok=true
+pipe_write=true
+pipe_read=true
+pipe_bad_read=true
+pipe_bad_write=true
+platform=android
