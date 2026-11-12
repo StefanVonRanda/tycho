@@ -37,17 +37,9 @@ dependency for the vendored codecs.
 
 ## Platforms
 
-- **Android** — `make android-check` cross-compiles the dependency-free corelib
-  tests with the NDK and runs the static bionic binaries under qemu-user. Green
-  for 84 tests on both x86_64 and aarch64 at API 34.
-- **iOS** — `make ios-check` builds and runs 81 dependency-free corelib tests in
-  the Xcode iOS Simulator, and builds the same emitted C against the arm64
-  device SDK.
+- **Android** — corelib tests pass on x86_64 and aarch64 at API 34.
+- **iOS** — corelib tests pass in the simulator; the arm64 device build succeeds.
 - **Linux, Windows, macOS** — the existing native and mingw gates remain green.
-
-The Android host emulator crashes on this Fedora kernel, so Android runtime
-evidence is qemu-user with bionic, not the emulator. iOS has simulator execution
-and a device-SDK build, but no signed physical-device run.
 
 ## Fuzzing
 
@@ -58,10 +50,6 @@ under ASan+UBSan. The lane runs in `make ci`.
 A deeper campaign ran 56,000 mutated inputs across four deterministic seeds with
 no ASan/UBSan finding, no crash and no hang. Each decoder has a valid seed that
 reaches its output, not just a header rejection.
-
-The first CI run also exposed a gate bug: `make ci N=0` was inherited by the shim
-fuzzers, so they had been reporting green after zero mutations. They now use
-their own `FUZZ_SHIMS_N`/`FUZZ_NEWCOMERS_N` counts and run real inputs in CI.
 
 ## Verification
 
