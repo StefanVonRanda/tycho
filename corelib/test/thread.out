@@ -1,3 +1,12 @@
 id_nonzero=true
 yield=true
 cpus=true
+tls_set=true
+tls_main=true
+tls_neg=true
+tls_bad=true
+tls_worker=true
+tls_isolated=true
+run=true
+run_isolated=true
+raw_thread=true

@@ -109,6 +109,9 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `qm_translate`, `qm_language`), locale data (`locale`, `system_locale`,
   `month_name`, `weekday_name`, `format_number`, `plural_slot`) and native Lua
   `%b`/`%f`/non-greedy `-` patterns in `core:textmatch`.
+- Added thread-local storage and a synchronous OS-thread runner to
+  `core:thread`: `local_set`/`local_get` over 32 per-thread slots and
+  `run(f) -> int`.
 - The tree is now 89 corelib packages and 101 golden test trees.
 
 ## [0.9.1] — 2026-11-10

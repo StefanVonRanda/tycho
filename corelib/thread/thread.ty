@@ -13,3 +13,31 @@ fn yield_now() -> bool:
 
 fn cpus() -> int:
     return ncpu()
+
+const TLS_KEYS = 32
+
+extern fn thx_tls_set(key: int, value: int) -> int
+extern fn thx_tls_get(key: int) -> int
+
+# Store an int in the current OS thread's slot `key` (0..31). Returns false for
+# an out-of-range key or an allocation failure.
+fn local_set(key: int, value: int) -> bool:
+    if key < 0 or key >= TLS_KEYS:
+        return false
+    return thx_tls_set(key, value) == 1
+
+# Read the current OS thread's slot `key`; unset slots read as 0.
+fn local_get(key: int) -> int:
+    if key < 0 or key >= TLS_KEYS:
+        return 0
+    return thx_tls_get(key)
+
+fn _invoke(f: fn() -> int) -> int:
+    return f()
+
+# Run `f` on a new OS thread and return its result. Tycho's `spawn` already
+# creates one pthread/Win32 thread per task; this is the joinable synchronous
+# form for callers that do not need a task handle.
+fn run(f: fn() -> int) -> int:
+    t := spawn _invoke(f)
+    return wait(t)

@@ -5,7 +5,7 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 89 packages, ~26.4k lines, 1292 locked
+lines). The current Tycho corelib is 89 packages, ~26.5k lines, 1295 locked
 public functions.
 
 Status values:
@@ -56,7 +56,7 @@ Status values:
 | `terminal` | covered | ANSI escapes, tty/size, raw mode, byte read, key decoding, `cursor_query`/`cursor_position` with DSR parsing, and non-console Windows tty fallbacks | none |
 | `testing` | covered | `T`, `check`, `eq`, `report`, `subtest`/`merge`, `bench`, `report_bench` | none |
 | `text` | covered | `strings`, `utf8`, `utf16`, `char`, `regex`, `textmatch` (including `%b`, `%f` and non-greedy `-`), `edit`, `scanner`, `table`, `glob`, GNU MO and Qt `.qm` `i18n`, and locale data | none |
-| `thread` | partial | language `spawn`/`wait`, channels, `parallel for`; `thread.id`/`yield_now`/`cpus` | raw thread creation/TLS need compiler/runtime support |
+| `thread` | covered | language `spawn`/`wait` (one OS thread per task), channels, `parallel for`; `thread.id`/`yield_now`/`cpus`, synchronous `thread.run`, and 32-slot per-thread `local_set`/`local_get` | none |
 | `time` | covered | monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset, IANA TZif zones via `core:tz` including the POSIX footer and leap-second records | none |
 | `unicode` | covered | `utf8`, `utf16`, full case mapping/folding, titlecase mapping, UAX #15 normalization, UAX #29 grapheme/word segmentation, UCD general-category/script/block/emoji classification | none |
 
@@ -97,7 +97,6 @@ them blocks the application-facing surface above:
 
 - `dynlib` — Tycho has no callback/function-pointer call path, so symbols are
   opaque handles for C shims.
-- `thread` — raw threads/TLS need compiler/runtime callbacks.
 
 ## Sequence
 
@@ -117,8 +116,8 @@ them blocks the application-facing surface above:
 7. **Runtime and diagnostics** — done: `debug`, `prof` spans plus deterministic
    sampling and Spall trace output, `terminal` including cursor queries,
    `dynlib`, `nbio.poll` plus epoll/kqueue/IOCP completion loops,
-   `thread.id`/`yield_now`; raw SIMD intrinsics stay a non-goal because
-   `vector[N]T` is the language surface.
+   `thread` raw task threads and TLS; raw SIMD intrinsics stay a non-goal
+   because `vector[N]T` is the language surface.
 8. **Continuous gates** — every package lands with `corelib/test/<pkg>`,
    `docs/reference/corelib.md` entries, and a deliberate `surface.lock`
    update. `make check-fast` per change; full CI at milestones.

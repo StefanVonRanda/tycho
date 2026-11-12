@@ -706,9 +706,12 @@ expression-bodied; pass a named function where you need a multi-line body.
   (every column read as text), `errmsg(db)`. Parameters bind as text and
   coerce; fail-closed with sqlite's own messages.
   `exec_params(&d, sql, params)` is the parameter-binding form of `exec`, returning the affected-row count.
-- **`thread`** — the OS-thread facts the task model still needs: `id()` (opaque
-  current-thread id), `yield_now()`, and `cpus()` (`ncpu()`). Creating raw
-  threads is `spawn`/`wait`; Tycho has no callback entry point for pthreads.
+- **`thread`** — the OS-thread facts and thread-local storage. `id()` (opaque
+  current-thread id), `yield_now()`, and `cpus()` (`ncpu()`). Language
+  `spawn`/`wait` creates one OS thread per task; `run(f) -> int` is the
+  synchronous joinable form. `local_set(key, value)` / `local_get(key)` use a
+  32-slot per-thread store (`TLS_KEYS`); unset slots read as 0 and values are
+  freed when the thread exits.
 - **`prof`** — manual instrumentation plus deterministic sampling and trace
   output: `start(name) -> Span`, `stop(&span)`, `finished`, `elapsed_ns`,
   `total_ns` and `report(spans)`. `sample_spans(spans, interval_ns)` walks

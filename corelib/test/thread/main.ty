@@ -1,7 +1,36 @@
 package main
+
 import "core:thread"
+
+fn tls_worker() -> int:
+    thread.local_set(3, 99)
+    return thread.local_get(3)
+
+fn run_worker() -> int:
+    thread.local_set(4, 7)
+    return thread.local_get(4)
+
+fn id_worker() -> int:
+    return thread.id()
 
 fn main():
     println("id_nonzero=" + str(thread.id() != 0))
     println("yield=" + str(thread.yield_now()))
     println("cpus=" + str(thread.cpus() > 0))
+
+    println("tls_set=" + str(thread.local_set(3, 42)))
+    println("tls_main=" + str(thread.local_get(3) == 42))
+    println("tls_neg=" + str(thread.local_set(0, 0 - 5) and thread.local_get(0) == 0 - 5))
+    println("tls_bad=" + str(thread.local_set(32, 1) == false and thread.local_get(32) == 0))
+
+    t := spawn tls_worker()
+    v := wait(t)
+    println("tls_worker=" + str(v == 99))
+    println("tls_isolated=" + str(thread.local_get(3) == 42))
+
+    println("run=" + str(thread.run(run_worker) == 7))
+    println("run_isolated=" + str(thread.local_get(4) == 0))
+
+    it := spawn id_worker()
+    wid := wait(it)
+    println("raw_thread=" + str(wid != thread.id()))
