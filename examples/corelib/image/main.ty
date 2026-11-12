@@ -13,6 +13,7 @@ fn why(e: image.ImgErr) -> string:
         image.ShortPixels: return "too few pixel bytes"
         image.Failed: return "libpng failed"
         image.TooBig: return "the declared image is too large to decode"
+        image.NotBng: return "not a BNG header"
     return "?"
 
 fn main():
