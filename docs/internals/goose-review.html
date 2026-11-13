@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goose review: what transfers to Tycho — Tycho docs</title>
+<script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <a class="search-trigger" id="search-open" href="../index.html" aria-haspopup="dialog" aria-controls="search-dialog" aria-keyshortcuts="Control+k Meta+k">Search <kbd aria-hidden="true">Ctrl K</kbd></a>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<dialog class="site-search" id="search-dialog" aria-labelledby="search-title" aria-describedby="search-help">
+ <div class="search-heading-row"><h2 class="search-heading" id="search-title">Search documentation</h2><button type="button" id="search-close" aria-label="Close search">Esc</button></div>
+ <div class="search-panel">
+  <div class="search-input-row"><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-labelledby="search-title" aria-controls="search-results" autocomplete="off" spellcheck="false" autofocus><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button></div>
+  <div id="r" class="search-results"><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div>
+ </div>
+ <p class="search-help" id="search-help">↑ ↓ to move · Enter to open · Esc to close</p>
+</dialog>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a><a href="../quickstart.html">Quickstart</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/1.0-readiness.html">1.0 readiness</a><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/archived-c-compiler.html">The archived C compiler</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/cold-probe-binary-2026-10-26.html">Cold binary-protocol probe, 2026-10-26</a><a href="../internals/corelib-parity.html">Odin core parity</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-gfx.html">`core:gfx` — value semantics at the SDL3 boundary</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/goose-review.html" aria-current="page">Goose review: what transfers to Tycho</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/plan-value-storage-places.html">Plan: ownership-free storage optimization + values vs places</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-graph-2026-10-18.html">Probe: file-backed social graph (relational data as values) — 2026-10-18</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-handles-2026-10-18.html">Probe: entity store with generational handles — 2026-10-18</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/probe-update-2026-10-18.html">Probe: exclusive update callbacks — 2026-10-18</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html">Release notes</a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#the-useful-split">The useful split</a>
+<a href="#1-in-place-construction-for-push-highest-value">1. In-place construction for push (highest value)</a>
+<a href="#2-bounds-contracts-and-a-check-free-report">2. Bounds contracts and a check-free report</a>
+<a href="#3-inline-fixed-size-enum-payloads">3. Inline fixed-size enum payloads</a>
+<a href="#4-static-function-values-measure-first-do-not-restrict-closures">4. Static function values: measure first, do not restrict closures</a>
+<a href="#5-lower-priority-ergonomics">5. Lower-priority ergonomics</a>
+<a href="#reject-incompatible-or-already-covered">Reject: incompatible or already covered</a>
+<a href="#recommendation">Recommendation</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/goose-review.md</nav>
+<h1 id="goose-review-what-transfers-to-tycho">Goose review: what transfers to Tycho</h1>
+<p>Status: research note, 2026-10-21. No language or runtime change is implied by this file.</p>
+<p>Sources: <a href="https://github.com/aardappel/goose">aardappel/goose</a>, read at <code>master</code> on 2026-10-21: its README, <a href="https://github.com/aardappel/goose/blob/master/docs/goose_spec.md">language spec</a>, <a href="https://github.com/aardappel/goose/blob/master/docs/reference.md">reference</a>, <a href="https://github.com/aardappel/goose/blob/master/docs/implementation.md">implementation notes</a>, <a href="https://github.com/aardappel/goose/blob/master/docs/packages.md">packages</a>, <a href="https://github.com/aardappel/goose/blob/master/docs/stdlib.md">standard library</a>, and the samples/benchmark notes. Goose's performance claims are its author's measurements, not independently reproduced here.</p>
+<p>Constraints for this review:</p>
+<ul>
+<li>Tycho keeps value semantics, implicit arenas and no reference type.</li>
+<li>No stored borrows, slices, relative links or stable references are coming back through this work.</li>
+<li>A feature is only worth adding when a real program needs it, with a measured control and a gate.</li>
+</ul>
+<h2 id="the-useful-split">The useful split</h2>
+<p>Goose's headline features are mostly consequences of a different memory model. Its data stacks make growth stable and free; references and slices are cheap because the compiler proves their roots; variable-size records are inline because there is no heap. Tycho does not need those mechanisms to get the useful parts.</p>
+<p>What transfers is narrower:</p>
+<ol>
+<li><strong>Fresh values should be built where they are stored</strong>, not in a temporary and copied afterwards.</li>
+<li><strong>A function should be able to state a bounds contract once</strong>, and the compiler should report whether any check survives.</li>
+<li><strong>A fixed-size sum value can be stored inline</strong>; <code>Option</code>/<code>Result</code> already are, and both compilers now store scalar-payload user enums that way.</li>
+</ol>
+<p>Everything else is either incompatible with the value model or belongs behind a concrete caller.</p>
+<h2 id="1-in-place-construction-for-push-highest-value">1. In-place construction for <code>push</code> (highest value)</h2>
+<p>Goose makes this a language guarantee: a value constructed into an array slot, a return slot or a field is built there, through calls and branches (spec section 4.3). Tycho already has the return-slot move, the caller-arena return and the O3 last-use move into <code>push</code>. The gap is fresh expressions that are neither a named local nor a return value.</p>
+<p>A local probe makes the gap visible. For an outer <code>[string]</code>:</p>
+<pre><code class="language-text">out: [string] = []
+for i := 0; i &lt; N; i += 1:
+    push(out, str(i) + "...")
+</code></pre>
+<p>the emitted C is, in shape:</p>
+<pre><code class="language-c">tycho_arr_str_push(&amp;owner,
+    tycho_str_copy(&amp;owner, tycho_str_concat(&amp;owner, ...)));
+</code></pre>
+<p>The concatenation has already built a fresh string in the destination arena; <code>push</code> then allocates and copies it again before storing the pointer. The original buffer is left as dead scratch. The same issue applies to a fresh struct or array passed to <code>push</code>, and to a call result that is copied into the receiver.</p>
+<p>The fix is not "add references". It is a compiler destination:</p>
+<ul>
+<li>Evaluate the pushed expression in the array's owning arena when it is a fresh value and cannot alias the receiver.</li>
+<li>Store it with the existing <code>push_move</code> path, or construct it directly in the slot when the element is inline.</li>
+<li>Keep the current copy path for places, borrowed values, views, a value that can reach the receiver, and every case the analysis cannot prove.</li>
+</ul>
+<p>This should become a documented guarantee only after it is enforced for returns, <code>push</code>, array literals and control-flow branches. Until then it is a conservative optimization.</p>
+<p>Validation: a fixture that pushes fresh strings and fresh records into an outer array, compiled with a <code>TYCHOC_NO_FRESH_PUSH</code> control. Measure peak RSS and wall time (median of five), require byte-identical output, then run the sanitizer lanes and the compiler fixpoint. The existing O3 <code>push_move</code> path and <code>bench/opt/movebuild</code> are the precedent, not a replacement for this test.</p>
+<h2 id="2-bounds-contracts-and-a-check-free-report">2. Bounds contracts and a check-free report</h2>
+<p>Goose's strongest compiler-side idea is not a new type: it is the <strong>contract</strong>. <code>assert</code> establishes a fact once, index types retain bounds as values, and <code>checkfree fn</code> rejects a kernel if a bounds check survives (reference sections 15 and 16; spec sections 7.14 and 10.5). The compiler also prints the surviving checks per line with <code>--bce-lines</code>.</p>
+<p>Tycho already removes the checks in monotone <code>len(xs)</code> loops (<code>TYCHOC_NO_BOUNDS_ELISION=1</code> is the control), but it has no assert builtin and no way to state or inspect a cross-call length relation. Two pieces are worth considering separately:</p>
+<ul>
+<li><strong>Facts from guards.</strong> A prototype proved <code>if j &gt;= 0 and j &lt; len(xs)</code> in a branch and removed the check from <code>xs[j]</code>. On 5,000,000 elements x 12 passes it was 43 ms against 40 ms for the control: the C compiler already folds the duplicate condition and the branch predicts. No measured win; the prototype was reverted. A real check-free path needs index types that retain validation, not more branch facts.</li>
+<li><strong>A reporting mode.</strong> <code>tychoc --bce-report</code> (name unresolved) should print every bounds check that survives in a function, with its source line. A <code>checkfree</code> source annotation is the stronger version, but only add it when a real kernel wants the guarantee.</li>
+</ul>
+<p>Full Goose index types do not map directly. Tycho arrays are values that can shrink; a <code>u32 in nodes</code> needs a stable, named, grow-only array. A later version could tie an index type to a <code>bounded[N]T</code> or a new grow-only array, but that is a separate design. Do not smuggle references in to get it.</p>
+<p>Validation: a graph or stencil kernel with a data-dependent index and an explicit length precondition. Build with the report and with <code>TYCHOC_NO_BOUNDS_ELISION=1</code>; compare checks, output, RSS and time. The gate is the report's accuracy, not a promised speedup.</p>
+<h2 id="3-inline-fixed-size-enum-payloads">3. Inline fixed-size enum payloads</h2>
+<p>Goose's fixed-mode enum stores tag plus the largest payload inline; variable mode stores each value at its own size and gives up indexing. Tycho stores user-defined enums as pointers to one tagged cell, with the payload inline in that cell (<code>docs/internals/design-enums.md</code>). <code>Option</code> and <code>Result</code> are already inline value structs; user enums are the remaining boxed case.</p>
+<p>A 1,000,000-value probe compared a fixed three-variant user enum with the equivalent packed tag-plus-payload record (the lower bound for unboxing):</p>
+<table>
+<tr><th>value</th><th>peak RSS</th><th>wall time</th></tr>
+<tr><td><code>[Kind]</code> old pointer cell</td><td>28,068 KB</td><td>7 ms</td></tr>
+<tr><td><code>[Kind]</code> inline packed tag+union</td><td><strong>19,872 KB</strong></td><td><strong>5 ms</strong></td></tr>
+</table>
+<p>That is 29% less memory and about 29% less time. The same effect appeared for <code>Option(int)</code> against a packed record: 28,500 KB / 8 ms versus 19,500 KB / 6 ms. <code>Option</code> and <code>Result</code> already have the inline rep; they pay padding, not an allocation. An inline representation for *user* enums whose variants are all fixed-size and non-recursive would remove the per-value cell and pointer chase; recursive enums stay boxed. This is a layout optimization, not variable-size records and not variable-mode enums; the value model is unchanged.</p>
+<p><strong>Status: adopted by both compilers for scalar payloads.</strong> A fixed user enum with scalar payloads is now a packed tag+union value; recursive, generic, fieldless, package-mangled and heap-payload enums keep the pointer cell. The control <code>TYCHOC_NO_INLINE_ENUM=1</code> reproduces the old representation.</p>
+<h2 id="4-static-function-values-measure-first-do-not-restrict-closures">4. Static function values: measure first, do not restrict closures</h2>
+<p>Goose passes function values as compile-time entities: they cannot escape, so every higher-order call is direct and inlinable (spec section 7.6). Tycho deliberately supports escaping closures and arrays of closures. Copying Goose's restriction would be a regression.</p>
+<p>The possible transfer is an optimization: specialize a call when a function literal or named function reaches a higher-order parameter and the value does not escape. The C backend can then inline the closure body and skip the environment.</p>
+<p>Measure before building it. A local <code>apply</code> probe with 10,000,000 calls was already ~7 ms, which is consistent with the C compiler devirtualizing the constant function values. The <code>bench/prongB/dispatch</code> workload is the opposite case: an array of escaping closures, which Goose's static values cannot express and Tycho can. Tycho's more expressive closure model should stay; treat this as a compiler optimization only if a real higher-order workload shows a gap.</p>
+<h2 id="5-lower-priority-ergonomics">5. Lower-priority ergonomics</h2>
+<p>These are real Goose conveniences, but none is a reason to change the model:</p>
+<ul>
+<li><code>guard</code> and long-distance <code>return ... from</code> (spec 7.9) versus Tycho's <code>Result</code> + <code>or_return</code>. Tycho's errors are explicit values; hidden non-local control flow is not obviously an improvement.</li>
+<li>Field defaults and <code>default&lt;T&gt;()</code> remove constructor boilerplate, but <code>Option</code> and explicit constructors already cover the use cases.</li>
+<li>Case functions (spec 8.2) need overloading, which Tycho has deliberately left demand-gated; <code>match</code> already gives exhaustive dispatch.</li>
+<li><code>embed_file</code> makes a single-file program self-contained. It is small and useful for tools and tests, but it is a builtin, not a memory-model change.</li>
+<li><code>simd fn</code> and <code>inline fn</code> are implementation directives. Tycho's C backend already relies on the C compiler for those choices.</li>
+</ul>
+<h2 id="reject-incompatible-or-already-covered">Reject: incompatible or already covered</h2>
+<ul>
+<li><strong>Data stacks / no heap / no allocator.</strong> Tycho's arena model exists to let values escape and copy safely. Replacing it would remove the language's central guarantee.</li>
+<li><strong>References, slices as stored values, relative or narrow links, stable pointers, growth-preserving references.</strong> These are the reference model the project deliberately does not have.</li>
+<li><strong><code>reusable</code> pools with stale-slot reuse.</strong> <code>core:pool</code> already gives Tycho index-plus-generation handles and rejects a stale handle. It is the safer version of the same idiom; keep it conditional, as the benchmark says.</li>
+<li><strong>Inline variable-size records and variable-mode enums.</strong> Goose's largest memory wins, but they need an address-stable layout and sequential access, and the current Tycho data-layout measurements do not justify a new record model. Revisit only with a concrete caller.</li>
+<li><strong>A package manager.</strong> Tycho's vendoring policy is a decided non-goal.</li>
+<li><strong>Static-only function values.</strong> Tycho's escaping closures are a feature, not an accidental cost.</li>
+</ul>
+<h2 id="recommendation">Recommendation</h2>
+<ol>
+<li>Ship destination construction for fresh <code>push</code> values. It earned its keep: ~35–43% less peak RSS and ~17–20% less wall time on the string case.</li>
+<li>Treat guard-derived bounds facts as a rejected experiment; a reporting mode may still be useful, but no speed claim is made.</li>
+<li>Keep inline fixed-size *scalar-payload* enums in both compilers.</li>
+<li>Leave static function specialization and the small ergonomics demand-gated.</li>
+</ol>
+</main>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
+</body>
+</html>

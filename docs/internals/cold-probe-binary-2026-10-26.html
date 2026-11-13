@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cold binary-protocol probe, 2026-10-26 — Tycho docs</title>
+<script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <a class="search-trigger" id="search-open" href="../index.html" aria-haspopup="dialog" aria-controls="search-dialog" aria-keyshortcuts="Control+k Meta+k">Search <kbd aria-hidden="true">Ctrl K</kbd></a>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<dialog class="site-search" id="search-dialog" aria-labelledby="search-title" aria-describedby="search-help">
+ <div class="search-heading-row"><h2 class="search-heading" id="search-title">Search documentation</h2><button type="button" id="search-close" aria-label="Close search">Esc</button></div>
+ <div class="search-panel">
+  <div class="search-input-row"><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-labelledby="search-title" aria-controls="search-results" autocomplete="off" spellcheck="false" autofocus><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button></div>
+  <div id="r" class="search-results"><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div>
+ </div>
+ <p class="search-help" id="search-help">↑ ↓ to move · Enter to open · Esc to close</p>
+</dialog>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a><a href="../quickstart.html">Quickstart</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/1.0-readiness.html">1.0 readiness</a><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/archived-c-compiler.html">The archived C compiler</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/cold-probe-binary-2026-10-26.html" aria-current="page">Cold binary-protocol probe, 2026-10-26</a><a href="../internals/corelib-parity.html">Odin core parity</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-gfx.html">`core:gfx` — value semantics at the SDL3 boundary</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/goose-review.html">Goose review: what transfers to Tycho</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/plan-value-storage-places.html">Plan: ownership-free storage optimization + values vs places</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-graph-2026-10-18.html">Probe: file-backed social graph (relational data as values) — 2026-10-18</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-handles-2026-10-18.html">Probe: entity store with generational handles — 2026-10-18</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/probe-update-2026-10-18.html">Probe: exclusive update callbacks — 2026-10-18</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html">Release notes</a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#what-passed">What passed</a>
+<a href="#friction-that-changed-the-tree">Friction that changed the tree</a>
+<a href="#server-shape-findings">Server-shape findings</a>
+<a href="#remaining-limits">Remaining limits</a>
+<a href="#why-this-is-not-the-10-gate">Why this is not the 1.0 gate</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/cold-probe-binary-2026-10-26.md</nav>
+<h1 id="cold-binary-protocol-probe-2026-10-26">Cold binary-protocol probe, 2026-10-26</h1>
+<blockquote>
+<p><strong>Provenance.</strong> This run used two fresh subagents inside the author's own session: one docs-only writer and one separate spec reviewer. They did not read the compiler, runtime or corelib source. That is a useful second mental model, not an independent third party; the findings stand, the independence does not.</p>
+</blockquote>
+<p><strong>Verdict: the language held; the docs and one missing I/O primitive did not. The probe is not the 1.0 external-program gate.</strong></p>
+<p>The writer built a binary key-value server and client in a sandbox containing only <code>README.md</code>, <code>docs/**</code> and the compiler wrapper. The brief required <code>u32be</code> framing, a 64 KiB cap, partial reads and writes, pipelined frames, eight connections, two concurrent clients, a generic <code>Ring(T)</code>, a <code>bounded[8]</code> connection table, a live <code>select</code>, malformed-frame survival, and a deterministic raw-socket harness. The program was discarded; this record is the artifact.</p>
+<h2 id="what-passed">What passed</h2>
+<ul>
+<li>The writer's own harness: green. It covered the functional corpus, duplicate keys, empty values, spaces, stats accounting, two clients, byte-at-a-time frames, pipelined frames, unknown/empty/malformed/truncated/oversized frames, the ninth-connection refusal, and a final health request.</li>
+<li>The reviewer's independent raw-wire suite: 43 pass, 1 fail, 3 warnings. Client suite: 15 pass. A separate generic <code>Ring</code> full/wrap/clear check passed.</li>
+<li>The generic <code>Ring(T)</code>, <code>bounded[8]</code>, <code>select</code> over channels, fixed worker pool and <code>Result</code> error paths were all expressible from the docs alone.</li>
+</ul>
+<h2 id="friction-that-changed-the-tree">Friction that changed the tree</h2>
+<ul>
+<li><strong>No stdout flush.</strong> <code>print</code>/<code>println</code> are stdio-buffered on a pipe, so the server's <code>READY</code> line was invisible while the process lived. The writer tried libc <code>fflush</code> and <code>write</code> through FFI; both failed against the real C prototypes, and no documented flush existed. <code>io.flush_stdout()</code> now exists (<code>corelib/io/io.ty</code>, <code>corelib/io/io_shim.c</code>) and is covered by <code>corelib/test/io</code>.</li>
+<li><strong><code>bounded[N]T = []</code> starts at count 0.</strong> The docs said "0 to N" but not that an empty initialiser leaves every slot unwritable until <code>push</code>; the writer seed-pushed 65,540 slots. The bounded section in <a href="../reference/arrays-slices.html">arrays-slices</a> now states this and points at <code>arrays.fill</code> for a dynamic backing array.</li>
+<li><strong>A generic struct cannot take <code>$N</code>.</strong> <code>[$N]T</code> is a function-parameter const generic, not a struct capacity; the writer paid one capacity for every <code>Ring(T)</code>. The same doc section now says so.</li>
+<li><strong><code>core:net</code>'s spec entry was stale.</strong> It promised negative-int sentinels; the reference and 0.9.0 return <code>Result(T, NetErr)</code>. The spec entry in <a href="../spec/18-library.html">18-library</a> now matches the implementation and points at the catalogue.</li>
+<li><strong><code>input()</code> cannot distinguish EOF from a blank line.</strong> Both return <code>""</code>; the builtins reference and spec now say so and point at the streaming <code>io.read_line</code> for EOF.</li>
+<li><strong><code>string</code>/<code>bytes</code> NUL wording contradicted itself.</strong> The reference said <code>bytes</code> was not NUL-terminated "unlike <code>string</code>"; both are length-counted and both preserve interior NULs. The <code>bytes</code> section now states the real difference: intent and API contract, not storage.</li>
+</ul>
+<h2 id="server-shape-findings">Server-shape findings</h2>
+<p>The reviewer reproduced three real defects in the <strong>probe</strong>, not in Tycho:</p>
+<ol>
+<li>A connection table keyed only by raw fd leaked slots and aliased new connections after fd reuse.</li>
+<li>Pipelined responses were reordered or lost because normal requests went through the dispatcher while errors were written directly by the reader.</li>
+<li>A blocking write in the dispatcher let one non-reading client stall every other connection and new accepts.</li>
+</ol>
+<p>Those are now stated as rules in the <a href="../reference/concurrency.html#server-shape">server-shape section</a> so the next writer starts with them.</p>
+<h2 id="remaining-limits">Remaining limits</h2>
+<ul>
+<li><code>bounded</code> still has no fill/resize or <code>pop</code>; a pre-sized ring pays seed pushes or uses a dynamic <code>[T]</code>.</li>
+<li>A generic struct still cannot take a const-generic capacity.</li>
+<li>A task cannot be stored, so a per-connection task inside an accept loop joins at the end of each iteration; the worker-pool shape is the documented one.</li>
+<li><code>select</code> is channel-only; socket readiness is not a select arm. A server needs tasks for blocking I/O or <code>net.wait_readable</code>.</li>
+<li>The probe source is not checked in; the record and the doc/corelib changes are the durable result.</li>
+</ul>
+<h2 id="why-this-is-not-the-10-gate">Why this is not the 1.0 gate</h2>
+<p>The writer and reviewer were fresh agents, but they ran inside the author's session. They do not replace a program written by another person or an external security review. The 1.0 conditions in <a href="https://github.com/StefanVonRanda/tycho/blob/main/ROADMAP.md#what-10-requires">ROADMAP</a> remain open.</p>
+</main>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
+</body>
+</html>

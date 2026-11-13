@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Odin core parity — Tycho docs</title>
+<script>(function(){try{var d=document.documentElement;var e=localStorage.getItem('tycho-theme');d.dataset.theme=e||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');}catch(e){}})();</script>
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="masthead">
+ <div class="in">
+  <a class="wordmark" href="../../">TYCHO</a>
+  <nav aria-label="Site">
+    <a href="../../#idea">Overview</a>
+    <a href="../../#costs">Tradeoffs</a>
+    <a href="../../#try">Install</a>
+    <a href="../index.html">Docs</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub ↗</a>
+  </nav>
+  <a class="search-trigger" id="search-open" href="../index.html" aria-haspopup="dialog" aria-controls="search-dialog" aria-keyshortcuts="Control+k Meta+k">Search <kbd aria-hidden="true">Ctrl K</kbd></a>
+  <button class="themebtn" id="tbtn" aria-label="Toggle theme">Theme</button>
+ </div>
+</div>
+<dialog class="site-search" id="search-dialog" aria-labelledby="search-title" aria-describedby="search-help">
+ <div class="search-heading-row"><h2 class="search-heading" id="search-title">Search documentation</h2><button type="button" id="search-close" aria-label="Close search">Esc</button></div>
+ <div class="search-panel">
+  <div class="search-input-row"><input id="q" type="search" placeholder="Search syntax, concepts, or corelib…" data-root="../" aria-labelledby="search-title" aria-controls="search-results" autocomplete="off" spellcheck="false" autofocus><button type="button" class="search-clear" id="search-clear" aria-label="Clear search" hidden>×</button></div>
+  <div id="r" class="search-results"><div id="search-status" class="status" role="status"></div><ul id="search-results" aria-label="Search results"></ul></div>
+ </div>
+ <p class="search-help" id="search-help">↑ ↓ to move · Enter to open · Esc to close</p>
+</dialog>
+<div class="page docs-layout">
+<aside class="docs-sidebar"><details class="docs-nav" open><summary>Browse documentation</summary><nav aria-label="Documentation"><a class="docs-home" href="../index.html">Documentation home</a><details><summary>Guide</summary><a href="../tutorial.html">Tutorial</a><a href="../README.html">Tycho documentation</a><a href="../from-c-to-arenas.html">From `malloc` to implicit arenas</a><a href="../idioms.html">Thinking in Tycho</a><a href="../memory-model.html">The memory model</a><a href="../quiet-results.html">Quiet results — where Tycho answers instead of refusing</a><a href="../performance.html">Performance</a><a href="../platforms.html">Platforms and toolchains, in detail</a><a href="../debugging.html">Debugging generated C</a><a href="../architecture.html">Architecture &amp; project status</a><a href="../thesis.html">The Tycho thesis: value semantics makes implicit arenas work</a><a href="../perf.html">Performance: the compiler and the C it emits</a><a href="../controls.html">Every gate must be able to fail</a><a href="../quickstart.html">Quickstart</a></details><details><summary>Reference</summary><a href="../reference/arrays-slices.html">Arrays and slices</a><a href="../reference/basics.html">Basics</a><a href="../reference/builtins.html">Builtins</a><a href="../reference/concurrency.html">Concurrency</a><a href="../reference/corelib.html">corelib — Tycho's core library</a><a href="../reference/enums-options.html">Enums, options, and `match`</a><a href="../reference/ffi.html">FFI (calling C)</a><a href="../reference/functions.html">Functions and closures</a><a href="../reference/generics.html">Generics</a><a href="../reference/index.html">Tycho language reference</a><a href="../reference/maps.html">Maps</a><a href="../reference/packages.html">Packages</a><a href="../reference/strings.html">Strings</a><a href="../reference/structs-tuples.html">Structs and tuples</a><a href="../reference/subscripts.html">Subscripts (user-defined projections)</a><a href="../reference/types.html">Types</a></details><details><summary>Specification</summary><a href="../spec/00-conventions.html">1. Scope and conformance · 2. Notation</a><a href="../spec/01-lexical.html">3. Lexical structure</a><a href="../spec/02-grammar.html">4. Grammar</a><a href="../spec/03-types.html">5. Types</a><a href="../spec/04-inference.html">6. Type inference</a><a href="../spec/05-generics.html">7. Generics</a><a href="../spec/06-conversions.html">8. Conversions and casts</a><a href="../spec/07-memory-model.html">9. Value semantics · 10. Object lifetimes and storage · 11. `inout`</a><a href="../spec/08-declarations.html">12. Declarations, bindings, and scoping</a><a href="../spec/09-expressions.html">13. Expressions</a><a href="../spec/10-statements.html">14. Statements and control flow</a><a href="../spec/11-functions.html">15. Functions</a><a href="../spec/12-aggregates.html">16. Arrays and slices · 17. Structs, tuples, `soa` · 18. Maps and subscripts · 19. Enums, `Option`, `Result`, `match`</a><a href="../spec/13-concurrency.html">20. The concurrency model · 21. `spawn`/`Task`/`wait` · 22. `parallel for` · 23. Channels and `select`</a><a href="../spec/14-ffi.html">24. `extern` and the C boundary · 25. Typed handles · 26. FFI and concurrency</a><a href="../spec/15-program.html">27. Program structure · 28. Packages and modules</a><a href="../spec/16-builtins.html">29. Builtins</a><a href="../spec/17-runtime.html">30. Defined runtime behavior and failure</a><a href="../spec/18-library.html">31. The library contract · 32. Core-tier packages · 33. Extended-tier packages</a><a href="../spec/README.html">The Tycho language specification</a><a href="../spec/appendix-a-grammar.html">Appendix A — Collected grammar</a><a href="../spec/appendix-b-keywords.html">Appendix B — Keywords and contextual identifiers</a><a href="../spec/appendix-c-precedence.html">Appendix C — Operator precedence and associativity</a><a href="../spec/appendix-d-builtins.html">Appendix D — Builtin index</a><a href="../spec/appendix-e-conformance.html">Appendix E — Conformance test map</a><a href="../spec/appendix-f-impl-defined.html">Appendix F — Unspecified and implementation-defined behavior</a><a href="../spec/appendix-g-glossary.html">Appendix G — Glossary</a><a href="../spec/appendix-h-differences.html">Appendix H — Differences from the reference documentation</a></details><details open><summary>Maintainer records</summary><a href="../internals/1.0-readiness.html">1.0 readiness</a><a href="../internals/FRICTION.html">FRICTION</a><a href="../internals/README.html">Internals</a><a href="../internals/archived-c-compiler.html">The archived C compiler</a><a href="../internals/audit-2026-08-16.html">Security audit, 2026-08-16 — the whole threat model</a><a href="../internals/audit-2026-09-25.html">Defect hunt, 2026-09-25</a><a href="../internals/audit-brief.html">Brief for an external security review</a><a href="../internals/cold-probe-binary-2026-10-26.html">Cold binary-protocol probe, 2026-10-26</a><a href="../internals/corelib-parity.html" aria-current="page">Odin core parity</a><a href="../internals/design-aggregate-ref.html">Design: a cheap reference to an aggregate</a><a href="../internals/design-aggregates.html">Aggregates design note</a><a href="../internals/design-concurrency.html">Concurrency design notes (maintainers)</a><a href="../internals/design-corelib.html">corelib design notes (maintainers)</a><a href="../internals/design-enums.html">Enum design notes (maintainers)</a><a href="../internals/design-ffi.html">FFI design notes (maintainers)</a><a href="../internals/design-functions.html">Function design notes (maintainers)</a><a href="../internals/design-generics.html">Generics design notes (maintainers)</a><a href="../internals/design-gfx.html">`core:gfx` — value semantics at the SDL3 boundary</a><a href="../internals/design-maps.html">Map design notes (maintainers)</a><a href="../internals/design-scalar-match.html">Design: `match` on scalar values</a><a href="../internals/design-subscripts.html">Subscript design notes (maintainers)</a><a href="../internals/editor-churn-2026-08-12.html">Editor churn: rebuild-per-operation on a long-lived value (2026-08-12)</a><a href="../internals/ffi-review-2026-08-14.html">FFI boundary review, 2026-08-14</a><a href="../internals/goose-review.html">Goose review: what transfers to Tycho</a><a href="../internals/plan-repo-polish-DONE.html">Repo polish, after the testing campaign</a><a href="../internals/plan-tycho-chess-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-kvsrv-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-rsa-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-sat-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-scheme-compiler-DONE.html">What the next program says the language needs</a><a href="../internals/plan-tycho-vm-DONE.html">What `tycho-vm` said the language needs</a><a href="../internals/plan-value-storage-places.html">Plan: ownership-free storage optimization + values vs places</a><a href="../internals/probe-ffi-2026-08-19.html">FFI probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-generics-2026-08-19.html">Generics probe, 2026-08-19 — what a first-time reader hits</a><a href="../internals/probe-graph-2026-10-18.html">Probe: file-backed social graph (relational data as values) — 2026-10-18</a><a href="../internals/probe-handle-2026-09-21.html">`handle` probe, 2026-09-21 — 14 findings, eight fixed the same day</a><a href="../internals/probe-handles-2026-10-18.html">Probe: entity store with generational handles — 2026-10-18</a><a href="../internals/probe-layout-2026-09-21.html">Layout/SIMD probe, 2026-09-21 — eight findings on the surface that returned none in September</a><a href="../internals/probe-model-comparison-2026-08-20.html">Two models, same four surfaces — what a probe's instrument is worth</a><a href="../internals/probe-newtype-subscript-bounded-2026-08-19.html">newtype / `subscript` / `bounded` probe, 2026-08-19</a><a href="../internals/probe-procedure.html">Running an agent probe</a><a href="../internals/probe-select-2026-08-19.html">`select` probe, 2026-08-19 — a select that takes no arm at all</a><a href="../internals/probe-simd-2026-09-07.html">Layout/SIMD probe, 2026-09-07 — four new features, no findings</a><a href="../internals/probe-uninit-arena-2026-09-11.html">Probe: uninitialised arena reads, 2026-09-11</a><a href="../internals/probe-update-2026-10-18.html">Probe: exclusive update callbacks — 2026-10-18</a><a href="../internals/roadmap-closed-2026-08.html">Closed 1.0 conditions, August 2026</a><a href="../internals/runtime-tuning.html">Runtime tuning: keeping the per-scope arena tax down</a><a href="../internals/value-semantics-limits.html">Optimizing data structures for the arena model</a><a href="../internals/windows-port.html">Native Windows support — plan (separate track from plan.md)</a><a href="../rfc/README.html">RFCs</a><a href="../rfc/ffi-threading-design-review.html">FFI &amp; Threading — design review and improvement plan</a><a href="../rfc/limited-references-spike.html">Limited references for shared/cyclic structures — research spike</a><a href="../rfc/or-return-mapping.html">`or_return` with a mapping expression</a><a href="../rfc/parallel-for-width.html">A width slot for `parallel for`</a><a href="../rfc/value-lifetime-regions.html">Value-lifetime regions — an arena whose lifetime follows a value</a></details><details><summary>Project</summary><a href="../changelog.html">Changelog</a><a href="../release-notes.html">Release notes</a></details></nav></details></aside>
+<aside class="contents"><details class="contents-nav" open><summary class="eyebrow">On this page</summary><nav aria-label="On this page"><a href="#matrix">Matrix</a>
+<a href="#what-parity-does-not-mean">What parity does not mean</a>
+<a href="#platform-targets">Platform targets</a>
+<a href="#residual-partials">Residual partials</a>
+<a href="#sequence">Sequence</a>
+</nav></details></aside>
+<main class="doc-content" id="main" tabindex="-1">
+<nav class="crumb" aria-label="Breadcrumb"><a href="../index.html">Docs</a> / internals/corelib-parity.md</nav>
+<h1 id="odin-core-parity">Odin core parity</h1>
+<p>Target: <strong>capability parity with Odin's <code>core</code> package tree</strong>, adapted to Tycho's value semantics and implicit arenas. Not line-for-line, not API-for-API. Odin's <code>vendor/</code> tree is a separate ecosystem and out of scope.</p>
+<p>Reference: Odin <code>dev-2026-11a</code> (<code>core</code> is 40 packages, 1,433 files, ~609k lines). The current Tycho corelib is 89 packages, ~26.5k lines, 1306 locked public functions.</p>
+<p>Status values:</p>
+<ul>
+<li><strong>covered</strong> — the capability exists and is usable.</li>
+<li><strong>partial</strong> — a useful subset exists; the named gap is real.</li>
+<li><strong>missing</strong> — no equivalent.</li>
+<li><strong>non-goal</strong> — deliberately excluded by the language design.</li>
+</ul>
+<h2 id="matrix">Matrix</h2>
+<table>
+<tr><th>Odin core</th><th>Status</th><th>Tycho today</th><th>Plan</th></tr>
+<tr><td><code>bufio</code></td><td>covered</td><td><code>core:bufio</code> in-memory reader/writer plus <code>core:scanner</code></td><td>none</td></tr>
+<tr><td><code>bytes</code></td><td>covered</td><td>immutable <code>bytes</code> plus mutable <code>core:buffer</code></td><td>none</td></tr>
+<tr><td><code>c</code></td><td>non-goal</td><td><code>extern fn</code> FFI plus internal <code>*_shim.c</code> files</td><td>none</td></tr>
+<tr><td><code>compress</code></td><td>covered</td><td>gzip/zlib, raw DEFLATE, LZ4, xz, bzip2, PPMd7/PPMd8, PKZIP Shrink/Reduce/Implode, Deflate64 (ZIP method 9), shoco, BCJ2, delta, BCJ for x86/ARM/ARM Thumb/ARM64/PowerPC/SPARC/IA64/RISC-V, and swap2/swap4</td><td>none</td></tr>
+<tr><td><code>container</code></td><td>covered</td><td><code>Deque</code>/<code>Queue</code>, <code>PriorityQueue</code>, <code>BitArray</code>, <code>Lru</code>, ordered <code>Treap</code>/<code>Avl</code>/<code>RbTree</code>, <code>HandleMap</code>, <code>SmallArray</code>, <code>Xar</code>, <code>topo_sort</code></td><td>intrusive containers need references (non-goal)</td></tr>
+<tr><td><code>crypto</code></td><td>covered</td><td>OpenSSL shims: ChaCha20-Poly1305 and AES-GCM AEAD, AES-CTR, AES-CBC, RSA PKCS#1 v1.5, ECDSA P-256, Ed25519, X25519, ML-DSA, ML-KEM, SHA-256/512, SHA-3/SHAKE, BLAKE2, HMAC-SHA256/512, PBKDF2, HKDF, Argon2id, CSPRNG; ASN.1 DER/BER and X.509 in their own packages</td><td>none</td></tr>
+<tr><td><code>debug</code></td><td>covered</td><td><code>assert</code>, <code>trace</code>, <code>enabled</code>, <code>stack_trace</code>; runtime traps and <code>tycho-debug bt</code></td><td>PE introspection is platform-specific tooling</td></tr>
+<tr><td><code>diff</code></td><td>covered</td><td><code>diff.lines</code> and <code>diff.unified</code> (LCS, bounded fallback)</td><td>none</td></tr>
+<tr><td><code>dynlib</code></td><td>covered</td><td><code>open</code>, <code>symbol</code>, <code>close_lib</code> over <code>dlopen</code>/<code>LoadLibrary</code>, typed invocation of C function pointers (<code>call_i32_0</code>..<code>call_ptr_1</code>), and C-to-Tycho callbacks for named scalar/<code>ptr</code> functions (<code>apply_i32_i32</code>). Closures and function variables are not accepted as C callbacks</td><td>none</td></tr>
+<tr><td><code>encoding</code></td><td>covered</td><td><code>base64</code>, <code>base32</code>, <code>hex</code>, <code>json</code>, <code>csv</code>, <code>uuid</code>, <code>pem</code>, <code>ini</code>, <code>varint</code>, <code>endian</code>, <code>xml</code>, <code>cbor</code>, <code>asn1</code>, <code>entity</code>, <code>hxa</code></td><td>none</td></tr>
+<tr><td><code>flags</code></td><td>covered</td><td><code>cli.parse</code>/<code>parse_spec</code> and <code>cli.flag</code></td><td>none</td></tr>
+<tr><td><code>fmt</code></td><td>covered</td><td><code>format_int</code>, <code>format_float</code>, <code>pad_left</code>/<code>pad_right</code> plus <code>str</code>/f-strings</td><td>none</td></tr>
+<tr><td><code>hash</code></td><td>covered</td><td>FNV-1a 32/64, djb2, sdbm, CRC16/32/64, Adler-32, Murmur3 and xxHash 32/64</td><td>none</td></tr>
+<tr><td><code>image</code></td><td>covered</td><td>PNG encode/decode, baseline JPEG encode/decode, BNG decode/encode, <code>raster</code> BMP/QOI/TGA/PPM/PGM/PBM</td><td>none</td></tr>
+<tr><td><code>io</code></td><td>covered</td><td>file read/write/append/copy/stat/dirs, checked variants, stdin/stdout, line reader</td><td>no generic <code>Reader</code>/<code>Writer</code> interface; concrete values are the design</td></tr>
+<tr><td><code>log</code></td><td>covered</td><td>leveled logger, stderr/file choice, <code>new</code>/<code>line</code></td><td>none</td></tr>
+<tr><td><code>math</code></td><td>covered</td><td><code>math</code>, <code>fmath</code> (trig/exp/log/hypot), <code>decimal</code>, <code>bignum</code>, <code>rand</code>, <code>linalg</code>, <code>complex</code>, <code>fixed</code>, <code>ease</code>, <code>noise</code>, <code>bits</code></td><td>none</td></tr>
+<tr><td><code>mem</code></td><td>non-goal</td><td>implicit arenas; no public allocator API</td><td>none — explicit allocators, virtual memory and TLSF are a different memory model</td></tr>
+<tr><td><code>nbio</code></td><td>covered</td><td><code>nbio.poll</code> over <code>poll(2)</code>/<code>WSAPoll</code>; <code>CompletionLoop</code> with epoll (Linux), kqueue (BSD/macOS) and IOCP (Windows), including posted completions and fd readiness. epoll and IOCP are runtime-tested here; kqueue is implemented but has no BSD host in this tree</td><td>none</td></tr>
+<tr><td><code>net</code></td><td>covered</td><td>TCP/UDP, timeouts, TLS, HTTP/HTTPD; DNS <code>resolve</code> plus MX/TXT/SRV parsing, UDP querying and TCP fallback; socket options; POSIX Unix sockets; <code>interfaces</code>; IPv4/IPv6/endpoint parse and format; prefix network/containment</td><td>none</td></tr>
+<tr><td><code>odin</code></td><td>non-goal</td><td>Tycho has its own compiler packages</td><td>none</td></tr>
+<tr><td><code>os</code></td><td>covered</td><td>process execution, environment, cwd/chdir, pid/ppid, hostname, home/temp/cache/config/data dirs, temp files/dirs, user name, pipes/fd I/O, <code>chmod</code>/<code>umask</code>, uid/gid, <code>io.walk</code></td><td>process signals live in <code>core:signal</code></td></tr>
+<tr><td><code>path</code></td><td>covered</td><td>POSIX <code>path</code> plus Windows lexical <code>filepath</code> (clean/join/volume/base/dir/ext/stem)</td><td>native path opening still goes through <code>io</code></td></tr>
+<tr><td><code>prof</code></td><td>covered</td><td>manual <code>Span</code> timing and <code>report</code>, deterministic <code>sample_spans</code>, and Spall trace <code>encode_trace</code>/<code>decode_trace</code></td><td>none</td></tr>
+<tr><td><code>reflect</code></td><td>non-goal</td><td>compile-time <code>typeof</code>, generics, <code>size_of$</code>; no runtime type metadata</td><td>keep runtime reflection out unless metadata is added deliberately</td></tr>
+<tr><td><code>relative</code></td><td>non-goal</td><td>no references by decision</td><td>none</td></tr>
+<tr><td><code>rexcode</code></td><td>non-goal</td><td>Odin's RISC-V toolchain, not a library capability</td><td>none</td></tr>
+<tr><td><code>simd</code></td><td>non-goal</td><td>language <code>vector[N]T</code> arithmetic is the SIMD surface; architecture intrinsics are codegen, not a library package</td><td>none</td></tr>
+<tr><td><code>slice</code></td><td>non-goal</td><td><code>[T]</code> is the slice; no separate heap-slice type</td><td>none</td></tr>
+<tr><td><code>sort</code></td><td>covered</td><td><code>sort</code> with generic ordering</td><td>none</td></tr>
+<tr><td><code>strconv</code></td><td>covered</td><td>decimal/base 2..36 parse and format, fixed float, widths via <code>fmt</code>, <code>format_g17</code>, builtin <code>str</code></td><td>none</td></tr>
+<tr><td><code>strings</code></td><td>covered</td><td>case, trim, split, fields, find, replace, pad, reverse, escapes, parsing</td><td>add a builder if measured concatenation cost demands it</td></tr>
+<tr><td><code>sync</code></td><td>covered</td><td>C11 atomics (int/bool/pointer), <code>Mutex</code>, <code>RwLock</code>, <code>Cond</code>, <code>Semaphore</code>, <code>WaitGroup</code>, <code>Once</code>, <code>Barrier</code>, recursive mutex; channels are language builtins</td><td>ticket mutex (not a capability gap)</td></tr>
+<tr><td><code>sys</code></td><td>non-goal</td><td>libc and shims are the portability boundary</td><td>none</td></tr>
+<tr><td><code>terminal</code></td><td>covered</td><td>ANSI escapes, tty/size, raw mode, byte read, key decoding, <code>cursor_query</code>/<code>cursor_position</code> with DSR parsing, and non-console Windows tty fallbacks</td><td>none</td></tr>
+<tr><td><code>testing</code></td><td>covered</td><td><code>T</code>, <code>check</code>, <code>eq</code>, <code>report</code>, <code>subtest</code>/<code>merge</code>, <code>bench</code>, <code>report_bench</code></td><td>none</td></tr>
+<tr><td><code>text</code></td><td>covered</td><td><code>strings</code>, <code>utf8</code>, <code>utf16</code>, <code>char</code>, <code>regex</code>, <code>textmatch</code> (including <code>%b</code>, <code>%f</code> and non-greedy <code>-</code>), <code>edit</code>, <code>scanner</code>, <code>table</code>, <code>glob</code>, GNU MO and Qt <code>.qm</code> <code>i18n</code>, and locale data</td><td>none</td></tr>
+<tr><td><code>thread</code></td><td>covered</td><td>language <code>spawn</code>/<code>wait</code> (one OS thread per task), channels, <code>parallel for</code>; <code>thread.id</code>/<code>yield_now</code>/<code>cpus</code>, synchronous <code>thread.run</code>, and 32-slot per-thread <code>local_set</code>/<code>local_get</code></td><td>none</td></tr>
+<tr><td><code>time</code></td><td>covered</td><td>monotonic stopwatch, unix time, sleep, civil date, ISO/CLF parse and format, local offset, IANA TZif zones via <code>core:tz</code> including the POSIX footer and leap-second records</td><td>none</td></tr>
+<tr><td><code>unicode</code></td><td>covered</td><td><code>utf8</code>, <code>utf16</code>, full case mapping/folding, titlecase mapping, UAX #15 normalization, UAX #29 grapheme/word segmentation, UCD general-category/script/block/emoji classification</td><td>none</td></tr>
+</table>
+<h2 id="what-parity-does-not-mean">What parity does not mean</h2>
+<ul>
+<li>No general allocator parameter on corelib APIs. Arenas stay implicit, so Odin's <code>mem</code> allocator/virtual/TLSF surface is a non-goal rather than a gap.</li>
+<li>No references, <code>defer</code>, or manual <code>free</code> contract introduced to mirror Odin.</li>
+<li>No raw syscall surface. Platform depth arrives through shims with a documented portable API.</li>
+<li>No runtime type metadata solely to support <code>reflect</code>.</li>
+<li>No package added without golden tests, reference docs and a <code>surface.lock</code> record.</li>
+</ul>
+<h2 id="platform-targets">Platform targets</h2>
+<p>Odin's core also carries platform targets: <code>core/sys/android</code> (45 files, ~4k lines) and <code>core/sys/darwin</code> (122 files, ~48k lines), with Android/Darwin branches in <code>os</code>, <code>net</code>, <code>log</code>, <code>sync</code>, <code>thread</code> and <code>time</code>.</p>
+<table>
+<tr><th>Target</th><th>Status</th><th>Evidence / gap</th></tr>
+<tr><td>Linux x86-64</td><td>supported</td><td>full <code>make ci</code>, release archive</td></tr>
+<tr><td>Windows x86-64</td><td>supported</td><td>mingw build + Wine smoke, release archive</td></tr>
+<tr><td>macOS arm64</td><td>supported</td><td>darwin-arm64 <code>make ci</code>, release archive</td></tr>
+<tr><td>Android</td><td><strong>supported</strong></td><td>NDK r28c cross-compile + qemu-user runtime: <code>make android-check</code> is green for 84 corelib tests on x86_64 and aarch64 at API 34. The host emulator 37.2.12 segfaults on this Fedora kernel, so runtime evidence is qemu-user with bionic, not the emulator. JNI/asset-manager/APK bindings are not part of corelib parity</td></tr>
+<tr><td>iOS</td><td><strong>supported</strong></td><td>Xcode 27.2 iOS Simulator: <code>make ios-check</code> is green for 81 corelib tests; the same emitted C also builds for the arm64 device SDK (platform 2). No signed physical-device run. <code>core/sys/darwin</code> raw bindings are not part of corelib parity</td></tr>
+</table>
+<p><code>supported</code> in this table means the corelib target gate is green. For Android and iOS that is not an end-user platform claim: no APK, Xcode project, JNI or asset-manager binding, or signed-device run ships.</p>
+<p>Android and iOS are separate target gates: <code>make android-check</code> on Linux with the NDK/qemu-user, <code>make ios-check</code> on macOS with Xcode and a simulator runtime. <code>os.platform()</code> and the <code>is_android</code>/<code>is_ios</code> predicates are exercised by both.</p>
+<h2 id="residual-partials">Residual partials</h2>
+<p>None. Every row above is either <strong>covered</strong> or an explicit <strong>non-goal</strong>.</p>
+<h2 id="sequence">Sequence</h2>
+<ol>
+<li><strong>Parity matrix</strong> — done; this page is the record.</li>
+<li><strong>Foundations</strong> — done: <code>core:container</code> and <code>core:sync</code> with atomics.</li>
+<li><strong>Platform</strong> — done: environment, cwd, identities, cache/config/data dirs, <code>io.walk</code>, <code>path.relative</code>, Unix sockets, interface enumeration.</li>
+<li><strong>Data and text</strong> — done: Base32, varint, endian, PEM, INI, UTF-16, edit, XML, CBOR, ASN.1, scanner, <code>fmt</code>, <code>bufio</code>, <code>diff</code>, entity decoding, full Unicode case mapping/folding, UAX #15 normalization, UAX #29 grapheme/word segmentation, Qt <code>.qm</code> catalogs, locale data and native Lua <code>%b</code>/<code>%f</code>/non-greedy patterns.</li>
+<li><strong>Crypto</strong> — done: SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF, AES-GCM/CTR/CBC, RSA, ECDSA, Ed25519, X25519, ML-DSA, ML-KEM, Argon2id and X.509.</li>
+<li><strong>Formats and media</strong> — done: TGA, Netpbm PPM/PGM/PBM, LZ4, baseline JPEG encode/decode and BNG joined PNG/BMP/QOI/HXA.</li>
+<li><strong>Runtime and diagnostics</strong> — done: <code>debug</code>, <code>prof</code> spans plus deterministic sampling and Spall trace output, <code>terminal</code> including cursor queries, <code>dynlib</code> including C function-pointer invocation and named C-to-Tycho callbacks, <code>nbio.poll</code> plus epoll/kqueue/IOCP completion loops, <code>thread</code> raw task threads and TLS; raw SIMD intrinsics stay a non-goal because <code>vector[N]T</code> is the language surface.</li>
+<li><strong>Continuous gates</strong> — every package lands with <code>corelib/test/&lt;pkg&gt;</code>, <code>docs/reference/corelib.md</code> entries, and a deliberate <code>surface.lock</code> update. <code>make check-fast</code> per change; full CI at milestones. The new byte-decoding codecs are fuzzed by <code>make fuzz-newcomers</code> under ASan+UBSan.</li>
+</ol>
+</main>
+</div>
+<footer class="site-footer page">
+  <div class="fbrand">TYCHO</div>
+  <nav class="flinks" aria-label="Footer">
+    <a href="../tutorial.html">Tutorial</a>
+    <a href="../reference/index.html">Reference</a>
+    <a href="../thesis.html">The thesis</a>
+    <a href="../idioms.html">Thinking in Tycho</a>
+    <a href="../changelog.html">Changelog</a>
+    <a href="https://github.com/StefanVonRanda/tycho">GitHub</a>
+  </nav>
+  <div class="fgiant" aria-hidden="true">TYCHO</div>
+  <div class="legal"><a href="https://github.com/StefanVonRanda/tycho/blob/main/LICENSE">MIT</a><span>tycho-lang.com</span></div>
+</footer>
+</body>
+</html>
