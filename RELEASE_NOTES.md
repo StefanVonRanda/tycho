@@ -1,7 +1,7 @@
 Tycho 0.9.2 — pre-1.0, no stability guarantees.
 
 0.9.2 expands the core library to cover the Odin `core` capability set and adds
-Android and iOS target support. This is capability parity, not API parity:
+Android and iOS compiler target gates. This is capability parity, not API parity:
 Tycho keeps its value semantics, implicit arenas and `Result` model, so Odin
 code does not compile unchanged.
 
@@ -25,11 +25,14 @@ codec. The vendored codecs add no runtime library dependency.
 
 ## Platforms
 
-- Linux x86-64
-- Windows x86-64
-- macOS arm64
-- Android x86-64 and aarch64
-- iOS simulator and arm64 device builds
+Prebuilt archives are attached for **Linux x86-64**, **Windows x86-64** and
+**macOS arm64**. The macOS archive is built natively on Apple Silicon and
+smoke-tested there; it is not a cross-compiled binary.
+
+**Android** and **iOS** are compiler target gates, not end-user platforms in
+0.9.2. `make android-check` and `make ios-check` build and run dependency-free
+corelib tests for those targets; no app archive, APK, Xcode project, JNI binding
+or signed-device run is shipped.
 
 ## Known limitations
 
@@ -41,5 +44,3 @@ codec. The vendored codecs add no runtime library dependency.
 - Tycho is pre-1.0. The language surface and corelib API may change before 1.0.
 
 Prebuilt archives and checksums are attached to this release.
-
-Tycho 0.9.2 is pre-1.0; the language surface and corelib API may change.

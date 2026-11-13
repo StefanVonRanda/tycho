@@ -17,12 +17,14 @@ needs that an insider would not think to write down.
 
 ## 1. What the thing is, in one paragraph
 
-Tycho is a compiled language whose compiler (`src/tychoc.c`, a single
-dependency-free C file) **transpiles to C** and hands the result to `cc`. There
-is no VM and no runtime interpreter. Programs get value semantics, arena
-allocation freed at scope exit, and an affine `handle` type whose destructor runs
-at scope exit. The standard library (`corelib/`, 89 packages) is written in Tycho
-except where it binds a system library, and those bindings are the subject below.
+Tycho is a compiled language whose self-hosted compiler (`compiler/`, about
+26k lines of Tycho) **transpiles to C** and hands the result to `cc`;
+`bootstrap/tycho_compiler.c` is the generated cold-start artifact, not a second
+implementation. There is no VM and no runtime interpreter. Programs get value
+semantics, arena allocation freed at scope exit, and an affine `handle` type
+whose destructor runs at scope exit.
+The standard library (`corelib/`, 89 packages) is written in Tycho except where
+it binds a system library, and those bindings are the subject below.
 
 **The security-relevant consequence of the design:** a Tycho program's memory
 safety is whatever the emitted C has, plus whatever the hand-written C shims
@@ -120,26 +122,26 @@ until a deliberately wrong expectation has been shown to fail.
 
 ## 4b. There is a released artifact now
 
-0.7.0 shipped 2026-08-15 with prebuilt Linux and Windows tarballs, so a reviewer
-does not have to build anything to start:
+0.9.2 shipped 2026-11-12 with prebuilt Linux, Windows and macOS tarballs, so a
+reviewer does not have to build anything to start:
 
 ```
-gh release download v0.7.0 -R StefanVonRanda/tycho
-sha256sum -c tycho-v0.7.0-linux-x86_64.tar.gz.sha256
+gh release download v0.9.2 -R StefanVonRanda/tycho
+sha256sum -c tycho-v0.9.2-linux-x86_64.tar.gz.sha256
+shasum -a 256 -c tycho-v0.9.2-darwin-arm64.tar.gz.sha256
 ```
 
-The source at tag `v0.7.0` is what those binaries were built from, verified by
-running the whole `tests/reject/` corpus through the extracted compiler before
-publishing. Building from source is still the better basis for a review — the
-tarball tells you nothing about how it was made — but the artifact is there if
-you want to reproduce a finding against exactly what users get.
+The source at tag `v0.9.2` is what those binaries were built from. Building from
+source is still the better basis for a review — the tarball tells you nothing
+about how it was made — but the artifact is there if you want to reproduce a
+finding against exactly what users get.
 
 ## 5. Reproducing anything here
 
 No cloud CI, deliberately. Everything runs locally with a C compiler and `make`.
 
 ```
-make                      # build ./tychoc -- one C file, no dependencies
+make                      # build ./tychoc from the self-hosted compiler
 make test                 # 1039 fixtures under ASan/UBSan/LeakSanitizer
 make corelib              # every corelib package against its golden
 make ci                   # the whole sweep, four lanes in parallel

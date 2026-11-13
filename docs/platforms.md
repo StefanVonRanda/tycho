@@ -28,6 +28,9 @@ MSVC is not a supported C target and is not planned. Native Windows means MSYS2
 ## macOS / Apple Silicon
 
 `make ci` is green on `darwin-arm64`. Setup is `xcode-select --install`.
+0.9.2 ships a `darwin-arm64` archive built natively on Apple Silicon;
+`scripts/release.sh` compiles a program from the extracted tarball before
+publishing it.
 
 It carries **12 skips over 7 causes**, each printing its reason: gdb,
 `-Wl,--wrap`, the glibc symbol floor, `ilp32`, `resource.prlimit`, an x86-64
@@ -37,6 +40,23 @@ It carries **12 skips over 7 causes**, each printing its reason: gdb,
 the raytrace and mandelbrot leak legs do not run on macOS. ASan, UBSan and TSan
 all do. Linux is the only host that scores leaks, which is why a leak regression
 must be caught there.
+
+## Mobile target gates
+
+Android and iOS are **compiler target gates**, not end-user platforms. Both
+build the same emitted C; neither ships an app template, APK, Xcode project,
+JNI/asset-manager binding or signed-device run.
+
+- **Android** — `make android-check` cross-compiles the dependency-free corelib
+  tests with the NDK and runs the static bionic binaries under qemu-user. Green
+  for 84 tests on x86_64 and aarch64 at API 34. The host emulator crashes on
+  this Fedora kernel, so runtime evidence is qemu-user, not the emulator.
+- **iOS** — `make ios-check` runs 81 dependency-free corelib tests in the Xcode
+  iOS Simulator and builds the same emitted C against the arm64 device SDK.
+  There is no signed physical-device run.
+
+Neither gate is part of `make ci` on Linux; run them on a host with the NDK or
+Xcode. They are not release archives.
 
 ## Linux
 

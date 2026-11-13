@@ -69,14 +69,13 @@ about whether this is a language someone would choose to use.
 
 ## What is not done
 
-**Platforms.** Artifacts exist for `linux-x86_64`, `mingw64-x86_64` and
-**`darwin-arm64`** — built by `scripts/release.sh`, byte-identical across two
-builds (`make release-check`), and content-gated (`make release-content`). The
-macOS archive is **built, not published**: `gh release create` is the owner's
-to run, and it is verified on the build box only. The `darwin-arm64` gate is
-green with enumerated skips, one of which is a real coverage loss (Apple's ASan
-ships no LeakSanitizer, so leak legs run on Linux only). Running the gate on a
-new platform found and fixed latent defects in shipped code. Details are in
+**Platforms.** 0.9.2 attaches archives for `linux-x86_64`, `mingw64-x86_64` and
+**`darwin-arm64`** — built by `scripts/release.sh` on the matching host, with
+the macOS one smoke-tested from the extracted tarball before upload. The
+`darwin-arm64` gate is green with enumerated skips, one of which is a real
+coverage loss (Apple's ASan ships no LeakSanitizer, so leak legs run on Linux
+only). Running the gate on a new platform found and fixed latent defects in
+shipped code. Details are in
 [ROADMAP](ROADMAP.md#1-it-runs-where-developers-are).
 
 **Two external requirements for 1.0 remain:**
@@ -107,7 +106,6 @@ index-pool idiom is the answer; references are refused by decision
   or runtime. On 2026-10-15, the append changes passed 1,149 fixture checks with
   each compiler and the self-hosting fixpoint; that is not a full `make ci` run.
   Keep regression gates and external review as requirements, not conclusions.
-- **Publishing the macOS/ARM64 build** (`gh release create`, owner's call).
 - **One other person writing one real program**, which is the actual 1.0 gate.
 - **Ergonomics work**, ranked by counting sites as surface changes were.
 
