@@ -343,17 +343,17 @@ run_winkvm() {  # $1 = ssh host running the KVM Windows VM
     cp "$ROOT/scripts/platform/win11x64/payload.ps1" "$W/payload.ps1"
     ( cd "$W" && tar -rf tree.tar payload.ps1 ) 2>/dev/null
     gzip -c "$W/tree.tar" > "$W/tree.tgz"
-    scp -q "$W/tree.tgz" "$h:vm/win11x64/tree.tgz" 2>/dev/null \
+    scp -q "$W/tree.tgz" "$h:vms/win11x64/tree.tgz" 2>/dev/null \
         || { rm -rf "$W"; echo "WINKVM-UPLOAD-FAILED"; return; }
     # Written BEFORE the temp dir is removed. It was after, and the lane died on
     # "No such file or directory" for a path it had just deleted.
     [ "$FULL" = 1 ] && : > "$W2fx" || printf '%s' "$FIXTURES" > "$W2fx"
-    scp -q "$W2fx" "$h:vm/win11x64/fixtures.txt" 2>/dev/null
+    scp -q "$W2fx" "$h:vms/win11x64/fixtures.txt" 2>/dev/null
     rm -rf "$W"
-    scp -q "$ROOT/scripts/platform/win11x64/remote_run.sh" "$h:vm/win11x64/remote_run.sh" 2>/dev/null
+    scp -q "$ROOT/scripts/platform/win11x64/remote_run.sh" "$h:vms/win11x64/remote_run.sh" 2>/dev/null
     # bash -s, not the login shell: that box runs zsh, which does not word-split
     # an unquoted variable, so an inline `$G "cmd"` became one filename.
-    ssh -o BatchMode=yes "$h" 'bash ~/vm/win11x64/remote_run.sh' </dev/null 2>&1
+    ssh -o BatchMode=yes "$h" 'bash ~/vms/win11x64/remote_run.sh' </dev/null 2>&1
 }
 
 run_ssh() {  # $1 = host alias

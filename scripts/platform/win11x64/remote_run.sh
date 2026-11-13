@@ -9,7 +9,7 @@
 #
 #   remote_run.sh          run the fixture list in fixtures.txt (all if absent)
 set -u
-VM=~/vm/win11x64
+VM=~/vms/win11x64
 G="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 G="$G -o LogLevel=ERROR -o BatchMode=yes -p 2223 tycho@127.0.0.1"
 S="scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"

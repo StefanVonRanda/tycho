@@ -9,7 +9,7 @@ set -eu
 # Runs on the Linux host, not the Mac -- the ESD is already there and the VM
 # will be there.
 here="$(cd "$(dirname "$0")" && pwd)"
-VMDIR="${VMDIR:-$HOME/vm/win11x64}"
+VMDIR="${VMDIR:-$HOME/vms/win11x64}"
 ESD="$VMDIR/win11x64.esd"
 OUT="$VMDIR/win11x64-unattend.iso"
 VIRTIO="$VMDIR/virtio-win.iso"

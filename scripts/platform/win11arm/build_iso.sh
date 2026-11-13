@@ -15,8 +15,8 @@ set -eu
 # Usage: sh build_iso.sh [ESD] [OUT.iso]
 
 here="$(cd "$(dirname "$0")" && pwd)"
-ESD="${1:-$HOME/vm/win11arm/win11arm64.esd}"
-OUT="${2:-$HOME/vm/win11arm/win11arm64-unattend.iso}"
+ESD="${1:-$HOME/vms/win11arm/win11arm64.esd}"
+OUT="${2:-$HOME/vms/win11arm/win11arm64-unattend.iso}"
 PRO_INDEX=6
 
 [ -f "$ESD" ] || { echo "no ESD at $ESD" >&2; exit 2; }
@@ -53,7 +53,7 @@ echo ">>> [4/5] answer file + provisioning + ARM64 virtio drivers"
 # the wrong letter fails silently -- Setup just installs with no NIC, which is
 # a VM you cannot reach and cannot diagnose (no network, no display, both
 # devices being virtio). On the install media the path is fixed and known.
-UTMTOOLS="${UTMTOOLS:-$HOME/vm/win11arm/utm-guest-tools.iso}"
+UTMTOOLS="${UTMTOOLS:-$HOME/vms/win11arm/utm-guest-tools.iso}"
 if [ ! -f "$UTMTOOLS" ]; then
     echo "    fetching UTM guest tools (the only source of ARM64 virtio drivers)"
     curl -sL --retry 3 -o "$UTMTOOLS" \

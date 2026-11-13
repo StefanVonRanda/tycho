@@ -15,7 +15,7 @@ rather than a broken typist. Anything unmapped is now a hard error.
 """
 import socket, sys, time
 
-SOCK = "/home/igzo/vm/win11x64/monitor.sock"
+SOCK = "/home/igzo/vms/win11x64/monitor.sock"
 BASE = "abcdefghijklmnopqrstuvwxyz0123456789"
 SHIFTED = {  # US layout
     "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",

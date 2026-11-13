@@ -27,7 +27,7 @@ set -eu
 #
 #   install | start | stop | status | ssh | destroy
 
-VMDIR="${VMDIR:-$HOME/vm/win11x64}"
+VMDIR="${VMDIR:-$HOME/vms/win11x64}"
 DISK="$VMDIR/win11x64.qcow2"
 NVRAM="$VMDIR/efi_vars.fd"
 ISO="$VMDIR/win11x64-unattend.iso"

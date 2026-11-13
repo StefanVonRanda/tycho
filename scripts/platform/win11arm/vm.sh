@@ -23,7 +23,7 @@ set -eu
 #   sh vm.sh destroy   delete the disk
 
 here="$(cd "$(dirname "$0")" && pwd)"
-VMDIR="${TYCHO_WINVM_DIR:-$HOME/vm/win11arm}"
+VMDIR="${TYCHO_WINVM_DIR:-$HOME/vms/win11arm}"
 DISK="$VMDIR/win11arm64.qcow2"
 NVRAM="$VMDIR/efi_vars.fd"
 ISO="$VMDIR/win11arm64-unattend.iso"
