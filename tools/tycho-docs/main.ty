@@ -557,7 +557,10 @@ fn build(docs_dir: string, out_dir: string):
         push(rels, name + ".md")
         push(sources, text)
         push(outs, strings.replace(strings.to_lower(name), "_", "-") + ".html")
-        push(titles, title_of(text))
+        title := title_of(text)
+        if len(title) == 0:
+            title = "Release notes"
+        push(titles, title)
         push(groups, "Project")
     search := "["
     n := 0
