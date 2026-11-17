@@ -32,6 +32,31 @@ fn count(xs: [$T], x: $T) -> int:             # number of elements equal to x
             n = n + 1
     return n
 
+# ---- index helpers (arrays used as index pools) ----
+fn push_index(xs: inout [$T], v: $T) -> int:   # append v; returns its index
+    push(xs, v)
+    return len(xs) - 1
+
+# A "maybe index": one int, -1 meaning none -- no Option tag or padding. A
+# newtype, so a raw int does not pass for one by accident.
+type OptIndex = int
+
+fn no_index() -> OptIndex:
+    return OptIndex(0 - 1)
+
+fn some_index(i: int) -> OptIndex:           # i must be >= 0
+    if i < 0:
+        die("arrays.some_index: negative index " + str(i))
+    return OptIndex(i)
+
+fn is_none(o: OptIndex) -> bool:
+    return to_int(o) < 0
+
+fn get_or(o: OptIndex, dflt: int) -> int:     # the index, or dflt when none
+    if to_int(o) < 0:
+        return dflt
+    return to_int(o)
+
 # ---- reshaping (any element type) ----
 fn reverse(xs: [$T]) -> [$T]:                 # returns a new reversed array
     out := []

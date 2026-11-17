@@ -243,7 +243,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   (`where numeric` — int/float); `join(xs, sep)` (`where` the element converts to a string).
   All return a new array — value semantics, the input is never mutated. `min`/`max`/`sum`/
   `product` seed from `xs[0]`, so they need a non-empty array. (`push`/`pop`/`len`/`range`
-  are builtins; higher-order `map`/`filter`/`reduce` live in `iter`.)
+  are builtins; higher-order `map`/`filter`/`reduce` live in `iter`.) Index-pool helpers:
+  `push_index(&xs, v) -> int` appends and returns the new index (the one helper that
+  mutates its input); `OptIndex` is a "maybe index" stored as one int, `-1` for none —
+  `no_index()`, `some_index(i)`, `is_none(o)`, `get_or(o, default)`.
 - **`iter`** — generic higher-order helpers over any `[T]`, each taking a `fn`/closure:
   `map` (two type variables — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, the only one that may change element type, so `iter.map(nums, to_str)` is a `[string]`), `filter`, `reduce`, `count`, `any`.
   Fallible stages get two siblings whose callback returns a `Result`:
@@ -278,6 +281,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   order — the way to walk a pool). A `Handle` carries a slot index plus a
   generation; every access checks the generation, so a handle to a freed-and-
   reused slot is caught at runtime instead of silently reading the new occupant.
+  Typed ids: `add_typed(&p, v) -> Id($T)` with `get_typed`, `set_typed` and
+  `remove_typed` bind a handle to its element type, so an `Id(Edge)` passed to a
+  `Pool(Node)` is a compile error (`id.h` is the plain `Handle`). `Id` is a struct, not
+  a newtype — newtypes take no type parameters — and carries an always-empty `[$T]` field
+  to fix `$T`, so it is 32 bytes rather than 8.
   Create one with `p := pool.Pool([]pool.Slot(int), []int)`. It removes the
   hand-rolled bookkeeping, not the cost: pointer-shaped storage costs more in
   this model (see [value-semantics limits](../internals/value-semantics-limits.md)).

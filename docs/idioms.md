@@ -47,6 +47,44 @@ packaged generational pool: per-slot generations reject stale indices instead
 of silently aliasing a reused slot. The full figures are in
 [internals/value-semantics-limits.md](internals/value-semantics-limits.md).
 
+## Pools with subscripts: name the slot, type the id
+
+Three helpers take the noise out of an index pool. `arrays.push_index` appends
+and hands back the new slot's index. A `subscript` names the slot, so
+`g.node(i).weight = 10` replaces `g.nodes[i].weight = 10`. `arrays.OptIndex`
+is a "maybe index" stored as one int (`-1` is none), with no `Option` tag.
+
+```tycho
+package main
+import "core:arrays"
+
+struct Node:
+    weight: int
+    parent: arrays.OptIndex
+struct Graph:
+    nodes: [Node]
+
+subscript node(g: Graph, i: int) -> inout Node:
+    yield &g.nodes[i]
+
+fn main():
+    g := Graph([]Node)
+    root := arrays.push_index(&g.nodes, Node(1, arrays.no_index()))
+    kid := arrays.push_index(&g.nodes, Node(2, arrays.some_index(root)))
+    g.node(kid).weight = 10
+    println(str(g.node(kid).weight) + " parent=" + str(arrays.get_or(g.node(kid).parent, -1)))
+    println("root has parent: " + str(not arrays.is_none(g.node(root).parent)))
+```
+
+```output
+10 parent=0
+root has parent: false
+```
+
+When slots are deleted, `core:pool`'s typed ids carry the element type:
+`pool.add_typed` returns an `Id(Node)`, and passing it to a `Pool(Edge)` is a
+compile error rather than a silent read of the wrong slot.
+
 ## Observers: send messages, don't hold pointers
 
 When one value must react to another, don't store a pointer back at the

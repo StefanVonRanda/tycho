@@ -2,6 +2,17 @@ package pool
 
 type Handle = int
 
+# A Handle bound to its element type: an Id(Node) does not type-check on a
+# Pool(Edge). Not a newtype: `type Id($T) = int` does not parse (a newtype takes
+# no type parameters). Not a single-field struct either: a struct constructor
+# infers its type parameters from field values only, so `$T` must appear in a
+# field. `of` is that field -- always empty, never allocated.
+# ponytail: 32 bytes, not 8 -- single-field once a struct constructor honours an
+# explicit `Id$(T)(h)` (the compiler accepts that form for enum variants only).
+struct Id($T):
+    h: Handle
+    of: [$T]
+
 struct Slot($T):
     val: $T
     gen: int              # bumped on remove; a live handle stores the gen it was minted with
@@ -90,3 +101,21 @@ fn live(p: Pool($T)) -> [Handle]:
         if p.slots[i].used:
             push(out, _pack(i, p.slots[i].gen))
     return out
+
+# --- typed ids (same semantics as add/get/set/remove, element type checked) ---
+
+fn add_typed(p: inout Pool($T), v: $T) -> Id($T):
+    return Id(add(&p, v), []$T)
+
+# get's body, not a call to get: a generic call returning `$T` inside a generic
+# body is one the typecheck pass cannot ground (verdict_diff.py's SIXB pin).
+fn get_typed(p: Pool($T), id: Id($T)) -> $T:
+    if not alive(p, id.h):
+        die("pool.get: stale or invalid handle (use-after-free)")
+    return p.slots[index_of(id.h)].val
+
+fn set_typed(p: inout Pool($T), id: Id($T), v: $T):
+    set(&p, id.h, v)
+
+fn remove_typed(p: inout Pool($T), id: Id($T)):
+    remove(&p, id.h)

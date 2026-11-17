@@ -1,0 +1,17 @@
+# expect: is pool.Id(Edge), which does not fit the parameter pattern
+package main
+
+import "core:pool"
+
+struct Node:
+    weight: int
+
+struct Edge:
+    to: int
+
+fn main():
+    nodes := pool.Pool([]pool.Slot(Node), []int)
+    edges := pool.Pool([]pool.Slot(Edge), []int)
+    pool.add_typed(&nodes, Node(5))
+    e := pool.add_typed(&edges, Edge(1))
+    println(str(pool.get_typed(nodes, e).weight))

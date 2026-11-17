@@ -15,6 +15,16 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ## [Unreleased]
 
+### Corelib
+
+- `arrays.push_index(&xs, v)` appends and returns the new element's index, and
+  `arrays.OptIndex` is a one-int "maybe index" (`no_index`, `some_index`,
+  `is_none`, `get_or`).
+- `core:pool` gains typed ids: `add_typed` returns an `Id($T)`, and
+  `get_typed`/`set_typed`/`remove_typed` refuse an id minted by a pool of another
+  element type at compile time. The `Handle` API is unchanged.
+- `docs/idioms.md` has a "pools with subscripts" section.
+
 ## [0.9.2] — 2026-11-12
 
 ### Compiler

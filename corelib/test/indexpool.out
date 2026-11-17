@@ -1,0 +1,5 @@
+push_index: 0 1 len=2
+opt: none=true get_or=99
+opt: some=false get_or=1
+typed: node=7 edge=1
+typed: removed alive=false count=0

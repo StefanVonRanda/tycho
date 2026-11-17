@@ -1,0 +1,33 @@
+package main
+
+import "core:arrays"
+import "core:pool"
+
+struct Node:
+    weight: int
+
+struct Edge:
+    to: int
+
+fn main():
+    # push_index: the index of the element just appended
+    xs := []int
+    a := arrays.push_index(&xs, 10)
+    b := arrays.push_index(&xs, 20)
+    println("push_index: " + str(a) + " " + str(b) + " len=" + str(len(xs)))
+
+    # OptIndex: one int, -1 for none
+    n := arrays.no_index()
+    s := arrays.some_index(b)
+    println("opt: none=" + str(arrays.is_none(n)) + " get_or=" + str(arrays.get_or(n, 99)))
+    println("opt: some=" + str(arrays.is_none(s)) + " get_or=" + str(arrays.get_or(s, 99)))
+
+    # typed ids: an Id(Node) only fits a Pool(Node)
+    nodes := pool.Pool([]pool.Slot(Node), []int)
+    edges := pool.Pool([]pool.Slot(Edge), []int)
+    n1 := pool.add_typed(&nodes, Node(5))
+    e1 := pool.add_typed(&edges, Edge(1))
+    pool.set_typed(&nodes, n1, Node(7))
+    println("typed: node=" + str(pool.get_typed(nodes, n1).weight) + " edge=" + str(pool.get_typed(edges, e1).to))
+    pool.remove_typed(&nodes, n1)
+    println("typed: removed alive=" + str(pool.alive(nodes, n1.h)) + " count=" + str(pool.count(nodes)))
