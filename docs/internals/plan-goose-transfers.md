@@ -58,6 +58,7 @@ reference type" are NOT up for change in any phase.
 ## 3. Memory density
 
 - [ ] 3.1 Compact array descriptor — files: `runtime/tycho_rt.c`, `corelib/tycho.h`, `compiler/emit/emit.ty`, `docs/memory-model.md`, `docs/internals/design-aggregates.md`, `docs/performance.md` — do: today a `[T]` value is a 24-byte `{data,len,cap}` header (`tycho_rt.c` ~2127). Evaluate and, if it wins, implement an 8-byte representation: one pointer to a buffer prefixed with `{len,cap}` (as strings already prefix their length), with the empty array as NULL (no allocation). Start with a measurement probe (struct with 3 array fields × 1M, `[[int]]` adjacency like `bench/dijkstra`, and the bench suite memory rows) using a hand-written C model of both layouts to predict the win before touching the emitter. FFI POD-array crossing (`docs/reference/ffi.md`) must keep working. Control `TYCHOC_NO_COMPACT_ARRAY=1` if feasible; if keeping both representations in the emitter is impractical, say so in the doc and gate by measurement + full test instead — done when: `make test`, `make corelib`, `make ffi`, `make conc`, `make ilp32`, `make fixpoint-check`, `make bootstrap-check` pass, and a before/after RSS+time table (bench suite memory rows + the probe) is in `docs/performance.md`.
+  - Probe done: [probe-compact-array-2026-11-17.md](probe-compact-array-2026-11-17.md), verdict go (conditional).
 
 ## 4. Strings: smaller, and views that don't copy
 
