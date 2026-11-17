@@ -1,0 +1,13 @@
+# an inout callee that empties the array inside a `len(xs)` loop must not
+# leave `xs[i]` with an elided bounds check: it must die with a bounds message
+fn wipe(xs: inout [int]):
+    for len(xs) > 0:
+        pop(xs)
+
+fn main():
+    xs := [1, 2, 3]
+    s := 0
+    for i := 0; i < len(xs); i += 1:
+        wipe(&xs)
+        s += xs[i]
+    print(str(s))

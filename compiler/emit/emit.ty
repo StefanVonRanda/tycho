@@ -6111,6 +6111,10 @@ fn _bare(es: [ast.Expr], arr: string) -> bool:
             ast.Name(l, n):
                 if n == arr:
                     return true
+            # `f(&xs)`: an inout callee may resize xs
+            ast.Addr(l, k):
+                if _bare(k, arr):
+                    return true
             _: pass
     return false
 

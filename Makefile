@@ -764,15 +764,14 @@ preflight:
 # typeparity (65s, cited for section 8.1) and run_pkg.py (143s, cited by nothing)
 # are deliberately NOT here: they are a budget decision on a ~300s gate, recorded
 # in 119 rather than taken unilaterally.
-parity-fuzz: tychoc1
+parity-fuzz: tychoc1 bounds-fuzz
 	@python3 fuzz/run_eqparity.py
 	@python3 fuzz/run_unaryparity.py
 	@python3 fuzz/run_parforparity.py
 
 # Bounds-check elision differential (fuzz/run_bounds.py): 500 loop-shaped
-# cases built with and without TYCHOC_NO_BOUNDS_ELISION, ~30s. Not in
-# parity-fuzz yet: it is red until the `f(&xs)` elision hole it found is fixed
-# (fuzz/README.md).
+# cases built with and without TYCHOC_NO_BOUNDS_ELISION, ~30s. Runs as a
+# prerequisite of parity-fuzz.
 bounds-fuzz: tychoc1
 	@python3 fuzz/run_bounds.py $(or $(BN),500)
 
