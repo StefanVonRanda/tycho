@@ -121,6 +121,8 @@ import sys
 # reason to be here rather than a blank line: a runner that stops asserting
 # anything should be an edit to this list, not a silent absence.
 NO_GOLDEN = {
+    "bench/compact_array/run.sh": "layout probe: both layouts must print the same checksum, then it prints time/RSS",
+    "bench/strings_v2/run.sh": "layout probe: all three layouts must print byte-identical output, then it prints time/RSS",
     "bench/run.sh": "driver: dispatches the per-bench runners, asserts a time/rss limit",
     "bench/cli/run.sh": "comparison: the Tycho and Go reports must match byte-for-byte, then it prints best time/RSS",
     "bench/conc/run.sh": "self-consistency: the three builds' checksums must agree with each other",

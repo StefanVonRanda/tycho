@@ -213,3 +213,15 @@ These are real Goose conveniences, but none is a reason to change the model:
    may still be useful, but no speed claim is made.
 3. Keep inline fixed-size *scalar-payload* enums in both compilers.
 4. Leave static function specialization and the small ergonomics demand-gated.
+
+## 2026-11 follow-up
+
+The owner asked for all five transfers on 2026-11-17. The work is tracked in
+[plan-goose-transfers.md](plan-goose-transfers.md). Two measurement records
+came out of it so far:
+
+- [design-strings-v2.md](design-strings-v2.md): the string representation
+  probe. `{ptr,len}` alone saves nothing; inline storage for strings of up to
+  15 bytes cuts the records workload by 29%.
+- [probe-compact-array-2026-11-17.md](probe-compact-array-2026-11-17.md): an
+  8-byte array descriptor cuts peak RSS by 11–37% on the probe workloads.
