@@ -121,6 +121,13 @@ cancels the rest. A SKU costs 32 bytes in both layouts (24 + 8 against 16 +
   measured here is 213 to 167 ms (-22%; -24% against today) on the split
   loop. It needs no representation change. Control
   `TYCHOC_NO_STR_VIEW=1`.
+  *Shipped (phase 4.3):* `_split_view` in `compiler/emit/emit.ty` and
+  `tycho_str_split_next` in the runtime. Real compiler, darwin-arm64,
+  `bench/peakrss.c` median of 5, an 8-field 52-byte line split 2M times,
+  each part's `len` summed and compared: 34 ms against 108 ms with the
+  control (-69%), RSS 1.5 MiB both, same output. The loop body's scratch
+  is reset per line, so the win is time, not memory. Fixture
+  `tests/split_view.ty`.
 - **4.4 inline small strings (with the 4.2 switch underneath): GO.** -29%
   RSS on the records workload, time flat. The split loop costs about +5%
   (225 against 213 ms), which is the inline-flag branch on every access. The

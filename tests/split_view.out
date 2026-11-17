@@ -1,0 +1,13 @@
+97 lp <alpha>
+found beta at field 2
+98 et <beta>
+short []
+103 am <gamma>
+short [de]
+5 fields, 16 bytes
+5 kept: alpha|beta||gamma|de
+5 pushed: alpha|de last=de
+[a]
+[b]
+[]
+[solo]

@@ -291,8 +291,13 @@ it somewhere, it deep-copies into an owning array, so value semantics still hold
 came from. Slices work on
 every array type and compose (`xs[1:5][1:3]`). One rule to remember: you cannot pass a slice
 of `xs` and a `inout` of `xs` to the same call, since the `inout` could reallocate the viewed buffer.
-A string slice `s[a:b]` works too — with the same `s[a:]` / `s[:b]` / `s[:]` forms — but unlike
-an array view it **always copies** into a fresh substring (there is no zero-copy string view);
+A string slice `s[a:b]` works too — with the same `s[a:]` / `s[:b]` / `s[:]` forms — and
+follows the same rule: passed straight to a function it is a zero-copy view of `s`, and stored,
+returned, pushed or bound to a name it copies into a fresh substring. `for part in split(s, sep)`
+whose body only reads `part` (compares it, takes `len`, indexes or slices it, passes it to a
+function) walks views of `s` with no `[string]` and no per-part copy; a body that stores or binds
+`part` gets the copying `split`. Either way the result is the same as a copy.
+`TYCHOC_NO_SLICE_VIEW=1` and `TYCHOC_NO_STR_VIEW=1` turn the two views off.
 [`substr(s, a, b)`](builtins.md) is the equivalent function form.
 
 ---

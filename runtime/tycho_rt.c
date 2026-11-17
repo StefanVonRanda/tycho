@@ -2578,6 +2578,28 @@ TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
     return r;
 }
 
+/* 4.3: `for part in split(s, sep)` with read-only parts. Each call yields the
+ * next field tycho_str_split would return, as a view of s: no array, no copy.
+ * *pos is the next field's start, -1 once the tail field has been yielded. */
+int tycho_str_split_next(const char *s, const char *sep, tycho_int *pos, TychoStrView *v) {
+    tycho_int start = *pos;
+    if (start < 0) return 0;
+    const char *sd = tycho_str_data(s), *pd = tycho_str_data(sep);
+    tycho_int sl = tycho_str_len(s), pl = tycho_str_len(sep);
+    if (pl == 0) {
+        fprintf(stderr, "tycho: split with an empty separator\n");
+        TYCHO_EXIT();
+    }
+    for (tycho_int i = start; i + pl <= sl; i++) {
+        if (memcmp(sd + i, pd, (size_t)pl) == 0) {
+            v->data = sd + start; v->len = i - start; *pos = i + pl;
+            return 1;
+        }
+    }
+    v->data = sd + start; v->len = sl - start; *pos = -1;
+    return 1;
+}
+
 /* Single-pass construction of fresh names plus their index in an arena tail.
  * Names grow upward, temporary pointers downward. No arena allocation may occur
  * between the first add and finish: libc readdir/closedir never use this arena.

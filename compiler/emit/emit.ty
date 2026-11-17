@@ -7421,6 +7421,175 @@ fn _presize_pair(cs: inout C, prev: ast.Stmt, s: ast.Stmt) -> string:
 fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
     return _block_projection(&cs, body, ind, false, -1)
 
+# 4.3: `for part in split(s, sep)` hands the body each part as a stack view
+# of s, with no [string] and no per-part copy. Only when `part` is merely
+# read: an operand, `len`/index/slice of it, or an argument to a Tycho fn
+# (O4 already passes views there; every callee retention copies). A bare
+# `part` anywhere else (bound, returned, stored, captured) keeps the copy.
+fn _sv_bare(e: ast.Expr, name: string) -> bool:
+    match e:
+        ast.Name(l, n): return n == name
+        _: return false
+    return false
+
+fn _sv_ok_e(cs: inout C, e: ast.Expr, name: string) -> bool:
+    match e:
+        ast.Name(l, n): return n != name
+        ast.Binop(l, o, k):
+            for x in k:
+                if not _sv_bare(x, name) and not _sv_ok_e(&cs, x, name):
+                    return false
+            return true
+        ast.Unop(l, o, k): return _sv_ok_e(&cs, k[0], name)
+        ast.Index(l, k):
+            for i := 0; i < len(k); i += 1:
+                if not (i == 0 and _sv_bare(k[0], name)) and not _sv_ok_e(&cs, k[i], name):
+                    return false
+            return true
+        ast.Slice(l, hl, hh, k):
+            for i := 0; i < len(k); i += 1:
+                if not (i == 0 and _sv_bare(k[0], name)) and not _sv_ok_e(&cs, k[i], name):
+                    return false
+            return true
+        ast.Call(l, q, n, ts, args):
+            safe := n == "len" or n == "find" or n == "hash"
+            if q == name:
+                if not safe:
+                    return false
+            ok := false
+            if len(q) == 0:
+                if safe or n == "print" or n == "println" or n == "eprint" or n == "eprintln":
+                    ok = true
+                else:
+                    fi := _fidx(&cs, n)
+                    ok = fi >= 0 and not _shadowable(n) and not _isext(&cs, cs.fds[fi].name)
+            for x in args:
+                if not (ok and _sv_bare(x, name)) and not _sv_ok_e(&cs, x, name):
+                    return false
+            return true
+        _: return _creads_e(e, name) == 0
+    return true
+
+fn _sv_ok_l(cs: inout C, k: [ast.Expr], name: string) -> bool:
+    for x in k:
+        if not _sv_ok_e(&cs, x, name):
+            return false
+    return true
+
+fn _sv_ok_b(cs: inout C, b: [ast.Stmt], name: string) -> bool:
+    for st in b:
+        match st:
+            ast.ExprStmt(l, k):
+                if not _sv_ok_l(&cs, k, name):
+                    return false
+            ast.Decl(l, n, t, r, v):
+                if n == name or not _sv_ok_l(&cs, r, name) or not _sv_ok_b(&cs, v, name):
+                    return false
+            ast.MDecl(l, d, ns, r):
+                if _has(ns, name) or not _sv_ok_l(&cs, r, name):
+                    return false
+            ast.Assign(l, n, r):
+                if n == name or not _sv_ok_l(&cs, r, name):
+                    return false
+            ast.ReturnS(l, k):
+                if not _sv_ok_l(&cs, k, name):
+                    return false
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    if not _sv_ok_l(&cs, arm.cond, name) or not _sv_ok_b(&cs, arm.body, name):
+                        return false
+                if not _sv_ok_b(&cs, e, name):
+                    return false
+            ast.WhileS(l, c, b2):
+                if not _sv_ok_l(&cs, c, name) or not _sv_ok_b(&cs, b2, name):
+                    return false
+            ast.For3(l, ip, c, b2):
+                if not _sv_ok_b(&cs, ip, name) or not _sv_ok_l(&cs, c, name) or not _sv_ok_b(&cs, b2, name):
+                    return false
+            ast.ForIn(l, n, c, b2, zpf):
+                if zpf or n == name or not _sv_ok_l(&cs, c, name) or not _sv_ok_b(&cs, b2, name):
+                    return false
+            _:
+                if _creads_s(st, name) > 0:
+                    return false
+    return true
+
+# The subject and separator are bound once for the whole loop, so the body
+# must not be able to recycle them: a literal, or a local/parameter the body
+# never writes.
+fn _sv_src(cs: inout C, e: ast.Expr, b: [ast.Stmt]) -> bool:
+    match e:
+        ast.StrLit(l, s): return true
+        ast.Name(l, n):
+            if _mut_b(b, n):
+                return false
+            for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+                if cs.vnames[i] == n:
+                    return i < cs.fnbase or cs.vlocal[i]
+            return false
+        _: return false
+    return false
+
+fn _split_view(cs: inout C, n: string, c: [ast.Expr], b: [ast.Stmt], ind: string) -> string:
+    if len(c) != 1 or len(getenv("TYCHOC_NO_STR_VIEW")) > 0:
+        return ""
+    sa := []ast.Expr
+    match c[0]:
+        ast.Call(l, q, fnn, ts, args):
+            if len(q) == 0 and fnn == "split" and len(ts) == 0 and len(args) == 2:
+                sa = args
+        _: pass
+    if len(sa) != 2:
+        return ""
+    fi := _fidx(&cs, "split")
+    if fi >= 0 and len(_pfx(&cs)) > 0 and cs.fds[fi].name == _pfx(&cs) + "split":
+        return ""
+    if not _sv_src(&cs, sa[0], b) or not _sv_src(&cs, sa[1], b) or not _sv_ok_b(&cs, b, n):
+        return ""
+    sc, st := _ex(&cs, sa[0])
+    pc, pt := _ex(&cs, sa[1])
+    if st != "string" or pt != "string":
+        return ""
+    vs := _fresh(&cs, "_vs")
+    vp := _fresh(&cs, "_vp")
+    vk := _fresh(&cs, "_vk")
+    vv := _fresh(&cs, "_vv")
+    ms := _mark(&cs)
+    pcn := _push(&cs, n, "string")
+    svs := cs.arena
+    ids := _fresh(&cs, "_scr")
+    push(cs.ascope, "&" + ids)
+    cs.loopdepth += 1
+    push(cs.lpost, -1)
+    push(cs.lmark, _mark(&cs))
+    cs.arena = "&" + ids
+    fos, fns := _fuse_open(&cs, b, ind + "    ", c)
+    bds := _block(&cs, b, ind + "        ")
+    pop(cs.lpost)
+    pop(cs.lmark)
+    pop(cs.ascope)
+    cs.loopdepth -= 1
+    cs.arena = svs
+    opens := ""
+    ress := ""
+    closs := ""
+    uids, fids := _uses_scr(bds, ids)
+    if uids:
+        opens = ind + "    Arena " + ids + " = arena_child(" + svs + ");\n"
+        ress = ind + "        arena_reset(&" + ids + ");\n"
+        closs = ind + "    arena_free(&" + ids + ");\n"
+    elif fids:
+        bds = _replace(bds, "arena_free(&" + ids + "); ", "")
+    fcs := _fuse_close(&cs, fns, ind + "    ")
+    out := ind + "{\n" + ind + "    const char *" + vs + " = " + sc + ";\n" +
+        ind + "    const char *" + vp + " = " + pc + ";\n" +
+        ind + "    tycho_int " + vk + " = 0;\n" + ind + "    TychoStrView " + vv + ";\n" + opens + fos +
+        ind + "    while (tycho_str_split_next(" + vs + ", " + vp + ", &" + vk + ", &" + vv + ")) {\n" + ress +
+        ind + "        char *" + pcn + " = (char *)((uintptr_t)&" + vv + " | (uintptr_t)1);\n" +
+        bds + ind + "    }\n" + fcs + closs + ind + "}\n"
+    _restore(&cs, ms)
+    return out
+
 # Is `e` a read of `name` (or a len/index read of it) that cannot escape?
 fn _read_ok_e(e: ast.Expr, name: string) -> bool:
     match e:
@@ -8978,6 +9147,9 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             _restore(&cs, m)
             return out
         ast.ForIn(l, n, c, b, zpf):
+            svo := _split_view(&cs, n, c, b, ind)
+            if len(svo) > 0:
+                return svo
             cc, ct := _ex(&cs, c[0])
             if ct == "string":
                 fs := _fresh(&cs, "_fs")

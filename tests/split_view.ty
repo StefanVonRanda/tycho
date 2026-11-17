@@ -1,0 +1,49 @@
+# 4.3: `for part in split(s, sep)` with read-only parts walks views of s,
+# with no [string] and no per-part copy. Value semantics must not change: a
+# part that is stored, pushed, bound or kept by a callee is an independent
+# copy, and rewriting the source afterwards never changes it.
+# TYCHOC_NO_STR_VIEW=1 must print the same thing.
+
+fn keep(xs: inout [string], s: string):
+    push(xs, s)
+
+fn tag(s: string) -> string:
+    return "<" + s + ">"
+
+fn main():
+    s := "alpha,beta,,gamma,de"
+    # read-only: the view path
+    n := 0
+    total := 0
+    for part in split(s, ","):
+        n += 1
+        total += len(part)
+        if part == "beta":
+            println("found beta at field " + str(n))
+        if len(part) > 2:
+            println(str(part[0]) + " " + part[1:3] + " " + tag(part))
+        else:
+            println("short [" + part + "]")
+    println(str(n) + " fields, " + str(total) + " bytes")
+
+    # a callee keeps it (copy inside keep), still on the view path
+    kept := []string
+    for part in split(s, ","):
+        keep(&kept, part)
+    # pushed and bound directly: the copy path
+    pushed := []string
+    last := ""
+    for part in split(s, ","):
+        push(pushed, part)
+        last = part
+    # rewrite the source, then read every retained part
+    s = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    s = s + s
+    println(str(len(kept)) + " kept: " + kept[0] + "|" + kept[1] + "|" + kept[2] + "|" + kept[3] + "|" + kept[4])
+    println(str(len(pushed)) + " pushed: " + pushed[0] + "|" + pushed[4] + " last=" + last)
+
+    # multi-byte separator, empty tail, no separator at all
+    for part in split("a::b::", "::"):
+        println("[" + part + "]")
+    for part in split("solo", ","):
+        println("[" + part + "]")
