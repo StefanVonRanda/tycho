@@ -113,6 +113,23 @@ only builds ASan. `run_tsan.py` filters those seeds, compiles each once with
 `-O2` and once with `-fsanitize=thread`, and requires the outputs to agree with
 no TSan report. `make fuzz-tsan` (N seeds; only concurrent shapes are run).
 
+## Bounds-elision lane — `run_bounds.py`
+
+`make bounds-fuzz` (`BN=` cases, default 500, ~30s) generates loop-shaped
+cases indexing arrays with affine and data-dependent indices, off-by-one
+bounds, starts and offsets, and body statements that reassign, shrink or grow
+the indexed array. Each batch is built with default elision and with
+`TYCHOC_NO_BOUNDS_ELISION=1`; every case runs in both and stdout, stderr and
+exit status must match, so an out-of-range access aborts in both builds.
+
+Its first run (2026-11-17) caught a real elision hole, not a planted one: the
+body-safety scan in `compiler/emit/emit.ty` (`_bare`) sees `f(xs)` but not
+`f(&xs)`, so passing the array to an `inout` parameter that empties it leaves
+`xs[i]` unchecked and the elided build reads past the end (SIGTRAP instead of
+the `index 0 out of bounds` abort). 4 of 500 cases. Matching `ast.Addr` around
+the bare name in `_bare` makes all 500 agree (checked in a scratch copy of the
+compiler). The lane stays out of `parity-fuzz` until that fix lands.
+
 ## Beyond generated programs
 
 `make fault-inject` (`scripts/fault_inject.sh`) injects short reads/writes and
