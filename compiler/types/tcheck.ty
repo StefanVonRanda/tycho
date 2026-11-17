@@ -2773,8 +2773,9 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         if not _arity(&cs, n, args, 1, "to_bytes(s) takes one argument"):
             return "bytes"
         if known(b0) and not (b0 == "string" or b0 == "bytes" or b0 == "arr(int)" or
-                _is_packed_struct(&cs, b0)):
-            _cerr(&cs, "to_bytes(x) takes a string, [int] or a packed struct")
+                _is_packed_struct(&cs, b0) or
+                (_is_arr(b0) and _is_packed_struct(&cs, _elem_of(&cs, b0)))):
+            _cerr(&cs, "to_bytes(x) takes a string, [int], a packed struct or an array of one")
         return "bytes"
     if n == "to_bool":
         if not _arity(&cs, n, args, 1, "to_bool(x) takes one argument"):
@@ -2826,6 +2827,10 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
             return "void"
         el := _elem_of(&cs, b0)
         _nest_aff_e(&cs, ats[1])
+        # push([int], bytes): append each byte as an element, in order. Bulk
+        # because the per-byte form costs one push per byte on every save path.
+        if known(b0) and _is_arr(b0) and _elem_of(&cs, b0) == "int" and ats[1] == "bytes":
+            return "void"
         if not compat(el, ats[1]):
             _cerr(&cs, "push's value must be " + el)
         return "void"

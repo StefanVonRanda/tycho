@@ -176,6 +176,81 @@ the boundary; a keystroke then writes bytes instead of copying a line. The
 worked editor case is in [thesis §4c](thesis.md). See
 [maps](reference/maps.md) (`m[k] += 1`, `push(m[k], v)` update in place).
 
+## Flat state: intern names, slice children by offset
+
+When one owned state holds many records with repeated strings and child lists,
+give the root one text blob and one array per record kind. Store a name as
+`(offset, length)` into the blob, and a child list as `(offset, count)` into a
+shared array; records become fixed-size and pointer-free.
+
+```tycho
+package main
+
+import "core:buffer"
+
+packed struct NameRef:
+    off: i32
+    len: i32
+
+struct Album:
+    title: NameRef
+    first: int
+    count: int
+
+struct Library:
+    text: bytes
+    names: [NameRef]
+    albums: [Album]
+    tracks: [NameRef]
+
+fn intern(text: inout buffer.Buffer, seen: inout [string: NameRef], s: string) -> NameRef:
+    if s in seen:
+        return seen[s]
+    r := NameRef(to_i32(len(text.data)), to_i32(len(s)))
+    buffer.write(&text, s)
+    seen[s] = r
+    return r
+
+fn name(text: bytes, r: NameRef) -> string:
+    o := to_int(r.off)
+    return to_str(text[o:o + to_int(r.len)])
+
+fn main():
+    text := buffer.new()
+    seen := []string: NameRef
+    lib := Library(to_bytes([]int), [], [], [])
+    so_what := intern(&text, &seen, "So What")
+    freddie := intern(&text, &seen, "Freddie Freeloader")
+    kind := intern(&text, &seen, "Kind of Blue")
+    push(lib.names, so_what)
+    push(lib.names, freddie)
+    push(lib.names, kind)
+    push(lib.tracks, so_what)
+    push(lib.tracks, freddie)
+    push(lib.albums, Album(kind, 0, 2))
+    lib.text = buffer.as_bytes(text)
+    a := lib.albums[0]
+    println(name(lib.text, a.title) + ": " + name(lib.text, lib.tracks[a.first]) +
+            ", " + name(lib.text, lib.tracks[a.first + 1]) + " (names=" + str(len(seen)) + ")")
+```
+
+```output
+Kind of Blue: So What, Freddie Freeloader (names=3)
+```
+
+Why this way: one array per kind means the root is the only thing holding a
+data pointer; elements are flat records of integers, so a copy copies bytes
+and a save can visit records in order. Repeated names cost one blob and one
+offset per use instead of a string header per record. Measured on
+[`bench/flat-state`](../bench/flat-state/RESULTS.md) (11,673 albums, 186,768
+tracks, nine interleaved runs): 41 vs 113 MiB peak RSS, 3.31 vs 4.43 MB on
+disk, save 7.7 vs 25.9 ms, load 3.7 vs 12.0 ms, teardown 0.9 vs 18.5 ms.
+`to_bytes(xs)` / `from_bytes$([T])(b)` move a whole `[packed T]` in one copy
+(V2b), which is what keeps save and load from visiting every record. The cost
+is build: 10.4 vs 7.2 ms, because interning hashes every name. Query is parity.
+Deletion needs a policy — tombstone the pool slot and leave the child range, or
+compact both arrays and rewrite offsets.
+
 ## Transients: scope the work, free the proof
 
 When a long-lived scope builds throwaway values — parsing a document, loading

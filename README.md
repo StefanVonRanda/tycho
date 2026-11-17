@@ -197,8 +197,9 @@ fn main():
 Every corelib module has a runnable example under
 [`examples/corelib/`](examples/corelib); two larger programs compose several
 end-to-end — [`examples/fetch`](examples/fetch) (HTTP client) and
-[`examples/site`](examples/site) (static-site generator). `make ci` builds and
-verifies the whole tree.
+[`examples/site`](examples/site) (static-site generator). `make check-fast` is
+the per-change gate; `make ci` is the release gate that builds and verifies the
+whole tree.
 
 ### Building
 
@@ -207,11 +208,13 @@ verifies the whole tree.
 | `make` | Build the `./tychoc` transpiler. |
 | `./tychoc f.ty` | Transpile to C, compile to native `f`; the intermediate `f.c` is removed on success, kept on a `cc` failure. |
 | `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
-| `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). Needs the sanitizer runtimes — see [CONTRIBUTING](CONTRIBUTING.md#what-the-gate-needs-beyond-that). |
+| `make check-fast` | The per-change gate: worker-pool tests, parser/typechecker sweep, links, corelib, debugger, surface and doc counts, plus a 20-seed fuzz smoke (~5 min measured). |
+| `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). Use it for compiler, emitter or bootstrap changes. Every recipe runs in a memory-capped cgroup (`MEMCAP_MB`, default 8192 MiB; `make ci` caps each lane with `MEMCAP_LANE_MB`). Needs the sanitizer runtimes — see [CONTRIBUTING](CONTRIBUTING.md#what-the-gate-needs-beyond-that). |
 | `make bench` | Run the performance guard (below). |
-| `make fuzz` | Differential + ASan/UBSan soundness fuzzer. |
+| `make fuzz` | Differential + ASan/UBSan soundness fuzzer, 200 seeds (nightly depth). `make fuzz-quick` is the 20-seed change smoke. |
 | `make corelib` | Build + validate the corelib against its goldens. |
-| `make ci` | The full local gate; independent lanes run in parallel — no cloud CI. |
+| `make ci` | The release gate: exhaustive local sweep for nightly, pre-merge and release — not per change. Independent lanes run in parallel, each memory-capped; no cloud CI. |
+| `make ci-release` | The release depth: `make ci` with at least 1000 fuzz seeds (refuses less). |
 | `make release-check` | Build and smoke-test the current-version tarball twice; require byte-identical archives. |
 | `make clean` | Remove build artifacts. |
 

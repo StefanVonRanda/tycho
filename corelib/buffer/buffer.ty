@@ -15,16 +15,10 @@ fn write_byte(b: inout Buffer, c: int):
     push(b.data, c)
 
 fn write(b: inout Buffer, s: string):
-    i := 0
-    for i < len(s):
-        push(b.data, s[i])
-        i += 1
+    push(b.data, to_bytes(s))
 
 fn write_bytes(b: inout Buffer, x: bytes):
-    i := 0
-    for i < len(x):
-        push(b.data, x[i])
-        i += 1
+    push(b.data, x)
 
 fn reserve_cap(b: inout Buffer, n: int):
     reserve(b.data, n)

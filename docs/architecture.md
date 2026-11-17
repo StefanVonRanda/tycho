@@ -11,11 +11,11 @@ for a full accounting of where the model wins and loses see
 
 ## The pieces
 
-**One compiler ships.** `compiler/` is 26,446 lines of Tycho across 13 files,
+**One compiler ships.** `compiler/` is 26,519 lines of Tycho across 13 files,
 built as `tychoc1` and installed as `tychoc`. Six packages: `lex`, `parse`,
 `ast`, `types`, `emit`, `driver`. The [spec](spec/) is normative; the compiler
 is the reference implementation in practice, and every suite here defaults to
-it (`tests/run.sh:175@TYCHOC`).
+it (`tests/run.sh:180@TYCHOC`).
 
 `bootstrap/tycho_compiler.c` is a generated cold-start artifact: the compiler
 source emitted as C by the last known-good compiler. It is not a second

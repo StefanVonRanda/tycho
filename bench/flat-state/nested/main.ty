@@ -1,0 +1,223 @@
+package main
+
+import "core:buffer"
+import "core:io"
+import "core:pool"
+import "../corpus"
+
+struct Track:
+    title: string
+    seconds: int
+    plays: int
+
+struct Album:
+    title: string
+    artist: int
+    year: int
+    tracks: [Track]
+
+struct Artist:
+    name: string
+    country: string
+
+struct State:
+    artists: [Artist]
+    albums: pool.Pool(Album)
+
+packed struct I32:
+    x: i32
+
+const MAGIC = 20081104
+const VERSION = 1
+const MOD = 1000000007
+
+fn new_state() -> State:
+    return State([], pool.Pool([]pool.Slot(Album), []int))
+
+fn hash_str(s: string) -> int:
+    h := 0
+    for i := 0; i < len(s); i += 1:
+        h = (h * 31 + s[i]) % MOD
+    return h
+
+fn step(h: int, v: int) -> int:
+    return (h * 131 + v) % MOD
+
+fn build(st: inout State) -> int:
+    reserve(st.artists, corpus.ARTISTS)
+    for a := 0; a < corpus.ARTISTS; a += 1:
+        push(st.artists, Artist(corpus.artist_name(a), corpus.artist_country(a)))
+    reserve(st.albums.slots, corpus.ARTISTS * corpus.ALBUMS_PER_ARTIST)
+    removed := pool.Handle(0)
+    did_remove := false
+    for a := 0; a < corpus.ARTISTS; a += 1:
+        for j := 0; j < corpus.ALBUMS_PER_ARTIST; j += 1:
+            g := a * corpus.ALBUMS_PER_ARTIST + j
+            h := pool.add(&st.albums, Album(corpus.album_title(a, j), a, corpus.album_year(a, j), []))
+            idx := pool.index_of(h)
+            for k := 0; k < corpus.TRACKS_PER_ALBUM; k += 1:
+                t := Track(corpus.track_title(a, j, k), corpus.track_seconds(a, j, k), corpus.track_plays(a, j, k))
+                push(st.albums.slots[idx].val.tracks, t)
+            if g % corpus.REMOVE_EVERY == 0:
+                pool.remove(&st.albums, h)
+                if not did_remove:
+                    removed = h
+                    did_remove = true
+    if not did_remove:
+        die("build: no album was removed")
+    if pool.alive(st.albums, removed):
+        die("build: removed handle is still alive")
+    return 1
+
+fn counts(st: State) -> (int, int):
+    live := 0
+    tracks := 0
+    for i := 0; i < len(st.albums.slots); i += 1:
+        if st.albums.slots[i].used:
+            live += 1
+            tracks += len(st.albums.slots[i].val.tracks)
+    return (live, tracks)
+
+fn query(st: State) -> int:
+    h := 17
+    for i := 0; i < len(st.artists); i += 1:
+        h = step(h, hash_str(st.artists[i].name))
+        h = step(h, hash_str(st.artists[i].country))
+    for i := 0; i < len(st.albums.slots); i += 1:
+        if st.albums.slots[i].used:
+            h = step(h, hash_str(st.albums.slots[i].val.title))
+            h = step(h, st.albums.slots[i].val.artist)
+            h = step(h, st.albums.slots[i].val.year)
+            for k := 0; k < len(st.albums.slots[i].val.tracks); k += 1:
+                h = step(h, hash_str(st.albums.slots[i].val.tracks[k].title))
+                h = step(h, st.albums.slots[i].val.tracks[k].seconds)
+                h = step(h, st.albums.slots[i].val.tracks[k].plays)
+    return h
+
+fn put_i32(b: inout buffer.Buffer, v: int):
+    buffer.write_bytes(&b, to_bytes(I32(to_i32(v))))
+
+fn put_str(b: inout buffer.Buffer, s: string):
+    put_i32(&b, len(s))
+    buffer.write(&b, s)
+
+fn get_i32(src: bytes, at: inout int) -> int:
+    if at < 0 or at + 4 > len(src):
+        die("load: bad file")
+    v := to_int(from_bytes$(I32)(src[at:at + 4]).x)
+    at += 4
+    return v
+
+fn get_str(src: bytes, at: inout int) -> string:
+    n := get_i32(src, &at)
+    if n < 0 or at + n > len(src):
+        die("load: bad file")
+    s := to_str(src[at:at + n])
+    at += n
+    return s
+
+fn save(st: State, path: string) -> int:
+    live, tracks := counts(st)
+    b := buffer.new()
+    put_i32(&b, MAGIC)
+    put_i32(&b, VERSION)
+    put_i32(&b, len(st.artists))
+    put_i32(&b, live)
+    put_i32(&b, tracks)
+    for i := 0; i < len(st.artists); i += 1:
+        put_str(&b, st.artists[i].name)
+        put_str(&b, st.artists[i].country)
+    for i := 0; i < len(st.albums.slots); i += 1:
+        if st.albums.slots[i].used:
+            put_str(&b, st.albums.slots[i].val.title)
+            put_i32(&b, st.albums.slots[i].val.artist)
+            put_i32(&b, st.albums.slots[i].val.year)
+            put_i32(&b, len(st.albums.slots[i].val.tracks))
+            for k := 0; k < len(st.albums.slots[i].val.tracks); k += 1:
+                put_str(&b, st.albums.slots[i].val.tracks[k].title)
+                put_i32(&b, st.albums.slots[i].val.tracks[k].seconds)
+                put_i32(&b, st.albums.slots[i].val.tracks[k].plays)
+    payload := buffer.as_bytes(b)
+    n := len(payload)
+    match io.write_bytes(path, payload):
+        Ok(): pass
+        Err(_): die("save: write failed")
+    return n
+
+fn read_file_bytes(path: string) -> bytes:
+    match io.read_bytes(path):
+        Ok(b): return b
+        Err(_): die("load: bad file")
+    return to_bytes([]int)
+
+fn load(st: inout State, path: string):
+    src := read_file_bytes(path)
+    at := 0
+    if len(src) < 20:
+        die("load: bad file")
+    if get_i32(src, &at) != MAGIC or get_i32(src, &at) != VERSION:
+        die("load: bad file")
+    n_artists := get_i32(src, &at)
+    n_albums := get_i32(src, &at)
+    n_tracks := get_i32(src, &at)
+    if n_artists < 0 or n_albums < 0 or n_tracks < 0:
+        die("load: bad file")
+    reserve(st.artists, n_artists)
+    for i := 0; i < n_artists; i += 1:
+        name := get_str(src, &at)
+        country := get_str(src, &at)
+        push(st.artists, Artist(name, country))
+    reserve(st.albums.slots, n_albums)
+    total := 0
+    for i := 0; i < n_albums; i += 1:
+        title := get_str(src, &at)
+        artist := get_i32(src, &at)
+        year := get_i32(src, &at)
+        n := get_i32(src, &at)
+        if n < 0:
+            die("load: bad file")
+        h := pool.add(&st.albums, Album(title, artist, year, []))
+        idx := pool.index_of(h)
+        for k := 0; k < n; k += 1:
+            t := get_str(src, &at)
+            secs := get_i32(src, &at)
+            plays := get_i32(src, &at)
+            push(st.albums.slots[idx].val.tracks, Track(t, secs, plays))
+        total += n
+    if total != n_tracks or at != len(src):
+        die("load: bad file")
+
+fn main():
+    a := args()
+    if len(a) < 3:
+        die("usage: nested build|load FILE")
+    mode := a[1]
+    path := a[2]
+    if mode == "build":
+        st := new_state()
+        t0 := clock()
+        stale := build(&st)
+        t1 := clock()
+        sum := query(st)
+        t2 := clock()
+        nbytes := save(st, path)
+        t3 := clock()
+        after := query(st)
+        t4 := clock()
+        live, tracks := counts(st)
+        println("result checksum=" + str(sum) + " live=" + str(live) + " tracks=" + str(tracks))
+        println("build ns=" + str(t1 - t0) + " query=" + str(t2 - t1) + " save=" + str(t3 - t2) +
+                " after=" + str(t4 - t3) + " after_save=" + str(after) + " stale=" + str(stale) +
+                " bytes=" + str(nbytes))
+    elif mode == "load":
+        st := new_state()
+        t0 := clock()
+        load(&st, path)
+        t1 := clock()
+        sum := query(st)
+        t2 := clock()
+        live, tracks := counts(st)
+        println("result checksum=" + str(sum) + " live=" + str(live) + " tracks=" + str(tracks))
+        println("load ns=" + str(t1 - t0) + " query=" + str(t2 - t1))
+    else:
+        die("usage: nested build|load FILE")

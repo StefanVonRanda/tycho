@@ -1,0 +1,7 @@
+# expect: only a packed struct or an array of one can be read from bytes
+struct Loose:
+    op: int
+
+fn main():
+    xs := from_bytes$([Loose])(to_bytes("abcd"))
+    println(str(len(xs)))

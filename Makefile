@@ -1,4 +1,15 @@
 
+# Cap every recipe at MEMCAP_MB MiB (0 disables) in a cgroup, so a runaway
+# compiler dies there instead of OOM-killing the caller's session; see
+# scripts/memcap.sh. Hosts without a systemd user manager run uncapped.
+MEMCAP_MB ?= 8192
+export MEMCAP_MB
+ifeq ($(OS),Windows_NT)
+SHELL := sh
+else
+SHELL := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))scripts/memcap.sh
+endif
+
 CC      ?= cc
 # -fwrapv: signed integer overflow wraps, never C UB. The compiler's own
 # arithmetic honours the same contract it gives generated programs.
@@ -17,7 +28,7 @@ RUNTIME := runtime/tycho_rt.c
 BOOTSTRAP_C     := bootstrap/tycho_compiler.c
 BOOTSTRAP_SHIMS := corelib/strings/strings_shim.c corelib/os/os_shim.c corelib/io/io_shim.c
 
-.PHONY: shadercross preflight prunner-check ci-linux bootstrap-check single-compiler-check fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check fstr-hole-file-check script-check builtin-qualified parity-fuzz bounds-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check docs-counts-check all tools tools-check demo test test-fast check-fast parse-check prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-newcomers corelib corelib-examples android-check ios-check shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci release-check release-content hooks ilp32 asan-self editors-check clean
+.PHONY: shadercross preflight prunner-check ci-linux bootstrap-check single-compiler-check fixpoint-check corpus-check packed-check vector-check align-probe status status-net status-check fstr-hole-file-check script-check builtin-qualified parity-fuzz bounds-fuzz oracle-fuzz fuzz-tsan fault-inject alloc-fail descriptor-fail mutation-check json-conformance friction-check friction-check-light surface-check net-poll-check version-check docs-counts-check all tools tools-check demo test test-fast check-fast parse-check prunner test-update conc rtparity bench bench-prongB bench-dbquery bench-conc bench-indexer bench-flat-state bench-window bench-latency bench-gcscan bench-floor bench-backends bench-suite bench-suite-report bench-suite-backends bench-suite-gate external-check bench-guard bench-site fuzz fuzz-quick fuzz-reject fuzz-leak fuzz-newcomers corelib corelib-examples android-check ios-check shim-check shim-warn emit-warn mingw-warn source-bytes goldens-check embed-check tls-verify http-verify handle-guard format-diff math-diff traversal-check ar-check build-check debug-check q-check vm-check scheme-check kv-check db-check flow-check docs-site-check ed-check sheet-check sim-check make-check snap-check tally-check agg-check tmpl-check stat-check ledger-check fh-check dupe-check grid-check grade-check chess-check kvsrv-check sat-check locale-check glibc-check fetch weblog webserver site docs-site docs-site-check raytrace mandelbrot ffi recursion entrypoints platform-check platform-check-strict platform-list spec-check spec-fast docs-fences check-links corelib-doc-check server server-check wiki ci ci-release release-check release-content hooks ilp32 asan-self editors-check clean
 
 # The self-hosted compiler is the only maintained compiler. `tychoc` is a copy
 # of it so the CLI and tools keep one spelling.
@@ -273,6 +284,7 @@ check-fast: tychoc tychoc1
 	@$(MAKE) -s debug-check
 	@$(MAKE) -s surface-check
 	@$(MAKE) -s docs-counts-check
+	@$(MAKE) -s fuzz-quick
 
 parse-check: tychoc tychoc1
 	@sh compiler/run.sh
@@ -316,6 +328,9 @@ bench-conc: $(TYCHOC)
 
 bench-indexer: $(TYCHOC)
 	@TYCHOC=$(TYCHOC) sh bench/indexer/run.sh
+
+bench-flat-state: $(TYCHOC)
+	@TYCHOC=$(TYCHOC) sh bench/flat-state/run.sh
 
 bench-site: $(TYCHOC)
 	@TYCHOC=$(TYCHOC) sh bench/site/run.sh
@@ -626,7 +641,9 @@ N ?= 200
 fuzz: tychoc1
 	@python3 fuzz/run.py $(N)
 
-QN ?= 60
+# Per-change fuzz depth: the pre-push hook and check-fast. Nightly `make ci`
+# runs 200; `make ci-release` runs at least 1000 and refuses less.
+QN ?= 20
 fuzz-quick: tychoc1
 	@python3 fuzz/run.py $(QN)
 
@@ -691,6 +708,11 @@ ci-linux:
 
 ci:
 	@sh scripts/ci.sh $(N)
+
+# The release depth: 1000 fuzz seeds minimum, raised (never lowered) with N=.
+# Nightly is `make ci` (200); the per-change smoke is `make fuzz-quick` (20).
+ci-release:
+	@CI_RELEASE=1 sh scripts/ci.sh $${N:-1000}
 
 release-check: tychoc1
 	@set -eu; \

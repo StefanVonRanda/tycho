@@ -6153,7 +6153,7 @@ On a **one-level** chain they agree byte for byte, which is why the fixture uses
 that shape.
 
 **Why it matters more than a wording difference.** `tests/run.sh` judges every
-`tests/diag/` golden with `${TYCHOC:-./tychoc1}` (`tests/run.sh:175@TYCHOC`),
+`tests/diag/` golden with `${TYCHOC:-./tychoc1}` (`tests/run.sh:180@TYCHOC`),
 while `tools/prunner/main.ty@judge_diag` hardcodes `./tychoc`. So the two
 runners over the same corpus disagree about what the right diagnostic IS, and a
 golden recorded from one fails under the other. That is not specific to this
@@ -6320,7 +6320,7 @@ does exactly that to its watchdog. Under four concurrent lanes the process churn
 is high enough for a PID to be recycled between the save and the kill, and the
 signal then lands on an unrelated process. That fits every observation above
 (needs concurrency, hits multiple unrelated scripts, no lane does it alone) and
-is consistent with `run_lanes` (`scripts/ci.sh:34@run_lanes`) backgrounding the
+is consistent with `run_lanes` (`scripts/ci.sh:82@run_lanes`) backgrounding the
 lanes into one process group. Confirming it needs PID-level tracing across a
 full run, which has not been done.
 

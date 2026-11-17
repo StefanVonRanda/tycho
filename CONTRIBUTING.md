@@ -77,7 +77,8 @@ rather than obvious.
 
   Measured 2026-09-11 on Fedora 44: absent, 335 of `make test`'s fixtures fail
   this way and `make friction-check` reddens with them, because most of its pins
-  are `make test`.
+  are `make test`. `make check-fast` runs the 20-seed fuzz smoke, which links
+  its ASan/UBSan leg, so it needs them too.
 - **A static libc.** `tychoc1` (the self-hosted compiler, which `make test`,
   `make corelib` and `make ci` all depend on) links `-static-pie`, and so do the
   three shipped tools (`tychofmt`, `tycho`, `tycho-lsp`) through `TOOL_CFLAGS`.
@@ -96,25 +97,48 @@ All three are one-time setup, and all three were found by hitting them.
 
 **`make ci` runs under gcc or clang.**
 
-## The local CI gate (run it before a PR)
+## The two gates: change and release
 
-**Tycho has no cloud CI — that's on purpose.** There are no GitHub Actions; the
-gate is `scripts/ci.sh`, run locally:
+**Tycho has no cloud CI — that's on purpose.** There are two local gates, at two
+different costs:
 
 ```
-make ci              # build · test · ilp32 · asan-self · corelib + examples ·
-                     # concurrency · FFI · the three fuzz lanes · tooling ·
-                     # perf guard · recursion · spec-check · link+citation check
-make ci N=0          # same, skipping the (slow) fuzz lanes for a quick check
+make check-fast      # change gate (details under "The fast loop" below)
+make test            # authoritative suite for compiler/runtime/bootstrap changes
+make ci              # release gate: links · build · test · ilp32 · asan-self ·
+                     # corelib + examples · concurrency · FFI · the three fuzz
+                     # lanes · tooling · perf guard · recursion · spec-check
+make ci N=0          # release gate without the fuzz lanes
 ```
+
+`make check-fast` is the change gate. Run it after every ordinary corelib,
+runtime or docs change. For a compiler, emitter or bootstrap change, replace its
+`test-fast` step with `make test`: the shell/`cmp` harness cannot be fooled by a
+compiler that regresses inside `test-fast`'s own judge.
+
+```
+make test
+make parse-check check-links corelib debug-check surface-check docs-counts-check
+```
+
+That compiler arm measured about ten minutes on this box (`make test` 466 s plus
+the cheap lanes, less `test-fast`, which it replaces). For everything else,
+`make ci` remains the release gate.
+
+`make ci` is the release gate: nightly, before a merge, before a release, and
+when no cheap lane covers the change. It is exhaustive by design and costs tens
+of minutes — over 90 for the full fuzz sweep with `CI_SERIAL=1` on a shared or
+memory-capped box. Pay that once at the merge point, not once per edit.
+
+The fuzz depth follows the gate: `make fuzz-quick` is 20 seeds (the change gate
+and the pre-push hook), `make ci` is 200 (nightly), and `make ci-release` is at
+least 1000 (release; it refuses a lower `N`).
 
 **Docs-only change?** `make check-links` (~3s) is the whole gate — links,
 reachability, citations, and hashes.
 
 **A change is "green" iff the lanes that can redden for it pass.** Pick them from
 the table below — it maps each part of the tree to the one lane that covers it.
-Running `make ci` instead is not a stronger answer, it is the same answer after
-nine minutes, and the table exists so you do not have to spend them.
 
 **Run `make hooks` once after you clone.** It points `core.hooksPath` at
 `.githooks/`, so `git push` runs the citation/link gate and a fuzz smoke, and
@@ -123,28 +147,30 @@ not tracked**, so a fresh clone has no hooks at all until you run it — which i
 exactly how a red citation gate reached `main` on 2026-08-10.
 
 **The hook does not run the sweep**, deliberately: it holds only checks that are
-too cheap to argue with. `make ci` before a substantial push is yours to run,
-and it is the only thing that covers the wide lanes — a dogfood link break or a
-cross-package mangling divergence is invisible to `make test`.
+too cheap to argue with. Before you push, run the change gate
+(`make check-fast`, or `make test` plus the cheap lanes for compiler work); the
+release gate is the only thing that covers the wide lanes — a dogfood link break
+or a cross-package mangling divergence is invisible to `make test`.
 
-**`make ci` takes several minutes** (the sweep prints its duration on its last
-line). `make ci N=0` skips the fuzz lanes for a quicker check. By default it
-parallelises (`run_lanes` forks each lane group). On a shared machine,
-`CI_SERIAL=1 make ci` serializes those groups, fact-pin checks, compiler-test
-workers, documentation and fuzz workers without skipping lanes. Fixture runtime
-concurrency is not disabled. Combine it with low CPU/I/O priority and an
-affinity limit when other work needs the box. It trades elapsed time for lower
-concurrent resource use. `TYCHO_TEST_JOBS=4` limits fixture compiler workers
-without changing the runtime's `TYCHO_THREADS`; `DOCS_FENCES_JOBS=2` and
-`FUZZ_JOBS=2` bound doc/fuzz workers. CPU affinity can bound the process tree.
+**`make ci` takes tens of minutes** (the sweep prints per-step and per-lane wall
+time on its last lines). `make ci N=0` skips the fuzz lanes for a quicker run.
+By default it parallelises (`run_lanes` forks each lane group). On a shared
+machine, `CI_SERIAL=1 make ci` serializes those groups, fact-pin checks,
+compiler-test workers, documentation and fuzz workers without skipping lanes.
+Fixture runtime concurrency is not disabled. Combine it with low CPU/I/O
+priority and an affinity limit when other work needs the box. It trades elapsed
+time for lower concurrent resource use. `TYCHO_TEST_JOBS=4` limits fixture
+compiler workers without changing the runtime's `TYCHO_THREADS`;
+`DOCS_FENCES_JOBS=2` and `FUZZ_JOBS=2` bound doc/fuzz workers. CPU affinity can
+bound the process tree.
 
 **Two different things get confused here.** Running EVERY lane one at a time is
 usually slower than the parallel sweep (but appropriate under a shared-machine
-resource limit). Running
-the ONE lane that can redden for your change is seconds against fifteen minutes, and
-that is what the table below is for. Reach for the sweep when you cannot name a
-lane that covers what you touched, or when you want the three things no lane
-gives cheaply: the fuzz lanes, `ilp32`, and `asan-self`.
+resource limit). Running the ONE lane that can redden for your change is seconds
+against the release gate's tens of minutes, and that is what the table below is
+for. Reach for the sweep when you cannot name a lane that covers what you
+touched, or when you want the three things no lane gives cheaply: the fuzz
+lanes, `ilp32`, and `asan-self`.
 
 If something is watching its output, redirect to a log (`make ci > ci.log 2>&1`)
 rather than piping it — a pipeline dies with whatever is reading it and you lose
@@ -202,11 +228,12 @@ history to resolve against, and that is the checkout's doing, not the tree's.
 
 ### Which gate for which change
 
-`make ci` covers everything and is the honest default. When you are iterating
-and want a verdict in seconds instead of minutes, this is the narrowest gate
-that can actually fail for what you touched. The **"cannot redden for"** notes
-are the important column: several changes are invisible to the gate you would
-reach for first.
+`make check-fast` is the change gate and covers most edits; `make ci` is the
+release gate you reach for at a merge point, nightly, or when you cannot name a
+lane. When you are iterating and want a verdict in seconds instead of minutes,
+this is the narrowest gate that can actually fail for what you touched. The
+**"cannot redden for"** notes are the important column: several changes are
+invisible to the gate you would reach for first.
 
 | You changed | Run | Notes |
 |---|---|---|
@@ -277,9 +304,16 @@ reach for first.
 
 ### The fast loop
 
-`make check-fast` (~3 min) is the per-change loop: `test-fast`, `parse-check`,
-`check-links`, `corelib`, `debug-check`, `surface-check`, `docs-counts-check`.
-Use it after ordinary corelib, runtime or docs changes.
+`make check-fast` (~5 min, measured 2026-11-14) is the per-change loop:
+`test-fast`, `parse-check`, `check-links`, `corelib`, `debug-check`,
+`surface-check`, `docs-counts-check`, `fuzz-quick` (20 seeds).
+
+Every recipe `make` runs sits in a cgroup capped at `MEMCAP_MB` (default
+8192 MiB): a runaway compiler is killed there instead of OOM-killing the
+caller's session. `make ci` gives each forked lane its own cgroup at
+`MEMCAP_LANE_MB` (default: the same value), so parallel lanes no longer share
+one ceiling. `MEMCAP_MB=0 make test` disables the cap. A host without a systemd
+user manager runs uncapped; nothing else changes.
 
 `test-fast` runs the same fixtures as `make test` over a worker pool, but the
 pool is driven by `tools/prunner`, which is compiled by the compiler it tests.

@@ -100,7 +100,7 @@ duplicated here; this section states only each builtin's kind and one-line role.
 | `to_float(n)` | `int`/`u32`/`u64`/`f32` or a `float`-newtype → `float`. | magic |
 | `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | Any numeric scalar (`int`/`char`/`float`/`u32`/`u64`/`f32`, through `base_of`) → the sized type. | magic |
 | `to_str(x)` | `bytes`, or a `string`-newtype → `string` (zero-cost reinterpret). | magic |
-| `to_bytes(x)` | `string`/`bytes` (through `base_of`) → `bytes` (same buffer, distinct type — zero-cost reinterpret); **or `[int]` → `bytes`**, each element truncated `& 0xFF` into a fresh buffer (the only way to construct a binary `bytes` with interior `0x00`); **or a packed struct → `bytes`**, its exact `size_of$(T)` bytes, little-endian ([§17.1b](12-aggregates.md#171b-the-bytes-bridge)). | magic |
+| `to_bytes(x)` | `string`/`bytes` (through `base_of`) → `bytes` (same buffer, distinct type — zero-cost reinterpret); **or `[int]` → `bytes`**, each element truncated `& 0xFF` into a fresh buffer (the only way to construct a binary `bytes` with interior `0x00`); **or a packed struct → `bytes`**, its exact `size_of$(T)` bytes, little-endian; **or a `[T]` of a packed struct → `bytes`**, its `len * size_of$(T)` bytes, records in order, each little-endian ([§17.1b](12-aggregates.md#171b-the-bytes-bridge)). | magic |
 | `to_bool(x)` | A `bool`-newtype → `bool` (unwrap). | magic |
 | `to_under(x)` | Any newtype → its underlying type (generic zero-cost unwrap). | magic |
 | `chr(n)` | `int -> string`: the one-byte string for byte value `n` (`0`–`255`); a value outside `0..255` **aborts**. | Sig |
@@ -158,7 +158,7 @@ rejected — so they may grow or shrink the value in the owning arena.
 | Builtin | Signature | Kind | Semantics |
 |---|---|---|---|
 | `len(a)` | `[T] -> int` | magic | Element count. Also accepts `string`, `bytes`, a map, or a `soa`. |
-| `push(a, v)` | `([T], T) -> void` | magic | Append `v` in place; `a` MUST be a mutable array (or `soa`) place. Grounds a still-pending array type to `[typeof(v)]`. |
+| `push(a, v)` | `([T], T) -> void` | magic | Append `v` in place; `a` MUST be a mutable array (or `soa`) place. Grounds a still-pending array type to `[typeof(v)]`. `push(xs, b)` with `xs: [int]`, `b: bytes` appends `len(b)` elements in order, each in `0..255`. |
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
 | `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`), and to **maps** — `reserve(m, n)` pre-sizes a map's entry + index arrays. |
 
@@ -219,15 +219,17 @@ accumulator (`acc := zero$(T)`) that must work on an empty input.
 | Builtin | Signature | Kind | Semantics |
 |---|---|---|---|
 | `size_of$(T)` | `-> int` | magic | The size of the packed or `align(N)` struct `T` in bytes (§17.1b). |
-| `from_bytes$(T)(b)` | `bytes -> T` | magic | Read a packed struct back out of exactly `size_of$(T)` bytes. |
+| `from_bytes$(T)(b)` | `bytes -> T` | magic | Read a packed struct, or an array of one, back out of exactly `size_of$(T)` bytes per element. |
 
 Both use the same explicit type-argument call form as `zero$(T)`.
 `size_of$(T)` accepts a **packed struct** or an **`align(N)` struct** (or a
-newtype over either); `from_bytes$(T)` accepts a **packed struct** (or a
-newtype over one). No other type has a stated layout to read or write.
-`from_bytes$(T)` requires the length to match **exactly**; any other length is
-a runtime error naming the type and both lengths. The byte order is
-little-endian on every host.
+newtype over either); `from_bytes$(T)` accepts a **packed struct** or an
+**array of a packed struct** (or a newtype over a packed struct). No other type
+has a stated layout to read or write.
+`from_bytes$(T)` requires the length to match **exactly**; for an array,
+`len(b)` must be an exact multiple of `size_of$(T)` and yields
+`len(b) / size_of$(T)` elements. Any other length is a runtime error naming the
+type and both lengths. The byte order is little-endian on every host.
 [§17.1b](12-aggregates.md#171b-the-bytes-bridge) is the normative description.
 
 There is **no** `empty$(T)` builtin. An `empty()` returning `[$T]` is an ordinary

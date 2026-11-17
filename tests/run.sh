@@ -30,6 +30,11 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2          # repo root
 
+# Make runs this inside a capped recipe scope; a direct run joins one here.
+if [ -z "${MEMCAP_APPLIED:-}" ]; then
+    exec sh scripts/memcap.sh sh "$0" "$@"
+fi
+
 # The `passed:` line below counts CASES, not fixtures, so neither it nor
 # `make status`'s file count can catch a fixture DIRECTORY silently falling out
 # of the globs: both figures would simply move, and neither says which class.
@@ -144,7 +149,7 @@ corpus_census() {
     # Plus the 2 handle-destructor fixtures (2026-09-21): `free:` naming a
     # function that is not a declared `extern fn`, and one declared at the wrong
     # parameter type. Both SEMANTIC and word-for-word in both compilers.
-    [ "$cc_exp" -eq 662 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=662"   # +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit; +2: value_if_one_line, fstr_hole_escaped_quote; +1: array_div_lit_zero; +7: fixed/vector empty and const-sized array cases (2026-09-26); +10: D06 literal-fit coverage (variadic, UFCS, lambda, map default, send, subscript, value-match, broadcast and f32 arrays/vectors); +4: subscript-place root-rule rejects (2026-10-18); +1: generic_explicit_newtype (2026-10-27)
+    [ "$cc_exp" -eq 664 ] || cc_bad="$cc_bad reject-expect:$cc_exp!=664"   # +1: value_if_nested (2026-09-24); +3: handle use-after-close (2026-09-24); +1: handle_close_param (2026-09-24); +1: slice_struct (2026-09-25); +4: fixarr/vector pop and reserve (2026-09-25); +5: the or_else rejects (2026-09-25); +1: sized_lit_binop_fit; +2: value_if_one_line, fstr_hole_escaped_quote; +1: array_div_lit_zero; +7: fixed/vector empty and const-sized array cases (2026-09-26); +10: D06 literal-fit coverage (variadic, UFCS, lambda, map default, send, subscript, value-match, broadcast and f32 arrays/vectors); +4: subscript-place root-rule rejects (2026-10-18); +1: generic_explicit_newtype (2026-10-27); +2: the array-capable bytes-bridge rejects (V2b, 2026-11-13)
 
     cc_dirs=0
     for cc_d in $(git ls-files tests 2>/dev/null | grep '\.ty$' | sed 's|/[^/]*$||' | sort -u); do

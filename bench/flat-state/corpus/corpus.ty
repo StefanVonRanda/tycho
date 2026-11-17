@@ -1,0 +1,36 @@
+package corpus
+
+const ARTISTS = 512
+const ALBUMS_PER_ARTIST = 24
+const TRACKS_PER_ALBUM = 16
+const REMOVE_EVERY = 20
+
+fn mix(a: int, b: int, c: int, salt: int) -> int:
+    return (a * 73856093 + b * 19349663 + c * 83492791 + salt * 2654435761) % 1000000007
+
+fn pad(n: int, width: int) -> string:
+    s := str(n)
+    for len(s) < width:
+        s = "0" + s
+    return s
+
+fn artist_name(a: int) -> string:
+    return "Artist " + pad(a, 4)
+
+fn artist_country(a: int) -> string:
+    return "Country " + pad(mix(a, 0, 0, 1) % 24, 2)
+
+fn album_title(a: int, j: int) -> string:
+    return "Album " + pad(mix(a, j, 0, 2) % 512, 4)
+
+fn album_year(a: int, j: int) -> int:
+    return 1960 + mix(a, j, 0, 3) % 65
+
+fn track_title(a: int, j: int, k: int) -> string:
+    return "Track " + pad(mix(a, j, k, 4) % 1024, 4)
+
+fn track_seconds(a: int, j: int, k: int) -> int:
+    return 45 + mix(a, j, k, 5) % 480
+
+fn track_plays(a: int, j: int, k: int) -> int:
+    return mix(a, j, k, 6) % 100000

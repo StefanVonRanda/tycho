@@ -7,7 +7,7 @@
 3. **[Tutorial](tutorial.md)** — write and run your first programs in about an hour.
 4. **[From `malloc` to implicit arenas](from-c-to-arenas.md)** — the memory model
    in five steps from familiar C. Read this right after the tutorial.
-5. **[Thinking in Tycho](idioms.md)** — the six idioms: what to reach for
+5. **[Thinking in Tycho](idioms.md)** — the eight idioms: what to reach for
    instead of references, observers, and interface values. Read this before
    the reference.
 

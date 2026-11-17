@@ -113,6 +113,7 @@ first argument.
 | Form | Effect |
 |---|---|
 | `push(a, v)` | Append a deep copy of `v` as the new last element; `len` grows by one. |
+| `push(a, b)` | `a: [int]`, `b: bytes`: append `len(b)` elements in order, each in `0..255`. |
 | `pop(a)` | Remove the last element and return it (deep-copied into the caller). |
 | `reserve(a, n)` | Grow backing capacity to at least `n`; `len` is unchanged. |
 
@@ -414,8 +415,8 @@ fn main():
 
 ### 17.1b The bytes bridge
 
-A packed struct is the only aggregate whose storage a program may move into or
-out of a `bytes` value. Three forms:
+A packed struct, or an array whose element is one, is the only aggregate whose
+storage a program may move into or out of a `bytes` value. Four forms:
 
 - `size_of$(T)` is the size of the struct `T` in bytes, an `int`. `T` MUST be a
   packed struct or an `align(N)` struct (or a newtype over either). For a packed
@@ -430,6 +431,12 @@ out of a `bytes` value. Three forms:
   `size_of$(T)` **exactly**; any other length is a runtime error naming the type
   and both lengths. A shorter buffer is not accepted and padded, and a longer
   one is not accepted and truncated.
+- `to_bytes(xs)`, where `xs: [T]` and `T` is a packed struct, yields
+  `len(xs) * size_of$(T)` bytes: the records in order, each little-endian.
+  `from_bytes$([T])(b)` is the read half and returns `len(b) / size_of$(T)`
+  elements; `len(b)` MUST be an exact multiple of `size_of$(T)`, and a remainder
+  is a runtime error naming the type and both numbers (a torn last record is
+  never silently dropped). An empty `bytes` yields an empty array.
 
 **The byte order is LITTLE-ENDIAN on every host**, not the host's own. Each
 field occupies its own width with the least significant byte first, fields in
@@ -457,6 +464,30 @@ fn main():
 ```output
 9 9 255
 3 -1 7
+```
+
+An array of a packed struct is a sequence of those same records, with no
+per-record header:
+
+```tycho
+packed struct Ins:
+    op: u8
+    a: i32
+
+fn main():
+    xs := []Ins
+    push(xs, Ins(to_u8(1), to_i32(2)))
+    push(xs, Ins(to_u8(3), to_i32(-4)))
+    ys := from_bytes$([Ins])(to_bytes(xs))
+    println(str(len(ys)))
+    for v in ys:
+        println(str(v.op) + " " + str(v.a))
+```
+
+```output
+2
+1 2
+3 -4
 ```
 
 ### 17.2 Field access and places

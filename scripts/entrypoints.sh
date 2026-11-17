@@ -27,7 +27,7 @@ for d in tools/*/; do
 done
 
 for f in $(find bench -name '*.ty' | sort); do
-    case "$f" in bench/trie/*) continue ;; esac
+    case "$f" in bench/trie/*|bench/flat-state/corpus/*) continue ;; esac  # packages, not entry points
     list="$list $f"
 done
 

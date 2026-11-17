@@ -1,0 +1,32 @@
+# push(xs, b): append every byte of a `bytes` as one [int] element, in order.
+# Covers a non-empty target, a packed struct with high bytes, an empty source,
+# and growth past one doubling.
+packed struct Rec:
+    tag: u8
+    n: i32
+
+fn main():
+    xs := [7, 8]
+    push(xs, to_bytes("AB"))
+    println(str(len(xs)) + " " + str(xs[0]) + " " + str(xs[1]) + " " +
+        str(xs[2]) + " " + str(xs[3]))
+
+    push(xs, to_bytes(Rec(to_u8(1), to_i32(-2))))
+    ln := len(xs)
+    println(str(ln) + " " + str(xs[4]) + " " + str(xs[5]) + " " + str(xs[6]) +
+        " " + str(xs[7]) + " " + str(xs[8]))
+
+    e := to_bytes("")
+    push(xs, e)
+    println(str(len(xs)))
+
+    big := []int
+    i := 0
+    for i < 4096:
+        push(big, i % 251)
+        i += 1
+    push(xs, to_bytes(big))
+    sum := 0
+    for v in xs:
+        sum += v
+    println(str(len(xs)) + " " + str(xs[0]) + " " + str(xs[len(xs) - 1]) + " " + str(sum))

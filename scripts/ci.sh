@@ -1,5 +1,10 @@
 set -eu
 cd "$(dirname "$0")/.."
+# `make ci` runs this inside a capped recipe scope; a direct `sh scripts/ci.sh`
+# would not, so join one. run_lanes then gives every forked lane its own scope.
+if [ -z "${MEMCAP_APPLIED:-}" ]; then
+    exec sh scripts/memcap.sh sh "$0" "$@"
+fi
 N="${1:-200}"
 LANE="${2:-main}"
 [ "$#" -le 2 ] || { echo "ci.sh: usage: scripts/ci.sh [FUZZ_N]" >&2; exit 2; }
@@ -7,6 +12,19 @@ LANE="${2:-main}"
 case "$N" in
     *[!0-9]*|"") printf 'ci.sh: FUZZ_N must be a non-negative integer, got "%s"\n' "$N" >&2; exit 2 ;;
 esac
+# Release depth is a floor, not a label: `make ci-release` sets CI_RELEASE=1 and
+# may raise N, never lower it. Nightly `make ci` stays at the default 200.
+case "${CI_RELEASE:-0}" in
+    0) ;;
+    1) [ "$N" -ge 1000 ] || {
+           printf 'ci.sh: release depth is >= 1000 seeds (got %s); nightly is 200\n' "$N" >&2
+           exit 2
+       } ;;
+    *) printf 'ci.sh: CI_RELEASE must be 0 or 1\n' >&2; exit 2 ;;
+esac
+# Each forked lane is its own cgroup. MEMCAP_MB caps the main lane (the recipe
+# scope) and is the default here; MEMCAP_LANE_MB caps every other lane.
+CAP_LANE_MB=${MEMCAP_LANE_MB:-${MEMCAP_MB:-8192}}
 # Shared machines can serialize lanes; callers may also lower priority/affinity.
 case "${CI_SERIAL:-0}" in
     0) ;;
@@ -54,17 +72,24 @@ step() {
     _step_t0=$(date +%s)
     printf '\n>>> %s\n' "$1"
 }
+run_lane() {
+    # Clearing MEMCAP_APPLIED is what asks memcap.sh for a NEW scope: the lane
+    # must not inherit the main lane's ceiling. It re-sets the guard inside the
+    # scope, so the lane's own make recipes inherit it instead of nesting scopes.
+    MEMCAP_APPLIED= MEMCAP_MB="$CAP_LANE_MB" \
+        sh scripts/memcap.sh sh "$0" "$N" "$1"
+}
 run_lanes() {
     if [ "${CI_SERIAL:-0}" = 1 ]; then
         failed=0
         for child in "$@"; do
-            if ! sh "$0" "$N" "$child"; then failed=1; fi
+            if ! run_lane "$child"; then failed=1; fi
         done
         return "$failed"
     fi
     pids=""
     for child in "$@"; do
-        sh "$0" "$N" "$child" &
+        run_lane "$child" &
         pids="$pids $!"
     done
     failed=0
@@ -89,6 +114,8 @@ ci_skipped=""
 bar
 printf ' tycho local CI   (no GitHub Actions -- runs here, on this machine)\n'
 printf ' fuzz seeds: %s\n' "$N"
+printf ' lane caps: main %s MiB, others %s MiB (MEMCAP_MB / MEMCAP_LANE_MB)\n' \
+    "${MEMCAP_MB:-8192}" "$CAP_LANE_MB"
 bar
 
 step "[1/13] build (make tychoc -- the checked-in bootstrap emits the self-hosted compiler, and the friction pins at [1d2] run tests under ./tychoc1)"
@@ -150,6 +177,14 @@ make -s bootstrap-check
 
 step "[1e3/13] make single-compiler-check  (no build lane compiles the archived src/tychoc.c)"
 make -s single-compiler-check
+
+# These two were reached only from the platform and apps lanes, which run after
+# every heavy step; both fit in a second and neither can redden for `make test`.
+step "[1e4/13] make rtparity  (emitted runtime surface vs the oracle; 0.05s, and make test cannot redden for it)"
+make -s rtparity
+
+step "[1e5/13] make entrypoints  (every entry point still compiles; 0.8s)"
+make -s entrypoints
 
 step "[2/13] make test  (golden output + ASan/UBSan/LeakSanitizer)"
 make -s test
@@ -230,9 +265,6 @@ else
     make -s asan-self
 fi
 
-step "[2d/13] make rtparity  (the emitted runtime surface -- env knobs, tycho: traps, arena-stats rows -- vs the oracle)"
-make -s rtparity
-
 step "[2e/13] make locale-check  (both locale fixtures compiled AND run under a comma-decimal LC_ALL forced by an LD_PRELOAD constructor)"
 make -s locale-check
 
@@ -282,10 +314,6 @@ make -s sheet-check
 fi
 
 if [ "$LANE" = apps ]; then
-step "[3b/13] make entrypoints  (every entry point in the tree still compiles)"
-make -s entrypoints
-
-
 step "[3d/13] make shim-check  (every corelib <pkg>_shim.c compiles standalone under -std=c11)"
 make -s shim-check
 
@@ -488,8 +516,10 @@ if [ "$LANE" = fuzz-reject ]; then
     python3 fuzz/run_reject.py "$N"
 fi
 if [ "$LANE" = fuzz-leak ]; then
-    # Leak bugs surface fast, so cap this sequential lane; make fuzz-leak runs deeper.
-    LN="$N"; [ "$LN" -gt 150 ] && LN=150
+    # Leak bugs surface fast, so cap this sequential lane at the nightly depth;
+    # the release depth lifts the cap so `make ci-release` really runs >= 1000.
+    LN="$N"
+    if [ "${CI_RELEASE:-0}" != 1 ] && [ "$LN" -gt 150 ]; then LN=150; fi
     step "[8/13] make fuzz-leak N=$LN  (LeakSanitizer: arena / owner-0 leaks)"
     python3 fuzz/run_leak.py "$LN"
 fi
@@ -506,7 +536,7 @@ make -s spec-check
 
 step "[12b/13] make docs-fences  (every fenced tycho block in docs/ that claims to be a whole program still compiles)"
 make -s docs-fences
+fi
 
 step "[13/13] make check-links  (every relative Markdown link resolves to a real file; every provenance citation still resolves)"
 make -s check-links
-fi

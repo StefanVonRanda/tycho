@@ -27,15 +27,16 @@ is off — leaks aren't soundness bugs; this targets *correctness*.
 ## Run it
 
 ```
-make fuzz            # 200 seeds (default) — full sweep, ~12 min under ASan
-make fuzz-quick      # 60 seeds (~1-2 min) — inner dev-loop smoke test
-make fuzz-quick QN=120  # a slightly deeper quick sweep
+make fuzz            # 200 seeds (default) — the nightly `make ci` depth, ~12 min under ASan
+make fuzz-quick      # 20 seeds — the per-change smoke (check-fast and the pre-push hook)
+make ci-release      # >= 1000 seeds — the release depth
 make fuzz N=5000     # more
 python3 fuzz/run.py 1000 2000   # 1000 seeds starting at seed 2000
 ```
 
-Use `make fuzz-quick` while iterating on a compiler change for fast feedback;
-run the full `make fuzz` before committing.
+`make check-fast` already runs the 20-seed smoke, so an ordinary change needs no
+manual fuzz run. `make ci` runs 200 nightly; `make ci-release` runs at least
+1000 and refuses a lower `N`.
 
 Deterministic: a finding's `seed_<n>.ty` reproduces with `python3 fuzz/gen.py <n>`.
 

@@ -4045,6 +4045,25 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
             out = out + v + "->u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
     return (out + v + "; })", "E~" + en)
 
+# _place() has no type, so it reads every to_bytes(x) as an alias. Ask the
+# argument's type for the two forms that really allocate. _expr_type can emit,
+# and can claim a pending binding, so probe with the state save _argtypes uses.
+fn _to_bytes_fresh(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Call(l, q, n, ts, k):
+            if n != "to_bytes" or len(q) != 0 or len(k) != 1:
+                return false
+            sw := cs.want
+            sp := cs.projection
+            cs.want = ""
+            cs.projection = []string
+            t := _expr_type(&cs, k[0])
+            cs.want = sw
+            cs.projection = sp
+            return _is_arr(t) or _is_struct(t)
+        _: return false
+    return false
+
 # The value a `return` hands back, homed in the caller's arena: shared by
 # `return e` and an `or_else` handler, which is returned the same way.
 fn _retval(cs: inout C, e: ast.Expr) -> string:
@@ -4057,6 +4076,11 @@ fn _retval(cs: inout C, e: ast.Expr) -> string:
     # tychoc1 copied unconditionally, which allocated every returned
     # value twice.
     tmpret := not _place(e)
+    # to_bytes is a place only when its argument is a string/bytes alias; for an
+    # [int] or a packed struct it is a fresh allocation, so returning it must not
+    # copy again (measured: two 3.3 MB copies per save).
+    if not tmpret and _to_bytes_fresh(&cs, e):
+        tmpret = true
     # _parent for a PLACE too. Its emission may insert a copy of its own
     # (a map/array element does), and _shares then reads the SOURCE --
     # which does live in the caller -- while the value actually returned
@@ -4440,6 +4464,17 @@ fn _ew_lane(cs: inout C, et: string, op: string, lhs: string, rhs: string) -> st
         out = "(" + _cty(&cs, et) + ")( " + out + ")"
     return out
 
+# Number of `+` nodes down a left spine. Fields are read in place and the walk
+# recurses on the element: binding a local `ast.Expr` deep-copies the subtree
+# this exists to avoid.
+fn _int_add_spine(e: ast.Expr) -> int:
+    match e:
+        ast.Binop(l, o, kids):
+            if o == "+":
+                return 1 + _int_add_spine(kids[0])
+        _: pass
+    return 0
+
 fn _int_add_leaf(cs: inout C, e: ast.Expr) -> bool:
     match e:
         ast.IntLit(l, v): return true
@@ -4451,40 +4486,55 @@ fn _int_add_leaf(cs: inout C, e: ast.Expr) -> bool:
 # Break a long simple-int left spine iteratively instead of nesting one C
 # parenthesis per source `+`. Calls and non-int expressions retain the ordinary
 # emitter so evaluation/coercion rules are untouched.
+# Validate a `+` spine without copying it: parameters are borrowed, so the
+# recursion reads `kids` in place. A `parts: [ast.Expr]` array deep-copied every
+# operand, which cost 255 MiB / 8.7 M allocs on a self-compile.
+fn _int_add_ok(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Binop(l, o, kids):
+            if o == "+":
+                return _int_add_leaf(&cs, kids[1]) and _int_add_ok(&cs, kids[0])
+        _: pass
+    return _int_add_leaf(&cs, e)
+
+fn _int_add_flat(cs: inout C, e: ast.Expr) -> (string, string):
+    match e:
+        ast.Binop(l, o, kids):
+            if o == "+":
+                ls, lt := _int_add_flat(&cs, kids[0])
+                if lt != "int":
+                    return ("", "?")
+                rs, rt := _ex(&cs, kids[1])
+                if rt != "int":
+                    return ("", "?")
+                return (ls + " + " + rs, "int")
+        _: pass
+    return _ex(&cs, e)
+
 fn _flat_int_add(cs: inout C, ea: ast.Expr, eb: ast.Expr) -> (string, string):
-    parts := [eb]
-    cur := ea
-    for true:
-        match cur:
-            ast.Binop(l, o, kids):
-                if o == "+":
-                    push(parts, kids[1])
-                    cur = kids[0]
-                    continue
-            _: pass
-        break
-    push(parts, cur)
-    if len(parts) < 128:
+    # The caller has already gated on _int_add_spine. Walk the borrowed spine
+    # instead of materialising `parts`: that array deep-copied every operand,
+    # and was the top allocator in a self front-end run (11.5 M allocs).
+    if not _int_add_ok(&cs, ea):
         return ("", "")
-    for part in parts:
-        if not _int_add_leaf(&cs, part):
-            return ("", "")
-    first, ft := _ex(&cs, parts[len(parts) - 1])
-    if ft != "int":
+    ls, lt := _int_add_flat(&cs, ea)
+    if lt != "int":
         return ("", "")
-    out := "(" + first
-    for i := len(parts) - 2; i >= 0; i -= 1:
-        next, nt := _ex(&cs, parts[i])
-        if nt != "int":
-            return ("", "")
-        out = out + " + " + next
-    return (out + ")", "int")
+    es, et := _ex(&cs, eb)
+    if et != "int":
+        return ("", "")
+    return ("(" + ls + " + " + es + ")", "int")
 
 fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, string):
     if op == "+":
-        flat, ft := _flat_int_add(&cs, ea, eb)
-        if len(ft) > 0:
-            return (flat, ft)
+        # Gate before calling: _flat_int_add opens a child arena and re-emits
+        # both operands, and this runs for every `+` in the program while almost
+        # all spines are short (self-compile: 14.1 M allocs total, no
+        # `_flat_int_add` entry, vs 25.6 M with the old parts[] walk).
+        if _int_add_spine(ea) + 2 >= 128:
+            flat, ft := _flat_int_add(&cs, ea, eb)
+            if len(ft) > 0:
+                return (flat, ft)
     savebin := cs.arena
     if len(cs.concat_scratch) > 0:
         cs.arena = cs.concat_scratch
@@ -4993,6 +5043,21 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
         return ("((tycho_int)sizeof(" + _cty(&cs, ta[0]) + "))", "int")
     if n == "from_bytes" and len(ta) == 1 and len(args) == 1:
         bc, _bt := _ex(&cs, args[0])
+        if _is_arr(ta[0]):
+            e := _elem(ta[0])
+            if not _is_struct(e):
+                _bad("from_bytes$([...]) takes an array of a packed struct")
+            ct := _cty(&cs, ta[0])
+            v2 := _fresh(&cs, "_pkr")
+            bsrc := _fresh(&cs, "_pkb")
+            nlen := _fresh(&cs, "_pkn")
+            dp := _fresh(&cs, "_pkd")
+            return ("(__extension__ ({ char *" + bsrc + " = " + bc + "; tycho_int " + nlen +
+                " = 0; void *" + dp + " = tycho_unpack_arr(" + cs.arena + ", " + bsrc +
+                ", Pk_" + _tname(e) + "_, " + str(_pk_n(&cs, e)) + ", (tycho_int)sizeof(" +
+                _cty(&cs, e) + "), \"[" + _pk_disp(_tname(e)) + "]\", &" + nlen + "); " +
+                ct + " " + v2 + "; " + v2 + ".data = (" + _cty(&cs, e) + " *)" + dp + "; " +
+                v2 + ".len = " + nlen + "; " + v2 + ".cap = " + nlen + "; " + v2 + "; }))", ta[0])
         v2 := _fresh(&cs, "_pkr")
         return ("(__extension__ ({ " + _ctyz(&cs, ta[0]) + v2 + "; tycho_unpack(&" + v2 +
             ", Pk_" + _tname(ta[0]) + "_, " + str(_pk_n(&cs, ta[0])) +
@@ -5748,6 +5813,14 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         if et == "float" and vt == "int":
             vc = "(double)(" + vc + ")"
         ow := _ownerof(&cs, args[0])
+        if et == "int" and vt == "bytes":
+            # One growth for the whole run, and the source is evaluated ONCE:
+            # a bare `vc` used twice would re-run a to_bytes(packed) statement
+            # expression (and its allocation).
+            pb := _fresh(&cs, "_pb")
+            return ("(__extension__ ({ char *" + pb + " = " + vc + "; " +
+                _u(&cs, "tycho_arr_int_append_bytes") + "(" + ow + ", &(" + rc + "), " + pb +
+                ", tycho_str_len(" + pb + ")); }))", "void")
         mv := _canmove_push(&cs, args[0], args[1], et)
         # A CONSTRUCTED value needs the copy as much as a place does: its
         # interior strings/arrays were allocated in the caller's temporary
@@ -5872,7 +5945,17 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         if _is_arr(t):
             # [int] -> bytes is a real conversion (each element & 0xFF);
             # string -> bytes is the same buffer -- src/tychoc.c:14288
-            return ("tycho_bytes_from_intarr(" + cs.arena + ", " + c + ")", "bytes")
+            e := _elem(t)
+            if e == "int":
+                return ("tycho_bytes_from_intarr(" + cs.arena + ", " + c + ")", "bytes")
+            if not _is_struct(e):
+                _bad("to_bytes([...]) takes an array of a packed struct")
+            ct := _cty(&cs, t)
+            v := _fresh(&cs, "_pka")
+            return ("(__extension__ ({ " + ct + " " + v + " = " + c +
+                "; tycho_pack_arr(" + cs.arena + ", " + v + ".data, " + v + ".len, Pk_" +
+                _tname(e) + "_, " + str(_pk_n(&cs, e)) + ", (tycho_int)sizeof(" +
+                _cty(&cs, e) + ")); }))", "bytes")
         if _is_struct(t):
             v := _fresh(&cs, "_pkv")
             return ("(__extension__ ({ " + _ctyz(&cs, t) + v + " = " + c +

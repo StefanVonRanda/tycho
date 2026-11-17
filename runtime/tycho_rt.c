@@ -2139,13 +2139,9 @@ TychoArrInt tycho_arr_int_with_cap(Arena *a, tycho_int cap) {
  * -- interior 0x00 included -- that a string can't hold. `to_bytes([int])`. */
 char *tycho_bytes_from_intarr(Arena *a, TychoArrInt arr) {
     tycho_int n = arr.len; if (n < 0) n = 0;
-    unsigned char *p = NULL;
-    if (n > 0) {
-        p = (unsigned char *)malloc((size_t)n);
-        if (!p) tycho_oom();
-        for (tycho_int i = 0; i < n; i++) p[i] = (unsigned char)(arr.data[i] & 0xFF);
-    }
-    return tycho_bytes_from_c(a, p, n);
+    char *r = tycho_str_alloc(a, n);
+    for (tycho_int i = 0; i < n; i++) r[i] = (char)(arr.data[i] & 0xFF);
+    return r;
 }
 
 /* --- packed struct <-> bytes (V2b) -----------------------------------------
@@ -2215,6 +2211,51 @@ void tycho_unpack(void *out, const int *w, int nw, tycho_int size,
     if (!tycho_pk_is_le()) tycho_pk_swap((unsigned char *)out, w, nw);
 }
 
+/* to_bytes(xs) over a [packed T]: n records of `size` bytes, record order kept,
+ * each record little-endian. One allocation for the whole array. */
+char *tycho_pack_arr(Arena *a, const void *data, tycho_int n, const int *w, int nw,
+                     tycho_int size) {
+    tycho_pk_check(w, nw, size);
+    if (n < 0) n = 0;
+    if (size <= 0 || (uint64_t)n > (size_t)-1 / (size_t)size)
+        tycho_die("tycho: packed array size out of range");
+    tycho_int tot = n * size;
+    char *r = tycho_str_alloc(a, tot);
+    if (tot > 0) memcpy(r, data, (size_t)tot);
+    if (!tycho_pk_is_le()) {
+        for (tycho_int i = 0; i < n; i++)
+            tycho_pk_swap((unsigned char *)r + i * size, w, nw);
+    }
+    return r;
+}
+
+/* from_bytes$( [T] )(b): len(b) must be a WHOLE number of records. A remainder
+ * is refused by name, exactly like the one-record read above -- a truncated
+ * last record is not silently dropped. */
+void *tycho_unpack_arr(Arena *a, const char *b, const int *w, int nw, tycho_int size,
+                       const char *tname, tycho_int *out_len) {
+    tycho_int nb = tycho_str_len(b);
+    tycho_pk_check(w, nw, size);
+    if (size <= 0 || nb % size != 0) {
+        char m[192];
+        snprintf(m, sizeof m, "from_bytes$(%s): length %lld is not a multiple of %lld",
+                 tname, (long long)nb, (long long)size);
+        tycho_die(m);
+    }
+    tycho_int n = nb / size;
+    void *r = 0;
+    if (nb > 0) {
+        r = arena_alloc(a, (size_t)nb);
+        memcpy(r, b, (size_t)nb);
+        if (!tycho_pk_is_le()) {
+            for (tycho_int i = 0; i < n; i++)
+                tycho_pk_swap((unsigned char *)r + i * size, w, nw);
+        }
+    }
+    *out_len = n;
+    return r;
+}
+
 /* FFI: copy a C-owned (ptr, len) tycho_int buffer (from an extern `-> [int]`, out-param
  * shim) into an arena array, then free it -- the [int] analogue of
  * tycho_bytes_from_c. NULL p yields the empty array (nothing to free). */
@@ -2232,6 +2273,26 @@ void tycho_arr_int_reserve(Arena *a, TychoArrInt *xs, tycho_int n) {
     if (xs->len) memcpy(nd, xs->data, (size_t)xs->len * sizeof(tycho_int));
     if (xs->cap) arena_recycle(a, xs->data, (size_t)xs->cap * sizeof(tycho_int));
     xs->data = nd; xs->cap = n;
+}
+
+/* push([int], bytes): widen each byte into one element with ONE growth step.
+ * The per-byte tycho_arr_int_push path re-checks capacity and doubles ~20 times
+ * to reach a multi-megabyte buffer; here the final length is known up front. */
+void tycho_arr_int_append_bytes(Arena *a, TychoArrInt *xs, const char *s, tycho_int n) {
+    if (n <= 0) return;
+    tycho_int need = xs->len + n;
+    if (need < xs->len) tycho_die("tycho: array length overflow");
+    if (need > xs->cap) {
+        tycho_int ncap = xs->cap > 0 ? xs->cap : 4;
+        while (ncap < need) {
+            if (ncap > 1152921504606846976LL) { ncap = need; break; }  /* 1 << 60 */
+            ncap *= 2;
+        }
+        tycho_arr_int_reserve(a, xs, ncap);
+    }
+    tycho_int *d = xs->data + xs->len;
+    for (tycho_int i = 0; i < n; i++) d[i] = (unsigned char)s[i];
+    xs->len = need;
 }
 
 static void tycho_arr_int_push_slow(Arena *a, TychoArrInt *xs, tycho_int v) {

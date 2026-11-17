@@ -945,8 +945,9 @@ fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args:
             _cerr(&cs, "from_bytes$(T)(b) takes exactly one type argument")
             return "?"
         t3 := _enc(&cs, ts[0])
-        if known(t3) and not _is_packed_struct(&cs, t3):
-            _cerr(&cs, "from_bytes$(" + _show(&cs, t3) + "): only a packed struct can be read from bytes")
+        if known(t3) and not (_is_packed_struct(&cs, t3) or
+                (_is_arr(t3) and _is_packed_struct(&cs, _elem_of(&cs, t3)))):
+            _cerr(&cs, "from_bytes$(" + _show(&cs, t3) + "): only a packed struct or an array of one can be read from bytes")
         if len(args) == 1:
             at3 := _base(&cs, _ex(&cs, args[0]))
             cs.line = l

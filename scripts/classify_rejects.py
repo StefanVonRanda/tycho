@@ -271,6 +271,9 @@ FALLBACK = [
     # class. Both are checks that need a concrete type.
     ("comparison needs concrete operand types", "TYPE"),
     ("consumed by a `sink` parameter inside a loop, where", "SEMANTIC"),
+    # V2b array-capable wordings, post-freeze: no frozen C site states them.
+    ("to_bytes(x) takes a string, [int], a packed struct", "SEMANTIC"),
+    ("only a packed struct or an array of one can be read from bytes", "SEMANTIC"),
 ]
 
 

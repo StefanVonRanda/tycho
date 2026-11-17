@@ -1,0 +1,276 @@
+package main
+
+import "core:buffer"
+import "core:io"
+import "core:pool"
+import "../corpus"
+
+# The same logical state as ../nested, laid out as one root value with no
+# pointers in any element: names are (off, len) into one text blob, an album's
+# tracks are an (off, count) slice of one global array, and albums are a pool
+# of packed records. See RESULTS.md for what this buys and what it costs.
+
+packed struct NameRef:
+    off: i32
+    len: i32
+
+packed struct ArtistRec:
+    name: NameRef
+    country: NameRef
+
+packed struct AlbumRec:
+    title: NameRef
+    artist: i32
+    year: i32
+    track_off: i32
+    track_count: i32
+
+packed struct TrackRec:
+    title: NameRef
+    seconds: i32
+    plays: i32
+
+packed struct I32:
+    x: i32
+
+struct State:
+    text: bytes
+    names: [NameRef]
+    artists: [ArtistRec]
+    albums: pool.Pool(AlbumRec)
+    tracks: [TrackRec]
+
+const MAGIC = 20081104
+const VERSION = 1
+const MOD = 1000000007
+
+fn new_state() -> State:
+    return State(to_bytes([]int), [], [], pool.Pool([]pool.Slot(AlbumRec), []int), [])
+
+fn step(h: int, v: int) -> int:
+    return (h * 131 + v) % MOD
+
+fn hash_ref(t: bytes, r: NameRef) -> int:
+    h := 0
+    off := to_int(r.off)
+    n := to_int(r.len)
+    for i := 0; i < n; i += 1:
+        h = (h * 31 + t[off + i]) % MOD
+    return h
+
+fn intern_of(seen: inout [string: NameRef], txt: inout buffer.Buffer, names: inout [NameRef], s: string) -> NameRef:
+    if s in seen:
+        return seen[s]
+    r := NameRef(to_i32(len(txt.data)), to_i32(len(s)))
+    buffer.write(&txt, s)
+    seen[s] = r
+    push(names, r)
+    return r
+
+fn build(st: inout State) -> int:
+    seen := []string: NameRef
+    txt := buffer.new()
+    reserve(st.artists, corpus.ARTISTS)
+    for a := 0; a < corpus.ARTISTS; a += 1:
+        n := intern_of(&seen, &txt, &st.names, corpus.artist_name(a))
+        c := intern_of(&seen, &txt, &st.names, corpus.artist_country(a))
+        push(st.artists, ArtistRec(n, c))
+    reserve(st.albums.slots, corpus.ARTISTS * corpus.ALBUMS_PER_ARTIST)
+    reserve(st.tracks, corpus.ARTISTS * corpus.ALBUMS_PER_ARTIST * corpus.TRACKS_PER_ALBUM)
+    removed := pool.Handle(0)
+    did_remove := false
+    for a := 0; a < corpus.ARTISTS; a += 1:
+        for j := 0; j < corpus.ALBUMS_PER_ARTIST; j += 1:
+            g := a * corpus.ALBUMS_PER_ARTIST + j
+            tt := intern_of(&seen, &txt, &st.names, corpus.album_title(a, j))
+            off := len(st.tracks)
+            h := pool.add(&st.albums, AlbumRec(tt, to_i32(a), to_i32(corpus.album_year(a, j)), to_i32(off), 0))
+            idx := pool.index_of(h)
+            for k := 0; k < corpus.TRACKS_PER_ALBUM; k += 1:
+                rt := intern_of(&seen, &txt, &st.names, corpus.track_title(a, j, k))
+                push(st.tracks, TrackRec(rt, to_i32(corpus.track_seconds(a, j, k)), to_i32(corpus.track_plays(a, j, k))))
+            st.albums.slots[idx].val.track_count = to_i32(corpus.TRACKS_PER_ALBUM)
+            if g % corpus.REMOVE_EVERY == 0:
+                pool.remove(&st.albums, h)
+                if not did_remove:
+                    removed = h
+                    did_remove = true
+    if not did_remove:
+        die("build: no album was removed")
+    if pool.alive(st.albums, removed):
+        die("build: removed handle is still alive")
+    st.text = buffer.as_bytes(txt)
+    return 1
+
+fn counts(st: State) -> (int, int):
+    live := 0
+    tracks := 0
+    for i := 0; i < len(st.albums.slots); i += 1:
+        if st.albums.slots[i].used:
+            live += 1
+            tracks += to_int(st.albums.slots[i].val.track_count)
+    return (live, tracks)
+
+fn query(st: State) -> int:
+    h := 17
+    for i := 0; i < len(st.artists); i += 1:
+        h = step(h, hash_ref(st.text, st.artists[i].name))
+        h = step(h, hash_ref(st.text, st.artists[i].country))
+    for i := 0; i < len(st.albums.slots); i += 1:
+        if st.albums.slots[i].used:
+            rec := st.albums.slots[i].val
+            h = step(h, hash_ref(st.text, rec.title))
+            h = step(h, to_int(rec.artist))
+            h = step(h, to_int(rec.year))
+            off := to_int(rec.track_off)
+            n := to_int(rec.track_count)
+            for k := 0; k < n; k += 1:
+                tr := st.tracks[off + k]
+                h = step(h, hash_ref(st.text, tr.title))
+                h = step(h, to_int(tr.seconds))
+                h = step(h, to_int(tr.plays))
+    return h
+
+fn put_i32(b: inout buffer.Buffer, v: int):
+    buffer.write_bytes(&b, to_bytes(I32(to_i32(v))))
+
+fn put_raw(b: inout buffer.Buffer, raw: bytes):
+    buffer.write_bytes(&b, raw)
+
+fn get_i32(src: bytes, at: inout int) -> int:
+    if at < 0 or at + 4 > len(src):
+        die("load: bad file")
+    v := to_int(from_bytes$(I32)(src[at:at + 4]).x)
+    at += 4
+    return v
+
+fn save(st: State, path: string) -> int:
+    live, tracks := counts(st)
+    b := buffer.new()
+    put_i32(&b, MAGIC)
+    put_i32(&b, VERSION)
+    put_i32(&b, len(st.artists))
+    put_i32(&b, live)
+    put_i32(&b, tracks)
+    put_i32(&b, len(st.text))
+    put_raw(&b, st.text)
+    put_i32(&b, len(st.names))
+    # Names and artists are dense, so each is one bulk conversion and one bulk
+    # append (V2b: to_bytes over a [packed T]).
+    put_raw(&b, to_bytes(st.names))
+    put_raw(&b, to_bytes(st.artists))
+    # The pool has holes and the wire rewrites track_off compacted, so the live
+    # albums are staged into one dense array and converted once.
+    staged := []AlbumRec
+    reserve(staged, live)
+    off := 0
+    for i := 0; i < len(st.albums.slots); i += 1:
+        if st.albums.slots[i].used:
+            rec := st.albums.slots[i].val
+            push(staged, AlbumRec(rec.title, rec.artist, rec.year, to_i32(off), rec.track_count))
+            off += to_int(rec.track_count)
+    put_raw(&b, to_bytes(staged))
+    # A removed album's track range stays in st.tracks as a hole; the wire is
+    # dense, so the live ranges are compacted first for the same one-call path.
+    staged_tracks := []TrackRec
+    reserve(staged_tracks, tracks)
+    for i := 0; i < len(st.albums.slots); i += 1:
+        if st.albums.slots[i].used:
+            rec := st.albums.slots[i].val
+            src_off := to_int(rec.track_off)
+            for k := 0; k < to_int(rec.track_count); k += 1:
+                push(staged_tracks, st.tracks[src_off + k])
+    put_raw(&b, to_bytes(staged_tracks))
+    payload := buffer.as_bytes(b)
+    n := len(payload)
+    match io.write_bytes(path, payload):
+        Ok(): pass
+        Err(_): die("save: write failed")
+    return n
+
+fn read_file_bytes(path: string) -> bytes:
+    match io.read_bytes(path):
+        Ok(b): return b
+        Err(_): die("load: bad file")
+    return to_bytes([]int)
+
+fn load(st: inout State, path: string):
+    src := read_file_bytes(path)
+    at := 0
+    if len(src) < 20:
+        die("load: bad file")
+    if get_i32(src, &at) != MAGIC or get_i32(src, &at) != VERSION:
+        die("load: bad file")
+    n_artists := get_i32(src, &at)
+    n_albums := get_i32(src, &at)
+    n_tracks := get_i32(src, &at)
+    if n_artists < 0 or n_albums < 0 or n_tracks < 0:
+        die("load: bad file")
+    n_text := get_i32(src, &at)
+    if n_text < 0 or at + n_text > len(src):
+        die("load: bad file")
+    st.text = src[at:at + n_text]
+    at += n_text
+    n_names := get_i32(src, &at)
+    if n_names < 0 or at + n_names * 8 > len(src):
+        die("load: bad file")
+    st.names = from_bytes$([NameRef])(src[at:at + n_names * 8])
+    at += n_names * 8
+    if at + n_artists * 16 > len(src):
+        die("load: bad file")
+    st.artists = from_bytes$([ArtistRec])(src[at:at + n_artists * 16])
+    at += n_artists * 16
+    reserve(st.albums.slots, n_albums)
+    next_off := 0
+    for i := 0; i < n_albums; i += 1:
+        if at + 24 > len(src):
+            die("load: bad file")
+        rec := from_bytes$(AlbumRec)(src[at:at + 24])
+        at += 24
+        if to_int(rec.track_count) < 0 or to_int(rec.track_off) != next_off:
+            die("load: bad file")
+        next_off += to_int(rec.track_count)
+        pool.add(&st.albums, rec)
+    if next_off != n_tracks:
+        die("load: bad file")
+    if at + n_tracks * 16 > len(src):
+        die("load: bad file")
+    st.tracks = from_bytes$([TrackRec])(src[at:at + n_tracks * 16])
+    at += n_tracks * 16
+    if at != len(src):
+        die("load: bad file")
+
+fn main():
+    a := args()
+    if len(a) < 3:
+        die("usage: flat build|load FILE")
+    mode := a[1]
+    path := a[2]
+    if mode == "build":
+        st := new_state()
+        t0 := clock()
+        stale := build(&st)
+        t1 := clock()
+        sum := query(st)
+        t2 := clock()
+        nbytes := save(st, path)
+        t3 := clock()
+        after := query(st)
+        t4 := clock()
+        live, tracks := counts(st)
+        println("result checksum=" + str(sum) + " live=" + str(live) + " tracks=" + str(tracks))
+        println("build ns=" + str(t1 - t0) + " query=" + str(t2 - t1) + " save=" + str(t3 - t2) +
+                " after=" + str(t4 - t3) + " after_save=" + str(after) + " stale=" + str(stale) +
+                " bytes=" + str(nbytes) + " names=" + str(len(st.names)))
+    elif mode == "load":
+        st := new_state()
+        t0 := clock()
+        load(&st, path)
+        t1 := clock()
+        sum := query(st)
+        t2 := clock()
+        live, tracks := counts(st)
+        println("result checksum=" + str(sum) + " live=" + str(live) + " tracks=" + str(tracks))
+        println("load ns=" + str(t1 - t0) + " query=" + str(t2 - t1))
+    else:
+        die("usage: flat build|load FILE")

@@ -11,11 +11,11 @@
 # place by being too cheap to argue with; past that it just teaches people to
 # bypass it.
 #
-# So THE SWEEP IS YOURS TO RUN: `make ci` before a substantial push. What that
-# buys, and this hook no longer does, is the wide lanes -- a `datetime`-FFI link
-# break in the `site` dogfood and cross-package type-mangling divergences are
-# invisible to `make test` and were caught by the sweep. Nothing here replaces
-# it; the trade is explicit.
+# So THE SWEEP IS YOURS TO RUN: `make ci` at a merge point (nightly, pre-merge,
+# pre-release), not per change. What that buys, and this hook no longer does, is
+# the wide lanes -- a `datetime`-FFI link break in the `site` dogfood and
+# cross-package type-mangling divergences are invisible to `make test` and were
+# caught by the sweep. Nothing here replaces it; the trade is explicit.
 #
 # THE gh-pages BRANCH HAS NEVER REACHED THIS HOOK, until 2026-08-17. `git rev-parse
 # --git-path hooks/pre-push` in the site worktree resolved to `.githooks/pre-push`
@@ -149,10 +149,10 @@ if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { 
     # step [2d], which nobody runs, and it had been RED since 51dcb45b -- two
     # packed-struct traps emitted with no oracle entry, across 9 clean pushes.
     gate "make rtparity (emitted runtime surface vs the oracle)" rtparity
-    gate "make fuzz-quick (soundness smoke)"     fuzz-quick
+    gate "make fuzz-quick (20-seed soundness smoke)"     fuzz-quick
 fi
 
 rm -f "$LOG"
-printf 'pre-push: gates green -- allowing push. NOT run here: `make ci`, and the\n'
-printf '  runnable-examples half of `make spec-check` (~20s). Run them yourself before a\n'
-printf '  substantial push.\n'
+printf 'pre-push: gates green -- allowing push. NOT run here: `make ci` and the\n'
+printf '  runnable-examples half of `make spec-check` (~20s). `make ci` is a merge-point\n'
+printf '  gate, not a per-change one.\n'

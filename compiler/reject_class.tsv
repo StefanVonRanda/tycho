@@ -217,7 +217,8 @@ tests/reject/for3_two_clauses.ty	SYNTAX	4545	a three-clause `for` is `for init; 
 tests/reject/for_missing_colon.ty	SYNTAX	4547	expected ':' before the block
 tests/reject/for_two_binders.ty	SYNTAX	4594	a `for` binds one name -- write `for p in COLL:` then `k, q := p` in the body
 tests/reject/from_bytes_not_bytes.ty	SEMANTIC	7348	from_bytes$(T)(b) takes bytes
-tests/reject/from_bytes_not_packed.ty	SEMANTIC	7346	from_bytes$(Loose): only a packed struct can be read from bytes
+tests/reject/from_bytes_not_packed.ty	SEMANTIC	0	from_bytes$(Loose): only a packed struct or an array of one can be read from bytes
+tests/reject/from_bytes_not_packed_array.ty	SEMANTIC	0	from_bytes$([Loose]): only a packed struct or an array of one can be read from bytes
 tests/reject/from_bytes_two_args.ty	SEMANTIC	7342	from_bytes$(T)(b) takes one value argument
 tests/reject/from_bytes_two_typeargs.ty	SEMANTIC	7343	from_bytes$(T)(b) takes exactly one type argument
 tests/reject/fstr_empty_hole.ty	SYNTAX	3167	empty '{}' in an interpolated string
@@ -582,8 +583,9 @@ tests/reject/tab_mix2.ty	SYNTAX	603	mixed tabs and spaces in indentation; use on
 tests/reject/task_copy.ty	SEMANTIC	9475	a task handle cannot be copied or re-bound -- bind the spawn directly (t := spawn f(...))
 tests/reject/to_bool_not_newtype.ty	SEMANTIC	7916	to_bool(x) takes a bool newtype
 tests/reject/to_bool_two_args.ty	SEMANTIC	7913	to_bool(x) takes one argument
-tests/reject/to_bytes_not_packed_struct.ty	SEMANTIC	7909	to_bytes(x) takes a string, [int] or a packed struct
-tests/reject/to_bytes_not_string.ty	SEMANTIC	7909	to_bytes(x) takes a string, [int] or a packed struct
+tests/reject/to_bytes_not_packed_array.ty	SEMANTIC	0	to_bytes(x) takes a string, [int], a packed struct or an array of one
+tests/reject/to_bytes_not_packed_struct.ty	SEMANTIC	0	to_bytes(x) takes a string, [int], a packed struct or an array of one
+tests/reject/to_bytes_not_string.ty	SEMANTIC	0	to_bytes(x) takes a string, [int], a packed struct or an array of one
 tests/reject/to_bytes_two_args.ty	SEMANTIC	7905	to_bytes(s) takes one argument
 tests/reject/to_float_already_float.ty	TYPE	7872	to_float(n) takes an int, a sized int, f32, or a float newtype
 tests/reject/to_float_two_args.ty	TYPE	7869	to_float(n) takes one argument

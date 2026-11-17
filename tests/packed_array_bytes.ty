@@ -1,0 +1,29 @@
+# `[packed T]` over the bytes bridge (V2b): to_bytes(xs) writes every record in
+# order, little-endian, and from_bytes$([T])(b) reads them back. A length that
+# is not a whole number of records is refused rather than truncated, so a torn
+# last record can never be mistaken for a short one.
+packed struct Pt:
+    x: i16
+    y: i16
+
+fn main():
+    xs := []Pt
+    push(xs, Pt(to_i16(1), to_i16(2)))
+    push(xs, Pt(to_i16(-3), to_i16(4)))
+    push(xs, Pt(to_i16(5), to_i16(-6)))
+    b := to_bytes(xs)
+    println(str(len(b)) + " " + str(size_of$(Pt)))
+    hx := ""
+    for k := 0; k < len(b); k += 1:
+        hx = hx + str(b[k]) + " "
+    println(hx)
+    ys := from_bytes$([Pt])(b)
+    println(str(len(ys)))
+    for p in ys:
+        println(str(p.x) + " " + str(p.y))
+
+    # empty in, empty out: no records is a length of 0, not an error
+    e := []Pt
+    eb := to_bytes(e)
+    zs := from_bytes$([Pt])(to_bytes(""))
+    println(str(len(eb)) + " " + str(len(zs)))

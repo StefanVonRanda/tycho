@@ -128,6 +128,7 @@ NO_GOLDEN = {
     "bench/conc/run.sh": "self-consistency: the three builds' checksums must agree with each other",
     "bench/dbquery/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/dijkstra/run.sh": "self-consistency checksum, as bench/conc/run.sh",
+    "bench/flat-state/run.sh": "timing/rss only: the flat and nested builds must agree on a checksum, then it records min..max timings and peak RSS",
     "bench/gcscan/run.sh": "timing/rss only",
     "bench/indexer/run.sh": "self-consistency checksum, as bench/conc/run.sh",
     "bench/interp/run.sh": "self-consistency checksum, as bench/conc/run.sh",

@@ -15,6 +15,15 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
 
 ## [Unreleased]
 
+### Language
+
+- **`[packed T]` now crosses the bytes bridge as one array.** `to_bytes(xs)`
+  writes every record in order, little-endian, with no per-record staging;
+  `from_bytes$([T])(b)` reads the whole array back and refuses a length that is
+  not a whole number of records instead of dropping a torn last record.
+  `push(dst: [int], src: bytes)` appends a byte source in one growth step
+  (spec §17.1b).
+
 ### Corelib
 
 - `arrays.push_index(&xs, v)` appends and returns the new element's index, and
@@ -24,6 +33,54 @@ docs alone to test them. See [STATUS](STATUS.md) for the full terms box.
   `get_typed`/`set_typed`/`remove_typed` refuse an id minted by a pool of another
   element type at compile time. The `Handle` API is unchanged.
 - `docs/idioms.md` has a "pools with subscripts" section.
+
+### Performance
+
+- **The emitted code no longer copies a fresh `to_bytes` result on return**
+  when the argument is a `[int]` or a packed value, and `core:buffer.write` /
+  `write_bytes` append a whole `bytes` instead of one element per iteration.
+  Save/load in `bench/flat-state` drop from 15.9/5.9 ms to 7.7/3.7 ms with the
+  same checksum and wire bytes.
+- **Emit walks the `+` spine of `_flat_int_add` recursively** instead of
+  materialising a `parts` array per call. A self-compile front end drops from
+  25.6 M allocations / 884 MiB bumped to 14.1 M / 552 MiB (2026-11-13).
+- **`--parse-census` borrows one accumulator instead of copying it per
+  call.** The walkers returned a value-copied `[string]`, so cost grew
+  quadratically with file size and `make parse-check` could take the host
+  down: the 514 KB `corelib/unicode/unicode.ty` needed >8 GiB. It now censuses
+  in 33 MiB, with byte-identical output on the other 729 corpus files.
+
+### Benchmarks
+
+- Added `bench/flat-state` (`make bench-flat-state`): one music-library state
+  in flat and nested layouts, same checksum. Flat uses 40.9 vs 112.7 MiB build
+  RSS, 3.31 vs 4.43 MB wire, 7.7 vs 25.9 ms save, 3.7 vs 12.0 ms load and
+  0.9 vs 18.5 ms teardown; build is 10.4 vs 7.2 ms. Full method and limits:
+  [`bench/flat-state/RESULTS.md`](bench/flat-state/RESULTS.md).
+
+### Documentation
+
+- Added the flat-state idiom to [`docs/idioms.md`](docs/idioms.md) and the
+  probe record [`docs/internals/probe-flat-state-2026-11-13.md`](docs/internals/probe-flat-state-2026-11-13.md).
+
+### Tooling
+
+- **Every `make` recipe runs under an 8 GiB memory cap.** A runaway compiler is
+  killed in its own systemd cgroup instead of OOM-killing the caller's session.
+  The cgroup cap leaves the ASan/TSan legs alone (a soft `RLIMIT_AS` breaks
+  them), `MEMCAP_MB` overrides it, and `0` disables it.
+- **The fuzz budget follows the gate.** `make fuzz-quick` is 20 seeds and runs
+  in `make check-fast` and the pre-push hook; `make ci` stays at 200; the new
+  `make ci-release` runs at least 1000 and refuses a lower `N`.
+- **`make ci` caps every lane separately.** The main lane keeps `MEMCAP_MB`
+  (default 8192 MiB) and each forked lane gets its own cgroup at
+  `MEMCAP_LANE_MB` (default: the same), so parallel lanes no longer share one
+  ceiling. `0` still disables the cap.
+- **The gates are split by cost.** `make check-fast` is the change gate
+  (minutes); `make ci` is the release gate (nightly, pre-merge, release; tens of
+  minutes, over 90 with fuzz when serialized on a shared box). `scripts/ci.sh`
+  runs `rtparity` and `entrypoints` before `make test`, where a failure is
+  known in the first seconds instead of after the suite.
 
 ## [0.9.2] — 2026-11-12
 

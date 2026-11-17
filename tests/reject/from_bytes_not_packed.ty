@@ -1,4 +1,4 @@
-# expect: from_bytes$(Loose): only a packed struct can be read from bytes
+# expect: from_bytes$(Loose): only a packed struct or an array of one can be read from bytes
 # Only a packed struct states a byte-exact layout, so only a packed struct can
 # be reconstructed from a byte buffer.
 struct Loose:
