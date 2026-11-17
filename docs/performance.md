@@ -234,10 +234,36 @@ Against **idiomatic** per-node C/Rust allocation, Tycho wins the allocation-heav
 tree workloads on time and memory. The generated expert-tier controls change
 the `binary` result: an expert C arena is faster than Tycho, while Tycho keeps
 the memory edge. Tycho trails C and Rust on flat array pipelines
-(per-element bounds checks, not the memory model). The in-place append (an
+(not the memory model; and, measured 2026-11-17 below, not the bounds checks
+either). The in-place append (an
 `acc = acc + x` loop growing one buffer) is guarded by `make bench`: ~1.5 MB
 where the un-optimized path is ~825 MB at the same N, so a 32 MB bound sits
 firmly between working and broken.
+
+### Bounds checks on the flat pipelines (2026-11-17, plan phase 2.3)
+
+Do the surviving per-element checks explain the flat-pipeline losses? Each
+bench built three ways: **default**; **checked**, `TYCHOC_NO_BOUNDS_ELISION=1`
+(every index goes through `tycho_arr_int_get`/`_ptr`); **off**, the checked C
+with every user index site rewritten to a raw `.data[i]` by sed (scratch build,
+not committed). `--bounds-report` gives the sites the default build keeps.
+Apple clang 21 `-O3`, arm64 macOS, median of 5 wall, all outputs identical.
+
+| bench | kept (default) | default | checked | off |
+|-------|----------------|---------|---------|-----|
+| prongB arr_pipeline | 0 of 2 | 12.0 ms | 18.0 ms | 19.4 ms |
+| prongB iter_transform | 0 of 3 | 92.3 ms | 136.7 ms | 137.0 ms |
+| window int (N=2M) | 1 (`set`) | 2.4 ms | 2.4 ms | 2.4 ms |
+| window int (N=200M, scratch) | 1 (`set`) | 27.1 ms | 27.0 ms | 27.2 ms |
+
+**checked vs off is flat:** removing every check changes nothing measurable.
+The default-vs-checked gap is not the checks: `TYCHOC_NO_BOUNDS_ELISION=1` also
+turns off the pre-loop `reserve` and the hoisted push fast path that ride on the
+same proof, and stripping the checks back out does not recover it. The one
+check the default build keeps (window int's ring `set`) costs nothing at 200M
+iterations. Loop versioning would remove under 5% here, so it is not
+implemented; the flat-pipeline gap to C/Rust is elsewhere (push/grow and the
+loop-scratch arena path are the next suspects).
 
 ## Where it costs
 
