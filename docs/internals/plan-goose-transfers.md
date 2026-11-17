@@ -21,14 +21,19 @@ reference type" are NOT up for change in any phase.
   phase names.
 - A phase whose measurement shows no win records the negative result in its doc,
   reverts the code, and still ticks and commits (the doc is the deliverable).
-- **Targeted gates only.** Run the checks that cover your change: the relevant
-  `tests/` fixtures via `make test` (or `make test-fast` while iterating),
-  `make corelib` if corelib changed, `make surface-check` if surface changed
-  (record with `python3 scripts/surface_lock.py --record`), `make docs-fences`
-  and `make check-links` if docs changed, `make parse-check` and
-  `make fixpoint-check` if `compiler/` changed, `make corpus-check` and
-  `make docs-counts-check` if fixtures were added. Do NOT run `make ci`; one
-  full sweep happens at the end of the batch.
+- **One fast check, then commit (owner, 2026-11-17: no "test theater").** Run
+  only the single quickest check that proves your own change: your new fixture
+  compiled and run by hand, or one make target. Do NOT run `make ci`,
+  `make test`, `parse-check`, `fixpoint-check`, `corpus-check` or any other
+  suite "to be safe". Exception: if you change `surface.lock` contents, run
+  `python3 scripts/surface_lock.py --record`. Phase "done when" lists below are
+  superseded by this rule. List the skipped gates in the commit message.
+- Time box: about 35 minutes per phase. If the phase is not done by then,
+  commit what is safe (docs, probe, measurements), leave the box unticked, and
+  report what remains.
+- Several phases may run at once. Commit only your own files
+  (`git commit -- <paths>`), and tick your own plan line immediately before
+  committing. Do not edit `CHANGELOG.md`; the wrap-up phase does it.
 - Adding a `tests/reject/` fixture bumps census counts in several places
   (`compiler/reject_class.tsv` via `scripts/classify_rejects.py`,
   `compiler/run.sh`, `compiler/verdict_diff.py`, `tests/run.sh`). Follow the
