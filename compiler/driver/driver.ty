@@ -472,6 +472,13 @@ fn compile(src_path: string, runtime_path: string, out_c: string, argv0: string,
         dbgf = p.files[0].path
     emit_to(p, runtime_path, argv0, out_c, dbgf)
 
+# --bounds-report: check and emit exactly as a build does, then print which
+# array index sites kept their bounds check and which the emitter elided.
+fn bounds_report(src_path: string, argv0: string, tgt: string, nat: bool):
+    p := types.Program([]types.File, "", "", "", "")
+    check_into(src_path, argv0, &p, _vec_tgt(tgt, nat))
+    print(emit.bounds_report(p))
+
 # --- --dump-tokens ----------------------------------------------------------
 # The lexer's own gate. One line per token so a disagreement names a position
 # rather than a file.

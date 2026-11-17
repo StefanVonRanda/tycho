@@ -179,9 +179,11 @@ struct C:
     destva: [string]
     thin: bool                         # no lambdas and no externs: function values are bare (Arena*, args...) pointers
     nul: bool                          # nullable recursive enums are safe: no nested pattern anywhere
+    brep_on: bool                      # --bounds-report: record every array index site
+    brep: [string]                     # "<fn>\t<path>:<line>: kept|elided ...", emission order
 
 fn _new() -> C:
-    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []string, []int, []string, false, true)
+    return C([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], -1, [], [], [], []ast.Ty, [], [], "", 0, "void", 0, "&_scope", [], false, [], [], [], []string: int, []string: int, []string: int, 0, [], [], [], [], [], [][ast.Param], []ast.Expr, [], 0, "", 0, []int, []ast.Stmt, [], [], [], false, []string: bool, []string: bool, []int, [], [], [], "", [], [], [], []string: int, "", [], []bool, "", [], false, [], -1, false, -1, "", "", []int, "", false, 0, "", "", "", "", "", []string: string, []string: int, []string: string, []int, []ast.Fn, []bool, false, ast.NullLit(0), []int, false, false, false, []string, []string, []string, []string, []int, []string, false, true, false, []string)
 
 fn _bad(msg: string):
     die("tychoc: " + msg)
@@ -2916,7 +2918,9 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
                 _bad("indexing a non-array")
             et := _elem(rt)
             if _in_range(&cs, k[0], k[1]):   # monotone loop index: skip the bounds check
+                _bnote(&cs, l, "elided monotone")
                 return ("(" + rc + ").data[" + ic + "]", et)
+            _bnote(&cs, l, "kept get")
             return (_arrf(&cs, et, "_get") + "(" + rc + ", " + ic + ")", et)
         ast.Slice(l, hl, hh, k):
             # src/tychoc.c:14975-15040 -- the block id is taken BEFORE the subject
@@ -6040,7 +6044,9 @@ fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
                 _bad("indexed assignment on a non-array")
             et := _elem(rt)
             if _in_range(&cs, k[0], k[1]):   # monotone loop index: project without the check
+                _bnote(&cs, l, "elided monotone")
                 return ("((" + rc + ").data[" + ic + "])", et)
+            _bnote(&cs, l, "kept set")
             return ("(*" + _arrf(&cs, et, "_ptr") + "(&(" + rc + "), " + ic + "))", et)
         ast.Call(l, q, n, tas, args):
             # A subscript call IS a place: `g.edge(1).weight = 99` writes
@@ -6254,6 +6260,42 @@ fn _for3_elide(ip: [ast.Stmt], c: [ast.Expr], b: [ast.Stmt]) -> (string, string)
     return (iv, arr)
 
 # src/tychoc.c@index_in_range -- is `base[idx]` a loop index proven in range?
+# --bounds-report: one record per array index site, tagged with the function
+# being emitted. A body emitted twice records twice; _brep_text dedupes.
+fn _bnote(cs: inout C, l: int, what: string):
+    if not cs.brep_on:
+        return
+    path := "?"
+    if cs.cf >= 0 and cs.cf < len(cs.fpath):
+        path = cs.fpath[cs.cf]
+    push(cs.brep, cs.pname + "\t" + path + ":" + str(l) + ": " + what)
+
+# Grouped per function in first-seen order, each followed by its summary.
+fn _brep_text(cs: inout C) -> string:
+    seen := []string: bool
+    fns := []string
+    rows := []string: string
+    nk := []string: int
+    ne := []string: int
+    for r in cs.brep:
+        if seen[r]:
+            continue
+        seen[r] = true
+        t := find(r, "\t")
+        f := r[0:t]
+        row := r[t + 1:len(r)]
+        if nk[f] + ne[f] == 0:
+            push(fns, f)
+        rows[f] = rows[f] + "  " + row + "\n"
+        if strings.contains(row, ": kept "):
+            nk[f] = nk[f] + 1
+        else:
+            ne[f] = ne[f] + 1
+    out := ""
+    for f in fns:
+        out = out + "fn " + f + ":\n" + rows[f] + "  " + f + ": " + str(nk[f]) + " kept, " + str(ne[f]) + " elided\n"
+    return out
+
 fn _in_range(cs: inout C, base: ast.Expr, idx: ast.Expr) -> bool:
     bn := ""
     ix := ""
@@ -8711,6 +8753,7 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                         vc6, _vt6 := _rhs2(&cs, k[1], elt6, scratch6)
                         cs.arena = sav6
                         sp6 := _fresh(&cs, "_ps")
+                        _bnote(&cs, ast.line_of(k5[1]), "kept set")
                         return pre + ind + _cty(&cs, elt6) + " " + sp6 + " = " + vc6 + ";\n" +
                             ind + _arrf(&cs, elt6, "_set") + "(" + ow6 + ", &(" + bc5 + "), " +
                             ic6 + ", " + sp6 + ");\n"
@@ -11632,8 +11675,16 @@ fn _nested_unit(u: ast.Unit, vs: [string: bool]) -> bool:
     return false
 
 fn program_in(program: types.Program, dbgf: string) -> string:
+    return _program(program, dbgf, false)
+
+# `tychoc --bounds-report`: emit as usual, return the bounds report instead of C.
+fn bounds_report(program: types.Program) -> string:
+    return _program(program, "", true)
+
+fn _program(program: types.Program, dbgf: string, brep: bool) -> string:
     cs := _new()
     cs.dbgfile = dbgf
+    cs.brep_on = brep
     # A function value carries a 24-byte descriptor (call + two inline capture
     # slots) because it MAY be a closure. A program with no lambda and no extern
     # cannot create one: every value is a top-level function, which already has
@@ -12027,4 +12078,6 @@ fn program_in(program: types.Program, dbgf: string) -> string:
     for nm in cs.fheap:
         hfd = hfd + "    if (p == (void *)" + nm + ") return 1;\n"
     hfd = hfd + "    return 0;\n}\n"
+    if brep:
+        return _brep_text(&cs)
     return head + xpro + protos + cpr + lpr + "\n" + hfd + chd + spd + cbd + lbd + fns + entry

@@ -51,6 +51,8 @@ fn _help() -> string:
         "                     one per line: what a hand-written link line passes to cc\n" +
         "  --print-deps       the pkg-config names it needs, transitively, one per line:\n" +
         "                     what a build probes to decide whether to skip\n" +
+        "  --bounds-report    every array index site, per function: `path:line: kept\n" +
+        "                     <get|set>` or `path:line: elided monotone`, plus a count\n" +
         "  --symbols          a symbol index for the language server; no code generated\n" +
         "  --bundle           the whole import graph as one post-order source stream\n" +
         "  --version          print the version and exit\n" +
@@ -116,6 +118,8 @@ fn main():
             mode = "shims"
         elif a == "--print-deps":
             mode = "deps"
+        elif a == "--bounds-report":
+            mode = "bounds"
         elif a == "-o":
             i += 1
             if i >= len(av):
@@ -230,6 +234,9 @@ fn main():
         return
     if mode == "deps":
         driver.print_deps(src, av[0])
+        return
+    if mode == "bounds":
+        driver.bounds_report(src, av[0], tgt, nat)
         return
     if not emit_c:
         # The default is a BINARY: emit the C beside it, run cc, remove the C.

@@ -128,6 +128,28 @@ Set `TYCHO_BACKTRACE=1` to add the C frames. They are addresses and symbols;
 resolve them against the binary with `addr2line -e ./program <address>`. Normal
 builds print neither, and pay nothing on the non-trapping path.
 
+## Which bounds checks survive: `--bounds-report`
+
+`tychoc --bounds-report file.ty` type-checks and emits the program exactly as a
+build does, then prints every array index site instead of building: `kept get`
+or `kept set` where the runtime check stays, `elided monotone` where the index
+is a loop counter proven inside `len(xs)`. Sites are grouped per function, each
+with a count:
+
+```text
+fn gather:
+  tests/bounds_report/main.ty:13: elided monotone
+  tests/bounds_report/main.ty:14: kept get
+  gather: 1 kept, 1 elided
+```
+
+`TYCHOC_NO_BOUNDS_ELISION=1` turns every `elided` into `kept`. A fixture can pin
+the verdicts with `# bounds: keep` / `# bounds: elide` on its lines;
+`scripts/bounds_report_check.sh [compiler] [fixture]` fails if the report
+disagrees with them or reports an unannotated line (default fixture:
+`tests/bounds_report/main.ty`). Strings, maps, `soa` and `vector[N]T` reads are
+not listed; they use their own checked accessors.
+
 ## What the frames look like
 
 The emitted C is faithful but not idiomatic, so a few things read differently
