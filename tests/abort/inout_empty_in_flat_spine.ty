@@ -1,0 +1,15 @@
+# A 130-term `+` spine takes the flat re-emit path; the array access in its
+# right operand must still trap after an inout callee empties the array. The
+# flattened leaves are ints only, so the kept bounds check cannot be lost.
+fn wipe(xs: inout [int]):
+    for len(xs) > 0:
+        pop(xs)
+
+fn main():
+    xs := [1, 2, 3]
+    s := 0
+    for i := 0; i < len(xs); i += 1:
+        wipe(&xs)
+        y := 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + 0 + xs[i]
+        s += y
+    print(str(s))
