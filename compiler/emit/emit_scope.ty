@@ -546,7 +546,11 @@ fn _pcap(cs: inout C, name: string) -> bool:
     return false
 
 # GCC does not unroll the fused push loop from the capacity proof even after
-# the checked path is removed. Clang does not need this hint; keep it GCC-only.
+# the checked path is removed, hence `GCC unroll`. Clang keeps its own hint: on
+# Apple clang (2026-11-20, 11 interleaved runs, medians) dropping it costs
+# prongB/arr_pipeline +21%, prongB/dispatch +16%, prongB/iter_transform +13%,
+# though it wins latency -38% and gcscan -21%. Clang warns `loop not unrolled`
+# where it cannot honour the count; the Makefile silences that for tychoc1.
 fn _unroll_hint(cs: inout C, ind: string, b: [ast.Stmt]) -> string:
     # The capacity-proof loop is always eligible. A reduction loop nested in
     # the same body (no further loop) is the other hot shape worth unrolling.
