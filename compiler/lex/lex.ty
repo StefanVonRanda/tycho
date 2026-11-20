@@ -674,8 +674,9 @@ fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
 fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
     return tokenize_named(src, keep_trivia, file)
 
-# An f-string HOLE, re-tokenized during emit (compiler/emit/emit.ty@_fstr and
-# @_fv). The hole text is a FRAGMENT: its line numbering starts at 0 and it has
+# An f-string HOLE, re-tokenized during emit (compiler/emit/emit_expr.ty@_fstr
+# and compiler/emit/emit_fnval.ty@_fv).
+# The hole text is a FRAGMENT: its line numbering starts at 0 and it has
 # no name, so a lex error inside one printed `tychoc1: line 1: unexpected
 # character '@'` -- no path, and the wrong line. `owner_src` and `owner_line`
 # are the enclosing file's text and the line the f-string sits on.

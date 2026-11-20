@@ -1,0 +1,1709 @@
+package emit
+
+import "../ast"
+import "../lex"
+import "../parse"
+import "core:strings"
+
+# Expressions (_ex), f-strings, and the expression helpers: variants, literals,
+# or-else/or-return, binary operators. Moved verbatim out of emit.ty.
+
+# --- expressions ------------------------------------------------------------
+# Every `_ex` returns the C text; `_ty_of` the type string. They are computed
+# together and returned as a tuple so an expression is walked once.
+
+# A literal leg cannot change between source evaluation and the store. Every
+# other place index is captured before the RHS: even a plain name can be changed
+# by an inout call while the place is being stored.
+fn _literal_expr(e: ast.Expr) -> bool:
+    match e:
+        ast.IntLit(l, v): return true
+        ast.FloatLit(l, v): return true
+        ast.StrLit(l, v): return true
+        ast.CharLit(l, v): return true
+        ast.BoolLit(l, v): return true
+        ast.NullLit(l): return true
+        _: return false
+    return false
+
+fn _same_exprs(a: [ast.Expr], b: [ast.Expr]) -> bool:
+    if len(a) != len(b):
+        return false
+    for i := 0; i < len(a); i += 1:
+        if not _same_expr(a[i], b[i]):
+            return false
+    return true
+
+fn _same_expr(a: ast.Expr, b: ast.Expr) -> bool:
+    match a:
+        ast.IntLit(la, va):
+            match b:
+                ast.IntLit(lb, vb): return va == vb
+                _: return false
+        ast.FloatLit(la, va):
+            match b:
+                ast.FloatLit(lb, vb): return va == vb
+                _: return false
+        ast.StrLit(la, va):
+            match b:
+                ast.StrLit(lb, vb): return va == vb
+                _: return false
+        ast.CharLit(la, va):
+            match b:
+                ast.CharLit(lb, vb): return va == vb
+                _: return false
+        ast.BoolLit(la, va):
+            match b:
+                ast.BoolLit(lb, vb): return va == vb
+                _: return false
+        ast.NullLit(la): return b is ast.NullLit
+        ast.Name(la, na):
+            match b:
+                ast.Name(lb, nb): return na == nb
+                _: return false
+        ast.Field(la, ka, fa):
+            match b:
+                ast.Field(lb, kb, fb): return fa == fb and _same_exprs(ka, kb)
+                _: return false
+        ast.TupIdx(la, ka, ia):
+            match b:
+                ast.TupIdx(lb, kb, ib): return ia == ib and _same_exprs(ka, kb)
+                _: return false
+        ast.Index(la, ka):
+            match b:
+                ast.Index(lb, kb): return _same_exprs(ka, kb)
+                _: return false
+        ast.Call(la, qa, na, ta, ka):
+            match b:
+                ast.Call(lb, qb, nb, tb, kb):
+                    return qa == qb and na == nb and len(ta) == len(tb) and _same_exprs(ka, kb)
+                _: return false
+        ast.CallVal(la, ka):
+            match b:
+                ast.CallVal(lb, kb): return _same_exprs(ka, kb)
+                _: return false
+        ast.Addr(la, ka):
+            match b:
+                ast.Addr(lb, kb): return _same_exprs(ka, kb)
+                _: return false
+        ast.Binop(la, oa, ka):
+            match b:
+                ast.Binop(lb, ob, kb): return oa == ob and _same_exprs(ka, kb)
+                _: return false
+        ast.Unop(la, oa, ka):
+            match b:
+                ast.Unop(lb, ob, kb): return oa == ob and _same_exprs(ka, kb)
+                _: return false
+        _: return false
+    return false
+
+fn _same_place(a: ast.Expr, b: ast.Expr) -> bool:
+    return _same_expr(a, b)
+
+# Every non-literal leg of a place, hoisted into a temp in SOURCE order:
+# `grid[f()][g()] = e()` must call f before g, and building the C subscript
+# expression leaves that order to the C compiler, which chose g first.
+fn _hoist_legs(cs: inout C, e: ast.Expr, ind: string, pre: inout string, tmps: inout [string]) -> ast.Expr:
+    match e:
+        ast.Index(l, k):
+            r := _hoist_legs(&cs, k[0], ind, &pre, &tmps)
+            if not _literal_expr(k[1]):
+                kc, kt := _ex(&cs, k[1])
+                cs.tmp += 1
+                kn := "_mk" + str(cs.tmp)
+                cn := _push(&cs, kn, kt)
+                pre = pre + ind + _ctyz(&cs, kt) + "" + cn + " = " + kc + ";\n"
+                push(tmps, kn)
+                return ast.Index(l, [r, ast.Name(l, kn)])
+            return ast.Index(l, [r, k[1]])
+        ast.Field(l, k, f):
+            return ast.Field(l, [_hoist_legs(&cs, k[0], ind, &pre, &tmps)], f)
+        ast.Call(l, q, n, ts, args):
+            # A user subscript is a CALL in the place spine, and `p += e` copies
+            # the whole place onto the right: without this its argument runs
+            # twice (tests/compound_subscript_eval.ty reads one slot and writes
+            # another).
+            na := []ast.Expr
+            for a2 in args:
+                if _literal_expr(a2):
+                    push(na, a2)
+                    continue
+                ac, at := _ex(&cs, a2)
+                cs.tmp += 1
+                an := "_mk" + str(cs.tmp)
+                acn := _push(&cs, an, at)
+                pre = pre + ind + _ctyz(&cs, at) + "" + acn + " = " + ac + ";\n"
+                push(tmps, an)
+                push(na, ast.Name(l, an))
+            return ast.Call(l, q, n, ts, na)
+        _: pass
+    return e
+
+# The compound form `p += e` carries a structural COPY of the place on the
+# right; it must read the same temps, or every leg runs twice.
+fn _subst_legs(e: ast.Expr, tmps: [string], i: inout int) -> ast.Expr:
+    match e:
+        ast.Index(l, k):
+            r := _subst_legs(k[0], tmps, &i)
+            if not _literal_expr(k[1]) and i < len(tmps):
+                nm := tmps[i]
+                i += 1
+                return ast.Index(l, [r, ast.Name(l, nm)])
+            return ast.Index(l, [r, k[1]])
+        ast.Field(l, k, f):
+            return ast.Field(l, [_subst_legs(k[0], tmps, &i)], f)
+        ast.Call(l, q, n, ts, args):
+            na := []ast.Expr
+            for a2 in args:
+                if _literal_expr(a2) or i >= len(tmps):
+                    push(na, a2)
+                    continue
+                push(na, ast.Name(l, tmps[i]))
+                i += 1
+            return ast.Call(l, q, n, ts, na)
+        _: pass
+    return e
+
+fn _place(e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.Field(l, r, f): return true
+        ast.Index(l, k): return true
+        ast.TupIdx(l, k, n): return true
+        # a slice aliases its source, so binding one copies (src/tychoc.c@is_place)
+        ast.Slice(l, a, b, k): return true
+        ast.Call(l, q, n, ts, k):
+            # to_str/to_bool lower to their ARGUMENT unchanged (there is no
+            # conversion to make -- the representations are identical), so the
+            # result IS that place and retaining it must still copy. Reading them
+            # as calls made `Ok(to_str(b))` in core:io hand back a pointer into
+            # the frame read_text was about to free: the source of every --parse
+            # run came back with one byte overwritten.
+            # to_under is deliberately NOT here. It aliases the same way, but
+            # ./tychoc aliases too and tests/newtype_agg.out records that answer
+            # (`m := to_under(e); m[k] = ...` writes THROUGH to the argument).
+            # Copying it there loses the update and reddens that fixture, so the
+            # aliasing is the contract until the golden says otherwise.
+            # to_bytes of a string is the same kind of reinterpret (src/tychoc.c
+            # @is_reinterpret_of_place): `Ok(Req(to_bytes(body)))` in core:httpd
+            # returned a body left in the _scope parse_request frees.
+            # ponytail: no type here, so to_bytes of an [int] or a packed struct
+            # (a real, fresh conversion) also reads as a place and costs one
+            # extra copy when retained; thread the type in if that ever shows.
+            if len(q) == 0 and len(k) == 1 and (n == "to_str" or n == "to_bool" or n == "to_bytes"):
+                return _place(k[0])
+            return false
+        _: return false
+    return false
+
+fn _num2(a: string, b: string) -> string:
+    if a == "float" or b == "float":
+        return "float"
+    if a == "f32" or b == "f32":
+        return "f32"
+    if _is_sized(a):
+        return a
+    if _is_sized(b):
+        return b
+    if a == "char" or b == "char":
+        return "char"
+    return "int"
+
+# src/tychoc.c@c_dtoa prints a float literal with C-locale `%.17g`, NOT the
+# shortest round-trip form `str()` gives. strings.format_g17 is that same one
+# snprintf call; a float literal out of range is refused by the lexer, so the
+# value here is always finite.
+
+fn _lit_float(v: float) -> string:
+    s := strings.format_g17(v)
+    has := false
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 46 or s[i] == 101 or s[i] == 69:
+            has = true
+    if has:
+        return s
+    return s + ".0"
+
+# src/tychoc.c@c_int_lit -- INT64_MIN has no C literal: -9223372036854775808LL
+# is a unary minus on a value that does not fit, so it is written as a subtraction.
+fn _ilit(v: int) -> string:
+    if v == -9223372036854775807 - 1:
+        return "(-9223372036854775807LL - 1)"
+    return str(v) + "LL"
+
+fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
+    match e:
+        ast.IntLit(l, v):
+            return (_ilit(v), "int")
+        ast.FloatLit(l, v):
+            return (_lit_float(v), "float")
+        ast.CharLit(l, v):
+            return (str(v) + "LL", "char")
+        ast.BoolLit(l, v):
+            if v:
+                return ("1", "bool")
+            return ("0", "bool")
+        ast.StrLit(l, s):
+            return ("TYCHO_LIT(\"" + s + "\")", "string")
+        ast.Name(l, n):
+            t := _vtype(&cs, n)
+            if strings.starts_with(t, "?A") and len(cs.want) > 0 and cs.want != "?" and not strings.starts_with(cs.want, "?A"):
+                # A pending binding is also typed by a USE: passing it to a
+                # parameter, or putting it beside a typed sibling in a literal.
+                pi8 := strings.parse_int_prefix(t[2:])
+                cs.ptv[pi8] = cs.want
+                _vset(&cs, n, cs.want)
+                return (_vcname(&cs, n), cs.want)
+            if len(t) > 0:
+                return (_vcname(&cs, n), t)
+            ci := _cidx(&cs, n)
+            if ci >= 0:
+                return (cs.ccode[ci], cs.ctypes[ci])
+            ei := _bare_variant(&cs, n)
+            if ei >= 0:
+                return _variant(&cs, ei, n, [])
+            fi2 := _fidx(&cs, n)
+            if fi2 >= 0:
+                _need_clo(&cs, fi2)
+                ft2 := _fn_of(&cs, cs.fds[fi2].ret, cs.fds[fi2].ptypes)
+                if cs.thin:
+                    return ("(" + _cty(&cs, ft2) + "){h_" + cs.fds[fi2].name + "}", ft2)
+                return ("(" + _cty(&cs, ft2) + "){" + cs.fds[fi2].name + "__clo, 0, 0}", ft2)
+            _bad("unknown name '" + n + "'")
+        ast.Field(l, r, f):
+            pm, pt2 := _pkgmember(&cs, r[0], f)
+            if len(pt2) > 0:
+                return (pm, pt2)
+            # `ps[i].x` PROJECTS into the soa's own buffer for x -- it is never a
+            # gather followed by a field read, which would copy every field.
+            match r[0]:
+                ast.Index(l2, k2):
+                    bc2, bt2 := _ex(&cs, k2[0])
+                    if _is_soa(bt2):
+                        ic3, it3 := _ex(&cs, k2[1])
+                        return _soafld(&cs, bc2, bt2, ic3, f)
+                _: pass
+            rc, rt := _ex(&cs, r[0])
+            lc9, lt9, lok9 := _lane_read(&cs, rc, rt, f)
+            if lok9:
+                return (lc9, lt9)
+            if not _is_struct(rt):
+                _bad("field '" + f + "' on non-struct")
+            si := _sidx(&cs, _tname(rt))
+            for i := 0; i < len(cs.sds[si].fnames); i += 1:
+                if cs.sds[si].fnames[i] == f:
+                    return ("((" + rc + ").f_" + f + ")", cs.sds[si].ftypes[i])
+            _bad("no field '" + f + "' on " + _tname(rt))
+        ast.Index(l, k):
+            rc, rt := _ex(&cs, k[0])
+            ic, it := _ex(&cs, k[1])
+            if rt == "string" or rt == "bytes":
+                return ("tycho_str_get(" + rc + ", " + ic + ")", "int")
+            if _is_soa(rt):
+                return (_spfx(&cs, rt) + "_get(&(" + rc + "), " + ic + ")", _selem(&cs, rt))
+            if _is_map(rt):
+                vt := _mval(&cs, rt)
+                if _shared_get_ok(&cs, k[0], rt, cs.arena):
+                    lv, _lt := _lvalue(&cs, k[0])
+                    g2 := _mpfx(&cs, rt) + "_get_share(" + cs.arena + ", &(" + lv + "), " +
+                        _keyrt(&cs, _mkey(&cs, rt), ic) + ", " + _zero(&cs, vt) + ")"
+                    cs.shared_get = true
+                    return (g2, vt)
+                g := _mpfx(&cs, rt) + "_get(" + rc + ", " +
+                    _keyrt(&cs, _mkey(&cs, rt), ic) + ", " + _zero(&cs, vt) + ")"
+                return (_copy(&cs, g, vt, cs.arena), vt)
+            if _is_vec(rt):
+                lk := _vlane(&cs, rt, k[1])
+                if lk >= 0:
+                    return ("(" + rc + ").v[" + str(lk) + "]", _velem(&cs, rt))
+                return (_u(&cs, _vecf(&cs, rt, "_get")) + "(" + rc + ", " + ic + ")",
+                    _velem(&cs, rt))
+            if not _is_arr(rt):
+                _bad("indexing a non-array")
+            et := _elem(rt)
+            if _in_range(&cs, k[0], k[1]):   # monotone loop index: skip the bounds check
+                _bnote(&cs, l, "elided monotone")
+                return ("(" + rc + ").data[" + ic + "]", et)
+            _bnote(&cs, l, "kept get")
+            return (_arrf(&cs, et, "_get") + "(" + rc + ", " + ic + ")", et)
+        ast.Slice(l, hl, hh, k):
+            # src/tychoc.c:14975-15040 -- the block id is taken BEFORE the subject
+            # is generated, and one id serves whichever of the three branches runs.
+            sid9 := _fresh(&cs, "")
+            rc, rt := _ex(&cs, k[0])
+            lo := "0L"
+            hi := ""
+            j := 1
+            if hl:
+                lc, lt := _ex(&cs, k[j])
+                lo = lc
+                j += 1
+            if hh:
+                hc, ht := _ex(&cs, k[j])
+                hi = hc
+            if rt == "string" or rt == "bytes":
+                # The subject is bound to a temp so it is evaluated EXACTLY ONCE:
+                # with `hi` omitted it is read a second time by tycho_str_len, and
+                # a subject with a side effect ran twice (tests/slice_once.ty).
+                ssn := "_ss" + sid9
+                if len(hi) == 0:
+                    hi = "tycho_str_len(" + ssn + ")"
+                if cs.slice_view and rt == "string" and len(getenv("TYCHOC_NO_SLICE_VIEW")) == 0:
+                    if hh:
+                        return ("({ const char *" + ssn + " = " + rc + "; tycho_str_view_alloc(" +
+                            cs.arena + ", " + ssn + ", " + lo + ", " + hi + "); })", rt)
+                    return ("({ const char *" + ssn + " = " + rc + "; tycho_str_view_alloc_auto(" +
+                        cs.arena + ", " + ssn + ", " + lo + "); })", rt)
+                return ("({ const char *" + ssn + " = " + rc + "; tycho_str_substr(" +
+                    cs.arena + ", " + ssn + ", " + lo + ", " + hi + "); })", rt)
+            # A soa slice offsets EVERY field pointer by lo and carries cap 0,
+            # so it is a view; the copy-on-bind comes from _heap, as for arrays.
+            if _is_soa(rt):
+                ss := "_sv" + sid9
+                sl := "_lo" + sid9
+                sh := "_hi" + sid9
+                if len(hi) == 0:
+                    hi = ss + ".len"
+                st2 := _selem(&cs, rt)
+                si2 := _sidx(&cs, _tname(st2))
+                offs := ""
+                for fi := 0; fi < len(cs.sds[si2].fnames); fi += 1:
+                    offs = offs + ss + ".f" + str(fi) + " + " + sl + ", "
+                # Copied, not returned as a view: the sliced Soa's field
+                # pointers alias the SOURCE buffers, so `sl[0].x = -1` would
+                # write through to q[1].x. ./tychoc wraps the same way.
+                return (_spfx(&cs, rt) + "_copy(" + cs.arena + ", ({ " + _ctyz(&cs, rt) + "" + ss + " = " + rc + "; tycho_int " +
+                    sl + " = " + lo + ", " + sh + " = " + hi + "; if (" + sl + " < 0 || " +
+                    sh + " > " + ss + ".len || " + sl + " > " + sh + ") { fprintf(stderr, " +
+                    "\"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
+                    sl + ", " + sh + ", " + ss + ".len); TYCHO_EXIT(); } (" + _cty(&cs, rt) + "){ " +
+                    offs + sh + " - " + sl + ", 0 }; }))", rt)
+            if not _is_arr(rt):
+                _bad("slicing '" + rt + "'")
+            sv := "_sv" + sid9
+            act := _cty(&cs, rt)
+            if len(hi) == 0:
+                hi = sv + ".len"
+            alo := "_lo" + sid9
+            ahi := "_hi" + sid9
+            sl := "({ " + act + " " + sv + " = " + rc + "; tycho_int " + alo + " = " + lo +
+                ", " + ahi + " = " + hi + "; if (" + alo + " < 0 || " + ahi + " > " + sv +
+                ".len || " + alo + " > " + ahi + ") { fprintf(stderr, \"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
+                alo + ", " + ahi + ", " + sv + ".len); TYCHO_EXIT(); } (" + act + "){ " + sv +
+                ".data + " + alo + ", " + ahi + " - " + alo + ", 0 }; })"
+            return (_copy(&cs, sl, rt, cs.arena), rt)
+        ast.Unop(l, op, k):
+            c, t := _ex(&cs, k[0])
+            if op == "not":
+                return ("(!" + c + ")", "bool")
+            if op == "-" or op == "~":
+                if _is_sized(t):
+                    return ("((" + _cty(&cs, t) + ")(" + op + c + "))", t)
+                return ("(" + op + c + ")", t)
+            _bad("unsupported unary '" + op + "'")
+        ast.Binop(l, op, k):
+            return _binop(&cs, op, k[0], k[1])
+        ast.Call(l, q, n, tas, args):
+            if len(q) == 0 and (n == "_json_intern" or n == "_str_intern") and len(args) == 1:
+                ic, _it := _ex(&cs, args[0])
+                return ("tycho_str_intern(" + ic + ")", "string")
+            return _call(&cs, l, q, n, tas, args)
+        ast.ArrLit(l, k):
+            return _arrlit(&cs, k)
+        ast.EmptyArr(l, ts):
+            et := ""
+            if len(ts) == 0 and _is_map(cs.want):
+                # `m: [K: V] = []` -- a bare [] under a map annotation is the
+                # empty map, not an empty array.
+                mv2 := _fresh(&cs, "_mp")
+                return ("({ " + _ctyz(&cs, cs.want) + "" + mv2 + " = " +
+                    _mpfx(&cs, cs.want) + "_with_cap(&_scope, 0); " + mv2 + "; })", cs.want)
+            if len(ts) > 0:
+                et = _ty(&cs, ts[0])
+            else:
+                if not _is_arr(cs.want):
+                    _bad("a bare [] needs an element type here")
+                et = _elem(cs.want)
+            v := _fresh(&cs, "_l")
+            ct := _cty(&cs, "[" + et + "]")
+            # cs.arena, not a hard-coded &_scope: inside a loop body that is the
+            # per-iteration scratch, and a loop-local `fs := []T` was otherwise
+            # charged to the whole function. An ASSIGNMENT to an outer name is
+            # unaffected -- the Assign arm sets cs.arena to the TARGET's owner.
+            return ("({ " + ct + " " + v + " = " + _arrf(&cs, et, "_with_cap") +
+                "(" + cs.arena + ", 0); " + v + ".len = 0; " + v + "; })", "[" + et + "]")
+        ast.IsVar(l, k, q, vn):
+            sc, st := _ex(&cs, k[0])
+            if not _is_enum(st):
+                _bad("`is` on a non-enum")
+            ei := _eidx(&cs, _tname(st))
+            tag := _tag(&cs, ei, vn)
+            if _nul_enum(&cs, _tname(st)):
+                if len(cs.eds[ei].vpay[tag].ptypes) == 0:
+                    return ("((" + sc + ") == NULL)", "bool")
+                return ("((" + sc + ") != NULL)", "bool")
+            if _inline_enum(&cs, _tname(st)):
+                return ("((" + sc + ").tag == " + str(tag) + ")", "bool")
+            return ("((" + sc + ")->tag == " + str(tag) + ")", "bool")
+        ast.TupIdx(l, k, n):
+            rc, rt := _ex(&cs, k[0])
+            if not _is_tup(rt):
+                _bad("`.` index on a non-tuple")
+            es := _telems(&cs, rt)
+            if n < 0 or n >= len(es):
+                _bad("tuple has no element " + str(n))
+            return ("((" + rc + ").f" + str(n) + ")", es[n])
+        ast.Tuple(l, k):
+            ecs := []string
+            ets := []string
+            # Each element is emitted under the CORRESPONDING element of the
+            # wanted tuple type, so `return (Ok(3), "full")` tells the bare `Ok`
+            # which Result it belongs to. Only the signature writes that down.
+            swt := cs.want
+            wts := []string
+            if _is_tup(swt):
+                wts = _telems(&cs, swt)
+            ti := 0
+            for x in k:
+                if ti < len(wts):
+                    cs.want = wts[ti]
+                else:
+                    cs.want = ""
+                ti += 1
+                sar8 := cs.arena
+                rs8 := cs.retslot
+                cs.retslot = false
+                xc, xt := _ex(&cs, x)
+                if ti - 1 < len(wts) and wts[ti - 1] == "float" and xt == "int":
+                    xc = _tofloat(xc)
+                    xt = "float"
+                cs.retslot = rs8
+                cs.arena = sar8
+                cs.want = swt
+                # A tuple ELEMENT of a `return (a, b)` follows the same
+                # return-slot rule the bare `return a` already had: a local the
+                # escape pass built in _parent from birth is already where the
+                # caller wants it. Gated on cs.retslot, which only ReturnS sets
+                # and which is cleared for every nested expression -- a tuple
+                # built mid-function must still copy, since its source stays
+                # live and an array is written in place.
+                if _place(x) and _heap(&cs, xt) and not _canmove(&cs, x, cs.arena) and
+                        not (rs8 and _inparent(&cs, x)):
+                    xc = _copy(&cs, xc, xt, cs.arena)
+                push(ecs, xc)
+                push(ets, xt)
+            tuple_types := ets
+            if len(wts) == len(ets):
+                tuple_types = wts
+            tt := _tup_of(&cs, tuple_types)
+            v := _fresh(&cs, "_tp")
+            out := "({ " + _ctyz(&cs, tt) + "" + v + "; "
+            for i := 0; i < len(ecs); i += 1:
+                out = out + v + ".f" + str(i) + " = " + ecs[i] + "; "
+            return (out + v + "; })", tt)
+        ast.SomeE(l, k):
+            w := cs.want
+            if not _is_optT(&cs, w):
+                pc, pt := _ex(&cs, k[0])
+                w = _opt_of(&cs, pt)
+            return _variant(&cs, _eidx(&cs, _tname(w)), "Some", k)
+        ast.NoneE(l):
+            if not _is_optT(&cs, cs.want):
+                _bad("`None` here has no Option type to belong to")
+            return _variant(&cs, _eidx(&cs, _tname(cs.want)), "None", []ast.Expr)
+        ast.OkE(l, k):
+            if not _is_resT(&cs, cs.want):
+                _bad("`Ok` here has no Result type to belong to")
+            return _variant(&cs, _eidx(&cs, _tname(cs.want)), "Ok", k)
+        ast.ErrE(l, k):
+            if not _is_resT(&cs, cs.want):
+                _bad("`Err` here has no Result type to belong to")
+            return _variant(&cs, _eidx(&cs, _tname(cs.want)), "Err", k)
+        ast.OrRet(l, b, k):
+            return _orret(&cs, b, k)
+        ast.FStrLit(l, v, hs): return _fstr(&cs, v, l)
+        ast.NullLit(l):
+            # `null` is the ptr literal; ptr is void* in the ABI.
+            return ("((void *)0)", "ptr")
+        ast.CallVal(l, k):
+            sc, st3, ok3 := _subcallval(&cs, k, false)
+            if ok3:
+                return (sc, st3)
+            return _callval(&cs, k)
+        ast.Named(l, n, k): _bad("expr:Named -- Phase 8")
+        ast.MapLit(l, k):
+            return _maplit(&cs, k)
+        ast.EmptyMap(l, t):
+            mt := _map_of(&cs, _ty(&cs, t[0]), _ty(&cs, t[1]))
+            mv := _fresh(&cs, "_mp")
+            return ("({ " + _ctyz(&cs, mt) + "" + mv + " = " + _mpfx(&cs, mt) +
+                "_with_cap(&_scope, 0); " + mv + "; })", mt)
+        ast.SoaLit(l, t):
+            ot := _soa_of(&cs, _ty(&cs, t[0]))
+            return ("(" + _ctyz(&cs, ot) + "){0}", ot)
+        ast.SpawnE(l, k): return _spawn(&cs, k[0])
+        ast.Spread(l, k):
+            # `xs...` IS the array; the packer passes it straight through, and
+            # this arm is what lets the generic inference see its type at all.
+            return _ex(&cs, k[0])
+        ast.Addr(l, k):
+            # `&x` reaching the EXPRESSION path. An inout ARGUMENT never gets
+            # here -- `_addr_of` handles that -- so this is the residual case,
+            # and it delegates rather than growing a second implementation.
+            # Measured: the `&` here is not load-bearing for either fixture
+            # (removing it moves no count), so what this arm buys is that Addr
+            # stops aborting, not the address itself.
+            _, at5 := _lvalue(&cs, k[0])
+            return (_addr_of(&cs, e), at5)
+        ast.ChanE(l, t, k):
+            et := "?"
+            if len(t) > 0:
+                et = _ty(&cs, t[0])
+            _ckind(&cs, et)
+            cap := "0"
+            if len(k) > 0:
+                cc, ct := _ex(&cs, k[0])
+                cap = cc
+            return ("tycho_chan_new(" + cap + ")", "chan(" + et + ")")
+        ast.Lambda(l, p, r, b): return _lambda(&cs, p, r, b[0])
+        _: _bad("unsupported expression -- Phase 8")
+    return ("", "")
+
+# A value that is STORED outlives the statement that built it, so it is built in
+# the scope arena even inside an expression statement's temp arena. Without this
+# `push(xs, P("p" + str(i)))` leaves the field pointing into freed memory.
+# --- f-strings --------------------------------------------------------------
+# The parser hands `FStrLit` its body UNPARSED (ast/ast.ty:45), so both the
+# split and the hole's re-lex happen here. Mirrors src/tychoc.c@desugar_interp,
+# except that the body arrives RAW -- lex.ty:503 keeps the escapes, and a nested
+# string inside a hole is copied verbatim with its quotes unescaped
+# (lex/lex.ty:158), so a hole's text is lexable as it stands.
+# Returns the pieces and, per piece, 0 for literal text and 1 for a hole.
+fn _trim_fhole(s: string) -> string:
+    lo := 0
+    hi := len(s)
+    for lo < hi and (s[lo] == 32 or s[lo] == 9 or s[lo] == 10 or s[lo] == 13):
+        lo += 1
+    for hi > lo and (s[hi - 1] == 32 or s[hi - 1] == 9 or s[hi - 1] == 10 or s[hi - 1] == 13):
+        hi -= 1
+    return s[lo:hi]
+
+fn _fsplit(body: string) -> ([string], [int]):
+    txt := []string
+    kind := []int
+    lit := ""
+    i := 0
+    n := len(body)
+    for i < n:
+        c := body[i]
+        if c == 123 and i + 1 < n and body[i + 1] == 123:
+            lit = lit + "{"
+            i += 2
+            continue
+        if c == 125 and i + 1 < n and body[i + 1] == 125:
+            lit = lit + "}"
+            i += 2
+            continue
+        if c == 125:
+            _bad("unmatched '}' in an interpolated string (use '}}' for a literal brace)")
+        if c == 123:
+            if len(lit) > 0:
+                push(txt, lit)
+                push(kind, 0)
+                lit = ""
+            i += 1
+            start := i
+            depth := 1
+            for i < n and depth > 0:
+                d := body[i]
+                if d == 34 or d == 39:
+                    quote := d
+                    i += 1
+                    for i < n and body[i] != quote:
+                        if body[i] == 92:
+                            i += 1
+                        i += 1
+                    if i >= n:
+                        _bad("unterminated literal in an interpolated hole")
+                    i += 1
+                    continue
+                if d == 123:
+                    depth += 1
+                elif d == 125:
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            if depth != 0:
+                _bad("unterminated '{' in an interpolated string")
+            if i == start:
+                _bad("empty '{}' in an interpolated string")
+            push(txt, body[start:i])
+            push(kind, 1)
+            i += 1
+            continue
+        if c == 92:
+            lit = lit + body[i:i + 2]
+            i += 2
+            continue
+        lit = lit + body[i:i + 1]
+        i += 1
+    if len(lit) > 0:
+        push(txt, lit)
+        push(kind, 0)
+    return (txt, kind)
+
+fn _fstr(cs: inout C, body: string, l: int) -> (string, string):
+    txt, kind := _fsplit(body)
+    if len(txt) == 0:
+        return ("TYCHO_LIT(\"\")", "string")
+    sw := cs.want
+    cs.want = ""
+    # src/tychoc.c desugars an f-string into a left-nested `+` chain marked
+    # `fstr`, then folds 3..6 string pieces into one tycho_str_concatN. Every
+    # hole is wrapped in a `str()` call, so `expr_has_call` is always true for a
+    # chain with a hole and the `fseq` arm always fires: each piece BUT THE LAST
+    # binds to a `_fi<n>` temp, which is what pins the left-to-right evaluation
+    # order 13.4 requires (tests/fstring_eval_order.ty).
+    ps := []string
+    for i := 0; i < len(txt); i += 1:
+        piece := "TYCHO_LIT(\"" + txt[i] + "\")"
+        if kind[i] == 1:
+            hole := _trim_fhole(txt[i])
+            if len(hole) == 0:
+                _bad("empty '{}' in an interpolated string")
+            toks := lex.tokenize_hole(hole, _ufile(&cs), _usrc(&cs), l)
+            he, hp := parse.expr(toks, 0)
+            if hp < len(toks) and toks[hp].k == lex.K_NEWLINE:
+                hp += 1
+            if hp >= len(toks) or toks[hp].k != lex.K_EOF:
+                _bad("unexpected token after expression in an interpolated-string hole")
+            hc, ht := _ex(&cs, he)
+            piece = _tostr(&cs, hc, ht)
+        push(ps, piece)
+    cs.want = sw
+    return (_fchain(&cs, ps, len(ps)), "string")
+
+# The emission for the leftmost `n` of `ps`, mirroring gen_expr's E_BINOP arm:
+# 2..6 pieces fold to one concatN inside a braced group, and a longer chain is
+# the fold of its first n-1 wrapped in one more pairwise concat.
+fn _fchain(cs: inout C, ps: [string], n: int) -> string:
+    if n == 1:
+        return ps[0]
+    if n > 6:
+        v := "_fi" + str(cs.uid)
+        cs.uid += 1
+        pieces := ["({ char *", v, " = ", ps[0], "; "]
+        for i := 1; i < n; i += 1:
+            push(pieces, v + " = tycho_str_concat(" + cs.arena + ", " + v + ", " + ps[i] + "); ")
+        push(pieces, v + "; })")
+        return _join_code(pieces)
+    pre := ""
+    out := "tycho_str_concat"
+    if n > 2:
+        out = out + str(n)
+    out = out + "(" + cs.arena
+    for i := 0; i < n; i += 1:
+        a := ps[i]
+        if i < n - 1:
+            v := "_fi" + str(cs.uid)
+            cs.uid += 1
+            pre = pre + "char *" + v + " = " + a + "; "
+            a = v
+        out = out + ", " + a
+    return "({ " + pre + out + "); })"
+
+# As _ex_scope, but in the INNERMOST live scratch. A transient built for a push
+# inside a loop belongs to that iteration: &_scope is the function arena and is
+# freed once, so 2e6 iterations of bench/strarr_build.ty retained every piece.
+fn _ex_cur(cs: inout C, e: ast.Expr) -> (string, string):
+    sav := cs.arena
+    cs.arena = _curown(&cs)
+    c, t := _ex(&cs, e)
+    cs.arena = sav
+    return (c, t)
+
+# Variants stay in Tycho/source metadata under their declared spelling. Give
+# every C payload type/member a private prefix so keywords/macros cannot collide.
+fn _vfield(vn: string) -> string:
+    return "V_" + vn
+
+fn _vpaytype(en: string, vn: string) -> string:
+    return "TychoPayload_" + en + "_" + vn
+
+# _tag DIES on an unknown variant, so it cannot be used to ASK whether a name
+# is one. This is the asking form.
+fn _tagopt(cs: inout C, ei: int, vn: string) -> int:
+    for i := 0; i < len(cs.eds[ei].vnames); i += 1:
+        if cs.eds[ei].vnames[i] == vn:
+            return i
+    return -1
+
+fn _tag(cs: inout C, ei: int, vn: string) -> int:
+    for i := 0; i < len(cs.eds[ei].vnames); i += 1:
+        if cs.eds[ei].vnames[i] == vn:
+            return i
+    _bad("enum " + cs.eds[ei].name + " has no variant '" + vn + "'")
+    return 0
+
+# `levels.DEBUG` and `geom.Red` parse as a FIELD on a name. When that name is an
+# imported package and not a local, the member is that package's const or its
+# bare variant. Returns ("", "") when the receiver is an ordinary value.
+# UFCS across a package boundary: `c.describe()` on a `geom.Circle` reaches
+# `geom__describe`, because a method-style call follows its RECEIVER's package
+# when the calling package has no such function.
+# A subscript has NO runtime object: the call INLINES to the place its body
+# yields (spec ROADMAP 2.4). Rather than substituting the AST, each parameter is
+# bound as a variable whose C NAME is the argument's already-emitted text, so the
+# yielded expression emits against the caller's own values. `lv` picks the place
+# form (`*..._ptr`) over the rvalue form (`..._get`), which is the only thing
+# that differs between a write through the projection and a read of it.
+# `g.edge(1)` parses as CallVal with a Field callee, not as Call -- the same
+# split Phase 4 found at src/tychoc.c:4848, where one E_CALL covers both.
+fn _subcallval(cs: inout C, k: [ast.Expr], lv: bool) -> (string, string, bool):
+    match k[0]:
+        ast.Field(l6, r6, f6):
+            si := _subidx(&cs, f6)
+            if si >= 0:
+                ua := []ast.Expr
+                push(ua, r6[0])
+                for ai := 1; ai < len(k); ai += 1:
+                    push(ua, k[ai])
+                c, t := _subinline(&cs, si, ua, lv)
+                return (c, t, true)
+        _: pass
+    return ("", "", false)
+
+fn _subidx(cs: inout C, n: string) -> int:
+    for i := 0; i < len(cs.subn); i += 1:
+        if cs.subn[i] == n:
+            return i
+    return -1
+
+fn _subinline(cs: inout C, si: int, args: [ast.Expr], lv: bool) -> (string, string):
+    ps := cs.subp[si]
+    if len(args) != len(ps):
+        _bad("subscript '" + cs.subn[si] + "' takes " + str(len(ps)) + " argument(s)")
+    nsave := len(cs.vnames)
+    for i := 0; i < len(ps); i += 1:
+        ac := ""
+        at := ""
+        # Resolve the owner BEFORE pushing this parameter: the push shadows
+        # the caller's binding under the same name, and looking the argument
+        # up after it would match the shadow itself while `vown` is still
+        # one entry short. The parameter aliases the caller's place, so it
+        # carries the ARGUMENT's owner -- not this function's `_scope`.
+        # Inlining `&g.friends[i]` for `&g.friends_of(a)` with `"&_scope"`
+        # here made `_ownerof` hand the caller's scope to the inout call,
+        # so a `push` through the projection grew into an arena freed on
+        # return (use after free, then garbage, then OOM). Fresh (non-place)
+        # arguments keep the old fallback: `_ownerof` answers `"&_scope"`.
+        owx := _ownerof(&cs, args[i])
+        if lv and _place(args[i]):
+            ac, at = _lvalue(&cs, args[i])
+        else:
+            ac, at = _ex(&cs, args[i])
+        push(cs.vnames, ps[i].name)
+        push(cs.vtypes, at)
+        push(cs.vcn, ac)
+        push(cs.vown, owx)
+        push(cs.vlocal, false)
+        push(cs.vloop, cs.loopdepth)
+        push(cs.vowned, false)
+    inner := cs.sube[si]
+    match cs.sube[si]:
+        ast.Addr(l, k): inner = k[0]
+        _: pass
+    rc := ""
+    rt := ""
+    if lv:
+        rc, rt = _lvalue(&cs, inner)
+    else:
+        rc, rt = _ex(&cs, inner)
+    for len(cs.vnames) > nsave:
+        pop(cs.vnames)
+        pop(cs.vtypes)
+        pop(cs.vcn)
+        pop(cs.vown)
+        pop(cs.vlocal)
+        pop(cs.vowned)
+    return (rc, rt)
+
+fn _ufcs_name(cs: inout C, n: string, rt: string) -> string:
+    if _fidx(&cs, n) >= 0:
+        return n
+    tn := ""
+    if _is_struct(rt) or _is_enum(rt):
+        tn = _tname(rt)
+    if len(tn) == 0:
+        return n
+    best := ""
+    for i := 0; i < len(cs.fpfx); i += 1:
+        pf := cs.fpfx[i]
+        if len(pf) == 0 or len(pf) > len(tn):
+            continue
+        if tn[0:len(pf)] != pf or len(pf) <= len(best):
+            continue
+        if _fidx(&cs, pf + n) >= 0:
+            best = pf
+    if len(best) == 0:
+        return n
+    return best + n
+
+fn _pkgmember(cs: inout C, r: ast.Expr, f: string) -> (string, string):
+    q := ""
+    match r:
+        ast.Name(l, nm): q = nm
+        _: q = ""
+    if len(q) == 0 or len(_vtype(&cs, q)) > 0 or not _ispkg(&cs, q):
+        return ("", "")
+    pf := _qpfx(&cs, q)
+    for i := 0; i < len(cs.cnames); i += 1:
+        if cs.cnames[i] == pf + f:
+            return (cs.ccode[i], cs.ctypes[i])
+    ei := _qvariant(&cs, pf, f)
+    if ei >= 0:
+        return _variant(&cs, ei, f, []ast.Expr)
+    # `opsx.bump` taken as a VALUE: the same trampoline the unqualified spelling
+    # gets, under the package-mangled name.
+    fi := -1
+    for i := 0; i < len(cs.fds); i += 1:
+        if cs.fds[i].name == pf + f:
+            fi = i
+    if fi >= 0:
+        _need_clo(&cs, fi)
+        ft := _fn_of(&cs, cs.fds[fi].ret, cs.fds[fi].ptypes)
+        if cs.thin:
+            return ("(" + _cty(&cs, ft) + "){h_" + cs.fds[fi].name + "}", ft)
+        return ("(" + _cty(&cs, ft) + "){" + cs.fds[fi].name + "__clo, 0, 0}", ft)
+    _bad("unknown package member '" + q + "." + f + "'")
+    return ("", "")
+
+fn _bare_variant(cs: inout C, n: string) -> int:
+    if _is_enum(cs.want):
+        w := _eidx(&cs, _tname(cs.want))
+        if w >= 0 and not _is_gen(cs.eds[w].name):
+            for v in cs.eds[w].vnames:
+                if v == n:
+                    return w
+    return _qvariant(&cs, _pfx(&cs), n)
+
+# A variant name is PACKAGE-scoped: `EmptyInput` in main is a different variant
+# from a sibling package's, even spelt the same (tests/pkg/variant_shadow). So
+# the search is confined to the enums declared with this prefix.
+fn _qvariant(cs: inout C, pfx: string, n: string) -> int:
+    for i := 0; i < len(cs.eds); i += 1:
+        if cs.edp[i] != pfx:
+            continue
+        if _is_gen(cs.eds[i].name) or _is_inst(&cs, cs.eds[i].name):
+            continue
+        for v in cs.eds[i].vnames:
+            if v == n:
+                return i
+    return -1
+
+# An INSTANCE of a generic enum is reachable only through the wanted type or by
+# inferring its arguments -- never by a bare variant name, which would otherwise
+# resolve `Has("hi")` into whichever instance happened to be stamped first.
+fn _is_inst(cs: inout C, n: string) -> bool:
+    for i := 0; i < len(cs.iname); i += 1:
+        if cs.iname[i] == n:
+            return true
+    return false
+
+fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, string):
+    en := cs.eds[ei].name
+    tag := _tag(&cs, ei, vn)
+    pay := cs.eds[ei].vpay[tag].ptypes
+    if len(pay) != len(args):
+        _bad("variant " + vn + " takes " + str(len(pay)) + " payload value(s)")
+    inl := _inline_enum(&cs, en)
+    nel := _nul_enum(&cs, en)
+    if len(pay) == 0:
+        if nel:
+            return ("((E_" + en + " *)0)", "E~" + en)
+        if inl:
+            return ("((E_" + en + "){ .tag = " + str(tag) + " })", "E~" + en)
+        return ("(&_sing_" + en + "_" + str(tag) + ")", "E~" + en)
+    v := _fresh(&cs, "_v")
+    out := "({ E_" + en + " " + v + " = {0}; " + v + ".tag = " + str(tag) + "; "
+    if nel:
+        out = "({ E_" + en + " *" + v + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", sizeof(" +
+            _vpaytype(en, vn) + ")); "
+    elif not inl:
+        out = "({ E_" + en + " *" + v + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", offsetof(E_" +
+            en + ", u) + sizeof(" + _vpaytype(en, vn) + ")); " + v + "->tag = " + str(tag) + "; "
+    for i := 0; i < len(args); i += 1:
+        sw := cs.want
+        cs.want = pay[i]
+        sar9 := cs.arena
+        cs.shared_get = false
+        ac, at := _ex(&cs, args[i])
+        cs.arena = sar9
+        cs.want = sw
+        if pay[i] == "float" and at == "int":
+            ac = "(double)(" + ac + ")"
+        same_enum := _is_enum(pay[i]) and _place(args[i]) and
+            _ownerof(&cs, args[i]) == cs.arena
+        if _place(args[i]) and _heap(&cs, pay[i]) and not _shares(&cs, args[i], pay[i], cs.arena) and
+                not _own_path_ok(&cs, args[i]) and not _shared_get_expr(&cs, args[i]) and
+                not _canmove(&cs, args[i], cs.arena) and
+                not _move_same_array(&cs, args[i], pay[i], cs.arena) and not same_enum:
+            ac = _copy(&cs, ac, pay[i], cs.arena)
+        if nel:
+            out = out + "((" + _vpaytype(en, vn) + " *)" + v + ")->f" + str(i) + " = " + ac + "; "
+        elif inl:
+            out = out + v + ".u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
+        else:
+            out = out + v + "->u." + _vfield(vn) + ".f" + str(i) + " = " + ac + "; "
+    return (out + v + "; })", "E~" + en)
+
+# _place() has no type, so it reads every to_bytes(x) as an alias. Ask the
+# argument's type for the two forms that really allocate. _expr_type can emit,
+# and can claim a pending binding, so probe with the state save _argtypes uses.
+fn _to_bytes_fresh(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Call(l, q, n, ts, k):
+            if n != "to_bytes" or len(q) != 0 or len(k) != 1:
+                return false
+            sw := cs.want
+            sp := cs.projection
+            cs.want = ""
+            cs.projection = []string
+            t := _expr_type(&cs, k[0])
+            cs.want = sw
+            cs.projection = sp
+            return _is_arr(t) or _is_struct(t)
+        _: return false
+    return false
+
+# The value a `return` hands back, homed in the caller's arena: shared by
+# `return e` and an `or_else` handler, which is returned the same way.
+fn _retval(cs: inout C, e: ast.Expr) -> string:
+    sw := cs.want
+    sa := cs.arena
+    # RETURN-SLOT MOVE: a returned TEMPORARY is built straight in the
+    # caller's arena, so it needs no copy on the way out. A place (a
+    # local, a field, an element) still copies -- it belongs to this
+    # scope and the scope is about to die. src/tychoc.c does the same;
+    # tychoc1 copied unconditionally, which allocated every returned
+    # value twice.
+    tmpret := not _place(e)
+    # to_bytes is a place only when its argument is a string/bytes alias; for an
+    # [int] or a packed struct it is a fresh allocation, so returning it must not
+    # copy again (measured: two 3.3 MB copies per save).
+    if not tmpret and _to_bytes_fresh(&cs, e):
+        tmpret = true
+    # _parent for a PLACE too. Its emission may insert a copy of its own
+    # (a map/array element does), and _shares then reads the SOURCE --
+    # which does live in the caller -- while the value actually returned
+    # is that copy, in a _scope this return is about to free.
+    if tmpret:
+        cs.arena = "_parent"
+    # An INDEX read is the exception among places: its emission copies
+    # the element into cs.arena, while _shares below reads the SOURCE --
+    # which does live in the caller -- and so suppresses the retention
+    # copy on a value sitting in the _scope this return then frees
+    # (cell/fold.ty@env_get, `return e.vals[k]`, read back after free).
+    match e:
+        ast.Index(li9, ki9): cs.arena = "_parent"
+        _: pass
+    cs.want = cs.cur_ret
+    srs := cs.retslot
+    match e:
+        ast.Tuple(l8, xs8): cs.retslot = tmpret
+        _: pass
+    cs.shared_get = false
+    c, t := _ex(&cs, e)
+    cs.retslot = srs
+    cs.want = sw
+    cs.arena = sa
+    rt := cs.cur_ret
+    if rt == "float" and t == "int":
+        c = "(double)(" + c + ")"
+    # O5: the owned value and the result share the destination arena, and the
+    # caller promised not to read the old value again.
+    if _own_path_ok(&cs, e):
+        return c
+    if _shared_get_expr(&cs, e):
+        return c
+    # src/tychoc.c:10832@cv_in_parent -- a return-slot local already
+    # lives in the caller's arena, so the copy would duplicate it.
+    projected := cs.ret_placed and _projection_fields(e, cs.ret_local) == cs.ret_fields
+    if projected and len(cs.ret_loop_bound) > 0:
+        c = "((" + cs.ret_loop_bound + " > 0) ? (" + c + ") : (" + _copy(&cs, c, rt, "_parent") + "))"
+    if not tmpret and not projected and not _shares(&cs, e, rt, "_parent") and
+            not _inparent(&cs, e):
+        c = _copy(&cs, c, rt, "_parent")
+    return c
+
+# `x or_return` -- on the failing tag it returns the SAME failure from the
+# enclosing function, rebuilt in the caller's arena because this scope is freed
+# on the way out.
+# `x or_else b: h` is the same node with k[1] = h: on the failing tag it binds
+# the error to b (a borrow of the operand, which lives in _scope), builds h as a
+# `return` would, runs the same frees and returns it (src/tychoc.c@gen_expr).
+fn _orret(cs: inout C, b: string, k: [ast.Expr]) -> (string, string):
+    sw := cs.want
+    cs.want = ""
+    # The operand is built in the CURRENT arena, as src/tychoc.c@gen_expr does:
+    # its Ok/Some payload is the node's value, and under a `return` that arena
+    # is _parent, which _retval then hands back uncopied (a temporary). Forcing
+    # &_scope here returned a payload from the scope the return frees.
+    c, t := _ex(&cs, k[0])
+    cs.want = sw
+    if not (_is_optT(&cs, t) or _is_resT(&cs, t)):
+        _bad("`or_return` on a value that is not an Option or a Result")
+    ei := _eidx(&cs, _tname(t))
+    rt := cs.cur_ret
+    if len(k) > 1:
+        return _orelse(&cs, b, k[1], c, t, ei)
+    if not (_is_optT(&cs, rt) or _is_resT(&cs, rt)):
+        _bad("`or_return` inside a function that returns neither Option nor Result")
+    ri := _eidx(&cs, _tname(rt))
+    v := _fresh(&cs, "_or")
+    r2 := _fresh(&cs, "_or")
+    bad := 0
+    if _is_resT(&cs, t):
+        bad = 1
+    rbad := 0
+    if _is_resT(&cs, rt):
+        rbad = 1
+    rn := _tname(rt)
+    rvn := cs.eds[ri].vnames[rbad]
+    rpay := cs.eds[ri].vpay[rbad].ptypes
+    mk := "(&_sing_" + rn + "_" + str(rbad) + ")"
+    if len(rpay) > 0:
+        src := "(" + v + "->u." + _vfield(cs.eds[ei].vnames[bad]) + ".f0)"
+        if len(cs.eds[ei].vpay[bad].ptypes) == 0:
+            _bad("`or_return` cannot carry a payload the source variant does not have")
+        mk = "({ E_" + rn + " *" + r2 + " = (E_" + rn + " *)arena_alloc(_parent, offsetof(E_" +
+            rn + ", u) + sizeof(" + _vpaytype(rn, rvn) + ")); " + r2 + "->tag = " + str(rbad) +
+            "; " + r2 + "->u." + _vfield(rvn) + ".f0 = " + _copy(&cs, src, rpay[0], "_parent") + "; " +
+            r2 + "; })"
+    ok := cs.eds[ei].vpay[1 - bad].ptypes
+    got := "((void)0)"
+    gt := "void"
+    if len(ok) > 0:
+        got = "(" + v + "->u." + _vfield(cs.eds[ei].vnames[1 - bad]) + ".f0)"
+        gt = ok[0]
+    return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
+        str(bad) + ") { E_" + rn + " *_orr = " + mk +
+        "; " + _oneline(_finalizers(&cs, cs.fnbase, "")) + _scr_frees(&cs) +
+        "if (_scope.head) arena_free(&_scope); return _orr; } " +
+        got + "; })", gt)
+
+fn _orelse(cs: inout C, b: string, h: ast.Expr, c: string, t: string, ei: int) -> (string, string):
+    v := _fresh(&cs, "_or")
+    bad := 0
+    if _is_resT(&cs, t):
+        bad = 1
+    m := _mark(&cs)
+    bind := ""
+    if len(b) > 0:
+        et := cs.eds[ei].vpay[bad].ptypes[0]
+        bcn := _push(&cs, b, et)
+        cs.vown[len(cs.vown) - 1] = "&_scope"
+        bind = _ctyz(&cs, et) + "" + bcn + " = " + v + "->u." + _vfield(cs.eds[ei].vnames[bad]) + ".f0; "
+        bind = bind + _append_binding(&cs, b, et, bcn, "")
+    hc := _retval(&cs, h)
+    _restore(&cs, m)
+    ok := cs.eds[ei].vpay[1 - bad].ptypes
+    got := "((void)0)"
+    gt := "void"
+    if len(ok) > 0:
+        got = "(" + v + "->u." + _vfield(cs.eds[ei].vnames[1 - bad]) + ".f0)"
+        gt = ok[0]
+    return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
+        str(bad) + ") { " + bind + _ctyz(&cs, cs.cur_ret) + "_orr = " + hc + "; " +
+        _oneline(_finalizers(&cs, cs.fnbase, "")) + _scr_frees(&cs) +
+        "if (_scope.head) arena_free(&_scope); return _orr; } " +
+        got + "; })", gt)
+
+# `v: vector[4]float = [1.0, 2.0, 3.0, 4.0]` -- lane by lane into the vector
+# member, no arena. src/tychoc.c emits the same statement expression.
+fn _veclit(cs: inout C, k: [ast.Expr], vt: string) -> (string, string):
+    n := _vn(&cs, vt)
+    if len(k) != n:
+        _bad("a vector[" + str(n) + "] literal needs " + str(n) + " elements")
+    et := _velem(&cs, vt)
+    sw := cs.want
+    cs.want = et
+    v := _fresh(&cs, "_l")
+    out := "({ " + _ctyz(&cs, vt) + "" + v + "; "
+    for i := 0; i < len(k); i += 1:
+        ac, at2 := _ex(&cs, k[i])
+        if at2 != et:
+            ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
+        out = out + v + ".v[" + str(i) + "] = " + ac + "; "
+    cs.want = sw
+    return (out + v + "; })", vt)
+
+fn _static_scalar_expr(e: ast.Expr) -> bool:
+    match e:
+        ast.IntLit(l, v): return true
+        ast.FloatLit(l, v): return true
+        ast.CharLit(l, v): return true
+        ast.BoolLit(l, v): return true
+        ast.Unop(l, o, kids):
+            return o == "-" and len(kids) == 1 and
+                ((kids[0] is ast.IntLit) or (kids[0] is ast.FloatLit))
+        _: return false
+    return false
+
+fn _static_scalar_type(t: string) -> bool:
+    return t == "int" or _is_sized(t) or t == "float" or t == "char" or t == "bool"
+
+fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
+    if len(k) == 0:
+        _bad("an empty array literal needs a type")
+    if _is_vec(cs.want):
+        return _veclit(&cs, k, cs.want)
+    v := _fresh(&cs, "_l")
+    sw := cs.want
+    # `a: [u32] = [1, 2]` -- the elements adapt to the ANNOTATED element type,
+    # which is the only place it is written down; taking it from element 0 alone
+    # would type this [int] and then fail to initialise a TychoArrK.
+    # Element 0 is emitted UNDER the narrowed want like every other element: it
+    # used to be emitted first, under the outer one, and `[[[1]]]` -- one element
+    # at every level -- then built TychoArrK0 at all three (tests/recursion
+    # ok_type, which cc refused).
+    et := ""
+    if _is_arr(cs.want):
+        et = _elem(cs.want)
+        cs.want = et
+    c0, et0 := _ex(&cs, k[0])
+    if len(et) == 0:
+        et = et0
+        cs.want = et
+    ct := _cty(&cs, "[" + et + "]")
+    static_lit := len(k) >= 64 and _static_scalar_type(et)
+    for i := 0; static_lit and i < len(k); i += 1:
+        if not _static_scalar_expr(k[i]):
+            static_lit = false
+    if static_lit:
+        lit := _fresh(&cs, "_lit")
+        pieces := ["({ static const " + _cty(&cs, et) + " " + lit + "[" + str(len(k)) + "] = {"]
+        for i := 0; i < len(k); i += 1:
+            ac := c0
+            at2 := et0
+            if i > 0:
+                ac2, at3 := _ex(&cs, k[i])
+                ac = ac2
+                at2 = at3
+            if at2 != et:
+                ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
+            if i > 0:
+                push(pieces, ", ")
+            push(pieces, ac)
+        push(pieces, "}; " + ct + " " + v + " = " + _arrf(&cs, et, "_with_cap") + "(" +
+            cs.arena + ", " + str(len(k)) + "L); memcpy(" + v + ".data, " + lit +
+            ", sizeof " + lit + "); " + v + ".len = " + str(len(k)) + "L; " + v + "; })")
+        cs.want = sw
+        return (_join_code(pieces), "[" + et + "]")
+    pieces2 := ["({ " + ct + " " + v + " = " + _arrf(&cs, et, "_with_cap") + "(" +
+        cs.arena + ", " + str(len(k)) + "L); "]
+    for i := 0; i < len(k); i += 1:
+        ac := c0
+        at2 := et0
+        if i > 0:
+            ac2, at3 := _ex(&cs, k[i])
+            ac = ac2
+            at2 = at3
+        if at2 != et and not _heap(&cs, et):
+            ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
+        if _place(k[i]) and _heap(&cs, et) and not _shares(&cs, k[i], et, cs.arena) and
+                not _canmove(&cs, k[i], cs.arena):
+            ac = _copy(&cs, ac, et, cs.arena)
+        push(pieces2, v + ".data[" + str(i) + "] = " + ac + "; ")
+    push(pieces2, v + ".len = " + str(len(k)) + "L; " + v + "; })")
+    cs.want = sw
+    return (_join_code(pieces2), "[" + et + "]")
+
+fn _maplit(cs: inout C, k: [ast.Expr]) -> (string, string):
+    if len(k) < 2:
+        _bad("an empty map literal needs a type")
+    kc0, kt := _ex(&cs, k[0])
+    vc0, vt := _ex(&cs, k[1])
+    mt := _map_of(&cs, kt, vt)
+    v := _fresh(&cs, "_mp")
+    n := len(k) / 2
+    if len(getenv("TYCHOC_NO_MAP_PRESIZE")) > 0:
+        n = 0
+    out := "({ " + _ctyz(&cs, mt) + "" + v + " = " + _mpfx(&cs, mt) +
+        "_with_cap(" + cs.arena + ", " + str(n) + "LL); "
+    for i := 0; i < len(k); i += 2:
+        sw := cs.want
+        cs.want = kt
+        kc, kct := _ex(&cs, k[i])
+        cs.want = vt
+        vc, vct := _ex(&cs, k[i + 1])
+        cs.want = sw
+        if vt == "float" and vct == "int":
+            vc = "(double)(" + vc + ")"
+        out = out + _mpfx(&cs, mt) + "_put(" + cs.arena + ", &" + v + ", " +
+            _keyrt(&cs, kt, kc) + ", " + vc + "); "
+    return (out + v + "; })", mt)
+
+# `m.get(k)` / `m.get(k, default)` reach emit as a call on a field expression;
+# the map read is the only receiver method the language has (fn values are 7b's).
+fn _mapget(cs: inout C, mc: string, mt: string, args: [ast.Expr]) -> (string, string):
+    if len(args) != 1 and len(args) != 2:
+        _bad("m.get(key) or m.get(key, default)")
+    kc, kct := _ex(&cs, args[0])
+    vt := _mval(&cs, mt)
+    d := _zero(&cs, vt)
+    if len(args) == 2:
+        sw := cs.want
+        cs.want = vt
+        dc, dt := _ex(&cs, args[1])
+        cs.want = sw
+        if vt == "float" and dt == "int":
+            dc = "(double)(" + dc + ")"
+        d = dc
+    g := _mpfx(&cs, mt) + "_get(" + mc + ", " + _keyrt(&cs, _mkey(&cs, mt), kc) +
+        ", " + d + ")"
+    if cs.copyless_get:
+        return (g, vt)
+    return (_copy(&cs, g, vt, cs.arena), vt)
+
+fn _callval(cs: inout C, k: [ast.Expr]) -> (string, string):
+    match k[0]:
+        ast.Field(l, r, f):
+            # `(pkg.f)(x)` -- the parenthesised immediate call. The receiver is a
+            # PACKAGE, not a value, so it must not be evaluated as one.
+            match r[0]:
+                ast.Name(l9, q9):
+                    if len(_vtype(&cs, q9)) == 0 and _ispkg(&cs, q9):
+                        ra := []ast.Expr
+                        for i := 1; i < len(k); i += 1:
+                            push(ra, k[i])
+                        return _call(&cs, l, q9, f, []ast.Ty, ra)
+                _: pass
+            rt0 := _argtypes(&cs, r)[0]
+            if _is_struct(rt0):
+                si4 := _sidx(&cs, _tname(rt0))
+                for j := 0; j < len(cs.sds[si4].fnames); j += 1:
+                    if cs.sds[si4].fnames[j] == f and _is_fn(cs.sds[si4].ftypes[j]):
+                        # a fn-typed FIELD is a value call, not UFCS
+                        return _callfv(&cs, k)
+            if f != "get" or not _is_map(rt0):
+                # UFCS: `x.f(a)` is `f(x, a)` for any free function f.
+                ua := []ast.Expr
+                uat := [rt0]
+                rest := []ast.Expr
+                push(ua, r[0])
+                for i := 1; i < len(k); i += 1:
+                    push(ua, k[i])
+                    push(rest, k[i])
+                for t in _argtypes(&cs, rest):
+                    push(uat, t)
+                return _call_with_types(&cs, l, "", f, []ast.Ty, ua, uat)
+            mc, mt := _ex(&cs, r[0])
+            if not _is_map(mt):
+                _bad(".get() on a non-map")
+            rest := []ast.Expr
+            for i := 1; i < len(k); i += 1:
+                push(rest, k[i])
+            return _mapget(&cs, mc, mt, rest)
+        _: pass
+    return _callfv(&cs, k)
+
+fn _simple_ex(e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.IntLit(l, n): return true
+        ast.StrLit(l, s): return true
+        _: return false
+    return false
+
+fn _simple_call_place(e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.Index(l, k):
+            return _simple_ex(k[0]) and _simple_ex(k[1])
+        ast.Field(l, r, f): return _simple_call_place(r[0])
+        _: return false
+    return false
+
+fn _callfv(cs: inout C, k: [ast.Expr]) -> (string, string):
+    fc, ft := _ex(&cs, k[0])
+    if not _is_fn(ft):
+        _bad("call of a value that is not a function")
+    # A simple place is already an lvalue. Calling through a pointer avoids
+    # copying the whole function descriptor (24 bytes) just to read `call` and
+    # the inline environment out of the copy.
+    direct := _simple_call_place(k[0]) and _place(k[0])
+    fv := _fresh(&cs, "_fv")
+    out := ""
+    if cs.thin:
+        if direct:
+            lv, _lt := _lvalue(&cs, k[0])
+            out = "({ " + _ctyz(&cs, ft) + " *" + fv + " = &(" + lv + "); " +
+                fv + "->call(" + cs.arena
+        else:
+            out = "({ " + _ctyz(&cs, ft) + "" + fv + " = " + fc + "; " + fv +
+                ".call(" + cs.arena
+    elif direct:
+        lv, _lt := _lvalue(&cs, k[0])
+        out = "({ " + _ctyz(&cs, ft) + " *" + fv + " = &(" + lv + "); " +
+            fv + "->call((void *)&" + fv + "->c0, " + cs.arena
+    else:
+        out = "({ " + _ctyz(&cs, ft) + "" + fv + " = " + fc + "; " + fv +
+            ".call((void *)&" + fv + ".c0, " + cs.arena
+    fps := _fps(&cs, ft)
+    sw := cs.want
+    for i := 1; i < len(k); i += 1:
+        cs.want = ""
+        if i - 1 < len(fps):
+            cs.want = fps[i - 1]
+        ac, at := _rhs2(&cs, k[i], cs.want, cs.arena)
+        out = out + ", " + ac
+    cs.want = sw
+    return (out + "); })", _fret(&cs, ft))
+
+fn _ew_lane(cs: inout C, et: string, op: string, lhs: string, rhs: string) -> string:
+    if not ((op == "/" or op == "%") and (et == "int" or _is_sint(et) or _is_uint(et))):
+        return "(" + lhs + " " + op + " " + rhs + ")"
+    f := "tycho_idiv"
+    if op == "%":
+        f = "tycho_imod"
+    if _is_uint(et):
+        f = "tycho_udiv"
+        if op == "%":
+            f = "tycho_umod"
+    out := f + "(" + lhs + ", " + rhs + ")"
+    if _is_sized(et):
+        out = "(" + _cty(&cs, et) + ")( " + out + ")"
+    return out
+
+# Number of `+` nodes down a left spine. Fields are read in place and the walk
+# recurses on the element: binding a local `ast.Expr` deep-copies the subtree
+# this exists to avoid.
+fn _int_add_spine(e: ast.Expr) -> int:
+    match e:
+        ast.Binop(l, o, kids):
+            if o == "+":
+                return 1 + _int_add_spine(kids[0])
+        _: pass
+    return 0
+
+fn _int_add_leaf(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.IntLit(l, v): return true
+        ast.Name(l, n): return _vtype(&cs, n) == "int"
+        ast.Unop(l, o, k): return o == "-" and len(k) == 1 and (k[0] is ast.IntLit)
+        _: return false
+    return false
+
+# Break a long simple-int left spine iteratively instead of nesting one C
+# parenthesis per source `+`. Calls and non-int expressions retain the ordinary
+# emitter so evaluation/coercion rules are untouched.
+# Validate a `+` spine without copying it: parameters are borrowed, so the
+# recursion reads `kids` in place. A `parts: [ast.Expr]` array deep-copied every
+# operand, which cost 255 MiB / 8.7 M allocs on a self-compile.
+fn _int_add_ok(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Binop(l, o, kids):
+            if o == "+":
+                return _int_add_leaf(&cs, kids[1]) and _int_add_ok(&cs, kids[0])
+        _: pass
+    return _int_add_leaf(&cs, e)
+
+fn _int_add_flat(cs: inout C, e: ast.Expr) -> (string, string):
+    match e:
+        ast.Binop(l, o, kids):
+            if o == "+":
+                ls, lt := _int_add_flat(&cs, kids[0])
+                if lt != "int":
+                    return ("", "?")
+                rs, rt := _ex(&cs, kids[1])
+                if rt != "int":
+                    return ("", "?")
+                return (ls + " + " + rs, "int")
+        _: pass
+    return _ex(&cs, e)
+
+fn _flat_int_add(cs: inout C, ea: ast.Expr, eb: ast.Expr) -> (string, string):
+    # The caller has already gated on _int_add_spine. Walk the borrowed spine
+    # instead of materialising `parts`: that array deep-copied every operand,
+    # and was the top allocator in a self front-end run (11.5 M allocs).
+    if not _int_add_ok(&cs, ea):
+        return ("", "")
+    ls, lt := _int_add_flat(&cs, ea)
+    if lt != "int":
+        return ("", "")
+    es, et := _ex(&cs, eb)
+    if et != "int":
+        return ("", "")
+    return ("(" + ls + " + " + es + ")", "int")
+
+fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, string):
+    if op == "+":
+        # Gate before calling: _flat_int_add opens a child arena and re-emits
+        # both operands, and this runs for every `+` in the program while almost
+        # all spines are short (self-compile: 14.1 M allocs total, no
+        # `_flat_int_add` entry, vs 25.6 M with the old parts[] walk).
+        if _int_add_spine(ea) + 2 >= 128:
+            flat, ft := _flat_int_add(&cs, ea, eb)
+            if len(ft) > 0:
+                return (flat, ft)
+    savebin := cs.arena
+    if len(cs.concat_scratch) > 0:
+        cs.arena = cs.concat_scratch
+    a, at := _ex(&cs, ea)
+    b, bt := _ex(&cs, eb)
+    cs.arena = savebin
+    if op == "in":
+        if not _is_map(bt):
+            _bad("`in` tests membership in a map")
+        return (_mpfx(&cs, bt) + "_has(" + b + ", " + _keyrt(&cs, _mkey(&cs, bt), a) + ")", "bool")
+    if op == "and":
+        return ("(" + a + " && " + b + ")", "bool")
+    if op == "or":
+        return ("(" + a + " || " + b + ")", "bool")
+    if op == "==":
+        return (_eq(&cs, a, b, at), "bool")
+    if op == "!=":
+        return ("(!" + _eq(&cs, a, b, at) + ")", "bool")
+    if op == "<" or op == ">" or op == "<=" or op == ">=":
+        if at == "string" or at == "bytes":
+            return ("(tycho_str_cmp(" + a + ", " + b + ") " + op + " 0)", "bool")
+        a, b = _widen(a, at, b, bt)
+        return ("(" + a + " " + op + " " + b + ")", "bool")
+    # Element-wise array arithmetic, and the scalar BROADCAST form. Shape read
+    # from `./tychoc tests/array_arith.ty --emit-c`: a fresh result array in the
+    # current arena, filled by one loop, with a length guard on the two-array
+    # form. Placed before the scalar operators so `a * b` on arrays never falls
+    # through to a C `*` on two structs.
+    if op == "*" or op == "/" or op == "%" or op == "+" or op == "-":
+        # vector[N]T: ONE C expression on the vector members, which is what
+        # makes this a machine instruction rather than a loop gcc may or may not
+        # vectorise. int `/` and `%` fall back to a lane loop because the
+        # LONG_MIN/-1 and divide-by-zero traps are a CALL, which cannot be
+        # applied to a whole vector -- src/tychoc.c:14689 does the same.
+        # A broadcast scalar needs no splat and the operand order is preserved.
+        if _is_vec(at) or _is_vec(bt):
+            vt := at
+            if not _is_vec(at):
+                vt = bt
+            vet := _velem(&cs, vt)
+            vct := _ctyz(&cs, vt)
+            vce := _ctyz(&cs, vet)
+            wa := _fresh(&cs, "_ewa")
+            wb := _fresh(&cs, "_ewb")
+            wr := _fresh(&cs, "_ewr")
+            wi := _fresh(&cs, "_ewi")
+            lct := vce
+            rct := vce
+            wsrc := wb
+            if _is_vec(at):
+                lct = vct
+                wsrc = wa
+            if _is_vec(bt):
+                rct = vct
+            raw := op == "+" or op == "-" or op == "*"
+            if op == "/" and (vet == "float" or vet == "f32"):
+                raw = true
+            whd := "({ " + lct + wa + " = (" + a + "); " + rct + wb + " = (" + b + "); " +
+                vct + wr + " = " + wsrc + ";\n"
+            if raw:
+                wl := wa
+                wrr := wb
+                if _is_vec(at):
+                    wl = wa + ".v"
+                if _is_vec(bt):
+                    wrr = wb + ".v"
+                return (whd + "   " + wr + ".v = " + wl + " " + op + " " + wrr +
+                    ";\n   " + wr + "; })", vt)
+            wl2 := wa
+            wr2 := wb
+            if _is_vec(at):
+                wl2 = wa + ".v[" + wi + "]"
+            if _is_vec(bt):
+                wr2 = wb + ".v[" + wi + "]"
+            lane := "(" + wl2 + " " + op + " " + wr2 + ")"
+            if (op == "/" or op == "%") and (vet == "int" or _is_sint(vet) or _is_uint(vet)):
+                f := "tycho_idiv"
+                if op == "%":
+                    f = "tycho_imod"
+                if _is_uint(vet):
+                    f = "tycho_udiv"
+                    if op == "%":
+                        f = "tycho_umod"
+                lane = f + "(" + wl2 + ", " + wr2 + ")"
+                if _is_sized(vet):
+                    lane = "(" + _cty(&cs, vet) + ")(" + lane + ")"
+            elif _is_sized(vet):
+                lane = "(" + _cty(&cs, vet) + ")" + lane
+            return (whd + "   for (tycho_int " + wi + " = 0; " + wi + " < " +
+                str(_vn(&cs, vt)) + "; " + wi + "++) " + wr + ".v[" + wi + "] = " +
+                lane + ";\n   " + wr + "; })", vt)
+        ewa := _is_arr(at)
+        ewb := _is_arr(bt)
+        if ewa or ewb:
+            et := at
+            if ewa:
+                et = _elem(at)
+            else:
+                et = _elem(bt)
+            ct := ""
+            if ewa:
+                ct = _cty(&cs, at)
+            else:
+                ct = _cty(&cs, bt)
+            ce := _cty(&cs, et)
+            va := _fresh(&cs, "_ewa")
+            vb := _fresh(&cs, "_ewb")
+            vr := _fresh(&cs, "_ewr")
+            vi := _fresh(&cs, "_ewi")
+            hd := ""
+            ln := ""
+            lhs := ""
+            rhs := ""
+            if ewa and ewb:
+                hd = ct + " " + va + " = (" + a + "); " + ct + " " + vb + " = (" + b + ");\n" +
+                    "   if (" + va + ".len != " + vb + ".len) tycho_ew_len(" + va + ".len, " + vb + ".len);\n"
+                ln = va + ".len"
+                lhs = va + ".data[" + vi + "]"
+                rhs = vb + ".data[" + vi + "]"
+            elif ewa:
+                hd = ct + " " + va + " = (" + a + "); " + ce + " " + vb + " = (" + b + ");\n"
+                ln = va + ".len"
+                lhs = va + ".data[" + vi + "]"
+                rhs = vb
+            else:
+                hd = ce + " " + va + " = (" + a + "); " + ct + " " + vb + " = (" + b + ");\n"
+                ln = vb + ".len"
+                lhs = va
+                rhs = vb + ".data[" + vi + "]"
+            rt2 := "[" + et + "]"
+            return ("({ " + hd +
+                "   " + ct + " " + vr + "; " + vr + ".len = " + ln + "; " + vr + ".cap = " + ln + ";\n" +
+                "   " + vr + ".data = " + vr + ".len ? (" + ce + " *)arena_alloc(" + cs.arena +
+                ", (size_t)" + vr + ".len * sizeof(" + ce + " )) : 0;\n" +
+                "   for (tycho_int " + vi + " = 0; " + vi + " < " + vr + ".len; " + vi + "++) " +
+                vr + ".data[" + vi + "] = " + _ew_lane(&cs, et, op, lhs, rhs) + ";\n" +
+                "   " + vr + "; })", rt2)
+    if op == "+" and (at == "string" or at == "bytes"):
+        if bt == "char":
+            return ("tycho_str_concat_char(" + cs.arena + ", " + a + ", " + b + ")", "string")
+        # FLATTEN a chain: `w + x + y + z` parses left-nested, so each `+` would
+        # allocate an intermediate and re-copy the whole growing prefix -- O(n^2)
+        # bytes for n pieces. The runtime already carries concat3..concat6 (one
+        # allocation, one copy per piece) and ./tychoc emits 654 of them
+        # compiling compiler/main.ty where tychoc1 emitted none.
+        for k := 5; k >= 2; k -= 1:
+            nm := "tycho_str_concat"
+            if k > 2:
+                nm = nm + str(k)
+            pre := nm + "(" + cs.arena + ", "
+            # A promoted declaration builds the inner piece in the loop scratch;
+            # fold it too, so the whole chain still writes the owner arena once.
+            pre2 := nm + "(" + cs.concat_scratch + ", "
+            if len(cs.concat_scratch) > 0 and not strings.starts_with(a, pre) and
+                    strings.starts_with(a, pre2):
+                pre = pre2
+            if strings.starts_with(a, pre) and _one_call(a):
+                return ("tycho_str_concat" + str(k + 1) + "(" + cs.arena + ", " +
+                    a[len(pre):len(a) - 1] + ", " + b + ")", "string")
+        return ("tycho_str_concat(" + cs.arena + ", " + a + ", " + b + ")", "string")
+    if op == "/" and at == "int" and bt == "int":
+        return ("tycho_idiv(" + a + ", " + b + ")", "int")
+    if op == "%" and at == "int" and bt == "int":
+        return ("tycho_imod(" + a + ", " + b + ")", "int")
+    if op == "+" or op == "-" or op == "*" or op == "/" or op == "%":
+        rt := _num2(at, bt)
+        a, b = _widen(a, at, b, bt)
+        if (op == "/" or op == "%") and (_is_sint(rt) or _is_uint(rt)):
+            f := "tycho_idiv"
+            if op == "%":
+                f = "tycho_imod"
+            if _is_uint(rt):
+                f = "tycho_udiv"
+                if op == "%":
+                    f = "tycho_umod"
+            return ("(" + _cty(&cs, rt) + ")(" + f + "(" + a + ", " + b + "))", rt)
+        if rt == "char":
+            # char is one byte, so its arithmetic stays 0..255 -- src/tychoc.c:14474
+            return ("((tycho_int)(unsigned char)((" + a + " " + op + " " + b + ")))", rt)
+        if _is_sized(rt):
+            return ("(" + _cty(&cs, rt) + ")((" + a + " " + op + " " + b + "))", rt)
+        return ("(" + a + " " + op + " " + b + ")", rt)
+    if op == "<<" or op == ">>":
+        # A count >= the operand's width is 0 and a negative one aborts, neither
+        # of which C gives -- runtime/tycho_rt.c:380 onwards owns both.
+        st := "int"
+        if _is_sized(at):
+            st = at
+        unsigned_count := "0"
+        if _is_uint(bt):
+            unsigned_count = "1"
+        count := "tycho_shift_count((uint64_t)(" + b + "), " + unsigned_count + ")"
+        f := "tycho_shl_i"
+        if op == ">>":
+            f = "tycho_shr_i"
+        if st == "u32" or st == "u64":
+            f = "tycho_shl_" + st
+            if op == ">>":
+                f = "tycho_shr_" + st
+            return (f + "(" + a + ", " + count + ")", st)
+        if _is_sized(st):
+            sg := "0"
+            if _is_sint(st):
+                sg = "1"
+            if op == "<<":
+                return ("(" + _cty(&cs, st) + ")(tycho_shln(" + a + ", " + count + ", " + str(_width(st)) + "))", st)
+            return ("(" + _cty(&cs, st) + ")(tycho_shrn(" + a + ", " + count + ", " + str(_width(st)) + ", " + sg + "))", st)
+        return (f + "(" + a + ", " + count + ")", "int")
+    if op == "&" or op == "|" or op == "^":
+        bt2 := "int"
+        if _is_sized(at):
+            bt2 = at
+        elif _is_sized(bt):
+            bt2 = bt
+        if _is_sized(bt2):
+            return ("(" + _cty(&cs, bt2) + ")((" + a + " " + op + " " + b + "))", bt2)
+        return ("(" + a + " " + op + " " + b + ")", "int")
+    _bad("unsupported operator '" + op + "'")
+    return ("", "")
+
+# src/tychoc.c widens an int operand in a float context at TYPECHECK time, so an
+# int LITERAL reaches codegen already a float and prints as `0.0`, never as a cast.
+fn _tofloat(c: string) -> string:
+    n := len(c)
+    if n > 2 and c[n - 2] == 76 and c[n - 1] == 76:
+        ok := n > 2
+        for i := 0; i < n - 2; i += 1:
+            d := c[i]
+            if d == 45 and i == 0:
+                continue
+            if d < 48 or d > 57:
+                ok = false
+        if ok:
+            return c[0:n - 2] + ".0"
+    return "(double)(" + c + ")"
+
+fn _widen(a: string, at: string, b: string, bt: string) -> (string, string):
+    if at == "float" and bt != "float":
+        return (a, _tofloat(b))
+    if bt == "float" and at != "float":
+        return (_tofloat(a), b)
+    return (a, b)
+
+# A packed member cannot be passed through a naturally aligned C pointer.
+# Walk the source place and test the aggregate that owns each selected field.
+fn _packed_field_byteptr(cs: inout C, e: ast.Expr) -> string:
+    match e:
+        ast.Field(l, r, f):
+            rc, rt := _lvalue(&cs, r[0])
+            if _is_struct(rt):
+                si := _sidx(&cs, _tname(rt))
+                if si >= 0 and cs.sds[si].packed:
+                    return "(void *)((unsigned char *)&(" + rc + ") + offsetof(S_" +
+                        cs.sds[si].name + ", f_" + f + "))"
+            return _packed_field_byteptr(&cs, r[0])
+        ast.Index(l, k): return _packed_field_byteptr(&cs, k[0])
+        ast.TupIdx(l, k, i): return _packed_field_byteptr(&cs, k[0])
+        _: return ""
+    return ""

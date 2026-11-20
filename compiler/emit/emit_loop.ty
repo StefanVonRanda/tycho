@@ -1,0 +1,988 @@
+package emit
+
+import "../ast"
+import "core:strings"
+
+# Return projection, counted-loop bounds and presizing, split views and block
+# emission. Moved verbatim out of emit.ty.
+
+fn _projection_ctor(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Call(l, q, n, ts, k): return _rebuild_ctor(&cs, q, n)
+        _: return false
+    return false
+
+fn _projection_fields(e: ast.Expr, root: string) -> [string]:
+    match e:
+        ast.Field(l, k, f):
+            match k[0]:
+                ast.Name(l2, n):
+                    if n == root:
+                        return [f]
+                _: pass
+            p := _projection_fields(k[0], root)
+            if len(p) > 0:
+                push(p, f)
+                return p
+        _: pass
+    return []string
+
+fn _projection_proc(cs: inout C, q: string, n: string) -> bool:
+    if len(q) > 0:
+        if len(_vtype(&cs, q)) > 0 or not _ispkg(&cs, q):
+            return false
+        return _projection_proc(&cs, "", _qpfx(&cs, q) + n)
+    if _is_fn(_vtype(&cs, n)):
+        return false
+    gi := _gfidx(&cs, n)
+    if gi >= 0:
+        return not cs.gf[gi].is_extern
+    fi := _fidx(&cs, n)
+    return fi >= 0 and not _isext(&cs, cs.fds[fi].name) and
+        (not _shadowable(n) or (len(_pfx(&cs)) > 0 and cs.fds[fi].name == _pfx(&cs) + n))
+
+fn _projection_reads(cs: inout C, e: ast.Expr, root: string, fields: [string]) -> bool:
+    match e:
+        ast.Name(l, n): return n != root
+        ast.Field(l, k, f):
+            if _rootname(e) == root:
+                return _projection_fields(e, root) == fields
+        ast.Addr(l, k):
+            if _rootname(k[0]) == root:
+                return false
+        ast.Call(l, q, n, ts, k):
+            # Mutating builtins can return buffers in their operand's arena.
+            if q == root or not (_rebuild_ctor(&cs, q, n) or _projection_proc(&cs, q, n)):
+                return false
+        ast.CallVal(l, k): return false
+        ast.Lambda(l, ps, rt, k): return false
+        _: pass
+    for child in ast.kids(e):
+        if not _projection_reads(&cs, child, root, fields):
+            return false
+    return true
+
+# -1 invalid, 0 readonly, 1 selected-field replacement.
+fn _projection_step(cs: inout C, s: ast.Stmt, root: string, fields: [string]) -> int:
+    match s:
+        ast.PassS(l): return 0
+        ast.PlaceSet(l, k):
+            if len(k) == 2 and _projection_fields(k[0], root) == fields and
+                    not _hasorr(k[1]) and _projection_reads(&cs, k[1], root, fields):
+                return 1
+        ast.Decl(l, n, ann, rhs, vv):
+            if n != root and len(rhs) == 1 and len(vv) == 0 and not _hasorr(rhs[0]) and
+                    _projection_reads(&cs, rhs[0], root, fields):
+                return 0
+        _: pass
+    return -1
+
+fn _projection_no_addr(e: ast.Expr) -> bool:
+    match e:
+        ast.Addr(l, k): return false
+        ast.Lambda(l, ps, rt, k): return false
+        _: pass
+    for k in ast.kids(e):
+        if not _projection_no_addr(k):
+            return false
+    return true
+
+fn _projection_bound(cs: inout C, e: ast.Expr, scope: [ast.Stmt], builder: int) -> string:
+    match e:
+        ast.IntLit(l, v):
+            if v > 0:
+                return str(v)
+        ast.Name(l, n):
+            for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+                if cs.vnames[i] == n:
+                    if cs.vtypes[i] != "int" or strings.starts_with(cs.vcn[i], "(*"):
+                        return ""
+                    # Same-block initialized locals have private scalar storage.
+                    # Walk the suffix in place: slicing this AST would copy it.
+                    for j := builder - 1; j >= 0; j -= 1:
+                        match scope[j]:
+                            ast.Decl(l2, dn, ann, rhs, vv):
+                                if dn == n:
+                                    if not cs.vlocal[i] or len(rhs) != 1 or len(vv) > 0:
+                                        return ""
+                                    for k := j + 1; k < len(scope); k += 1:
+                                        if _uns_s(scope[k], n, n) or _mut_s(scope[k], n):
+                                            return ""
+                                    return cs.vcn[i]
+                            ast.MDecl(l2, decl, ns, rhs):
+                                if decl:
+                                    for dn in ns:
+                                        if dn == n:
+                                            return ""
+                            _: pass
+                    # Otherwise only a proven-stable value parameter qualifies.
+                    if i < cs.fnbase and not _uns_b(cs.pbody, n, n) and not _mut_b(cs.pbody, n):
+                        return cs.vcn[i]
+                    return ""
+        _: pass
+    return ""
+
+# -2 invalidates the proof; -1 is a valid sequence with no replacement.
+fn _projection_loop_body(cs: inout C, b: [ast.Stmt], root: string, fields: [string], iv: string, branches: bool) -> int:
+    last := -1
+    for i := 0; i < len(b); i += 1:
+        match b[i]:
+            ast.IfS(l, arms, no):
+                if not branches or len(arms) != 1 or len(arms[0].cond) != 1:
+                    return -2
+                c := arms[0].cond[0]
+                if _hasorr(c) or not _projection_no_addr(c) or not _projection_reads(&cs, c, root, fields):
+                    return -2
+                yes_last := _projection_loop_body(&cs, arms[0].body, root, fields, iv, false)
+                no_last := _projection_loop_body(&cs, no, root, fields, iv, false)
+                if yes_last < 0 or no_last < 0:
+                    return -2
+                last = i
+            _:
+                step := _projection_step(&cs, b[i], root, fields)
+                if step < 0:
+                    return -2
+                match b[i]:
+                    ast.Decl(l, n, ann, rhs, vv):
+                        if n == iv or not _projection_no_addr(rhs[0]):
+                            return -2
+                    ast.PlaceSet(l, k):
+                        if not _projection_no_addr(k[1]):
+                            return -2
+                    _: pass
+                if step == 1:
+                    last = i
+    return last
+
+fn _projection_last_store(b: [ast.Stmt]) -> int:
+    for i := len(b) - 1; i >= 0; i -= 1:
+        match b[i]:
+            ast.PlaceSet(l, k): return i
+            _: pass
+    return -1
+
+fn _projection_counted(cs: inout C, s: ast.Stmt, root: string, fields: [string], scope: [ast.Stmt], builder: int) -> (int, string, string):
+    match s:
+        ast.For3(l, ip, c, b):
+            if len(ip) != 2 or len(c) != 1:
+                return (-1, "", "")
+            iv := ""
+            match ip[0]:
+                ast.Decl(l2, n, ann, rhs, vv):
+                    if n == root or len(_vtype(&cs, n)) > 0 or len(rhs) != 1 or len(vv) > 0:
+                        return (-1, "", "")
+                    if len(ann) > 0 and _ty(&cs, ann[0]) != "int":
+                        return (-1, "", "")
+                    match rhs[0]:
+                        ast.IntLit(l3, v):
+                            if v == 0:
+                                iv = n
+                        _: pass
+                _: pass
+            if len(iv) == 0:
+                return (-1, "", "")
+            bound := ""
+            match c[0]:
+                ast.Binop(l2, op, k):
+                    if op == "<" and len(k) == 2:
+                        match k[0]:
+                            ast.Name(l3, n):
+                                if n == iv:
+                                    bound = _projection_bound(&cs, k[1], scope, builder)
+                            _: pass
+                _: pass
+            if len(bound) == 0:
+                return (-1, "", "")
+            post := false
+            match ip[1]:
+                ast.Assign(l2, n, k):
+                    if n == iv and len(k) == 1:
+                        match k[0]:
+                            ast.Binop(l3, op, es):
+                                if op == "+" and len(es) == 2:
+                                    match es[0]:
+                                        ast.Name(l4, n4):
+                                            if n4 == iv:
+                                                match es[1]:
+                                                    ast.IntLit(l5, v): post = v == 1
+                                                    _: pass
+                                        _: pass
+                            _: pass
+                _: pass
+            if not post:
+                return (-1, "", "")
+            last := _projection_loop_body(&cs, b, root, fields, iv, true)
+            return (last, iv, bound)
+        _: pass
+    return (-1, "", "")
+
+# -2 refuses an invalidating span; -1 means construction is the final write.
+fn _projection_span(cs: inout C, body: [ast.Stmt], start: int, root: string, fields: [string]) -> int:
+    update := -1
+    loop := false
+    for i := start + 1; i < len(body) - 1; i += 1:
+        match body[i]:
+            ast.For3(l, ip, c, b):
+                inner, iv, bound := _projection_counted(&cs, body[i], root, fields, body, start)
+                if update >= 0 or inner < 0:
+                    return -2
+                update = i
+                loop = true
+            _:
+                step := _projection_step(&cs, body[i], root, fields)
+                if step < 0 or (step == 1 and loop):
+                    return -2
+                if step == 1:
+                    update = i
+    return update
+
+# O7: `xs := []T` immediately followed by a counted loop that pushes into it.
+# Reserve the loop's proven upper bound once; over-reserving is safe because
+# reserve only grows. Mirrors src/tychoc.c@presize_loop_limit.
+# A counted fresh-array builder whose bound is a runtime value `n`:
+# `out := []; for i := 0; i < n; i += 1 { push(out, ...) }`.
+# Reserving n (clamped at zero) is an upper bound even with break/continue, and
+# removes geometric growth on closure-heavy builders. The array is freshly
+# empty and the loop counter has the canonical 0/+1 shape.
+fn _count_bound(cs: inout C, ip: [ast.Stmt], c: [ast.Expr], b: [ast.Stmt]) -> string:
+    iv := ""
+    match ip[0]:
+        ast.Decl(l, n, t, r, v):
+            if len(v) > 0 or len(r) != 1:
+                return ""
+            match r[0]:
+                ast.IntLit(l2, x):
+                    if x != 0:
+                        return ""
+                _: return ""
+            iv = n
+        _: return ""
+    lim := ""
+    limname := ""
+    match c[0]:
+        ast.Binop(l, op, k):
+            if op != "<" or len(k) != 2:
+                return ""
+            match k[0]:
+                ast.Name(l2, n2):
+                    if n2 != iv:
+                        return ""
+                _: return ""
+            match k[1]:
+                ast.Name(l3, n3):
+                    if n3 == iv or _defs_b(b, n3):
+                        return ""
+                    limname = n3
+                    lim = _vcname(&cs, n3)
+                ast.IntLit(l3, n3):
+                    if n3 <= 0:
+                        return ""
+                    lim = str(n3)
+                _: return ""
+        _: return ""
+    if len(lim) == 0 or len(ip) < 2:
+        return ""
+    match ip[1]:
+        ast.Assign(l, n, r):
+            if n != iv or len(r) != 1:
+                return ""
+            match r[0]:
+                ast.Binop(l2, op2, k2):
+                    if op2 != "+" or len(k2) != 2:
+                        return ""
+                    match k2[0]:
+                        ast.Name(l3, n3):
+                            if n3 != iv:
+                                return ""
+                        _: return ""
+                    match k2[1]:
+                        ast.IntLit(l4, one):
+                            if one != 1:
+                                return ""
+                        _: return ""
+                _: return ""
+        _: return ""
+    return lim
+
+# Canonical while-loop shape:
+#   i := 0
+#   while i < n: body; i = i + 1
+# The counter declaration is the statement immediately before the while; the
+# array declaration (when presizing) is the one before that.
+fn _counter_init(s: ast.Stmt, nm: string) -> bool:
+    match s:
+        ast.Decl(l, n, ann, r, v):
+            if n != nm or len(v) > 0 or len(r) != 1:
+                return false
+            match r[0]:
+                ast.IntLit(l2, x): return x == 0
+                _: return false
+        _: return false
+    return false
+
+fn _last_inc(b: [ast.Stmt], iv: string) -> bool:
+    if len(b) == 0:
+        return false
+    match b[len(b) - 1]:
+        ast.Assign(l, n, r):
+            if n != iv or len(r) != 1:
+                return false
+            match r[0]:
+                ast.Binop(l2, op, k):
+                    if op != "+" or len(k) != 2:
+                        return false
+                    match k[0]:
+                        ast.Name(l3, n3):
+                            if n3 != iv:
+                                return false
+                        _: return false
+                    match k[1]:
+                        ast.IntLit(l4, one): return one == 1
+                        _: return false
+                _: return false
+        _: return false
+    return false
+
+fn _while_limit(cs: inout C, c: [ast.Expr], iv: string) -> string:
+    match c[0]:
+        ast.Binop(l, op, k):
+            if op != "<" or len(k) != 2:
+                return ""
+            match k[0]:
+                ast.Name(l2, n2):
+                    if n2 != iv:
+                        return ""
+                _: return ""
+            match k[1]:
+                ast.Name(l3, n3): return _vcname(&cs, n3)
+                ast.IntLit(l3, n3):
+                    if n3 <= 0:
+                        return ""
+                    return str(n3)
+                _: return ""
+        _: return ""
+    return ""
+
+fn _while_array(c: [ast.Expr], iv: string) -> string:
+    match c[0]:
+        ast.Binop(l, op, k):
+            if op != "<" or len(k) != 2:
+                return ""
+            match k[0]:
+                ast.Name(l2, n2):
+                    if n2 != iv:
+                        return ""
+                _: return ""
+            match k[1]:
+                ast.Call(l3, q, fnm, ts, args):
+                    if len(q) > 0 or fnm != "len" or len(ts) > 0 or len(args) != 1:
+                        return ""
+                    match args[0]:
+                        ast.Name(l4, an): return an
+                        _: return ""
+                _: return ""
+        _: return ""
+    return ""
+
+fn _while_presize(cs: inout C, arr: ast.Stmt, ctr: ast.Stmt, w: ast.Stmt) -> string:
+    if len(getenv("TYCHOC_NO_PRESIZE")) > 0:
+        return ""
+    match arr:
+        ast.Decl(l, n, ann, rhs, vv):
+            if len(rhs) != 1 or len(vv) > 0:
+                return ""
+            if not _is_arr(_vtype(&cs, n)) or _cap_of_target(&cs, ast.Name(l, n)) > 0:
+                return ""
+            match rhs[0]:
+                ast.EmptyArr(l2, ts):
+                    if len(ts) == 0 and len(ann) == 0:
+                        return ""
+                _: return ""
+            iv := ""
+            match ctr:
+                ast.Decl(l2, n2, a2, r2, v2): iv = n2
+                _: return ""
+            if len(iv) == 0 or not _counter_init(ctr, iv):
+                return ""
+            match w:
+                ast.WhileS(l3, c, b):
+                    if _pushn_b(b, n) == 0 or not _last_inc(b, iv):
+                        return ""
+                    lim := _while_limit(&cs, c, iv)
+                    if len(lim) == 0:
+                        return ""
+                    return _arrf(&cs, _elem(_vtype(&cs, n)), "_reserve") + "(" +
+                        _ownerof(&cs, ast.Name(l, n)) + ", &(" + _vcname(&cs, n) +
+                        "), ((" + lim + ") > 0 ? (tycho_int)(" + lim + ") : 0));"
+                _: return ""
+        _: return ""
+    return ""
+
+fn _while_bounds(cs: inout C, ctr: ast.Stmt, w: ast.Stmt) -> (string, string):
+    if not _elision_on():
+        return ("", "")
+    iv := ""
+    match ctr:
+        ast.Decl(l, n, a, r, v): iv = n
+        _: return ("", "")
+    if len(iv) == 0 or not _counter_init(ctr, iv):
+        return ("", "")
+    match w:
+        ast.WhileS(l2, c, b):
+            if not _last_inc(b, iv):
+                return ("", "")
+            arr := _while_array(c, iv)
+            if len(arr) == 0 or len(b) < 2:
+                return ("", "")
+            if _uns_b(b[0:len(b) - 1], iv, arr):
+                return ("", "")
+            return (iv, arr)
+        _: return ("", "")
+    return ("", "")
+
+# The capacity proof used by the fused push emitter. The loop must have exactly
+# one syntactic push to this array, and that push must be a direct top-level
+# statement in the loop body; then one reservation of the loop's upper bound is
+# enough for every iteration. Nested work after the push is irrelevant.
+fn _proof_direct(prev: ast.Stmt, loop: ast.Stmt, ctr: ast.Stmt) -> bool:
+    nm := ""
+    match prev:
+        ast.Decl(l, n, a, r, v):
+            nm = n
+        _: return false
+    if len(nm) == 0 or _pushn_b(_loop_body(loop), nm) != 1:
+        return false
+    if not _direct_push_b(_loop_body(loop), nm):
+        return false
+    match loop:
+        ast.WhileS(l, c, b):
+            match ctr:
+                ast.Decl(l2, iv, a2, r2, v2):
+                    return _stable_counter(b, iv, true)
+                _: return false
+            return false
+        ast.For3(l, ip, c, b):
+            if len(ip) == 0:
+                return false
+            match ip[0]:
+                ast.Decl(l2, iv, a2, r2, v2):
+                    return _stable_counter(b, iv, false)
+                _: return false
+            return false
+        _: return false
+    return false
+
+fn _loop_body(s: ast.Stmt) -> [ast.Stmt]:
+    match s:
+        ast.WhileS(l, c, b): return b
+        ast.For3(l, ip, c, b): return b
+        _: return []
+    return []
+
+fn _decl_cname(cs: inout C, s: ast.Stmt) -> string:
+    match s:
+        ast.Decl(l, n, a, r, v):
+            return _vcname(&cs, n)
+        _: return ""
+    return ""
+
+fn _presize_pair(cs: inout C, prev: ast.Stmt, s: ast.Stmt) -> string:
+    if len(getenv("TYCHOC_NO_PRESIZE")) > 0:
+        return ""
+    match prev:
+        ast.Decl(l, n, ann, rhs, vv):
+            if len(rhs) != 1 or len(vv) > 0:
+                return ""
+            dt := _vtype(&cs, n)
+            if not _is_arr(dt) or _cap_of_target(&cs, ast.Name(l, n)) > 0:
+                return ""
+            match rhs[0]:
+                ast.EmptyArr(l2, ts):
+                    if len(ts) == 0 and len(ann) == 0:
+                        return ""
+                _: return ""
+            match s:
+                ast.For3(l3, ip, c, b):
+                    if _pushn_b(b, n) == 0:
+                        return ""
+                    ev, ea := _for3_elide(ip, c, b)
+                    if len(ea) > 0 and ea != n and _is_arr(_vtype(&cs, ea)):
+                        return _arrf(&cs, _elem(dt), "_reserve") + "(" +
+                            _ownerof(&cs, ast.Name(l, n)) + ", &(" + _vcname(&cs, n) +
+                            "), (tycho_int)" + _vcname(&cs, ea) + ".len);"
+                    lim := _count_bound(&cs, ip, c, b)
+                    if len(lim) > 0:
+                        return _arrf(&cs, _elem(dt), "_reserve") + "(" +
+                            _ownerof(&cs, ast.Name(l, n)) + ", &(" + _vcname(&cs, n) +
+                            "), ((" + lim + ") > 0 ? (tycho_int)(" + lim + ") : 0));"
+                    return ""
+                _: pass
+        _: pass
+    return ""
+
+fn _block(cs: inout C, body: [ast.Stmt], ind: string) -> string:
+    return _block_projection(&cs, body, ind, false, -1)
+
+# 4.3: `for part in split(s, sep)` hands the body each part as a stack view
+# of s, with no [string] and no per-part copy. Only when `part` is merely
+# read: an operand, `len`/index/slice of it, or an argument to a Tycho fn
+# (O4 already passes views there; every callee retention copies). A bare
+# `part` anywhere else (bound, returned, stored, captured) keeps the copy.
+fn _sv_bare(e: ast.Expr, name: string) -> bool:
+    match e:
+        ast.Name(l, n): return n == name
+        _: return false
+    return false
+
+fn _sv_ok_e(cs: inout C, e: ast.Expr, name: string) -> bool:
+    match e:
+        ast.Name(l, n): return n != name
+        ast.Binop(l, o, k):
+            for x in k:
+                if not _sv_bare(x, name) and not _sv_ok_e(&cs, x, name):
+                    return false
+            return true
+        ast.Unop(l, o, k): return _sv_ok_e(&cs, k[0], name)
+        ast.Index(l, k):
+            for i := 0; i < len(k); i += 1:
+                if not (i == 0 and _sv_bare(k[0], name)) and not _sv_ok_e(&cs, k[i], name):
+                    return false
+            return true
+        ast.Slice(l, hl, hh, k):
+            for i := 0; i < len(k); i += 1:
+                if not (i == 0 and _sv_bare(k[0], name)) and not _sv_ok_e(&cs, k[i], name):
+                    return false
+            return true
+        ast.Call(l, q, n, ts, args):
+            safe := n == "len" or n == "find" or n == "hash"
+            if q == name:
+                if not safe:
+                    return false
+            ok := false
+            if len(q) == 0:
+                if safe or n == "print" or n == "println" or n == "eprint" or n == "eprintln":
+                    ok = true
+                else:
+                    fi := _fidx(&cs, n)
+                    ok = fi >= 0 and not _shadowable(n) and not _isext(&cs, cs.fds[fi].name)
+            for x in args:
+                if not (ok and _sv_bare(x, name)) and not _sv_ok_e(&cs, x, name):
+                    return false
+            return true
+        _: return _creads_e(e, name) == 0
+    return true
+
+fn _sv_ok_l(cs: inout C, k: [ast.Expr], name: string) -> bool:
+    for x in k:
+        if not _sv_ok_e(&cs, x, name):
+            return false
+    return true
+
+fn _sv_ok_b(cs: inout C, b: [ast.Stmt], name: string) -> bool:
+    for st in b:
+        match st:
+            ast.ExprStmt(l, k):
+                if not _sv_ok_l(&cs, k, name):
+                    return false
+            ast.Decl(l, n, t, r, v):
+                if n == name or not _sv_ok_l(&cs, r, name) or not _sv_ok_b(&cs, v, name):
+                    return false
+            ast.MDecl(l, d, ns, r):
+                if _has(ns, name) or not _sv_ok_l(&cs, r, name):
+                    return false
+            ast.Assign(l, n, r):
+                if n == name or not _sv_ok_l(&cs, r, name):
+                    return false
+            ast.ReturnS(l, k):
+                if not _sv_ok_l(&cs, k, name):
+                    return false
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    if not _sv_ok_l(&cs, arm.cond, name) or not _sv_ok_b(&cs, arm.body, name):
+                        return false
+                if not _sv_ok_b(&cs, e, name):
+                    return false
+            ast.WhileS(l, c, b2):
+                if not _sv_ok_l(&cs, c, name) or not _sv_ok_b(&cs, b2, name):
+                    return false
+            ast.For3(l, ip, c, b2):
+                if not _sv_ok_b(&cs, ip, name) or not _sv_ok_l(&cs, c, name) or not _sv_ok_b(&cs, b2, name):
+                    return false
+            ast.ForIn(l, n, c, b2, zpf):
+                if zpf or n == name or not _sv_ok_l(&cs, c, name) or not _sv_ok_b(&cs, b2, name):
+                    return false
+            _:
+                if _creads_s(st, name) > 0:
+                    return false
+    return true
+
+# The subject and separator are bound once for the whole loop, so the body
+# must not be able to recycle them: a literal, or a local/parameter the body
+# never writes.
+fn _sv_src(cs: inout C, e: ast.Expr, b: [ast.Stmt]) -> bool:
+    match e:
+        ast.StrLit(l, s): return true
+        ast.Name(l, n):
+            if _mut_b(b, n):
+                return false
+            for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+                if cs.vnames[i] == n:
+                    return i < cs.fnbase or cs.vlocal[i]
+            return false
+        _: return false
+    return false
+
+fn _split_view(cs: inout C, n: string, c: [ast.Expr], b: [ast.Stmt], ind: string) -> string:
+    if len(c) != 1 or len(getenv("TYCHOC_NO_STR_VIEW")) > 0:
+        return ""
+    sa := []ast.Expr
+    match c[0]:
+        ast.Call(l, q, fnn, ts, args):
+            if len(q) == 0 and fnn == "split" and len(ts) == 0 and len(args) == 2:
+                sa = args
+        _: pass
+    if len(sa) != 2:
+        return ""
+    fi := _fidx(&cs, "split")
+    if fi >= 0 and len(_pfx(&cs)) > 0 and cs.fds[fi].name == _pfx(&cs) + "split":
+        return ""
+    if not _sv_src(&cs, sa[0], b) or not _sv_src(&cs, sa[1], b) or not _sv_ok_b(&cs, b, n):
+        return ""
+    sc, st := _ex(&cs, sa[0])
+    pc, pt := _ex(&cs, sa[1])
+    if st != "string" or pt != "string":
+        return ""
+    vs := _fresh(&cs, "_vs")
+    vp := _fresh(&cs, "_vp")
+    vk := _fresh(&cs, "_vk")
+    vv := _fresh(&cs, "_vv")
+    ms := _mark(&cs)
+    pcn := _push(&cs, n, "string")
+    svs := cs.arena
+    ids := _fresh(&cs, "_scr")
+    push(cs.ascope, "&" + ids)
+    cs.loopdepth += 1
+    push(cs.lpost, -1)
+    push(cs.lmark, _mark(&cs))
+    cs.arena = "&" + ids
+    fos, fns := _fuse_open(&cs, b, ind + "    ", c)
+    bds := _block(&cs, b, ind + "        ")
+    pop(cs.lpost)
+    pop(cs.lmark)
+    pop(cs.ascope)
+    cs.loopdepth -= 1
+    cs.arena = svs
+    opens := ""
+    ress := ""
+    closs := ""
+    uids, fids := _uses_scr(bds, ids)
+    if uids:
+        opens = ind + "    Arena " + ids + " = arena_child(" + svs + ");\n"
+        ress = ind + "        arena_reset(&" + ids + ");\n"
+        closs = ind + "    arena_free(&" + ids + ");\n"
+    elif fids:
+        bds = _replace(bds, "arena_free(&" + ids + "); ", "")
+    fcs := _fuse_close(&cs, fns, ind + "    ")
+    out := ind + "{\n" + ind + "    const char *" + vs + " = " + sc + ";\n" +
+        ind + "    const char *" + vp + " = " + pc + ";\n" +
+        ind + "    tycho_int " + vk + " = 0;\n" + ind + "    TychoStrView " + vv + ";\n" + opens + fos +
+        ind + "    while (tycho_str_split_next(" + vs + ", " + vp + ", &" + vk + ", &" + vv + ")) {\n" + ress +
+        ind + "        char *" + pcn + " = (char *)((uintptr_t)&" + vv + " | (uintptr_t)1);\n" +
+        bds + ind + "    }\n" + fcs + closs + ind + "}\n"
+    _restore(&cs, ms)
+    return out
+
+# Is `e` a read of `name` (or a len/index read of it) that cannot escape?
+fn _read_ok_e(e: ast.Expr, name: string) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.Index(l, k):
+            if len(k) == 2:
+                match k[0]:
+                    ast.Name(l2, n2):
+                        if n2 == name:
+                            return _read_ok_e(k[1], name)
+                    _: pass
+            return true
+        ast.Call(l, q, n, ts, args):
+            if len(q) == 0 and n == "len" and len(args) == 1:
+                match args[0]:
+                    ast.Name(l2, n2): return n2 == name
+                    _: return true
+            return _creads_l(args, name) == 0
+        ast.CallVal(l, args): return _creads_l(args, name) == 0
+        ast.Lambda(l, ps, r, b):
+            return _creads_l(b, name) == 0
+        ast.SpawnE(l, args): return _creads_l(args, name) == 0
+        ast.ChanE(l, t, args): return _creads_l(args, name) == 0
+        ast.Binop(l, o, k):
+            for x in k:
+                if not _read_ok_e(x, name):
+                    return false
+            return true
+        ast.Unop(l, o, k): return _read_ok_e(k[0], name)
+        ast.Tuple(l, k):
+            for x in k:
+                if not _read_ok_e(x, name):
+                    return false
+            return true
+        _: return true
+    return true
+
+fn _read_ok_b(b: [ast.Stmt], name: string) -> bool:
+    for st in b:
+        match st:
+            ast.Assign(l, n, r):
+                if n == name:
+                    return false
+                for x in r:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.PlaceSet(l, k):
+                if _creads_l(k, name) > 0:
+                    return false
+            ast.ReturnS(l, k):
+                if _creads_l(k, name) > 0:
+                    return false
+            ast.MDecl(l, d, ns, r):
+                for n in ns:
+                    if n == name:
+                        return false
+                for x in r:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.ExprStmt(l, k):
+                for x in k:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    for x in arm.cond:
+                        if not _read_ok_e(x, name):
+                            return false
+                    if not _read_ok_b(arm.body, name):
+                        return false
+                if not _read_ok_b(e, name):
+                    return false
+            ast.WhileS(l, c, b):
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+                if not _read_ok_b(b, name):
+                    return false
+            ast.For3(l, ip, c, b):
+                if not _read_ok_b(ip, name) or not _read_ok_b(b, name):
+                    return false
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.ForIn(l, n, c, b, zpf):
+                if n == name or not _read_ok_b(b, name):
+                    return false
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.ForRange(l, n, c, b):
+                if n == name or not _read_ok_b(b, name):
+                    return false
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+            ast.MatchS(l, c, a):
+                for x in c:
+                    if not _read_ok_e(x, name):
+                        return false
+                for arm in a:
+                    if not _read_ok_b(arm.body, name):
+                        return false
+            ast.DeleteS(l, k):
+                if _creads_l(k, name) > 0:
+                    return false
+            _: pass
+    return true
+
+fn _safe_map_get_local(cs: inout C, body: [ast.Stmt], i: int) -> bool:
+    match body[i]:
+        ast.Decl(l, n, ann, rhs, vv):
+            if len(rhs) != 1 or len(vv) > 0:
+                return false
+            match rhs[0]:
+                ast.Call(l2, q, fnn, ts, args):
+                    if fnn != "get" or len(q) == 0 or not _is_map(_vtype(&cs, q)):
+                        return false
+                    # The map must not be mentioned again in this block, and
+                    # the bound local must be read-only in the suffix.
+                    rest := body[i + 1:len(body)]
+                    if _creads_b(rest, q) > 0:
+                        return false
+                    if not _read_ok_b(rest, n):
+                        return false
+                    return _is_arr(_mval(&cs, _vtype(&cs, q)))
+                _: return false
+        _: return false
+    return false
+
+fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, update: int) -> string:
+    m := _mark(&cs)
+    oldlocal := cs.ret_local
+    oldfields := cs.ret_fields
+    oldplaced := cs.ret_placed
+    oldpath := cs.projection
+    oldupdate := cs.ret_update
+    oldstore := cs.ret_store
+    oldinner := cs.ret_loop_inner
+    oldiv := cs.ret_loop_iv
+    oldbound := cs.ret_loop_bound
+    if inherit:
+        cs.ret_update = update
+    else:
+        cs.ret_update = -1
+        cs.ret_local = ""
+        cs.ret_fields = []string
+        cs.ret_loop_inner = -1
+        cs.ret_loop_iv = ""
+        cs.ret_loop_bound = ""
+    cs.ret_store = false
+    cs.ret_placed = false
+    cs.projection = []string
+    out := ""
+    pcap_active := false
+    dest_start := len(cs.destvi)
+    for i := 0; i < len(body); i += 1:
+        s := body[i]
+        # Keep obsolete builder versions local; only the final write escapes.
+        if i < len(body) - 1 and len(cs.ret_local) == 0 and _heap(&cs, cs.cur_ret):
+            match s:
+                ast.Decl(l, n, ann, rhs, vv):
+                    if len(rhs) == 1 and len(vv) == 0 and not _hasorr(rhs[0]) and _projection_ctor(&cs, rhs[0]):
+                        match body[len(body) - 1]:
+                            ast.ReturnS(l2, k):
+                                if len(k) == 1:
+                                    fields := _projection_fields(k[0], n)
+                                    if len(fields) > 0:
+                                        update := _projection_span(&cs, body, i, n, fields)
+                                        if update >= -1:
+                                            cs.ret_local = n
+                                            cs.ret_fields = fields
+                                            cs.ret_update = update
+                                            if update >= 0:
+                                                inner, iv, bound := _projection_counted(&cs, body[update], n, fields, body, i)
+                                                cs.ret_loop_inner = inner
+                                                cs.ret_loop_iv = iv
+                                                cs.ret_loop_bound = bound
+                            _: pass
+                _: pass
+        # -g: src/tychoc.c:16054 puts a `#line` before every statement so a
+        # debugger steps the .ty source rather than the generated C. The path
+        # is C string syntax: escape backslashes and quotes like tychoc does.
+        if len(cs.dbgfile) > 0:
+            dbgf := cs.dbgfile
+            if cs.cf >= 0 and cs.cf < len(cs.fpath):
+                dbgf = cs.fpath[cs.cf]
+            out = out + "#line " + str(ast.sline_of(s)) + " \"" + _c_escape_path(dbgf) + "\"\n"
+            out = out + ind + "tycho_trap_at(\"" + _c_escape_path(dbgf) + "\", " + str(ast.sline_of(s)) + ");\n"
+        cs.ret_store = i == cs.ret_update
+        # A canonical `i := 0; while ...` builder/reader gets the same
+        # presizing and monotone-index proof as a three-clause for loop. The
+        # array and counter declarations are the two statements before the
+        # while, and both are already registered here.
+        wb := ""
+        if i >= 2:
+            match s:
+                ast.WhileS(lw9, cw9, bw9):
+                    wpr := _while_presize(&cs, body[i - 2], body[i - 1], s)
+                    if len(wpr) > 0:
+                        out = out + ind + wpr + "\n"
+                        if _proof_direct(body[i - 2], s, body[i - 1]):
+                            pc := _decl_cname(&cs, body[i - 2])
+                            if len(pc) > 0:
+                                push(cs.pcap, pc)
+                                pcap_active = true
+                    wiv, war := _while_bounds(&cs, body[i - 1], s)
+                    if len(war) > 0:
+                        wb = wiv + "|" + war
+                _: pass
+        if len(wb) > 0:
+            wparts := split(wb, "|")
+            push(cs.elv, wparts[0])
+            push(cs.ela, wparts[1])
+        copyget := _safe_map_get_local(&cs, body, i)
+        oldcopyget := cs.copyless_get
+        cs.copyless_get = copyget
+        dest := ""
+        dname := ""
+        match s:
+            ast.Decl(l, n, ann, rhs, vv):
+                if len(rhs) == 1 and len(vv) == 0:
+                    match rhs[0]:
+                        ast.EmptyArr(l2, ts):
+                            dname = n
+                            dest = _dest_owner(&cs, body, i, n)
+                        _: pass
+            _: pass
+        if len(dest) > 0:
+            push(cs.destn, dname)
+            push(cs.desta, dest)
+        enumdst := false
+        edname := ""
+        if len(dest) == 0 and _is_enum(cs.cur_ret):
+            match s:
+                ast.Decl(l, n, ann, rhs, vv):
+                    if len(rhs) == 1 and len(vv) == 0 and len(ann) > 0 and _ty(&cs, ann[0]) == cs.cur_ret:
+                        enumdst = true
+                        edname = n
+                _: pass
+        oldarena := cs.arena
+        if len(dest) > 0:
+            cs.arena = dest
+        elif enumdst:
+            cs.arena = "_parent"
+        out = out + _stmt(&cs, s, ind)
+        cs.arena = oldarena
+        if enumdst:
+            for j := len(cs.vnames) - 1; j >= 0; j -= 1:
+                if cs.vnames[j] == edname:
+                    cs.vown[j] = "_parent"
+                    break
+        if len(dest) > 0:
+            pop(cs.destn)
+            pop(cs.desta)
+            vi := -1
+            for j := len(cs.vnames) - 1; j >= 0; j -= 1:
+                if cs.vnames[j] == dname:
+                    vi = j
+                    break
+            if vi >= 0:
+                push(cs.destvi, vi)
+                push(cs.destva, dest)
+        cs.copyless_get = oldcopyget
+        if len(wb) > 0:
+            pop(cs.elv)
+            pop(cs.ela)
+        if pcap_active:
+            pop(cs.pcap)
+            pcap_active = false
+        if i + 1 < len(body):
+            pr := _presize_pair(&cs, s, body[i + 1])
+            if len(pr) > 0:
+                out = out + ind + pr + "\n"
+                if _proof_direct(s, body[i + 1], s):
+                    pc := _decl_cname(&cs, s)
+                    if len(pc) > 0:
+                        push(cs.pcap, pc)
+                        pcap_active = true
+    for len(cs.destvi) > dest_start:
+        pop(cs.destvi)
+        pop(cs.destva)
+    out = out + _finalizers(&cs, m, ind)
+    _restore(&cs, m)
+    cs.ret_local = oldlocal
+    cs.ret_fields = oldfields
+    cs.ret_placed = oldplaced
+    cs.projection = oldpath
+    cs.ret_update = oldupdate
+    cs.ret_store = oldstore
+    cs.ret_loop_inner = oldinner
+    cs.ret_loop_iv = oldiv
+    cs.ret_loop_bound = oldbound
+    return out

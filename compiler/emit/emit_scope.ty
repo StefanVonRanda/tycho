@@ -1,0 +1,656 @@
+package emit
+
+import "../ast"
+import "core:strings"
+
+# Local scope (names, C names, temporaries) and the per-iteration loop scratch
+# arena. Moved verbatim out of emit.ty.
+
+# --- local scope ------------------------------------------------------------
+
+# The file and text of the unit being emitted, for an f-string hole's lexer.
+# Empty when the caller did not supply them (emit.program's old entry), which
+# restores the bare `tychoc1: line N:` form rather than naming a wrong file.
+fn _ufile(cs: inout C) -> string:
+    if cs.cf >= 0 and cs.cf < len(cs.fpath):
+        return cs.fpath[cs.cf]
+    return ""
+
+fn _usrc(cs: inout C) -> string:
+    if cs.cf >= 0 and cs.cf < len(cs.fsrc):
+        return cs.fsrc[cs.cf]
+    return ""
+
+fn _vcap(cs: inout C, n: string) -> int:
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return cs.vcaps[i]
+    return 0
+
+fn _mark(cs: inout C) -> int:
+    return len(cs.vnames)
+
+fn _restore(cs: inout C, m: int):
+    for len(cs.vnames) > m:
+        pop(cs.vnames)
+        pop(cs.vtypes)
+        pop(cs.vcn)
+        pop(cs.vcaps)
+        pop(cs.vown)
+        pop(cs.vlocal)
+        pop(cs.vloop)
+        pop(cs.vacc)
+        pop(cs.vowned)
+
+# src/tychoc.c@cv_push: a shadowing binding keeps the C name `h_<n>` and leans
+# on C's own block scoping. Only a SELF-referential decl (`x := x + 1`) needs
+# help, and it gets the `_sh_` temp at the decl site, not a rename here.
+fn _push(cs: inout C, n: string, t: string) -> string:
+    cn := "h_" + n
+    push(cs.vnames, n)
+    push(cs.vtypes, t)
+    push(cs.vcn, cn)
+    push(cs.vcaps, 0)
+    own := _curown(&cs)
+    for i := len(cs.destn) - 1; i >= 0; i -= 1:
+        if cs.destn[i] == n:
+            own = cs.desta[i]
+            break
+    push(cs.vown, own)
+    push(cs.vlocal, false)
+    push(cs.vloop, cs.loopdepth)
+    push(cs.vacc, "")
+    push(cs.vowned, false)
+    return cn
+
+fn _vtype(cs: inout C, n: string) -> string:
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return cs.vtypes[i]
+    return ""
+
+# Ground a PENDING binding at its first assignment (a value-if/value-match).
+fn _vset(cs: inout C, n: string, t: string):
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            cs.vtypes[i] = t
+            return
+
+fn _vcname(cs: inout C, n: string) -> string:
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return cs.vcn[i]
+    return ""
+
+# A heap value reached through an `inout` parameter belongs to the CALLER's
+# arena: allocating its growth in this function's `_scope` leaves the buffer
+# dangling the moment the callee returns. Each such parameter therefore carries
+# its owning arena alongside it, exactly as src/tychoc.c@owner_arena_of does
+# with its `_ina_<name>`.
+fn _rootname(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, r, f): return _rootname(r[0])
+        ast.Index(l, k): return _rootname(k[0])
+        ast.TupIdx(l, k, i): return _rootname(k[0])
+        ast.Addr(l, k): return _rootname(k[0])
+        ast.CallVal(l, k):
+            # A subscript call is rooted in its receiver: `g.edge(1)` lives
+            # in `g`, exactly as if the subscript had been inlined (the
+            # reference inlines subscripts at resolve; at emit the wrapper
+            # is still present). Without this, `_ownerof(&g.friends_of(a))`
+            # answers `"&_scope"`, so an inout push through the projection
+            # grew into the caller's scope arena and died on return.
+            if len(k) > 0:
+                match k[0]:
+                    ast.Field(l6, r6, f6):
+                        if len(r6) > 0:
+                            return _rootname(r6[0])
+                    _: pass
+            return ""
+        _: return ""
+    return ""
+
+# Is this place rooted in a live in-place string ACCUMULATOR? Such a buffer is
+# written through (tycho_str_append grows it past its own end once it owns it),
+# so sharing it would make a snapshot follow the accumulator instead of freezing
+# -- tests/value_semantics.ty checks exactly that.
+fn _acc_rooted(cs: inout C, e: ast.Expr) -> bool:
+    n := _rootname(e)
+    if len(n) == 0:
+        return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return len(cs.vacc[i]) > 0
+    return false
+
+# The same rule as the declaration path: a string already in the destination
+# arena, not rooted in an accumulator, is shared rather than copied.
+fn _shares(cs: inout C, e: ast.Expr, t: string, arena: string) -> bool:
+    # Enums join strings here: a variant is immutable once built -- there is no
+    # assignment to a payload, and a match arm that WRITES its binding keeps its
+    # own copy -- so retaining one into the arena it already lives in has nothing
+    # to protect. This is where the AST copies were: tycho_copy_E_ast__Expr and
+    # the Expr-array copy under it were 16% of the profile. Arrays and maps are
+    # NOT here: push and element assignment write them in place.
+    if t != "string" and not _is_enum(t):
+        return false
+    if _acc_rooted(&cs, e):
+        return false
+    # A slice is a FRESH buffer, not the root's own, so _ownerof(root) says
+    # nothing about it. src/tychoc.c@is_place copies one unconditionally.
+    match e:
+        ast.Slice(l9, a9, b9, k9): return false
+        # Container fields/elements are replaceable; their setter may recycle
+        # the string buffer, so a same-arena alias would not remain immutable.
+        ast.Field(l9, r9, f9): return false
+        ast.TupIdx(l9, r9, i9): return false
+        ast.Index(l9, r9): return false
+        _: pass
+    ow6 := _ownerof(&cs, e)
+    if ow6 == arena:
+        return true
+    # A place rooted in an INOUT parameter lives in the arena the caller handed
+    # down with it, which is the caller's own -- the same one _parent names, or
+    # an ancestor. So returning one needs no copy. ENUMS only: the same rule for
+    # a string is unsound, because a string field of that struct can be an
+    # accumulator its owner appends to IN PLACE, and _acc_rooted tests the root
+    # LOCAL so it cannot see one living at cs.ccode[i]. An enum has no in-place
+    # write at all.
+    if arena == "_parent" and _is_enum(t) and strings.starts_with(ow6, "_ina_"):
+        return true
+    return false
+
+# src/tychoc.c@cv_in_parent: is this bare name's storage the caller's arena?
+fn _inparent(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n):
+            for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+                if cs.vnames[i] == n:
+                    return cs.vown[i] == "_parent"
+            return false
+        _: return false
+    return false
+
+fn _expr_has_name(e: ast.Expr, n: string) -> bool:
+    match e:
+        ast.Name(l, x):
+            if x == n:
+                return true
+        _: pass
+    for c in ast.kids(e):
+        if _expr_has_name(c, n):
+            return true
+    return false
+
+fn _find_push_dest_e(e: ast.Expr, n: string) -> string:
+    match e:
+        ast.Call(l, q, fname, ts, args):
+            if len(q) == 0 and fname == "push" and len(args) >= 2 and _expr_has_name(args[1], n):
+                match args[0]:
+                    ast.Name(l2, t):
+                        return t
+                    _: pass
+        _: pass
+    for c in ast.kids(e):
+        r := _find_push_dest_e(c, n)
+        if len(r) > 0:
+            return r
+    return ""
+
+fn _find_push_dest_b(b: [ast.Stmt], n: string) -> string:
+    # Only a use INSIDE the value of a push can hand the array to a container.
+    # Walk backwards so the last textual use must be that push: anything after
+    # it could still read the array and the move would be wrong.
+    for i := len(b) - 1; i >= 0; i -= 1:
+        st := b[i]
+        for e in _stmt_es(st):
+            if _expr_has_name(e, n):
+                return _find_push_dest_e(e, n)
+        for sb in _stmt_bs(st):
+            r := _find_push_dest_b(sb, n)
+            if len(r) > 0:
+                return r
+    return ""
+
+fn _count_push_value_e(e: ast.Expr, n: string) -> int:
+    c := 0
+    match e:
+        ast.Call(l, q, fname, ts, args):
+            if len(q) == 0 and fname == "push" and len(args) >= 2 and _expr_has_name(args[1], n):
+                c = 1
+        _: pass
+    for k in ast.kids(e):
+        c = c + _count_push_value_e(k, n)
+    return c
+
+fn _count_push_value_b(b: [ast.Stmt], n: string) -> int:
+    c := 0
+    for st in b:
+        for e in _stmt_es(st):
+            c = c + _count_push_value_e(e, n)
+        for sb in _stmt_bs(st):
+            c = c + _count_push_value_b(sb, n)
+    return c
+
+fn _returned_name_b(b: [ast.Stmt], n: string) -> bool:
+    for st in b:
+        match st:
+            ast.ReturnS(l, es):
+                for e in es:
+                    if _expr_has_name(e, n):
+                        return true
+            _: pass
+        for sb in _stmt_bs(st):
+            if _returned_name_b(sb, n):
+                return true
+    return false
+
+fn _dest_owner(cs: inout C, body: [ast.Stmt], idx: int, n: string) -> string:
+    t := _find_push_dest_b(body[idx + 1:len(body)], n)
+    if len(t) == 0 or not _is_arr(_vtype(&cs, t)):
+        return ""
+    # Exactly one push may take this array as part of its value. Two would mean
+    # the same buffer is handed to two containers, and moving it at the first
+    # would alias the second.
+    if _count_push_value_b(body[idx + 1:len(body)], n) != 1:
+        return ""
+    # The destination array must escape the function. A purely local container
+    # would keep the moved buffers alive until its loop's scope dies, trading a
+    # copy for memory that the loop scratch arena would otherwise recycle.
+    if not _returned_name_b(cs.pbody, t):
+        return ""
+    ow := _ownerof(&cs, ast.Name(0, t))
+    if ow == _curown(&cs):
+        return ""
+    return ow
+
+fn _move_same_array(cs: inout C, e: ast.Expr, t: string, arena: string) -> bool:
+    if not _is_arr(t) or not _place(e):
+        return false
+    match e:
+        ast.Name(l, n):
+            for vi := len(cs.vnames) - 1; vi >= 0; vi -= 1:
+                if cs.vnames[vi] == n:
+                    for i := len(cs.destvi) - 1; i >= 0; i -= 1:
+                        if cs.destvi[i] == vi and cs.destva[i] == arena:
+                            return true
+                    return false
+        _: return false
+    return false
+
+fn _ownerof(cs: inout C, e: ast.Expr) -> string:
+    n := _rootname(e)
+    if len(n) == 0:
+        return "&_scope"
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return cs.vown[i]
+    return "&_scope"
+
+fn _fresh(cs: inout C, p: string) -> string:
+    # src/tychoc.c@g_blk is post-incremented: the first block temp is _l0.
+    n := cs.tmp
+    cs.tmp += 1
+    return p + str(n)
+
+# --- the per-iteration loop scratch arena (src/tychoc.c:17014-17034) ---------
+#
+# A loop opens `Arena _scrN = arena_child(<enclosing>)`, resets it as the FIRST
+# statement of every iteration and frees it after. Correctness comes from the
+# arena hierarchy, not from escape analysis: anything that must outlive an
+# iteration is written through its variable's OWNING arena (_ownerof), which is
+# never a scratch, and a value DECLARED inside the loop records the scratch as
+# its owner -- which is what makes _shares copy it out instead of aliasing it.
+# arena_child is a plain arena_new (runtime/tycho_rt.c@arena_child): freeing the
+# parent does not free it, so every exit path frees it by hand.
+
+# The arena a value created at this point lives in.
+# src/tychoc.c@fuse_open. A `push(xs, v)` in a loop calls a helper per element,
+# which -O3 cannot keep in registers; hoisting xs's data/len/cap into locals lets
+# it. bench/prongB iter-transform was 248 ms against ./tychoc's 219 at -O3 for
+# exactly this reason -- and 336 vs 433 at -O2, where the call is not the
+# bottleneck, which is why it only shows up under the harness's flags.
+fn _fuse_idx(cs: inout C, nm: string) -> int:
+    for i := len(cs.fua) - 1; i >= 0; i -= 1:
+        if cs.fua[i] == nm:
+            return i
+    return -1
+
+fn _pushn_e(e: ast.Expr, nm: string) -> int:
+    k := 0
+    match e:
+        ast.Call(l, q, n, ts, args):
+            if n == "push" and len(q) == 0 and len(args) >= 1:
+                match args[0]:
+                    ast.Name(l2, n2):
+                        if n2 == nm:
+                            k = 1
+                    _: pass
+        _: pass
+    for c in ast.kids(e):
+        k = k + _pushn_e(c, nm)
+    return k
+
+fn _pushn_l(es: [ast.Expr], nm: string) -> int:
+    k := 0
+    for e in es:
+        k = k + _pushn_e(e, nm)
+    return k
+
+fn _pushn_a(ar: [ast.Arm], nm: string) -> int:
+    k := 0
+    for a in ar:
+        k = k + _pushn_b(a.body, nm)
+    return k
+
+fn _pushn_s(s: ast.Stmt, nm: string) -> int:
+    match s:
+        ast.ExprStmt(l, k2): return _pushn_l(k2, nm)
+        ast.Decl(l, n, t, r, v): return _pushn_l(r, nm) + _pushn_b(v, nm)
+        ast.MDecl(l, d, ns, r): return _pushn_l(r, nm)
+        ast.Assign(l, n, r): return _pushn_l(r, nm)
+        ast.PlaceSet(l, k2): return _pushn_l(k2, nm)
+        ast.ConstS(l, n, k2): return _pushn_l(k2, nm)
+        ast.ReturnS(l, k2): return _pushn_l(k2, nm)
+        ast.IfS(l, arms, e):
+            count := 0
+            for arm in arms:
+                count = count + _pushn_l(arm.cond, nm) + _pushn_b(arm.body, nm)
+            return count + _pushn_b(e, nm)
+        ast.WhileS(l, c2, b): return _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.For3(l, ip, c2, b): return _pushn_b(ip, nm) + _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.ForIn(l, n, c2, b, zpf): return _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.ForRange(l, n, c2, b): return _pushn_l(c2, nm) + _pushn_b(b, nm)
+        ast.ParallelS(l, w, b): return _pushn_l(w, nm) + _pushn_b(b, nm)
+        ast.MatchS(l, c2, a): return _pushn_l(c2, nm) + _pushn_a(a, nm)
+        ast.SelectS(l, a): return _pushn_a(a, nm)
+        ast.DeleteS(l, k2): return _pushn_l(k2, nm)
+        _: return 0
+    return 0
+
+fn _pushn_b(b: [ast.Stmt], nm: string) -> int:
+    k := 0
+    for st in b:
+        k = k + _pushn_s(st, nm)
+    return k
+
+# reassigned, re-declared or shadowed in the body: the cursor would not track it
+fn _defs_s(s: ast.Stmt, nm: string) -> bool:
+    match s:
+        ast.Assign(l, n, r): return n == nm
+        ast.Decl(l, n, t, r, v): return n == nm or _defs_b(v, nm)
+        ast.MDecl(l, d, ns, r):
+            for x in ns:
+                if x == nm:
+                    return true
+            return false
+        ast.IfS(l, arms, e):
+            for arm in arms:
+                if _defs_b(arm.body, nm):
+                    return true
+            return _defs_b(e, nm)
+        ast.WhileS(l, c2, b): return _defs_b(b, nm)
+        ast.For3(l, ip, c2, b): return _defs_b(ip, nm) or _defs_b(b, nm)
+        ast.ForIn(l, n, c2, b, zpf): return n == nm or _defs_b(b, nm)
+        ast.ForRange(l, n, c2, b): return n == nm or _defs_b(b, nm)
+        ast.ParallelS(l, w, b): return _defs_b(b, nm)
+        ast.MatchS(l, c2, a): return _defs_a(a, nm)
+        ast.SelectS(l, a): return _defs_a(a, nm)
+        _: return false
+    return false
+
+fn _defs_a(ar: [ast.Arm], nm: string) -> bool:
+    for a in ar:
+        if _defs_b(a.body, nm):
+            return true
+    return false
+
+fn _defs_b(b: [ast.Stmt], nm: string) -> bool:
+    for st in b:
+        if _defs_s(st, nm):
+            return true
+    return false
+
+fn _fuse_names_e(e: ast.Expr, out: inout [string]):
+    match e:
+        ast.Call(l, q, n, ts, args):
+            if n == "push" and len(q) == 0 and len(args) >= 1:
+                match args[0]:
+                    ast.Name(l2, n2):
+                        seen := false
+                        for x in out:
+                            if x == n2:
+                                seen = true
+                        if not seen:
+                            push(out, n2)
+                    _: pass
+        _: pass
+    for c in ast.kids(e):
+        _fuse_names_e(c, &out)
+
+fn _fuse_names(b: [ast.Stmt], out: inout [string]):
+    for st in b:
+        for e in _stmt_es(st):
+            _fuse_names_e(e, &out)
+        for sb in _stmt_bs(st):
+            _fuse_names(sb, &out)
+
+fn _stmt_es(s: ast.Stmt) -> [ast.Expr]:
+    match s:
+        ast.ExprStmt(l, k2): return k2
+        ast.Decl(l, n, t, r, v): return r
+        ast.MDecl(l, d, ns, r): return r
+        ast.Assign(l, n, r): return r
+        ast.PlaceSet(l, k2): return k2
+        ast.ConstS(l, n, k2): return k2
+        ast.ReturnS(l, k2): return k2
+        ast.IfS(l, arms, e):
+            conds := []ast.Expr
+            for arm in arms:
+                for c in arm.cond:
+                    push(conds, c)
+            return conds
+        ast.WhileS(l, c2, b): return c2
+        ast.For3(l, ip, c2, b): return c2
+        ast.ForIn(l, n, c2, b, zpf): return c2
+        ast.ForRange(l, n, c2, b): return c2
+        ast.ParallelS(l, w, b): return w
+        ast.MatchS(l, c2, a): return c2
+        ast.DeleteS(l, k2): return k2
+        _: return []ast.Expr
+    return []ast.Expr
+
+fn _stmt_bs(s: ast.Stmt) -> [[ast.Stmt]]:
+    out := [][ast.Stmt]
+    match s:
+        ast.Decl(l, n, t, r, v): push(out, v)
+        ast.IfS(l, arms, e):
+            for arm in arms:
+                push(out, arm.body)
+            push(out, e)
+        ast.WhileS(l, c2, b): push(out, b)
+        ast.For3(l, ip, c2, b):
+            push(out, ip)
+            push(out, b)
+        ast.ForIn(l, n, c2, b, zpf): push(out, b)
+        ast.ForRange(l, n, c2, b): push(out, b)
+        ast.ParallelS(l, w, b): push(out, b)
+        ast.MatchS(l, c2, a):
+            for x in a:
+                push(out, x.body)
+        ast.SelectS(l, a):
+            for x in a:
+                push(out, x.body)
+        _: pass
+    return out
+
+# A direct `push(xs, ...)` at the top level of a loop body is the one shape
+# whose capacity proof is simple enough to use without a runtime check. Nested
+# pushes and pushes under conditions keep the checked path.
+fn _direct_push_b(b: [ast.Stmt], nm: string) -> bool:
+    for st in b:
+        match st:
+            ast.ExprStmt(l, es):
+                for e in es:
+                    match e:
+                        ast.Call(l2, q, n, ts, args):
+                            if len(q) == 0 and n == "push" and len(args) >= 2:
+                                match args[0]:
+                                    ast.Name(l3, n3):
+                                        if n3 == nm:
+                                            return true
+                                    _: pass
+                        _: pass
+            _: pass
+    return false
+
+fn _nested_loop_b(b: [ast.Stmt]) -> bool:
+    for st in b:
+        match st:
+            ast.WhileS(l, c, bb): return true
+            ast.For3(l, ip, c, bb): return true
+            ast.ForIn(l, n, c, bb, z): return true
+            ast.ForRange(l, n, c, bb): return true
+            ast.ParallelS(l, w, bb): return true
+            ast.IfS(l, arms, e):
+                for a in arms:
+                    if _nested_loop_b(a.body):
+                        return true
+                if _nested_loop_b(e):
+                    return true
+            ast.MatchS(l, c, arms):
+                for a in arms:
+                    if _nested_loop_b(a.body):
+                        return true
+            ast.SelectS(l, arms):
+                for a in arms:
+                    if _nested_loop_b(a.body):
+                        return true
+            _: pass
+    return false
+
+fn _stable_counter(b: [ast.Stmt], iv: string, allow_last: bool) -> bool:
+    n := len(b)
+    for i := 0; i < n; i += 1:
+        if allow_last and i == n - 1:
+            continue
+        if _defs_s(b[i], iv):
+            return false
+    return true
+
+fn _pcap(cs: inout C, name: string) -> bool:
+    for x in cs.pcap:
+        if x == name:
+            return true
+    return false
+
+# GCC does not unroll the fused push loop from the capacity proof even after
+# the checked path is removed. Clang does not need this hint; keep it GCC-only.
+fn _unroll_hint(cs: inout C, ind: string, b: [ast.Stmt]) -> string:
+    # The capacity-proof loop is always eligible. A reduction loop nested in
+    # the same body (no further loop) is the other hot shape worth unrolling.
+    if len(cs.pcap) == 0 and _nested_loop_b(b):
+        return ""
+    return ind + "    #if defined(__clang__)\n" +
+        ind + "    #pragma clang loop unroll_count(4)\n" +
+        ind + "    #elif defined(__GNUC__)\n" +
+        ind + "    #pragma GCC unroll 4\n" +
+        ind + "    #endif\n"
+
+# Emits the cursor declarations for every fusible array in `b`; returns the code
+# and how many were opened, which _fuse_close pops.
+fn _fuse_open(cs: inout C, b: [ast.Stmt], ind: string, guard: [ast.Expr]) -> (string, int):
+    cand := []string
+    _fuse_names(b, &cand)
+    out := ""
+    opened := 0
+    for nm in cand:
+        if _fuse_idx(&cs, nm) >= 0:
+            continue                       # an enclosing loop already cached it
+        t := _vtype(&cs, nm)
+        nmx := ast.Name(0, nm)
+        if not _is_arr(t) or _cap_of_target(&cs, nmx) > 0:
+            continue                       # bounded has no growable spine
+        ow := _ownerof(&cs, nmx)
+        if strings.starts_with(ow, "_ina_"):
+            continue                       # an inout param is a pointer, not a value
+        if _defs_b(b, nm):
+            continue
+        if _creads_b(b, nm) != _pushn_b(b, nm):
+            continue                       # read for anything but a push: stale view
+        gr := 0
+        for ge in guard:
+            gr = gr + _creads_e(ge, nm)
+        if gr > 0:
+            continue                       # the loop condition would read a stale len
+        et := _elem(t)
+        id := _fresh(&cs, "_fd")
+        cn := _vcname(&cs, nm)
+        out = out + ind + _cty(&cs, et) + " *" + id + " = " + cn + ".data; tycho_int " +
+            id + "l = " + cn + ".len, " + id + "c = " + cn + ".cap;\n"
+        push(cs.fua, nm)
+        push(cs.fuid, id)
+        push(cs.fuel, et)
+        opened = opened + 1
+    return (out, opened)
+
+fn _fuse_close(cs: inout C, opened: int, ind: string) -> string:
+    out := ""
+    for i := 0; i < opened; i += 1:
+        j := len(cs.fua) - 1
+        cn := _vcname(&cs, cs.fua[j])
+        id := cs.fuid[j]
+        out = out + ind + cn + ".data = " + id + "; " + cn + ".len = " + id + "l; " +
+            cn + ".cap = " + id + "c;\n"
+        pop(cs.fua)
+        pop(cs.fuid)
+        pop(cs.fuel)
+    return out
+
+fn _curown(cs: inout C) -> string:
+    if len(cs.ascope) > 0:
+        return cs.ascope[len(cs.ascope) - 1]
+    return "&_scope"
+
+# The frees an early `return` (or an `or_return`) must run before it frees
+# _scope, innermost first -- src/tychoc.c@return_frees.
+fn _scr_frees(cs: inout C) -> string:
+    out := ""
+    for i := len(cs.ascope) - 1; i >= 0; i -= 1:
+        out = out + "arena_free(" + cs.ascope[i] + "); "
+    return out
+
+# Does this emitted body name scratch `id` for anything but its own free, and
+# does it name it at ALL? A loop whose body allocates nothing gets no scratch,
+# which is what keeps the whole-body _scope elision in _fn reachable for an
+# allocation-free loop; the second answer says whether the _replace that strips
+# the dead frees is worth running, and most bodies have no early return.
+#
+# The `_scr` prefix is tested byte by byte rather than by slicing: this runs
+# over every loop body once per enclosing loop, and `_scope` alone would have
+# made a substring at every occurrence -- 17% of the self-compile.
+fn _uses_scr(s: string, id: string) -> (bool, bool):
+    n := len(s)
+    m := len(id)
+    i := 0
+    used := false
+    seen := false
+    for i + m <= n:
+        if s[i] == 95 and s[i + 1] == 115 and s[i + 2] == 99 and s[i + 3] == 114:
+            ok := true
+            j := 4
+            for j < m:
+                if s[i + j] != id[j]:
+                    ok = false
+                    j = m
+                else:
+                    j += 1
+            if ok and i + m < n and s[i + m] >= 48 and s[i + m] <= 57:
+                ok = false                    # _scr1 is not _scr10
+            if ok:
+                seen = true
+                if not (i >= 12 and s[i - 12:i] == "arena_free(&"):
+                    return (true, true)
+        i += 1
+    return (used, seen)

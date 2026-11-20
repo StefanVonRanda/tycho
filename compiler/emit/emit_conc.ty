@@ -1,0 +1,736 @@
+package emit
+
+import "../ast"
+
+# Concurrency: channels, spawn, finalizers, parallel for/array/channel loops
+# and select. Moved verbatim out of emit.ty.
+
+# --- concurrency -------------------------------------------------------------
+# Channels and tasks lower onto the runtime's HChan/HTask, exactly as
+# src/tychoc.c does. Each channel ELEMENT type gets its own send/recv pair
+# (the runtime moves void*, so the copy in and out is typed here), and each
+# `spawn` SITE gets an argument struct and a thunk, because pthreads takes one
+# void* and the call's arity is known only here.
+
+fn _chan_defs(cs: inout C) -> string:
+    out := ""
+    for i := 0; i < len(cs.ckinds); i += 1:
+        et := cs.ckinds[i]
+        ct := _cty(&cs, et)
+        n := str(i)
+        out = out + "static void tycho_chan_send_" + n + "(HChan *_ch, " + ct + " _v) { " +
+            "HCell *_c = tycho_chan_send_cell(_ch); " + ct + " *_p = (" + ct +
+            " *)arena_alloc(&_c->arena, sizeof(" + ct + ")); *_p = " + _copy(&cs, "_v", et, "&_c->arena") +
+            "; tycho_chan_send_commit(_ch, _c, _p); }\n"
+        out = out + "static int tycho_chan_recv_" + n + "(HChan *_ch, Arena *_dst, " + ct + " *_out) { " +
+            "HCell *_c = tycho_chan_recv_cell(_ch); if (!_c) return 0; *_out = " +
+            _copy(&cs, "(*(" + ct + " *)_c->val)", et, "_dst") + "; tycho_chan_recv_commit(_ch, _c); return 1; }\n"
+        out = out + "static int tycho_chan_tryrecv_" + n + "(HChan *_ch, Arena *_dst, " + ct + " *_out) { " +
+            "HCell *_c; int _st = tycho_chan_try_recv(_ch, &_c); if (_st != 1) return _st; *_out = " +
+            _copy(&cs, "(*(" + ct + " *)_c->val)", et, "_dst") + "; tycho_chan_recv_commit(_ch, _c); return 1; }\n"
+    return out
+
+# `recv(ch)` yields an Option, which tychoc1 lowers as an enum instance -- so the
+# receive is a statement expression that builds Some(v) or hands back the shared
+# None singleton.
+fn _recv_expr(cs: inout C, chc: string, et: string, fname: string) -> (string, string):
+    ot := _opt_of(&cs, et)
+    oi := _eidx(&cs, _tname(ot))
+    en := cs.eds[oi].name
+    st := _tag(&cs, oi, "Some")
+    nt := _tag(&cs, oi, "None")
+    k := str(_ckind(&cs, et))
+    v := _fresh(&cs, "_rv")
+    tv := _fresh(&cs, "_rt")
+    code := "({ E_" + en + " *" + v + "; " + _ctyz(&cs, et) + "" + tv + "; " +
+        "if (" + fname + k + "(" + chc + ", " + cs.arena + ", &" + tv + ")) { " +
+        v + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", offsetof(E_" + en + ", u) + sizeof(" + _vpaytype(en, "Some") + ")); " +
+        v + "->tag = " + str(st) + "; " + v + "->u." + _vfield("Some") + ".f0 = " + tv + "; } else { " +
+        v + " = &_sing_" + en + "_" + str(nt) + "; } " + v + "; })"
+    return (code, ot)
+
+# One thunk per spawn site. The arguments are copied into the TASK's own arena,
+# which outlives the spawning scope; the result is written back there too and
+# read out by wait().
+fn _spawn(cs: inout C, e: ast.Expr) -> (string, string):
+    match e:
+        ast.Call(l, q, n, ts, args):
+            nm := n
+            if len(q) > 0:
+                nm = _qpfx(&cs, q) + n
+            fi := _fidx(&cs, nm)
+            if fi < 0:
+                # `spawn get(Box(11))` on a GENERIC: instantiate it first, the
+                # same way _call does, and spawn the instance.
+                gfi := _gfidx(&cs, nm)
+                if gfi >= 0:
+                    tps := cs.gf[gfi].typarams
+                    bs := []string
+                    for i := 0; i < len(ts); i += 1:
+                        push(bs, _ty(&cs, ts[i]))
+                    if len(bs) < len(tps):
+                        bs = _blank(len(tps))
+                        ats := _argtypes(&cs, args)
+                        for j := 0; j < len(cs.gf[gfi].params) and j < len(ats); j += 1:
+                            if len(cs.gf[gfi].params[j].ty) > 0:
+                                _unify(&cs, cs.gf[gfi].params[j].ty[0], ats[j], tps, &bs)
+                    for j := 0; j < len(bs); j += 1:
+                        if len(bs[j]) == 0:
+                            _bad("cannot infer '$" + tps[j] + "' at a spawn of '" + nm + "'")
+                    fi = _inst_fn(&cs, nm, bs)
+            if fi < 0:
+                _bad("spawn requires a direct call to a declared procedure")
+            fd := cs.fds[fi]
+            rt := fd.ret
+            id := str(len(cs.spawnd))
+            fields := "HTask *t;"
+            init := ""
+            call := "h_" + fd.name + "(&_a->t->root"
+            for i := 0; i < len(args) and i < len(fd.ptypes); i += 1:
+                pt := fd.ptypes[i]
+                sw := cs.want
+                sa := cs.arena
+                cs.want = pt
+                cs.arena = "&_tk->root"
+                ac, at := _ex(&cs, args[i])
+                cs.want = sw
+                cs.arena = sa
+                if pt == "float" and at == "int":
+                    ac = "(double)(" + ac + ")"
+                # A spawn takes a SNAPSHOT: the task runs concurrently with the
+                # parent, so a heap argument must be deep-copied into the task's
+                # own arena. Setting cs.arena alone does not do it -- a place
+                # emits as the parent's variable -- and tests/conc/basic.ty read
+                # 39 for 10 because the parent pushed while sum() walked it.
+                if _heap(&cs, pt):
+                    ac = _copy(&cs, ac, pt, "&_tk->root")
+                fields = fields + " " + _ctyz(&cs, pt) + "a" + str(i) + ";"
+                init = init + "_sa->a" + str(i) + " = " + ac + "; "
+                call = call + ", _a->a" + str(i)
+            call = call + ")"
+            body := "static void *tycho_spawn_" + id + "(void *_p) { HSpawnA_" + id +
+                " *_a = (HSpawnA_" + id + " *)_p; "
+            if rt == "void":
+                body = body + call + "; _a->t->ret = 0; "
+            else:
+                body = body + _ctyz(&cs, rt) + "_r = " + call + "; " + _cty(&cs, rt) +
+                    " *_s = (" + _ctyz(&cs, rt) + "*)arena_alloc(&_a->t->root, sizeof(" +
+                    _cty(&cs, rt) + ")); *_s = _r; _a->t->ret = _s; "
+            body = body + "tycho_pool_flush(); return 0; }\n"
+            push(cs.spawnd, "typedef struct { " + fields + " } HSpawnA_" + id + ";\n" + body)
+            mk := "({ HTask *_tk = tycho_task_new(); HSpawnA_" + id + " *_sa = (HSpawnA_" + id +
+                " *)arena_alloc(&_tk->root, sizeof(HSpawnA_" + id + ")); _sa->t = _tk; " + init +
+                "tycho_task_start(_tk, tycho_spawn_" + id + ", _sa); _tk; })"
+            return (mk, "task(" + rt + ")")
+        _: _bad("spawn requires a direct call: spawn f(args)")
+    return ("", "")
+
+# CC-2/CC-4: a task is JOINED and a channel FREED at the end of the scope that
+# created it, innermost first. src/tychoc.c keeps the same list in g_taskvars.
+fn _finalizers(cs: inout C, m: int, ind: string) -> string:
+    out := ""
+    i := len(cs.vnames)
+    for i > m:
+        i -= 1
+        t := cs.vtypes[i]
+        if _is_handle(t):
+            fr := _hfree(&cs, t)
+            if len(fr) > 0:
+                out = out + ind + "if (" + cs.vcn[i] + ") " + fr + "(" + cs.vcn[i] + ");\n"
+        elif _is_task(t):
+            out = out + ind + "tycho_task_finish(" + cs.vcn[i] + ");\n"
+        elif _is_chan(t):
+            out = out + ind + "tycho_chan_free(" + cs.vcn[i] + ");\n"
+    return out
+
+# The frees a `break`/`continue` must run: everything declared since the
+# innermost loop was entered.
+fn _lpfin(cs: inout C) -> string:
+    if len(cs.lmark) == 0:
+        return ""
+    return _finalizers(&cs, cs.lmark[len(cs.lmark) - 1], "")
+
+fn _c_escape_path(p: string) -> string:
+    out := ""
+    slash := chr(92)
+    for i := 0; i < len(p); i += 1:
+        c := to_int(char_at(p, i))
+        if c == 92 or c == 34:
+            out = out + slash + chr(c)
+        elif c == 10:
+            out = out + slash + "n"
+        elif c == 13:
+            out = out + slash + "r"
+        elif c == 9:
+            out = out + slash + "t"
+        elif c < 32 or c == 127:
+            out = out + slash + chr(48 + c / 64 % 8) + chr(48 + c / 8 % 8) + chr(48 + c % 8)
+        else:
+            out = out + chr(c)
+    return out
+
+# `parallel for i in lo..<hi:` -- the body is OUTLINED into a worker taking the
+# half-open slice and every capture, started on min(ncpu, hi-lo) tasks and
+# joined in order, the reduction summed on the way out (src/tychoc.c@__plo).
+# One reduction variable is supported; the corpus has no program with two.
+# gap: two or more reductions want a tuple return, which ./tychoc emits.
+# `w` is the DECLARED width -- `parallel(3) for` -- empty for a bare `parallel
+# for`, which sizes itself to ncpu(). It used to be dropped at the call site,
+# so every explicit width compiled as ncpu() (tests/conc/parfor_width.ty).
+# The operator a parallel-for accumulator reduces with: `acc = acc + e` or
+# `acc = acc * e`. The chunk seed and the join must BOTH follow it -- a
+# product seeded at 0 stays 0, and products joined with + are a sum
+# (tests/conc/parfor.ty read p=1 for 120).
+fn _red_op(b: [ast.Stmt], n: string) -> string:
+    for s in b:
+        match s:
+            ast.Assign(l, an, r):
+                if an == n and len(r) == 1:
+                    match r[0]:
+                        ast.Binop(l2, o, k): return o
+                        _: pass
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    o1 := _red_op(arm.body, n)
+                    if len(o1) > 0:
+                        return o1
+                o2 := _red_op(e, n)
+                if len(o2) > 0:
+                    return o2
+            ast.WhileS(l, c, bb): 
+                o3 := _red_op(bb, n)
+                if len(o3) > 0:
+                    return o3
+            ast.For3(l, ip, c, bb):
+                o4 := _red_op(bb, n)
+                if len(o4) > 0:
+                    return o4
+            _: pass
+    return ""
+
+fn _parfor(cs: inout C, b: [ast.Stmt], ind: string, w: [ast.Expr]) -> string:
+    pkw := "tycho_ncpu()"
+    if len(w) == 1:
+        wc, wt := _ex(&cs, w[0])
+        pkw = wc
+        # a literal width prints as itself: ./tychoc emits `_pk = 3;` and the
+        # lane reads the initialiser, so the LL suffix _ex adds would miss it
+        match w[0]:
+            ast.IntLit(lw, iv): pkw = str(iv)
+            _: pass
+    # A DECLARED width is the programmer's, so it fails closed rather than
+    # clamping silently; the bare form is ncpu() and clamps by design
+    # (src/tychoc.c:15890).
+    pkg := ""
+    if len(w) == 1:
+        pkg = "    if (_pk < 1 || _pk > 64) tycho_die(\"parallel width out of range 1..64\");\n"
+    match b[0]:
+        ast.ForRange(l2, v, k, body):
+            free := []string
+            wr := []string
+            bs := [v]
+            _fv_body(&cs, body, bs, &free, &wr)
+            caps := []string
+            for f in free:
+                if not _has(wr, f) and len(_vtype(&cs, f)) > 0:
+                    push(caps, f)
+            capt := []string
+            for c in caps:
+                push(capt, _vtype(&cs, c))
+            # One reduction returns its own type; several return a TUPLE, which
+            # is what src/tychoc.c's worker does.
+            rts := []string
+            for r9 in wr:
+                push(rts, _vtype(&cs, r9))
+            rn := ""
+            rt := "int"
+            if len(wr) == 1:
+                rn = wr[0]
+                rt = rts[0]
+            elif len(wr) > 1:
+                rn = wr[0]
+                rt = _tup_of(&cs, rts)
+            id := str(len(cs.lamd))
+            wnm := "h___par" + id
+            # the worker's signature
+            sig := _ctyz(&cs, rt) + "" + wnm + "(Arena *_parent, tycho_int h___plo, tycho_int h___phi"
+            for i := 0; i < len(caps); i += 1:
+                sig = sig + ", " + _ctyz(&cs, capt[i]) + "h_" + caps[i]
+            sig = sig + ")"
+            # the worker's body, in a scope holding only its parameters
+            sv := cs.vnames
+            svt := cs.vtypes
+            svc := cs.vcn
+            svcaps := cs.vcaps
+            svo := cs.vown
+            svlocal := cs.vlocal
+            svloop := cs.vloop
+            sva := cs.vacc
+            svowned := cs.vowned
+            sar := cs.arena
+            scr := cs.cur_ret
+            cs.vnames = []string
+            cs.vtypes = []string
+            cs.vcn = []string
+            cs.vcaps = []int
+            cs.vown = []string
+            cs.vlocal = []bool
+            cs.vloop = []int
+            cs.vacc = []string
+            cs.vowned = []bool
+            sas := cs.ascope
+            cs.ascope = []string
+            sldp := cs.loopdepth
+            cs.loopdepth = sldp + 1   # a parallel loop body: one textual read runs N times
+            cs.arena = "&_scope"
+            cs.cur_ret = rt
+            for i := 0; i < len(caps); i += 1:
+                _push(&cs, caps[i], capt[i])
+            decl := ""
+            for j9 := 0; j9 < len(wr); j9 += 1:
+                cnr := _push(&cs, wr[j9], rts[j9])
+                seed := _zero(&cs, rts[j9])
+                if _red_op(body, wr[j9]) == "*":
+                    seed = "1"
+                decl = decl + "    " + _ctyz(&cs, rts[j9]) + "" + cnr + " = " +
+                    seed + ";\n"
+            iv := _push(&cs, v, "int")
+            loop := "    for (tycho_int " + iv + " = h___plo; " + iv + " < h___phi; " + iv + " += 1) {\n" +
+                _block(&cs, body, "        ") + "    }\n"
+            ret := "    arena_free(&_scope); return 0;\n"
+            if len(wr) == 1:
+                ret = "    { " + _ctyz(&cs, rt) + "_r = " + _vcname(&cs, wr[0]) +
+                    "; arena_free(&_scope); return _r; }\n"
+            elif len(wr) > 1:
+                mk9 := "    { " + _ctyz(&cs, rt) + "_r;"
+                for j9 := 0; j9 < len(wr); j9 += 1:
+                    mk9 = mk9 + " _r.f" + str(j9) + " = " + _vcname(&cs, wr[j9]) + ";"
+                ret = mk9 + " arena_free(&_scope); return _r; }\n"
+            wbody := sig + " {\n    Arena _scope = arena_child(_parent);\n" + decl + loop + ret + "}\n"
+            cs.vnames = sv
+            cs.vtypes = svt
+            cs.vcn = svc
+            cs.vcaps = svcaps
+            cs.vown = svo
+            cs.vlocal = svlocal
+            cs.vloop = svloop
+            cs.vacc = sva
+            cs.vowned = svowned
+            cs.arena = sar
+            cs.ascope = sas
+            cs.loopdepth = sldp
+            cs.cur_ret = scr
+            push(cs.lamp, sig + ";\n")
+            push(cs.lamd, wbody)
+            # the spawn thunk for this worker
+            sid := str(len(cs.spawnd))
+            fields := "HTask *t; tycho_int a0; tycho_int a1;"
+            call := wnm + "(&_a->t->root, _a->a0, _a->a1"
+            for i := 0; i < len(caps); i += 1:
+                fields = fields + " " + _ctyz(&cs, capt[i]) + "c" + str(i) + ";"
+                call = call + ", _a->c" + str(i)
+            call = call + ")"
+            ct := _cty(&cs, rt)
+            push(cs.spawnd, "typedef struct { " + fields + " } HSpawnA_" + sid + ";\n" +
+                "static void *tycho_spawn_" + sid + "(void *_p) { HSpawnA_" + sid + " *_a = (HSpawnA_" + sid +
+                " *)_p; " + ct + " _r = " + call + "; " + ct + " *_s = (" + ct +
+                " *)arena_alloc(&_a->t->root, sizeof(" + ct + ")); *_s = _r; _a->t->ret = _s; " +
+                "tycho_pool_flush(); return 0; }\n")
+            loc, lot := _ex(&cs, k[0])
+            hic, hit := _ex(&cs, k[1])
+            out := ind + "{\n" +
+                ind + "    tycho_int _plo = " + loc + ", _phi = " + hic + ";\n" +
+                ind + "    if (_phi < _plo) _phi = _plo;\n" +
+                ind + "    tycho_int _pk = " + pkw + ";\n" + ind + pkg +
+                ind + "    if (_pk > _phi - _plo) _pk = _phi - _plo;\n" +
+                ind + "    if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n" +
+                ind + "    HTask *_pts[64];\n" +
+                ind + "    for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n" +
+                ind + "        HTask *_tk = tycho_task_new();\n" +
+                ind + "        HSpawnA_" + sid + " *_sa = (HSpawnA_" + sid + " *)arena_alloc(&_tk->root, sizeof(HSpawnA_" + sid + "));\n" +
+                ind + "        _sa->t = _tk;\n" +
+                ind + "        _sa->a0 = _plo + (_phi - _plo) * _pc / _pk;\n" +
+                ind + "        _sa->a1 = _plo + (_phi - _plo) * (_pc + 1) / _pk;\n"
+            for i := 0; i < len(caps); i += 1:
+                out = out + ind + "        _sa->c" + str(i) + " = " + _vcname(&cs, caps[i]) + ";\n"
+            out = out + ind + "        tycho_task_start(_tk, tycho_spawn_" + sid + ", _sa);\n" +
+                ind + "        _pts[_pc] = _tk;\n" +
+                ind + "    }\n" +
+                ind + "    for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n" +
+                ind + "        tycho_task_join(_pts[_pc]);\n" +
+                ind + "        " + ct + " _pp = *(" + ct + " *)_pts[_pc]->ret;\n" +
+                ind + "        tycho_task_free(_pts[_pc]);\n"
+            if len(wr) == 1:
+                jo := _red_op(body, wr[0])
+                if jo != "*":
+                    jo = "+"
+                out = out + ind + "        " + _vcname(&cs, wr[0]) + " = " +
+                    _vcname(&cs, wr[0]) + " " + jo + " _pp;\n"
+            elif len(wr) > 1:
+                for j9 := 0; j9 < len(wr); j9 += 1:
+                    jo2 := _red_op(body, wr[j9])
+                    if jo2 != "*":
+                        jo2 = "+"
+                    out = out + ind + "        " + _vcname(&cs, wr[j9]) + " = " +
+                        _vcname(&cs, wr[j9]) + " " + jo2 + " _pp.f" + str(j9) + ";\n"
+            else:
+                out = out + ind + "        (void)_pp;\n"
+            return out + ind + "    }\n" + ind + "}\n"
+        ast.ForIn(l2, v, coll, body, zpf):
+            return _parchan(&cs, l2, v, coll, body, ind, pkw, pkg)
+        _: _bad("parallel requires `for i in lo..<hi:` or `for x in ch:`")
+    return ""
+
+# `parallel for x in ch:` -- every worker DRAINS the channel until it is closed
+# and empty, which is the `closed:` arm src/tychoc.c desugars this into. The
+# reduction is summed on join, exactly as the range form does.
+# `parallel for x in xs:` over an ARRAY -- the third form. Each worker takes a
+# half-open slice of the INDEX range and binds the element itself, so the array
+# is a capture like any other and the chunking is the range form's.
+fn _pararr(cs: inout C, cc: string, ct: string, v: string, body: [ast.Stmt], ind: string, pkw: string, pkg: string) -> string:
+    et := _elem(ct)
+    free := []string
+    wr := []string
+    bs := [v]
+    _fv_body(&cs, body, bs, &free, &wr)
+    caps := []string
+    for f in free:
+        if not _has(wr, f) and len(_vtype(&cs, f)) > 0:
+            push(caps, f)
+    capt := []string
+    for c in caps:
+        push(capt, _vtype(&cs, c))
+    rts := []string
+    for r9 in wr:
+        push(rts, _vtype(&cs, r9))
+    rt := "int"
+    if len(wr) == 1:
+        rt = rts[0]
+    elif len(wr) > 1:
+        rt = _tup_of(&cs, rts)
+    id := str(len(cs.lamd))
+    wnm := "h___par" + id
+    sig := _ctyz(&cs, rt) + "" + wnm + "(Arena *_parent, " + _cty(&cs, ct) +
+        " _parr, tycho_int h___plo, tycho_int h___phi"
+    for i := 0; i < len(caps); i += 1:
+        sig = sig + ", " + _ctyz(&cs, capt[i]) + "h_" + caps[i]
+    sig = sig + ")"
+    sv := cs.vnames
+    svt := cs.vtypes
+    svc := cs.vcn
+    svcaps := cs.vcaps
+    svo := cs.vown
+    svlocal := cs.vlocal
+    svloop := cs.vloop
+    sva := cs.vacc
+    sar := cs.arena
+    scr := cs.cur_ret
+    cs.vnames = []string
+    cs.vtypes = []string
+    cs.vcn = []string
+    cs.vcaps = []int
+    cs.vown = []string
+    cs.vlocal = []bool
+    cs.vloop = []int
+    cs.vacc = []string
+    sas := cs.ascope
+    cs.ascope = []string
+    sldp := cs.loopdepth
+    cs.loopdepth = sldp + 1   # a parallel loop body: one textual read runs N times
+    cs.arena = "&_scope"
+    cs.cur_ret = rt
+    for i := 0; i < len(caps); i += 1:
+        _push(&cs, caps[i], capt[i])
+    decl := ""
+    for j := 0; j < len(wr); j += 1:
+        cnr := _push(&cs, wr[j], rts[j])
+        decl = decl + "    " + _ctyz(&cs, rts[j]) + "" + cnr + " = " + _zero(&cs, rts[j]) + ";\n"
+    ecn := _push(&cs, v, et)
+    loop := "    for (tycho_int _pi = h___plo; _pi < h___phi; _pi += 1) {\n" +
+        "        " + _ctyz(&cs, et) + "" + ecn + " = " + _arrf(&cs, et, "_get") + "(_parr, _pi);\n" +
+        _block(&cs, body, "        ") + "    }\n"
+    ret := "    arena_free(&_scope); return 0;\n"
+    if len(wr) == 1:
+        ret = "    { " + _ctyz(&cs, rt) + "_r = " + _vcname(&cs, wr[0]) +
+            "; arena_free(&_scope); return _r; }\n"
+    elif len(wr) > 1:
+        mk := "    { " + _ctyz(&cs, rt) + "_r;"
+        for j := 0; j < len(wr); j += 1:
+            mk = mk + " _r.f" + str(j) + " = " + _vcname(&cs, wr[j]) + ";"
+        ret = mk + " arena_free(&_scope); return _r; }\n"
+    push(cs.lamp, sig + ";\n")
+    push(cs.lamd, sig + " {\n    Arena _scope = arena_child(_parent);\n" + decl + loop + ret + "}\n")
+    cs.vnames = sv
+    cs.vtypes = svt
+    cs.vcn = svc
+    cs.vcaps = svcaps
+    cs.vown = svo
+    cs.vlocal = svlocal
+    cs.vloop = svloop
+    cs.vacc = sva
+    cs.arena = sar
+    cs.ascope = sas
+    cs.loopdepth = sldp
+    cs.cur_ret = scr
+    sid := str(len(cs.spawnd))
+    fields := "HTask *t; " + _ctyz(&cs, ct) + "a0; tycho_int a1; tycho_int a2;"
+    call := wnm + "(&_a->t->root, _a->a0, _a->a1, _a->a2"
+    for i := 0; i < len(caps); i += 1:
+        fields = fields + " " + _ctyz(&cs, capt[i]) + "c" + str(i) + ";"
+        call = call + ", _a->c" + str(i)
+    call = call + ")"
+    ctt := _cty(&cs, rt)
+    push(cs.spawnd, "typedef struct { " + fields + " } HSpawnA_" + sid + ";\n" +
+        "static void *tycho_spawn_" + sid + "(void *_p) { HSpawnA_" + sid + " *_a = (HSpawnA_" + sid +
+        " *)_p; " + ctt + " _r = " + call + "; " + ctt + " *_s = (" + ctt +
+        " *)arena_alloc(&_a->t->root, sizeof(" + ctt + ")); *_s = _r; _a->t->ret = _s; " +
+        "tycho_pool_flush(); return 0; }\n")
+    out := ind + "{\n" +
+        ind + "    " + _ctyz(&cs, ct) + "_parr = " + cc + ";\n" +
+        ind + "    tycho_int _plo = 0, _phi = (_parr).len;\n" +
+        ind + "    tycho_int _pk = " + pkw + ";\n" + ind + pkg +
+        ind + "    if (_pk > _phi - _plo) _pk = _phi - _plo;\n" +
+        ind + "    if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n" +
+        ind + "    HTask *_pts[64];\n" +
+        ind + "    for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n" +
+        ind + "        HTask *_tk = tycho_task_new();\n" +
+        ind + "        HSpawnA_" + sid + " *_sa = (HSpawnA_" + sid + " *)arena_alloc(&_tk->root, sizeof(HSpawnA_" + sid + "));\n" +
+        ind + "        _sa->t = _tk;\n" +
+        ind + "        _sa->a0 = _parr;\n" +
+        ind + "        _sa->a1 = _plo + (_phi - _plo) * _pc / _pk;\n" +
+        ind + "        _sa->a2 = _plo + (_phi - _plo) * (_pc + 1) / _pk;\n"
+    for i := 0; i < len(caps); i += 1:
+        out = out + ind + "        _sa->c" + str(i) + " = " + _vcname(&cs, caps[i]) + ";\n"
+    out = out + ind + "        tycho_task_start(_tk, tycho_spawn_" + sid + ", _sa);\n" +
+        ind + "        _pts[_pc] = _tk;\n" +
+        ind + "    }\n" +
+        ind + "    for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n" +
+        ind + "        tycho_task_join(_pts[_pc]);\n" +
+        ind + "        " + ctt + " _pp = *(" + ctt + " *)_pts[_pc]->ret;\n" +
+        ind + "        tycho_task_free(_pts[_pc]);\n"
+    if len(wr) == 1:
+        out = out + ind + "        " + _vcname(&cs, wr[0]) + " = " + _vcname(&cs, wr[0]) + " + _pp;\n"
+    elif len(wr) > 1:
+        for j := 0; j < len(wr); j += 1:
+            out = out + ind + "        " + _vcname(&cs, wr[j]) + " = " +
+                _vcname(&cs, wr[j]) + " + _pp.f" + str(j) + ";\n"
+    else:
+        out = out + ind + "        (void)_pp;\n"
+    return out + ind + "    }\n" + ind + "}\n"
+
+fn _parchan(cs: inout C, l: int, v: string, coll: [ast.Expr], body: [ast.Stmt], ind: string, pkw: string, pkg: string) -> string:
+    cc, ct := _ex(&cs, coll[0])
+    if _is_arr(ct):
+        return _pararr(&cs, cc, ct, v, body, ind, pkw, pkg)
+    if not _is_chan(ct):
+        _bad("parallel requires `for i in lo..<hi:`, `for x in xs:` or `for x in ch:`")
+    et := _cinner(ct)
+    ck := str(_ckind(&cs, et))
+    free := []string
+    wr := []string
+    bs := [v]
+    _fv_body(&cs, body, bs, &free, &wr)
+    caps := []string
+    for f in free:
+        if not _has(wr, f) and len(_vtype(&cs, f)) > 0:
+            push(caps, f)
+    capt := []string
+    for c in caps:
+        push(capt, _vtype(&cs, c))
+    rts := []string
+    for r9 in wr:
+        push(rts, _vtype(&cs, r9))
+    rn := ""
+    rt := "int"
+    if len(wr) == 1:
+        rn = wr[0]
+        rt = rts[0]
+    elif len(wr) > 1:
+        rn = wr[0]
+        rt = _tup_of(&cs, rts)
+    id := str(len(cs.lamd))
+    wnm := "h___par" + id
+    sig := _ctyz(&cs, rt) + "" + wnm + "(Arena *_parent, HChan *_pch"
+    for i := 0; i < len(caps); i += 1:
+        sig = sig + ", " + _ctyz(&cs, capt[i]) + "h_" + caps[i]
+    sig = sig + ")"
+    sv := cs.vnames
+    svt := cs.vtypes
+    svc := cs.vcn
+    svcaps := cs.vcaps
+    svo := cs.vown
+    svlocal := cs.vlocal
+    svloop := cs.vloop
+    sva := cs.vacc
+    sar := cs.arena
+    scr := cs.cur_ret
+    cs.vnames = []string
+    cs.vtypes = []string
+    cs.vcn = []string
+    cs.vcaps = []int
+    cs.vown = []string
+    cs.vlocal = []bool
+    cs.vloop = []int
+    cs.vacc = []string
+    sas := cs.ascope
+    cs.ascope = []string
+    sldp := cs.loopdepth
+    cs.loopdepth = sldp + 1   # a parallel loop body: one textual read runs N times
+    cs.arena = "&_scope"
+    cs.cur_ret = rt
+    for i := 0; i < len(caps); i += 1:
+        _push(&cs, caps[i], capt[i])
+    decl := ""
+    for j := 0; j < len(wr); j += 1:
+        cnr := _push(&cs, wr[j], rts[j])
+        seed := _zero(&cs, rts[j])
+        if _red_op(body, wr[j]) == "*":
+            seed = "1"
+        decl = decl + "    " + _ctyz(&cs, rts[j]) + "" + cnr + " = " +
+            seed + ";\n"
+    ecn := _push(&cs, v, et)
+    loop := "    for (;;) {\n" +
+        "        " + _ctyz(&cs, et) + "" + ecn + "; int _ssp = 0, _got = 0;\n" +
+        "        for (;;) {\n" +
+        "            int _st = tycho_chan_tryrecv_" + ck + "(_pch, &_scope, &" + ecn + ");\n" +
+        "            if (_st == 1) { _got = 1; break; }\n" +
+        "            if (_st != 0) break;\n" +
+        "            tycho_select_pause(&_ssp);\n" +
+        "        }\n" +
+        "        if (!_got) break;\n" +
+        _block(&cs, body, "        ") +
+        "    }\n"
+    ret := "    arena_free(&_scope); return 0;\n"
+    if len(wr) == 1:
+        ret = "    { " + _ctyz(&cs, rt) + "_r = " + _vcname(&cs, wr[0]) +
+            "; arena_free(&_scope); return _r; }\n"
+    elif len(wr) > 1:
+        mk := "    { " + _ctyz(&cs, rt) + "_r;"
+        for j := 0; j < len(wr); j += 1:
+            mk = mk + " _r.f" + str(j) + " = " + _vcname(&cs, wr[j]) + ";"
+        ret = mk + " arena_free(&_scope); return _r; }\n"
+    push(cs.lamp, sig + ";\n")
+    push(cs.lamd, sig + " {\n    Arena _scope = arena_child(_parent);\n" + decl + loop + ret + "}\n")
+    cs.vnames = sv
+    cs.vtypes = svt
+    cs.vcn = svc
+    cs.vcaps = svcaps
+    cs.vown = svo
+    cs.vlocal = svlocal
+    cs.vloop = svloop
+    cs.vacc = sva
+    cs.arena = sar
+    cs.ascope = sas
+    cs.loopdepth = sldp
+    cs.cur_ret = scr
+    sid := str(len(cs.spawnd))
+    fields := "HTask *t; HChan *a0;"
+    call := wnm + "(&_a->t->root, _a->a0"
+    for i := 0; i < len(caps); i += 1:
+        fields = fields + " " + _ctyz(&cs, capt[i]) + "c" + str(i) + ";"
+        call = call + ", _a->c" + str(i)
+    call = call + ")"
+    ctt := _cty(&cs, rt)
+    push(cs.spawnd, "typedef struct { " + fields + " } HSpawnA_" + sid + ";\n" +
+        "static void *tycho_spawn_" + sid + "(void *_p) { HSpawnA_" + sid + " *_a = (HSpawnA_" + sid +
+        " *)_p; " + ctt + " _r = " + call + "; " + ctt + " *_s = (" + ctt +
+        " *)arena_alloc(&_a->t->root, sizeof(" + ctt + ")); *_s = _r; _a->t->ret = _s; " +
+        "tycho_pool_flush(); return 0; }\n")
+    out := ind + "{\n" +
+        ind + "    HChan *_pch = " + cc + ";\n" +
+        ind + "    tycho_int _pk = " + pkw + ";\n" + ind + pkg +
+        ind + "    if (_pk < 1) _pk = 1; if (_pk > 64) _pk = 64;\n" +
+        ind + "    HTask *_pts[64];\n" +
+        ind + "    for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n" +
+        ind + "        HTask *_tk = tycho_task_new();\n" +
+        ind + "        HSpawnA_" + sid + " *_sa = (HSpawnA_" + sid + " *)arena_alloc(&_tk->root, sizeof(HSpawnA_" + sid + "));\n" +
+        ind + "        _sa->t = _tk;\n" +
+        ind + "        _sa->a0 = _pch;\n"
+    for i := 0; i < len(caps); i += 1:
+        out = out + ind + "        _sa->c" + str(i) + " = " + _vcname(&cs, caps[i]) + ";\n"
+    out = out + ind + "        tycho_task_start(_tk, tycho_spawn_" + sid + ", _sa);\n" +
+        ind + "        _pts[_pc] = _tk;\n" +
+        ind + "    }\n" +
+        ind + "    for (tycho_int _pc = 0; _pc < _pk; _pc++) {\n" +
+        ind + "        tycho_task_join(_pts[_pc]);\n" +
+        ind + "        " + ctt + " _pp = *(" + ctt + " *)_pts[_pc]->ret;\n" +
+        ind + "        tycho_task_free(_pts[_pc]);\n"
+    if len(wr) == 1:
+        jo := _red_op(body, wr[0])
+        if jo != "*":
+            jo = "+"
+        out = out + ind + "        " + _vcname(&cs, rn) + " = " + _vcname(&cs, rn) + " " + jo + " _pp;\n"
+    elif len(wr) > 1:
+        for j := 0; j < len(wr); j += 1:
+            jo := _red_op(body, wr[j])
+            if jo != "*":
+                jo = "+"
+            out = out + ind + "        " + _vcname(&cs, wr[j]) + " = " +
+                _vcname(&cs, wr[j]) + " " + jo + " _pp.f" + str(j) + ";\n"
+    else:
+        out = out + ind + "        (void)_pp;\n"
+    return out + ind + "    }\n" + ind + "}\n"
+
+# `select:` -- try each recv arm in turn; take the first that has a value. With
+# a `default:` arm the whole thing falls through immediately; without one it
+# retries until a channel is ready, EXCEPT when every channel is closed and
+# drained, which takes the `closed:` arm if there is one and falls through if
+# not (src/tychoc.c: the recv-only shape used to hang there).
+fn _select(cs: inout C, arms: [ast.Arm], ind: string) -> string:
+    cs.tmp += 1
+    id := str(cs.tmp)
+    out := ind + "{\n"
+    chs := []string
+    ets := []string
+    n := 0
+    for a in arms:
+        if a.kind != "recv":
+            continue
+        cc, ct := _ex(&cs, a.ch[0])
+        push(chs, "_sc" + id + "_" + str(n))
+        push(ets, _cinner(ct))
+        out = out + ind + "    HChan *_sc" + id + "_" + str(n) + " = " + cc + ";\n"
+        n += 1
+    out = out + ind + "    int _ssp" + id + " = 0, _open" + id + " = 0;\n" +
+        ind + "    _sel_retry_" + id + ": ;\n" +
+        ind + "    _open" + id + " = 0;\n"
+    i := 0
+    for a in arms:
+        if a.kind != "recv":
+            continue
+        et := ets[i]
+        m := _mark(&cs)
+        bind := ""
+        if len(a.binds) > 0:
+            bcn := _push(&cs, a.binds[0], et)
+            bind = ind + "        " + _ctyz(&cs, et) + "" + bcn + " = _v" + id + ";\n" +
+                _append_binding(&cs, a.binds[0], et, bcn, ind + "        ")
+        body := _block(&cs, a.body, ind + "        ")
+        _restore(&cs, m)
+        out = out + ind + "    { " + _ctyz(&cs, et) + "_v" + id + "; int _st" + id +
+            " = tycho_chan_tryrecv_" + str(_ckind(&cs, et)) + "(" + chs[i] + ", " + cs.arena + ", &_v" + id + ");\n" +
+            ind + "      if (_st" + id + " == 1) {\n" + bind + body +
+            ind + "        goto _sel_done_" + id + ";\n" + ind + "      }\n" +
+            ind + "      if (_st" + id + " == 0) _open" + id + " = 1; }\n"
+        i += 1
+    dflt := ""
+    closed := ""
+    for a in arms:
+        if a.kind == "default":
+            dflt = _block(&cs, a.body, ind + "        ")
+        elif a.kind == "closed":
+            closed = _block(&cs, a.body, ind + "        ")
+    if len(dflt) > 0:
+        # A `closed:` arm beside a `default:` still wins when every channel is
+        # closed and drained -- `stage.cancelled()` is exactly that shape, and
+        # taking the default there made a cancelled source keep producing.
+        if len(closed) > 0:
+            out = out + ind + "    if (!_open" + id + ") {\n" + closed +
+                ind + "        goto _sel_done_" + id + ";\n" + ind + "    }\n"
+        out = out + dflt + ind + "    goto _sel_done_" + id + ";\n"
+    else:
+        out = out + ind + "    if (!_open" + id + ") {\n" + closed +
+            ind + "        goto _sel_done_" + id + ";\n" + ind + "    }\n" +
+            ind + "    tycho_select_pause(&_ssp" + id + ");\n" +
+            ind + "    goto _sel_retry_" + id + ";\n"
+    return out + ind + "    _sel_done_" + id + ": ;\n" + ind + "}\n"

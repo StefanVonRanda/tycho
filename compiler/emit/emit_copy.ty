@@ -1,0 +1,226 @@
+package emit
+
+import "core:strings"
+
+# Deep copy, str and eq of a typed value. Moved verbatim out of emit.ty.
+
+# --- deep copy / str / eq ---------------------------------------------------
+
+# A TYCHO_LIT is a `static const` object with program lifetime, so copying one
+# into an arena allocates a second copy of bytes that already outlive every
+# arena. The empty string takes this route today by another door -- _copy of a
+# zero-length string hands back the runtime's immortal singleton.
+fn _islit(s: string) -> bool:
+    n := len(s)
+    if n < 13 or not strings.starts_with(s, "TYCHO_LIT(\""):
+        return false
+    i := 11
+    for i < n:
+        c := s[i]
+        if c == 92:
+            i += 2
+            continue
+        if c == 34:
+            return i + 2 == n and s[i + 1] == 41
+        i += 1
+    return false
+
+fn _copy(cs: inout C, code: string, t: string, arena: string) -> string:
+    if t == "string" or t == "bytes":
+        if _islit(code):
+            return code
+        return "tycho_str_copy(" + arena + ", " + code + ")"
+    if _is_fn(t):
+        # re-home a returned closure's captures; a plain fn ref has c0/c1 == 0
+        if cs.thin:
+            return code
+        return "({ " + _ctyz(&cs, t) + "_fcp = (" + code + "); tycho_fn_copy(" + arena +
+            ", (void *)_fcp.call, &_fcp.c0); _fcp; })"
+    if _is_arr(t):
+        return _arrf(&cs, _elem(t), "_copy") + "(" + arena + ", " + code + ")"
+    if _is_enum(t):
+        if _inline_enum(&cs, _tname(t)):
+            return code
+        cen := _u(&cs, "tycho_copy_E_" + _tname(t))
+        return cen + "(" + arena + ", " + code + ")"
+    if _is_map(t):
+        return _mpfx(&cs, t) + "_copy(" + arena + ", " + code + ")"
+    if _is_soa(t):
+        return _spfx(&cs, t) + "_copy(" + arena + ", " + code + ")"
+    if _is_struct(t) and _heap(&cs, t):
+        csn := _u(&cs, "tycho_copy_S_" + _tname(t))
+        return csn + "(" + arena + ", " + code + ")"
+    if _is_tup(t) and _heap(&cs, t):
+        ctn := _u(&cs, "tycho_copy_T" + _tname(t))
+        return ctn + "(" + arena + ", " + code + ")"
+    return code
+
+fn _recycle_name(cs: inout C, t: string) -> string:
+    if t == "string" or t == "bytes":
+        return "tycho_str_recycle"
+    if _is_fn(t):
+        if cs.thin:
+            return ""
+        return "tycho_recycle_FnC" + _tname(t)
+    if _is_arr(t):
+        return _apfx(&cs, _elem(t)) + "_recycle"
+    if _is_enum(t):
+        if _inline_enum(&cs, _tname(t)):
+            return ""
+        return "tycho_recycle_E_" + _tname(t)
+    if _is_map(t):
+        return _mpfx(&cs, t) + "_recycle"
+    if _is_soa(t):
+        return _spfx(&cs, t) + "_recycle"
+    if _is_struct(t):
+        return "tycho_recycle_S_" + _tname(t)
+    if _is_tup(t):
+        return "tycho_recycle_T" + _tname(t)
+    return ""
+
+# Mark the transitive type graph of a map key/value (or closure capture). The
+# used-name map is also the visited set, so recursive structs through arrays/maps
+# terminate while still requesting every helper they call.
+fn _recycle_mark(cs: inout C, t: string):
+    if not _heap(&cs, t):
+        return
+    name := _recycle_name(&cs, t)
+    if len(name) == 0 or name in cs.used:
+        return
+    cs.used[name] = true
+    if _is_arr(t):
+        _recycle_mark(&cs, _elem(t))
+    elif _is_map(t):
+        if _kclass(&cs, _mkey(&cs, t)) != "enum":
+            _recycle_mark(&cs, _mkey(&cs, t))
+        _recycle_mark(&cs, _mval(&cs, t))
+    elif _is_struct(t):
+        si := _sidx(&cs, _tname(t))
+        if si >= 0:
+            for ft in cs.sds[si].ftypes:
+                _recycle_mark(&cs, ft)
+    elif _is_enum(t):
+        ei := _eidx(&cs, _tname(t))
+        if ei >= 0:
+            for v in cs.eds[ei].vpay:
+                for pt in v.ptypes:
+                    _recycle_mark(&cs, pt)
+    elif _is_tup(t):
+        for et in _telems(&cs, t):
+            _recycle_mark(&cs, et)
+    elif _is_soa(t):
+        si := _sidx(&cs, _tname(_selem(&cs, t)))
+        if si >= 0:
+            for ft in cs.sds[si].ftypes:
+                _recycle_mark(&cs, ft)
+
+fn _recycle_call(cs: inout C, arena: string, value: string, t: string) -> string:
+    if not _heap(&cs, t):
+        return ""
+    _recycle_mark(&cs, t)
+    return _recycle_name(&cs, t) + "(" + arena + ", " + value + ");"
+
+fn _tostr(cs: inout C, code: string, t: string) -> string:
+    if t == "string" or t == "bytes":
+        return code
+    if _is_uint(t):
+        return "tycho_uint_to_str(" + cs.arena + ", " + code + ")"
+    if _is_sint(t):
+        return "tycho_int_to_str(" + cs.arena + ", " + code + ")"
+    if t == "f32":
+        return "tycho_float_to_str(" + cs.arena + ", (double)(" + code + "))"
+    if _is_fn(t):
+        # a closure has no printable form; the struct str() generator is eager
+        # here and would otherwise refuse every struct holding a callback
+        return "TYCHO_LIT(\"<fn>\")"
+    if t == "int":
+        return "tycho_int_to_str(" + cs.arena + ", " + code + ")"
+    if t == "char":
+        return "tycho_chr(" + cs.arena + ", " + code + ")"
+    if t == "float":
+        return "tycho_float_to_str(" + cs.arena + ", " + code + ")"
+    if t == "bool":
+        return "tycho_bool_to_str(" + cs.arena + ", " + code + ")"
+    if _is_struct(t):
+        ssn := _u(&cs, "tycho_str_S_" + _tname(t))
+        return ssn + "(" + cs.arena + ", " + code + ")"
+    if _is_tup(t):
+        stn := _u(&cs, "tycho_str_T" + _tname(t))
+        return stn + "(" + cs.arena + ", " + code + ")"
+    if _is_enum(t):
+        sen := _u(&cs, "tycho_str_E_" + _tname(t))
+        return sen + "(" + cs.arena + ", " + code + ")"
+    if _is_map(t):
+        return "tycho_str_mapM" + _tname(t) + "(" + cs.arena + ", " + code + ")"
+    if _is_soa(t):
+        return "tycho_str_from_c(" + cs.arena + ", \"<soa [" + _tname(_selem(&cs, t)) + "]>\")"
+    if _is_vec(t):
+        return _u(&cs, _vecf(&cs, t, "_str")) + "(" + cs.arena + ", " + code + ")"
+    if _is_arr(t):
+        e := _elem(t)
+        if e == "int":
+            return "tycho_arr_int_str(" + cs.arena + ", " + code + ")"
+        if e == "float":
+            return "tycho_arr_float_str(" + cs.arena + ", " + code + ")"
+        if e == "string":
+            return "tycho_arr_str_str(" + cs.arena + ", " + code + ")"
+        san := "tycho_str_arr_K" + str(_akind(&cs, e))
+        return _u(&cs, san) + "(" + cs.arena + ", " + code + ")"
+    if t == "ptr":
+        # A ptr has no printable value; the generated struct stringifier prints
+        # a placeholder for it rather than refusing the whole struct
+        # (src/tychoc.c's gen_str does the same).
+        return "tycho_str_from_c(" + cs.arena + ", \"<ptr>\")"
+    _bad("str() of unsupported type '" + t + "'")
+    return ""
+
+# The value a missing map key reads as. A Tycho string carries a length header
+# in front of the pointer, so a NULL `char *` is not the empty string -- it
+# crashes the first read (tests/map_index_read.ty prints exactly that case).
+fn _zero(cs: inout C, t: string) -> string:
+    if t == "string" or t == "bytes":
+        return "TYCHO_LIT(\"\")"
+    if _is_sized(t):
+        return "0"
+    if _is_map(t):
+        return "(" + _cty(&cs, t) + "){&tycho_mapM" + _tname(t) + "_empty, 0}"
+    if _is_fn(t):
+        if cs.thin:
+            return "(" + _cty(&cs, t) + "){0}"
+        return "(" + _cty(&cs, t) + "){0, 0, 0}"
+    if t == "float":
+        return "0.0"
+    if t == "int" or t == "char" or t == "bool":
+        return "0LL"
+    return "(" + _ctyz(&cs, t) + "){0}"
+
+fn _eq(cs: inout C, a: string, b: string, t: string) -> string:
+    if _is_fn(t):
+        # identity: same thunk and same captures/env -- src/tychoc.c:13435
+        if cs.thin:
+            return "((" + a + ").call == (" + b + ").call)"
+        return "((" + a + ").call == (" + b + ").call && (" + a + ").c0 == (" + b + ").c0 && (" + a + ").c1 == (" + b + ").c1)"
+    if t == "string" or t == "bytes":
+        # EQUALITY, not order: tycho_str_eq settles on the length headers and
+        # never touches the bytes when they differ, which is the common case.
+        # tycho_str_cmp must memcmp the common prefix even then -- it owes an
+        # ORDER. `!=` routes through here too.
+        return "tycho_str_eq(" + a + ", " + b + ")"
+    if _is_struct(t):
+        esn := _u(&cs, "tycho_eq_S_" + _tname(t))
+        return esn + "(" + a + ", " + b + ")"
+    if _is_tup(t):
+        etn := _u(&cs, "tycho_eq_T" + _tname(t))
+        return etn + "(" + a + ", " + b + ")"
+    if _is_enum(t):
+        een := _u(&cs, "tycho_eq_E_" + _tname(t))
+        return een + "(" + a + ", " + b + ")"
+    if _is_map(t):
+        return _mpfx(&cs, t) + "_eq(" + a + ", " + b + ")"
+    if _is_soa(t):
+        return _spfx(&cs, t) + "_eq(" + a + ", " + b + ")"
+    if _is_vec(t):
+        return _u(&cs, _vecf(&cs, t, "_eq")) + "(" + a + ", " + b + ")"
+    if _is_arr(t):
+        return _arrf(&cs, _elem(t), "_eq") + "(" + a + ", " + b + ")"
+    return "(" + a + " == " + b + ")"

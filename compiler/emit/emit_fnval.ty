@@ -1,0 +1,500 @@
+package emit
+
+import "../ast"
+import "../lex"
+import "../parse"
+import "core:strings"
+
+# Function values: fn types, closures, callbacks, free-variable collection and
+# lambdas. Moved verbatim out of emit.ty.
+
+# --- function values --------------------------------------------------------
+# A fn value is `{ RET (*call)(void*, Arena*, P...); tycho_int c0, c1; }`.
+# Up to two integer captures live directly in c0/c1; every other capture gets
+# an Env in a header-carrying allocation, with the payload pointer in c0. A
+# reference to a named function has c0/c1 == 0. The registry key is
+# "ret|p0|p1|...", the type string "F~<index>", stamped as a tuple kind is.
+fn _is_fn(t: string) -> bool:
+    return strings.starts_with(t, "F~")
+
+fn _fkind(cs: inout C, key: string) -> int:
+    for i := 0; i < len(cs.fks); i += 1:
+        if cs.fks[i] == key:
+            return i
+    push(cs.fks, key)
+    return len(cs.fks) - 1
+
+fn _fn_of(cs: inout C, ret: string, ps: [string]) -> string:
+    k := ret
+    for p in ps:
+        k = k + "|" + p
+    return "F~" + str(_fkind(&cs, k))
+
+fn _fparts(cs: inout C, t: string) -> [string]:
+    return split(cs.fks[strings.parse_int_prefix(_tname(t))], "|")
+
+fn _fret(cs: inout C, t: string) -> string:
+    return _fparts(&cs, t)[0]
+
+fn _fps(cs: inout C, t: string) -> [string]:
+    p := _fparts(&cs, t)
+    return p[1:len(p)]
+
+# The `<name>__clo` trampoline: one per named function actually taken as a
+# value, so an unused function grows no code and an `inout` parameter (which a
+# fn value cannot carry) is never wrapped.
+fn _need_clo(cs: inout C, fi: int):
+    if cs.thin:
+        return
+    for x in cs.clos:
+        if x == cs.fds[fi].name:
+            return
+    push(cs.clos, cs.fds[fi].name)
+
+# A C callback parameter is a raw function pointer, not a 24-byte Tycho
+# descriptor. Only scalar/ptr arguments and results have a C ABI Tycho can
+# reproduce without a length header or arena.
+fn _cb_scalar(t: string) -> bool:
+    if t == "ptr" or t == "char" or t == "bool" or t == "float" or t == "f32":
+        return true
+    return t == "int" or _is_uint(t) or _is_sint(t)
+
+fn _cb_fnty(cs: inout C, t: string) -> string:
+    s := _cty(&cs, _fret(&cs, t)) + " (*)("
+    ps := _fps(&cs, t)
+    if len(ps) == 0:
+        s = s + "void"
+    for i := 0; i < len(ps); i += 1:
+        if i > 0:
+            s = s + ", "
+        s = s + _cty(&cs, ps[i])
+    return s + ")"
+
+fn _cb_fi(cs: inout C, e: ast.Expr) -> int:
+    match e:
+        ast.Name(l, n):
+            if len(_vtype(&cs, n)) > 0:
+                return -1
+            return _fidx(&cs, n)
+        ast.Field(l, r, f):
+            match r[0]:
+                ast.Name(l2, q):
+                    if _ispkg(&cs, q):
+                        return _fidx(&cs, _qpfx(&cs, q) + f)
+                _: pass
+        _: pass
+    return -1
+
+fn _need_cb(cs: inout C, fi: int):
+    _need_clo(&cs, fi)
+    cs.used["cb:" + cs.fds[fi].name] = true
+
+fn _cb_arg(cs: inout C, e: ast.Expr, want: string) -> string:
+    fi := _cb_fi(&cs, e)
+    if fi < 0:
+        _bad("a C callback argument must be a named Tycho function; closures and function variables are not supported")
+    f := cs.fds[fi]
+    if f.pvar:
+        _bad("a C callback cannot be a variadic Tycho function")
+    for j := 0; j < len(f.pinout); j += 1:
+        if f.pinout[j]:
+            _bad("a C callback cannot have an inout parameter")
+    if not _cb_scalar(f.ret) and f.ret != "void":
+        _bad("a C callback must return a scalar or void")
+    for j := 0; j < len(f.ptypes); j += 1:
+        if not _cb_scalar(f.ptypes[j]):
+            _bad("a C callback parameter must be a scalar or ptr")
+    if _fn_of(&cs, f.ret, f.ptypes) != want:
+        _bad("a C callback argument does not match the declared function type")
+    _need_cb(&cs, fi)
+    return f.name + "__cb"
+
+fn _clo_defs(cs: inout C) -> (string, string):
+    if cs.thin:
+        return ("", "")
+    pr := ""
+    bd := ""
+    for nm in cs.clos:
+        fi := _fidx(&cs, nm)
+        rt := cs.fds[fi].ret
+        sig := _ctyz(&cs, rt) + "" + nm + "__clo(void *_env, Arena *_parent"
+        call := "h_" + nm + "(_parent"
+        for j := 0; j < len(cs.fds[fi].ptypes); j += 1:
+            sig = sig + ", " + _ctyz(&cs, cs.fds[fi].ptypes[j]) + "_a" + str(j)
+            call = call + ", _a" + str(j)
+        sig = sig + ")"
+        call = call + ")"
+        r := "    return " + call + ";\n"
+        if rt == "void":
+            r = "    " + call + ";\n"
+        pr = pr + sig + ";\n"
+        bd = bd + sig + " {\n    (void)_env;\n" + r + "}\n"
+        if cs.used["cb:" + nm]:
+            csig := _ctyz(&cs, rt) + nm + "__cb("
+            ccall := "h_" + nm + "(&_cb_a"
+            for j := 0; j < len(cs.fds[fi].ptypes); j += 1:
+                if j > 0:
+                    csig = csig + ", "
+                csig = csig + _ctyz(&cs, cs.fds[fi].ptypes[j]) + "_a" + str(j)
+                ccall = ccall + ", _a" + str(j)
+            if len(cs.fds[fi].ptypes) == 0:
+                csig = csig + "void"
+            csig = csig + ")"
+            ccall = ccall + ")"
+            cbd := "    Arena _cb_a = arena_new(0);\n"
+            if rt == "void":
+                cbd = cbd + "    " + ccall + ";\n    arena_free(&_cb_a);\n"
+            else:
+                cbd = cbd + "    " + _ctyz(&cs, rt) + "_r = " + ccall +
+                    ";\n    arena_free(&_cb_a);\n    return _r;\n"
+            pr = pr + csig + ";\n"
+            bd = bd + csig + " {\n" + cbd + "}\n"
+    return (pr, bd)
+
+fn _fn_defs(cs: inout C) -> string:
+    out := "typedef struct { void *(*copy)(Arena *, void *); void (*drop)(Arena *, void *); } TychoEnvHdr;\n" +
+        "static int tycho_fn_is_heap(void *);\n" +
+        "static void tycho_fn_copy(Arena *, void *, tycho_int *);\n" +
+        "static void tycho_fn_recycle(Arena *, void *, tycho_int *);\n" +
+        "static void tycho_fn_copy(Arena *a, void *call, tycho_int *slot) {\n" +
+        "    if (!tycho_fn_is_heap(call)) return;\n" +
+        "    void *env = (void *)*slot;\n" +
+        "    if (!env) return;\n" +
+        "    *slot = (tycho_int)((TychoEnvHdr *)env)[-1].copy(a, env);\n}\n" +
+        "static void tycho_fn_recycle(Arena *a, void *call, tycho_int *slot) {\n" +
+        "    if (!tycho_fn_is_heap(call)) return;\n" +
+        "    void *env = (void *)*slot;\n" +
+        "    if (env) ((TychoEnvHdr *)env)[-1].drop(a, env);\n}\n"
+    for i := 0; i < len(cs.fks); i += 1:
+        ps := split(cs.fks[i], "|")
+        if cs.thin:
+            s := "typedef struct { " + _ctyz(&cs, ps[0]) + "(*call)(Arena *"
+            for j := 1; j < len(ps); j += 1:
+                s = s + ", " + _cty(&cs, ps[j])
+            out = out + s + "); } FnC" + str(i) + ";\n"
+        else:
+            s := "typedef struct { " + _ctyz(&cs, ps[0]) + "(*call)(void *, Arena *"
+            for j := 1; j < len(ps); j += 1:
+                s = s + ", " + _cty(&cs, ps[j])
+            out = out + s + "); tycho_int c0; tycho_int c1; } FnC" + str(i) + ";\n"
+    return out
+
+# A lambda body is one EXPRESSION (parse/parse.ty:310), so the only binder
+# inside it is a nested lambda's parameter list -- which is what makes this
+# free-variable walk short enough to be trustworthy.
+fn _bound(bs: [string], n: string) -> bool:
+    for b in bs:
+        if b == n:
+            return true
+    return false
+
+fn _fv(cs: inout C, e: ast.Expr, bs: [string], out: inout [string]):
+    match e:
+        ast.Name(l, n):
+            if _bound(bs, n) or _bound(out, n):
+                return
+            if len(_vtype(&cs, n)) > 0:
+                push(out, n)
+        ast.Lambda(l, ps, r, b):
+            bs2 := []string
+            for x in bs:
+                push(bs2, x)
+            for p in ps:
+                push(bs2, p.name)
+            _fv(&cs, b[0], bs2, &out)
+        ast.Field(l, k, f): _fv(&cs, k[0], bs, &out)
+        ast.TupIdx(l, k, n2): _fv(&cs, k[0], bs, &out)
+        ast.Call(l, q, n2, ts, k):
+            # `g(f(x))`: f and g are the CALLEE names, and skipping them is the
+            # regression tests/closure_fncap.ty pins.
+            cn2 := q
+            if len(q) == 0:
+                cn2 = n2
+            if not _bound(bs, cn2) and not _bound(out, cn2) and len(_vtype(&cs, cn2)) > 0:
+                push(out, cn2)
+            for x in k:
+                _fv(&cs, x, bs, &out)
+        ast.IsVar(l, k, q, n2): _fv(&cs, k[0], bs, &out)
+        ast.EmptyArr(l, t): pass
+        ast.EmptyMap(l, t): pass
+        ast.SoaLit(l, t): pass
+        ast.ChanE(l, t, k):
+            for x in k:
+                _fv(&cs, x, bs, &out)
+        ast.IntLit(l, v): pass
+        ast.FloatLit(l, v): pass
+        ast.StrLit(l, v): pass
+        ast.CharLit(l, v): pass
+        ast.BoolLit(l, v): pass
+        ast.NullLit(l): pass
+        ast.NoneE(l): pass
+        ast.FStrLit(l, v, hs):
+            txt, kind := _fsplit(v)
+            for i := 0; i < len(txt); i += 1:
+                if kind[i] == 1:
+                    toks := lex.tokenize_hole(txt[i], _ufile(&cs), _usrc(&cs), l)
+                    he, _hp := parse.expr(toks, 0)
+                    _fv(&cs, he, bs, &out)
+        ast.Index(l, k): _fvs(&cs, k, bs, &out)
+        ast.Slice(l, a, b2, k): _fvs(&cs, k, bs, &out)
+        ast.CallVal(l, k): _fvs(&cs, k, bs, &out)
+        ast.Named(l, n2, k): _fvs(&cs, k, bs, &out)
+        ast.Binop(l, o, k): _fvs(&cs, k, bs, &out)
+        ast.Unop(l, o, k): _fvs(&cs, k, bs, &out)
+        ast.ArrLit(l, k): _fvs(&cs, k, bs, &out)
+        ast.MapLit(l, k): _fvs(&cs, k, bs, &out)
+        ast.Tuple(l, k): _fvs(&cs, k, bs, &out)
+        ast.SomeE(l, k): _fvs(&cs, k, bs, &out)
+        ast.OkE(l, k): _fvs(&cs, k, bs, &out)
+        ast.ErrE(l, k): _fvs(&cs, k, bs, &out)
+        ast.SpawnE(l, k): _fvs(&cs, k, bs, &out)
+        ast.OrRet(l, b9, k):
+            _fv(&cs, k[0], bs, &out)
+            if len(k) > 1:              # or_else: the binding is bound in the handler
+                bs2 := []string
+                for x in bs:
+                    push(bs2, x)
+                push(bs2, b9)
+                _fv(&cs, k[1], bs2, &out)
+        ast.Spread(l, k): _fvs(&cs, k, bs, &out)
+        ast.Addr(l, k): _fvs(&cs, k, bs, &out)
+
+fn _fvs(cs: inout C, k: [ast.Expr], bs: [string], out: inout [string]):
+    for x in k:
+        _fv(&cs, x, bs, &out)
+
+# The free variables of a STATEMENT body, and the ones it ASSIGNS. A parallel
+# for outlines its body into a worker taking [lo, hi) plus every capture, and
+# returning the reduction (src/tychoc.c@__plo): a captured variable that is
+# written is a reduction, one that is only read is passed by value.
+fn _fv_body(cs: inout C, body: [ast.Stmt], bs0: [string], out: inout [string], wr: inout [string]):
+    bs := bs0
+    for st in body:
+        match st:
+            ast.ExprStmt(l, k): _fvs(&cs, k, bs, &out)
+            ast.Decl(l, n, t, r, v):
+                _fvs(&cs, r, bs, &out)
+                push(bs, n)
+                _fv_body(&cs, v, bs, &out, &wr)
+            ast.MDecl(l, d, ns, r):
+                _fvs(&cs, r, bs, &out)
+                for n in ns:
+                    push(bs, n)
+            ast.Assign(l, n, r):
+                _fvs(&cs, r, bs, &out)
+                if not _has(bs, n):
+                    _add1(&wr, n)
+                    _add1(&out, n)
+            ast.PlaceSet(l, k): _fvs(&cs, k, bs, &out)
+            ast.ConstS(l, n, k):
+                _fvs(&cs, k, bs, &out)
+                push(bs, n)
+            ast.ReturnS(l, k): _fvs(&cs, k, bs, &out)
+            ast.IfS(l, arms, e2):
+                for arm in arms:
+                    _fvs(&cs, arm.cond, bs, &out)
+                    _fv_body(&cs, arm.body, bs, &out, &wr)
+                _fv_body(&cs, e2, bs, &out, &wr)
+            ast.WhileS(l, c, b2):
+                _fvs(&cs, c, bs, &out)
+                _fv_body(&cs, b2, bs, &out, &wr)
+            ast.For3(l, ip, c, b2):
+                _fv_body(&cs, ip, bs, &out, &wr)
+                _fvs(&cs, c, bs, &out)
+                _fv_body(&cs, b2, bs, &out, &wr)
+            ast.ForIn(l, n, coll, b2, zpf):
+                _fvs(&cs, coll, bs, &out)
+                push(bs, n)
+                _fv_body(&cs, b2, bs, &out, &wr)
+            ast.ForRange(l, n, k, b2):
+                _fvs(&cs, k, bs, &out)
+                push(bs, n)
+                _fv_body(&cs, b2, bs, &out, &wr)
+            ast.MatchS(l, c, arms):
+                _fvs(&cs, c, bs, &out)
+                for a in arms:
+                    bs2 := bs
+                    for b3 in a.binds:
+                        push(bs2, b3)
+                    _fv_body(&cs, a.body, bs2, &out, &wr)
+            ast.SelectS(l, arms):
+                # A `select:` inside a parallel body captures the CHANNELS it
+                # names; without this arm they were not passed to the worker.
+                for a in arms:
+                    _fvs(&cs, a.ch, bs, &out)
+                    bs3 := bs
+                    for b4 in a.binds:
+                        push(bs3, b4)
+                    _fv_body(&cs, a.body, bs3, &out, &wr)
+            ast.ParallelS(l, w, b5):
+                _fvs(&cs, w, bs, &out)
+                _fv_body(&cs, b5, bs, &out, &wr)
+            _: pass
+
+fn _has(xs: [string], n: string) -> bool:
+    for x in xs:
+        if x == n:
+            return true
+    return false
+
+fn _add1(xs: inout [string], n: string):
+    if not _has(xs, n):
+        push(xs, n)
+
+# A lambda body that cannot allocate needs no child arena and no per-call free.
+# Calls are conservatively excluded; the common arithmetic closure is covered.
+fn _noalloc_e(e: ast.Expr) -> bool:
+    match e:
+        ast.IntLit(l, n): return true
+        ast.FloatLit(l, n): return true
+        ast.StrLit(l, s): return true
+        ast.CharLit(l, n): return true
+        ast.BoolLit(l, b): return true
+        ast.Name(l, n): return true
+        ast.Field(l, k, f): return _noalloc_e(k[0])
+        ast.TupIdx(l, k, i): return _noalloc_e(k[0])
+        ast.Index(l, k): return _noalloc_e(k[0])
+        ast.Binop(l, o, k):
+            for x in k:
+                if not _noalloc_e(x):
+                    return false
+            return true
+        ast.Unop(l, o, k): return _noalloc_e(k[0])
+        ast.IsVar(l, k, q, n): return _noalloc_e(k[0])
+        _: return false
+    return false
+
+fn _lambda(cs: inout C, ps: [ast.Param], ret: [ast.Ty], body: ast.Expr) -> (string, string):
+    # The lambda's own type: an untyped parameter or an omitted return is read
+    # off `cs.want`, which is the only place either is written down.
+    want := cs.want
+    wps := []string
+    wr := ""
+    if _is_fn(want):
+        wps = _fps(&cs, want)
+        wr = _fret(&cs, want)
+    pts := []string
+    for i := 0; i < len(ps); i += 1:
+        if len(ps[i].ty) > 0:
+            push(pts, _ty(&cs, ps[i].ty[0]))
+        elif i < len(wps):
+            push(pts, wps[i])
+        else:
+            _bad("a lambda parameter with no type and nothing to infer it from")
+    caps := []string
+    pn := []string
+    for p in ps:
+        push(pn, p.name)
+    _fv(&cs, body, pn, &caps)
+    cs.tmp += 1
+    id := str(cs.tmp)
+    capt := []string
+    for c in caps:
+        ct := _vtype(&cs, c)
+        push(capt, ct)
+        _recycle_mark(&cs, ct)
+    # Add only the lambda's captures and parameters to the enclosing binding
+    # tables, then roll them back to this mark. Copying every outer-local table
+    # per lambda made a function with N locals and N lambdas quadratic in memory.
+    # `_fv` has already computed every referenced free variable, so each one is
+    # shadowed here by its closure-environment binding.
+    vm := _mark(&cs)
+    scr := cs.cur_ret
+    sar := cs.arena
+    oldbase := cs.fnbase
+    sas := cs.ascope
+    cs.ascope = []string
+    cs.arena = "&_scope"
+    env := ""
+    for i := 0; i < len(caps); i += 1:
+        _push(&cs, caps[i], capt[i])
+        cs.vcn[len(cs.vcn) - 1] = "(_ec->c" + str(i) + ")"
+        env = env + "    " + _ctyz(&cs, capt[i]) + "c" + str(i) + ";\n"
+    sig := "(void *_env, Arena *_parent"
+    for i := 0; i < len(ps); i += 1:
+        cn := _push(&cs, ps[i].name, pts[i])
+        sig = sig + ", " + _ctyz(&cs, pts[i]) + "" + cn
+    sig = sig + ")"
+    cs.fnbase = len(cs.vnames)       # captures and parameters are borrowed inputs
+    rt := wr
+    if len(ret) > 0:
+        rt = _ty(&cs, ret[0])
+    if len(rt) == 0:
+        rt = "?"
+    cs.cur_ret = rt
+    bc, bt := _ex(&cs, body)
+    if rt == "?":
+        rt = bt
+        cs.cur_ret = rt
+    _restore(&cs, vm)
+    cs.fnbase = oldbase
+    cs.cur_ret = scr
+    cs.arena = sar
+    cs.ascope = sas
+    ft := _fn_of(&cs, rt, pts)
+    fid := _tname(ft)
+    inl := len(caps) <= 2
+    for i := 0; i < len(caps); i += 1:
+        if capt[i] != "int":
+            inl = false
+    pre := ""
+    if len(caps) > 0 and inl:
+        pre = "    Env" + id + " *_ec = (Env" + id + " *)_env;\n"
+    if len(caps) > 0 and not inl:
+        pre = "    Env" + id + " *_ec = *(Env" + id + " **)_env;\n"
+        push(cs.fheap, "__lam" + id + "__clo")
+    # The thunk's own scope must be released, exactly as a named fn's is: the
+    # result is copied into _parent first, so the copy outlives the free.
+    noalloc := not _heap(&cs, rt) and _noalloc_e(body)
+    ret2 := "    " + _ctyz(&cs, rt) + "_lr = " + _copy(&cs, bc, rt, "_parent") +
+        ";\n    arena_free(&_scope);\n    return _lr;\n"
+    if noalloc:
+        ret2 = "    return " + bc + ";\n"
+    if rt == "void":
+        ret2 = "    " + bc + ";\n    arena_free(&_scope);\n"
+        if noalloc:
+            ret2 = "    " + bc + ";\n"
+    d := ""
+    if len(caps) > 0:
+        # `may_alias`: the inline path points an Env pointer at c0/c1. The
+        # object there is an FnC field, so GCC/clang need this on the Env type.
+        d = "typedef struct __attribute__((may_alias)) { \n" + env + "} Env" + id + ";\n" +
+            "static void Env" + id + "_drop(Arena *_a, void *_p);\n" +
+            "static void *Env" + id + "_copy(Arena *_a, void *_p) {\n" +
+            "    Env" + id + " *_s = (Env" + id + " *)_p;\n" +
+            "    TychoEnvHdr *_h = (TychoEnvHdr *)arena_alloc(_a, sizeof(TychoEnvHdr) + sizeof(Env" + id + "));\n" +
+            "    _h->copy = Env" + id + "_copy; _h->drop = Env" + id + "_drop;\n" +
+            "    Env" + id + " *_d = (Env" + id + " *)(_h + 1);\n"
+        for i := 0; i < len(caps); i += 1:
+            d = d + "    _d->c" + str(i) + " = " + _copy(&cs, "(_s->c" + str(i) + ")", capt[i], "_a") + ";\n"
+        d = d + "    return _d;\n}\n" +
+            "static void Env" + id + "_drop(Arena *_a, void *_p) {\n" +
+            "    if (!_p || !arena_owns(_a, _p)) return;\n" +
+            "    Env" + id + " *_e = (Env" + id + " *)_p;\n"
+        for i := 0; i < len(caps); i += 1:
+            rc := _recycle_call(&cs, "_a", "_e->c" + str(i), capt[i])
+            if len(rc) > 0:
+                d = d + "    " + rc + "\n"
+        d = d + "    arena_recycle(_a, (TychoEnvHdr *)_e - 1, sizeof(TychoEnvHdr) + sizeof(*_e));\n}\n"
+    scope_decl := "    Arena _scope = arena_child(_parent);\n"
+    if noalloc:
+        scope_decl = ""
+    d = d + _ctyz(&cs, rt) + "__lam" + id + "__clo" + sig + " {\n" + pre +
+        scope_decl + ret2 + "}\n"
+    push(cs.lamd, d)
+    push(cs.lamp, _ctyz(&cs, rt) + "__lam" + id + "__clo" + sig + ";\n")
+    if len(caps) == 0:
+        return ("(FnC" + fid + "){__lam" + id + "__clo, 0, 0}", ft)
+    if inl:
+        mk := "({ (FnC" + fid + "){__lam" + id + "__clo"
+        for i := 0; i < len(caps); i += 1:
+            mk = mk + ", (tycho_int)(" + _vcname(&cs, caps[i]) + ")"
+        mk = mk + "}; })"
+        return (mk, ft)
+    mk := "({ TychoEnvHdr *_h = (TychoEnvHdr *)arena_alloc(" + cs.arena + ", sizeof(TychoEnvHdr) + sizeof(Env" + id + ")); _h->copy = Env" + id + "_copy; _h->drop = Env" + id + "_drop; Env" + id + " *_e = (Env" + id + " *)(_h + 1);"
+    for i := 0; i < len(caps); i += 1:
+        cv := _vcname(&cs, caps[i])
+        if _heap(&cs, capt[i]):
+            cv = _copy(&cs, cv, capt[i], cs.arena)
+        mk = mk + " _e->c" + str(i) + " = " + cv + ";"
+    return (mk + " (FnC" + fid + "){__lam" + id + "__clo, (tycho_int)_e, 0}; })", ft)

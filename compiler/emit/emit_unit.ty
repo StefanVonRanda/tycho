@@ -1,0 +1,1065 @@
+package emit
+
+import "../ast"
+import "../types"
+
+# Declaration collection, dead-code elimination and function bodies, and the
+# unit (program entry). Moved verbatim out of emit.ty.
+
+# --- declaration collection -------------------------------------------------
+
+# Two passes, because a package's files are collected in one go and a name may
+# be declared in a LATER file of the same package -- src/tychoc.c merges every
+# file's declarations before it resolves any of them. Pass 1 registers the
+# names (already package-mangled); pass 2 resolves the types those names carry.
+
+fn _collect1(cs: inout C, u: ast.Unit):
+    p := _pfx(&cs)
+    for sd in u.structs:
+        if len(sd.typarams) > 0:
+            push(cs.gs, ast.StructD(p + sd.name, sd.typarams, sd.fields, sd.line, sd.packed, sd.aln))
+            push(cs.gsf, cs.cf)
+        else:
+            push(cs.sds, SD(p + sd.name, [], [], [], sd.packed, sd.aln))
+    for ed in u.enums:
+        if len(ed.typarams) > 0:
+            push(cs.ge, ast.EnumD(p + ed.name, ed.typarams, ed.variants, ed.line))
+            push(cs.gef, cs.cf)
+        else:
+            push(cs.eds, ED(p + ed.name, [], []))
+            push(cs.edp, p)
+    for nt in u.newtypes:
+        push(cs.ntn, p + nt.name)
+        push(cs.ntu, "")
+        push(cs.ntt, nt.under)
+        push(cs.ntf, cs.cf)
+    for f in u.fns:
+        if len(f.typarams) > 0:
+            push(cs.gf, ast.Fn(p + f.name, f.params, f.ret, f.typarams, f.wheres,
+                f.body, f.is_extern, f.lib, f.dnote, f.line))
+            push(cs.gff, cs.cf)
+
+# A newtype over a LATER newtype is legal -- and, across packages, over one
+# declared in a file collected earlier -- so resolve only the ones whose every
+# named part is already known and repeat until nothing moves. Each is resolved
+# with its OWN file current, which is what makes an unqualified name in it
+# resolve against its own package.
+fn _collect_nt(cs: inout C):
+    save := cs.cf
+    for pas := 0; pas <= len(cs.ntn); pas += 1:
+        for i := 0; i < len(cs.ntn); i += 1:
+            cs.cf = cs.ntf[i]
+            if len(cs.ntu[i]) == 0 and _ty_ready(&cs, cs.ntt[i]):
+                cs.ntu[i] = _ty(&cs, cs.ntt[i])
+    for i := 0; i < len(cs.ntn); i += 1:
+        cs.cf = cs.ntf[i]
+        if len(cs.ntu[i]) == 0:
+            cs.ntu[i] = _ty(&cs, cs.ntt[i])
+    cs.cf = save
+
+fn _collect2(cs: inout C, u: ast.Unit):
+    p := _pfx(&cs)
+    for i := 0; i < len(u.structs); i += 1:
+        if len(u.structs[i].typarams) > 0:
+            continue
+        si := _sidx(&cs, u.structs[i].name)
+        for f in u.structs[i].fields:
+            push(cs.sds[si].fnames, f.name)
+            push(cs.sds[si].ftypes, _ty(&cs, f.ty))
+            push(cs.sds[si].fcaps, _capof(&cs, f.ty))
+    for i := 0; i < len(u.enums); i += 1:
+        if len(u.enums[i].typarams) > 0:
+            continue
+        ei := _eidx(&cs, u.enums[i].name)
+        for v in u.enums[i].variants:
+            push(cs.eds[ei].vnames, v.name)
+            ps := []string
+            for pt2 in v.payload:
+                push(ps, _ty(&cs, pt2))
+            push(cs.eds[ei].vpay, VD(v.name, ps))
+    for f in u.fns:
+        if len(f.typarams) > 0:
+            continue
+        if f.is_extern:
+            push(cs.exn, f.name)
+        pn := []string
+        pt := []string
+        pio := []bool
+        psk := []bool
+        psz := []string
+        pv := false
+        for pp in f.params:
+            if len(pp.ty) == 0:
+                _bad("untyped parameter on '" + f.name + "'")
+            one := _ty(&cs, pp.ty[0])
+            if pp.is_variadic:
+                pv = true
+                one = "[" + one + "]"
+            push(pn, pp.name)
+            push(pt, one)
+            push(pio, pp.is_inout)
+            push(psk, pp.is_sink)
+            push(psz, _sizep_of(pp.ty))
+        nmf := p + f.name
+        if f.is_extern:
+            nmf = f.name
+        push(cs.fds, FD(nmf, pn, pt, pio, psk, pv, _tyo(&cs, f.ret), psz))
+    for c in u.consts:
+        cc, ct := _ex(&cs, c.value)
+        push(cs.cnames, p + c.name)
+        push(cs.ctypes, ct)
+        push(cs.ccode, cc)
+
+# ---------------------------------------------------------------- dead code
+#
+# 33% of the functions in a typical emitted unit are never called anywhere in
+# it -- a package is imported for two symbols and every one it declares gets a
+# body. ./tychoc emits them too, so declining to is a straight win.
+#
+# The set is of SHORT names, unqualified and unresolved on purpose: a name kept
+# live by a same-named function in another package costs one function emitted
+# for nothing, where a missed reference is a link error. Every field name and
+# every bare identifier goes in as well, which covers a UFCS method and a
+# function taken as a value without having to tell them apart from a local.
+# Nothing here is CHECKED any differently -- this only declines to write a body.
+
+# An f-string's interpolation is DEFERRED -- ast.FStrLit carries the raw body
+# and emit parses it later -- so a `f"{a.dot(b)}"` has no Expr children to walk
+# and `dot` would be dropped. Every identifier-shaped run in the body goes in.
+fn _ref_idents(s: string, m: inout [string: bool]):
+    st := -1
+    for i := 0; i <= len(s); i += 1:
+        c := 0
+        if i < len(s):
+            c = s[i]
+        idc := (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95 or
+            (st >= 0 and c >= 48 and c <= 57)
+        if idc:
+            if st < 0:
+                st = i
+        elif st >= 0:
+            m[s[st:i]] = true
+            st = -1
+    return
+
+fn _ref_e(e: ast.Expr, m: inout [string: bool]):
+    match e:
+        ast.Name(l, n): m[n] = true
+        ast.FStrLit(l, v, hs): _ref_idents(v, &m)
+        ast.Field(l, k, f):
+            m[f] = true
+            _ref_es(k, &m)
+        ast.Call(l, q, n, ts, k):
+            m[n] = true
+            _ref_es(k, &m)
+        ast.TupIdx(l, k, i): _ref_es(k, &m)
+        ast.Index(l, k): _ref_es(k, &m)
+        ast.Slice(l, a, b, k): _ref_es(k, &m)
+        ast.CallVal(l, k): _ref_es(k, &m)
+        ast.Named(l, n, k): _ref_es(k, &m)
+        ast.Binop(l, o, k): _ref_es(k, &m)
+        ast.Unop(l, o, k): _ref_es(k, &m)
+        ast.IsVar(l, k, q, n): _ref_es(k, &m)
+        ast.ArrLit(l, k): _ref_es(k, &m)
+        ast.MapLit(l, k): _ref_es(k, &m)
+        ast.Tuple(l, k): _ref_es(k, &m)
+        ast.SomeE(l, k): _ref_es(k, &m)
+        ast.OkE(l, k): _ref_es(k, &m)
+        ast.ErrE(l, k): _ref_es(k, &m)
+        ast.SpawnE(l, k): _ref_es(k, &m)
+        ast.OrRet(l, b9, k): _ref_es(k, &m)
+        ast.Spread(l, k): _ref_es(k, &m)
+        ast.Addr(l, k): _ref_es(k, &m)
+        ast.ChanE(l, t, k): _ref_es(k, &m)
+        ast.Lambda(l, ps, rt, k): _ref_es(k, &m)
+        _: pass
+
+fn _ref_es(es: [ast.Expr], m: inout [string: bool]):
+    for e in es:
+        _ref_e(e, &m)
+
+fn _ref_s(s: ast.Stmt, m: inout [string: bool]):
+    match s:
+        ast.ExprStmt(l, k): _ref_es(k, &m)
+        ast.Decl(l, n, ty, rhs, vb):
+            _ref_es(rhs, &m)
+            _ref_b(vb, &m)
+        ast.MDecl(l, isd, ns, rhs): _ref_es(rhs, &m)
+        ast.Assign(l, n, rhs): _ref_es(rhs, &m)
+        ast.PlaceSet(l, k): _ref_es(k, &m)
+        ast.ConstS(l, n, v): _ref_es(v, &m)
+        ast.ReturnS(l, k): _ref_es(k, &m)
+        ast.DeleteS(l, k): _ref_es(k, &m)
+        ast.IfS(l, arms, e):
+            for arm in arms:
+                _ref_es(arm.cond, &m)
+                _ref_b(arm.body, &m)
+            _ref_b(e, &m)
+        ast.WhileS(l, c, b):
+            _ref_es(c, &m)
+            _ref_b(b, &m)
+        ast.For3(l, i, c, b):
+            _ref_b(i, &m)
+            _ref_es(c, &m)
+            _ref_b(b, &m)
+        ast.ForIn(l, v, c, b, zpf):
+            _ref_es(c, &m)
+            _ref_b(b, &m)
+        ast.ForRange(l, v, bd, b):
+            _ref_es(bd, &m)
+            _ref_b(b, &m)
+        ast.ParallelS(l, w, b):
+            _ref_es(w, &m)
+            _ref_b(b, &m)
+        ast.MatchS(l, subj, arms):
+            _ref_es(subj, &m)
+            for a in arms:
+                _ref_b(a.body, &m)
+        ast.SelectS(l, arms):
+            for a in arms:
+                _ref_es(a.ch, &m)
+                _ref_b(a.body, &m)
+        _: pass
+
+fn _ref_b(b: [ast.Stmt], m: inout [string: bool]):
+    for s in b:
+        _ref_s(s, &m)
+
+# src/tychoc.c@vlane_kind: core:math's min/max/clamp at a vector. "" when not.
+fn _vmath_of(cs: inout C, gi: int, tg: [string]) -> string:
+    if len(tg) == 0 or not _is_vec(tg[0]):
+        return ""
+    f := cs.gff[gi]
+    if f < 0 or f >= len(cs.fcore) or not cs.fcore[f]:
+        return ""
+    n := cs.gf[gi].name
+    if n == "math__min" or n == "math__max" or n == "math__clamp":
+        return n[6:]
+    return ""
+
+# src/tychoc.c@gen_vlane, the same text: C has no vector `?:`, so each select is
+# a lane mask from one vector compare and a blend through a same-size cast.
+fn _vlane_body(cs: inout C, fi: int, k: string) -> (string, string):
+    rt := _ctyz(&cs, cs.fds[fi].ret)
+    sig := rt + "h_" + cs.fds[fi].name + "(Arena *_parent"
+    for j := 0; j < len(cs.fds[fi].pnames); j += 1:
+        sig = sig + ", " + _ctyz(&cs, cs.fds[fi].ptypes[j]) + "h_" + cs.fds[fi].pnames[j]
+    sig = sig + ")"
+    b := sig + " {\n    (void)_parent;\n"
+    if k == "clamp":
+        b = b + "    __typeof__(h_x.v < h_lo.v) _ml = h_x.v < h_lo.v, _mh = h_x.v > h_hi.v;\n"
+        b = b + "    __typeof__(_ml) _t = ((__typeof__(_ml))h_hi.v & _mh) | ((__typeof__(_ml))h_x.v & ~_mh);\n"
+        b = b + "    " + rt + "_r;\n    _r.v = (__typeof__(h_x.v))(((__typeof__(_ml))h_lo.v & _ml) | (_t & ~_ml));\n"
+    else:
+        op := "<"
+        if k == "max":
+            op = ">"
+        b = b + "    __typeof__(h_a.v < h_b.v) _m = h_a.v " + op + " h_b.v;\n"
+        b = b + "    " + rt + "_r;\n    _r.v = (__typeof__(h_a.v))(((__typeof__(_m))h_a.v & _m) | ((__typeof__(_m))h_b.v & ~_m));\n"
+    return (sig + ";\n", b + "    return _r;\n}\n\n")
+
+fn _fnbody(cs: inout C, fi: int, body: [ast.Stmt]) -> (string, string):
+    nm := cs.fds[fi].name
+    rt := cs.fds[fi].ret
+    # O5: is this one of the generated owned variants?
+    cs.own_idx = 0
+    cs.own_name = ""
+    cs.own_orig = ""
+    cs.own_clone = ""
+    cs.force_own = ""
+    cs.force_orig = ""
+    cs.in_ret = false
+    cs.ret_ast = ast.NullLit(0)
+    if nm in cs.own_idxv:
+        cs.own_idx = cs.own_idxv[nm]
+        if cs.own_idx > 0 and cs.own_idx <= len(cs.fds[fi].pnames):
+            cs.own_name = cs.fds[fi].pnames[cs.own_idx - 1]
+        cs.own_orig = cs.own_orgv[nm]
+        cs.own_clone = nm
+    cs.cur_ret = rt
+    sa := []string
+    ot := []string
+    dc := []string
+    br := []string
+    _acc_scan(body, &sa, &ot, &dc, &br)
+    es9 := []string
+    if _heap(&cs, rt):
+        hv9 := []bool
+        if _is_tup(rt):
+            et9 := _telems(&cs, rt)
+            for ix8 := 0; ix8 < len(et9); ix8 += 1:
+                push(hv9, _heap(&cs, et9[ix8]))
+        else:
+            push(hv9, true)
+        _escs_b(body, hv9, &es9)
+        # O6: a top-level local whose every VALUE read is inside a return is
+        # built in the caller's arena, so returning it through a constructor is
+        # a move. Writes (`m[k] = v`) are not reads; the return is terminal.
+        for ix9 := 0; ix9 < len(body); ix9 += 1:
+            match body[ix9]:
+                ast.Decl(l9, n9, ann9, rhs9, vv9):
+                    if len(rhs9) == 1 and len(vv9) == 0:
+                        tot := _cvreads_b(body, n9)
+                        inr := _returns_reads_b(body, n9)
+                        if tot > 0 and tot == inr and _every_return_has(body[ix9 + 1:], n9):
+                            seen := false
+                            for e9 in es9:
+                                if e9 == n9:
+                                    seen = true
+                            if not seen:
+                                push(es9, n9)
+                _: pass
+    cs.escs = es9
+    cs.accs = []string
+    for a in sa:
+        bad := true
+        for d in dc:
+            if d == a:
+                bad = false
+        for o in ot:
+            if o == a:
+                bad = true
+        if not bad:
+            push(cs.accs, a)
+    for a in br:
+        push(cs.accs, a)
+    sig := _ctyz(&cs, rt) + "h_" + nm + "(Arena *_parent"
+    m := _mark(&cs)
+    append_init := ""
+    for j := 0; j < len(cs.fds[fi].pnames); j += 1:
+        pt := cs.fds[fi].ptypes[j]
+        cn := _push(&cs, cs.fds[fi].pnames[j], pt)
+        if cs.fds[fi].pinout[j]:
+            sig = sig + ", " + _ctyz(&cs, pt) + "*" + cn
+            cs.vcn[len(cs.vcn) - 1] = "(*" + cn + ")"
+            if _heap(&cs, pt):
+                sig = sig + ", Arena *_ina_" + cn
+                cs.vown[len(cs.vown) - 1] = "_ina_" + cn
+            if pt == "string" or pt == "bytes":
+                sig = sig + ", TychoStrAppend *_aps_" + cn
+                cs.vacc[len(cs.vacc) - 1] = cn
+                append_init = append_init + "    TychoStrAppend _fallback_" + cn +
+                    " = {0}; if (!_aps_" + cn + ") _aps_" + cn + " = &_fallback_" + cn + ";\n"
+        else:
+            sig = sig + ", " + _ctyz(&cs, pt) + "" + cn
+            append_init = append_init + _append_binding(&cs, cs.fds[fi].pnames[j], pt, cn, "    ")
+        if cs.own_idx > 0 and j == cs.own_idx - 1:
+            cs.vowned[len(cs.vowned) - 1] = true
+    sig = sig + ")"
+    # A `[$N]T` parameter makes N an int CONST in the body: for a fixed array
+    # the runtime length is N, so it needs no monomorphisation over sizes.
+    cm := len(cs.cnames)
+    for j := 0; j < len(cs.fds[fi].psize) and j < len(cs.fds[fi].pnames); j += 1:
+        sn := cs.fds[fi].psize[j]
+        if len(sn) > 0 and _cidx(&cs, sn) < 0:
+            push(cs.cnames, sn)
+            push(cs.ctypes, "int")
+            push(cs.ccode, "((" + _vcname(&cs, cs.fds[fi].pnames[j]) + ").len)")
+    sfb := cs.fnbase
+    cs.ascope = []string
+    cs.loopdepth = 0
+    spb := cs.pbody
+    cs.pbody = body
+    cs.fnbase = len(cs.vnames)
+    sel := cs.elv
+    sea := cs.ela
+    cs.elv = []string
+    cs.ela = []string
+    pm := len(cs.pk)
+    cs.pname = nm
+    cs.lbl = 0
+    cs.lpost = []int
+    b := append_init + _block(&cs, body, "    ")
+    cs.pbody = spb
+    cs.fnbase = sfb
+    cs.elv = sel
+    cs.ela = sea
+    # Replace the greatest placeholders first. `_PT1` is a prefix of `_PT10`
+    # and `_PE1` of `_PE10`; replacing in allocation order corrupts the latter
+    # and leaves its numeric suffix in the generated C.
+    for i := len(cs.pk) - 1; i >= pm; i -= 1:
+        if len(cs.ptv[i]) == 0:
+            _bad("a bare [] or None with nothing to type it")
+        b = _replace(b, "_PT" + str(cs.pk[i]), _cty(&cs, cs.ptv[i]))
+        init9 := _zero(&cs, cs.ptv[i])
+        if _is_arr(cs.ptv[i]):
+            init9 = _arrf(&cs, _elem(cs.ptv[i]), "_with_cap") + "(&_scope, 0)"
+        elif _is_enum(cs.ptv[i]):
+            ei9 := _eidx(&cs, _tname(cs.ptv[i]))
+            init9 = "(&_sing_" + cs.eds[ei9].name + "_" + str(_tag(&cs, ei9, "None")) + ")"
+        b = _replace(b, "_PE" + str(cs.pk[i]), init9)
+    _restore(&cs, m)
+    # the `$N` bindings are this function's, not the module's
+    for len(cs.cnames) > cm:
+        pop(cs.cnames)
+        pop(cs.ctypes)
+        pop(cs.ccode)
+    # A body that never allocates gets no scope arena. Every call still paid
+    # arena_child + arena_free for it: of 6.91M arenas created compiling
+    # compiler/main.ty, 5.80M never had a single allocation. The test is that
+    # the emitted body mentions _scope nowhere except in the frees themselves,
+    # which is exact -- an allocation, a copy or an inout hand-off all name it.
+    bare := ""
+    keep := true
+    bi := 0
+    blast := 0
+    bn := len(b)
+    for bi + 6 <= bn:
+        if b[bi] == 95 and b[bi + 1] == 115 and b[bi:bi + 6] == "_scope":
+            # the guarded teardown is one unit; its leading `if (_scope.head)`
+            # would otherwise read as a real use and defeat the elision
+            if bi >= 4 and bi + 33 <= bn and b[bi - 4:bi] == "if (" and
+                    b[bi:bi + 33] == "_scope.head) arena_free(&_scope);":
+                bare = bare + b[blast:bi - 4]
+                bi += 33
+                if bi < bn and (b[bi] == 32 or b[bi] == 10):
+                    bi += 1
+                blast = bi
+                continue
+            if bi >= 12 and b[bi - 12:bi] == "arena_free(&":
+                bare = bare + b[blast:bi - 12]
+                bi += 7                              # past "_scope)"
+                if bi < bn and b[bi] == 59:
+                    bi += 1                          # and the ';'
+                if bi < bn and (b[bi] == 32 or b[bi] == 10):
+                    bi += 1                          # and the space or newline
+                blast = bi
+                continue
+            keep = false
+            bi = bn
+            continue
+        bi += 1
+    bare = bare + b[blast:]
+    if not keep:
+        out := sig + " {\n" +
+            "    Arena _scope = arena_child(_parent); _scope.name = \"" + nm + "\";\n" + b
+        if not _ends_ret(body):
+            if rt == "void":
+                out = out + "    if (_scope.head) arena_free(&_scope);\n"
+            else:
+                out = out + "    if (_scope.head) arena_free(&_scope); return (" + _ctyz(&cs, rt) + "){0};\n"
+        return (sig + ";\n", out + "}\n\n")
+    out0 := sig + " {\n" + bare
+    if not _ends_ret(body) and rt != "void":
+        out0 = out0 + "    return (" + _ctyz(&cs, rt) + "){0};\n"
+    return (sig + ";\n", out0 + "}\n\n")
+
+# src/tychoc.c@block_ends_in_return -- whether the last statement of a block
+# leaves on every path, which is what decides the proc's trailing free.
+fn _ends_ret(b: [ast.Stmt]) -> bool:
+    if len(b) == 0:
+        return false
+    match b[len(b) - 1]:
+        ast.ReturnS(l, k): return true
+        ast.MatchS(l, c, a):
+            for x in a:
+                if not _ends_ret(x.body):
+                    return false
+            return len(a) > 0
+        ast.IfS(l, arms, e):
+            if len(e) == 0 or len(arms) == 0 or not _ends_ret(e):
+                return false
+            for arm in arms:
+                if not _ends_ret(arm.body):
+                    return false
+            return true
+        _: pass
+    return false
+
+# --- the unit ---------------------------------------------------------------
+
+# Read the loader-owned graph directly, in dependency post-order. Keeping units
+# and metadata in the existing Program avoids a second complete AST and the
+# alignment invariant of five parallel arrays. This parameter is not inout;
+# emitter-owned tables still take independent values where they store/mutate.
+# Paths/text retain the enclosing file identity for re-tokenized f-string holes.
+fn _has_lambda_expr(e: ast.Expr) -> bool:
+    match e:
+        ast.Lambda(l, p, t, b): return true
+        _: pass
+    for k in ast.kids(e):
+        if _has_lambda_expr(k):
+            return true
+    return false
+
+fn _has_lambda_stmts(ss: [ast.Stmt]) -> bool:
+    for s in ss:
+        if _has_lambda_stmt(s):
+            return true
+    return false
+
+fn _has_lambda_arm(a: ast.Arm) -> bool:
+    if _has_lambda_stmts(a.body):
+        return true
+    for c in a.ch:
+        if _has_lambda_expr(c):
+            return true
+    return false
+
+fn _has_lambda_stmt(s: ast.Stmt) -> bool:
+    match s:
+        ast.ExprStmt(l, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        ast.Decl(l, n, t, r, v):
+            for e in r:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(v):
+                return true
+        ast.MDecl(l, d, ns, r):
+            for e in r:
+                if _has_lambda_expr(e):
+                    return true
+        ast.Assign(l, n, r):
+            for e in r:
+                if _has_lambda_expr(e):
+                    return true
+        ast.PlaceSet(l, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        ast.ConstS(l, n, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        ast.ReturnS(l, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        ast.IfS(l, arms, e):
+            for a in arms:
+                for c in a.cond:
+                    if _has_lambda_expr(c):
+                        return true
+                if _has_lambda_stmts(a.body):
+                    return true
+            if _has_lambda_stmts(e):
+                return true
+        ast.WhileS(l, c, b):
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.For3(l, ip, c, b):
+            if _has_lambda_stmts(ip):
+                return true
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.ForIn(l, n, c, b, p):
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.ForRange(l, n, c, b):
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.ParallelS(l, w, b):
+            for e in w:
+                if _has_lambda_expr(e):
+                    return true
+            if _has_lambda_stmts(b):
+                return true
+        ast.MatchS(l, c, arms):
+            for e in c:
+                if _has_lambda_expr(e):
+                    return true
+            for a in arms:
+                if _has_lambda_arm(a):
+                    return true
+        ast.SelectS(l, arms):
+            for a in arms:
+                if _has_lambda_arm(a):
+                    return true
+        ast.DeleteS(l, k):
+            for e in k:
+                if _has_lambda_expr(e):
+                    return true
+        _: pass
+    return false
+
+fn _has_lambda_unit(u: ast.Unit) -> bool:
+    for f in u.fns:
+        if _has_lambda_stmts(f.body):
+            return true
+    for c in u.consts:
+        if _has_lambda_expr(c.value):
+            return true
+    for s in u.subscripts:
+        if _has_lambda_expr(s.place):
+            return true
+    return false
+
+fn _nested_arm(a: ast.Arm, vs: [string: bool]) -> bool:
+    if len(a.sub) > 0:
+        return true
+    for b in a.binds:
+        if b in vs:
+            return true
+    return _nested_stmts(a.body, vs)
+
+fn _nested_stmts(ss: [ast.Stmt], vs: [string: bool]) -> bool:
+    for s in ss:
+        if _nested_stmt(s, vs):
+            return true
+    return false
+
+fn _nested_stmt(s: ast.Stmt, vs: [string: bool]) -> bool:
+    match s:
+        ast.Decl(l, n, t, r, v):
+            if _nested_stmts(v, vs):
+                    return true
+        ast.IfS(l, arms, e):
+            for a in arms:
+                if _nested_stmts(a.body, vs):
+                    return true
+            if _nested_stmts(e, vs):
+                    return true
+        ast.WhileS(l, c, b):
+            if _nested_stmts(b, vs):
+                    return true
+        ast.For3(l, ip, c, b):
+            if _nested_stmts(ip, vs) or _nested_stmts(b, vs):
+                    return true
+        ast.ForIn(l, n, c, b, p):
+            if _nested_stmts(b, vs):
+                    return true
+        ast.ForRange(l, n, c, b):
+            if _nested_stmts(b, vs):
+                    return true
+        ast.ParallelS(l, w, b):
+            if _nested_stmts(b, vs):
+                    return true
+        ast.MatchS(l, c, arms):
+            for a in arms:
+                if _nested_arm(a, vs):
+                    return true
+        ast.SelectS(l, arms):
+            for a in arms:
+                if _nested_arm(a, vs):
+                    return true
+        _: pass
+    return false
+
+fn _nested_unit(u: ast.Unit, vs: [string: bool]) -> bool:
+    for f in u.fns:
+        if _nested_stmts(f.body, vs):
+            return true
+    return false
+
+fn program_in(program: types.Program, dbgf: string) -> string:
+    return _program(program, dbgf, false)
+
+# `tychoc --bounds-report`: emit as usual, return the bounds report instead of C.
+fn bounds_report(program: types.Program) -> string:
+    return _program(program, "", true)
+
+fn _program(program: types.Program, dbgf: string, brep: bool) -> string:
+    cs := _new()
+    cs.dbgfile = dbgf
+    cs.brep_on = brep
+    # A function value carries a 24-byte descriptor (call + two inline capture
+    # slots) because it MAY be a closure. A program with no lambda and no extern
+    # cannot create one: every value is a top-level function, which already has
+    # the bare (Arena*, args...) signature. Such a program gets 8-byte function
+    # values, so `struct { i, p, f }` is 24 bytes like C's raw pointer instead
+    # of 40. Conservatively fat for any extern, because an extern can hand back
+    # a function value whose ABI is C's.
+    thin := true
+    for file in program.files:
+        for f in file.unit.fns:
+            if f.is_extern:
+                thin = false
+        if _has_lambda_unit(file.unit):
+            thin = false
+    cs.thin = thin
+    vs := []string: bool
+    for file in program.files:
+        for ed in file.unit.enums:
+            for v in ed.variants:
+                vs[v.name] = true
+    for file in program.files:
+        if _nested_unit(file.unit, vs):
+            cs.nul = false
+    for file in program.files:
+        push(cs.fpath, file.path)
+        push(cs.fsrc, file.src)
+        push(cs.fpfx, file.prefix)
+        push(cs.fcore, types.from_corelib(program.root, file.dir))
+    for i := 0; i < len(program.files); i += 1:
+        for c in program.files[i].unit.consts:
+            match c.value:
+                ast.IntLit(l, v): cs.constv[program.files[i].prefix + c.name] = v
+                ast.CharLit(l, v): cs.constv[program.files[i].prefix + c.name] = v
+                _: pass
+    for file0 in program.files:
+        for hd in file0.unit.handles:
+            # A handle is an opaque `void *` whose free fn runs at every scope
+            # exit; the destructor call is emitted by _finalizers, exactly as a
+            # task's join and a channel's free are.
+            push(cs.hdn, hd.name)
+            push(cs.hdf, hd.free_fn)
+        for sd in file0.unit.subscripts:
+            push(cs.subn, sd.name)
+            push(cs.subp, sd.params)
+            push(cs.sube, sd.place)
+        for im in file0.unit.imports:
+            b := _pkg_base(im.path)
+            push(cs.ala, b)
+            push(cs.alp, b)
+            if len(im.alias) > 0:
+                push(cs.ala, im.alias)
+                push(cs.alp, b)
+    for i := 0; i < len(program.files); i += 1:
+        cs.cf = i
+        _collect1(&cs, program.files[i].unit)
+    _collect_nt(&cs)
+    for i := 0; i < len(program.files); i += 1:
+        cs.cf = i
+        _collect2(&cs, program.files[i].unit)
+    cs.cf = -1
+    _own_find(&cs, program)
+    # UNREACHABLE via the driver: driver.ty@check_into resolves before emit_to
+    # on both compile paths, and the only two `main` kinds resolve accepts (fn,
+    # extern) are exactly the two that reach cs.fds under the spelling _fidx
+    # looks up. An invariant, not a user diagnostic -- worded as one.
+    if _fidx(&cs, "main") < 0:
+        _bad("internal error: emit reached a program with no 'main' -- types.resolve owns that rule (compiler/types/resolve.ty@resolve) and refuses first")
+
+    # Every name any body, const initialiser or subscript place mentions. A
+    # generic's body is walked too: it is emitted only when instantiated, but
+    # whatever it calls has to survive whether or not it ever is.
+    used := []string: bool
+    used["main"] = true
+    for i := 0; i < len(program.files); i += 1:
+        for f in program.files[i].unit.fns:
+            _ref_b(f.body, &used)
+        for c in program.files[i].unit.consts:
+            _ref_e(c.value, &used)
+        for sd in program.files[i].unit.subscripts:
+            _ref_e(sd.place, &used)
+        for hd in program.files[i].unit.handles:
+            used[hd.free_fn] = true
+
+    fns := ""
+    protos := ""
+    for i := 0; i < len(program.files); i += 1:
+        cs.cf = i
+        for f in program.files[i].unit.fns:
+            if len(f.typarams) > 0:
+                continue
+            if not (f.name in used):
+                continue
+            # An extern has NO Tycho body; emitting one gives every extern a
+            # second, empty `h_<name>` definition beside the real C symbol.
+            if f.is_extern:
+                continue
+            pc, bc := _fnbody(&cs, _fidx(&cs, f.name), f.body)
+            protos = protos + pc
+            fns = fns + bc
+    # O5: one body per owned variant, sharing the original Fn's AST.
+    for k := 0; k < len(cs.own_fd); k += 1:
+        cs.cf = cs.own_cf[k]
+        pc3, bc3 := _fnbody(&cs, cs.own_fd[k], cs.own_fns[k].body)
+        protos = protos + pc3
+        fns = fns + bc3
+    cs.cf = -1
+    # Stage 2: every generic instance discovered while emitting -- and every one
+    # discovered while emitting THOSE -- gets its own body. The registry only
+    # ever grows at the end, so a forward scan reaches the whole closure.
+    for k := 0; k < len(cs.ikey); k += 1:
+        if cs.pendk[k] < 0:
+            continue
+        fj := cs.pendk[k]
+        cs.pendk[k] = -1
+        parts := split(cs.ikey[k], "|")
+        gi := _gfidx(&cs, parts[1])
+        tg := []string
+        for q := 2; q < len(parts); q += 1:
+            push(tg, parts[q])
+        mb := _bind(&cs, cs.gf[gi].typarams, tg)
+        cs.cf = cs.gff[gi]
+        vk := _vmath_of(&cs, gi, tg)
+        pc2 := ""
+        bc2 := ""
+        if len(vk) > 0:
+            pc2, bc2 = _vlane_body(&cs, fj, vk)
+        else:
+            pc2, bc2 = _fnbody(&cs, fj, cs.gf[gi].body)
+        _unbind(&cs, mb)
+        protos = protos + pc2
+        fns = fns + bc2
+
+    # Order matters in C: opaque typedefs, then the array structs (which name
+    # element types only through pointers), then struct bodies in dependency
+    # order, then the enum bodies (whose payloads may hold a struct by value).
+    head := ""
+    cs.arena = "&_scope"
+    edefs := ""
+    eproto := ""
+    ebody := ""
+    e0, ep0, eb0 := _enum_support(&cs)
+    edefs = edefs + e0
+    eproto = eproto + ep0
+    ebody = ebody + eb0
+    sproto := ""
+    sbody := ""
+    sp0, sb0 := _struct_support(&cs)
+    sproto = sproto + sp0
+    sbody = sbody + sb0
+    mtd, msb, mpr, mfb := _map_defs(&cs)
+    nm := 0
+    for nm != len(cs.mks):
+        nm = len(cs.mks)
+        mtd, msb, mpr, mfb = _map_defs(&cs)
+    # The tuple generator runs FIRST, not as a discarded discovery pre-pass:
+    # an array/map/soa kind only a TUPLE introduces has to be registered before
+    # the array fixpoint or it never gets a body (Phase 7f: `struct TychoTup3_
+    # { TychoArrK17 f0; }` with no TychoArrK17 anywhere). It used to be
+    # generated twice for that -- once thrown away -- which `_need` makes
+    # unnecessary: every later call adds only what is newly live.
+    ttd := ""
+    tsb := ""
+    tpr := ""
+    tfb := ""
+    p1, p2, p3, p4 := _tup_defs(&cs)
+    ttd = ttd + p1
+    tsb = tsb + p2
+    tpr = tpr + p3
+    tfb = tfb + p4
+    npre := 0
+    for npre != len(cs.tks):
+        npre = len(cs.tks)
+        p1, p2, p3, p4 = _tup_defs(&cs)
+        ttd = ttd + p1
+        tsb = tsb + p2
+        tpr = tpr + p3
+        tfb = tfb + p4
+    osb, ofb := _soa_defs(&cs)
+    no := 0
+    for no != len(cs.oks):
+        no = len(cs.oks)
+        osb, ofb = _soa_defs(&cs)
+    atd := ""
+    asb := ""
+    apr := ""
+    afb := ""
+    a1, a2, a3, a4 := _arr_defs(&cs)
+    atd = atd + a1
+    asb = asb + a2
+    apr = apr + a3
+    afb = afb + a4
+    nk := 0
+    for nk != len(cs.akinds):
+        nk = len(cs.akinds)
+        a1, a2, a3, a4 = _arr_defs(&cs)
+        atd = atd + a1
+        asb = asb + a2
+        apr = apr + a3
+        afb = afb + a4
+    # `extern double strx_parse_double(char *, tycho_int *);` -- the foreign
+    # symbol's prototype, matching ./tychoc. An inout parameter is a pointer.
+    # ./tychoc emits these INTERLEAVED with the ordinary prototypes (one loop
+    # over the whole proc list, src/tychoc.c:16919), so the block lands directly
+    # in front of them -- not up in the type header.
+    xpro := ""
+    for xi := 0; xi < len(cs.fds); xi += 1:
+        # The name is bound FIRST. Passing `cs.fds[xi].name` straight into a
+        # call that also takes `&cs` reads a field of the very value being
+        # borrowed, and the argument came out as a garbage pointer.
+        xnm := cs.fds[xi].name
+        if not _isext(&cs, xnm):
+            continue
+        xps := ""
+        for xj := 0; xj < len(cs.fds[xi].ptypes); xj += 1:
+            if xj > 0:
+                xps = xps + ", "
+            # A `bytes` PARAMETER is (data, len), matching the call site.
+            if cs.fds[xi].ptypes[xj] == "bytes" and not cs.fds[xi].pinout[xj]:
+                xps = xps + "const unsigned char *, tycho_int"
+                continue
+            if _is_fn(cs.fds[xi].ptypes[xj]) and not cs.fds[xi].pinout[xj]:
+                xps = xps + _cb_fnty(&cs, cs.fds[xi].ptypes[xj])
+                continue
+            # So is an ARRAY: the shim gets the element pointer and the count,
+            # never the array struct by value (`osx_exec(argv: [string])`).
+            if _is_arr(cs.fds[xi].ptypes[xj]) and not cs.fds[xi].pinout[xj]:
+                el := _elem(cs.fds[xi].ptypes[xj])
+                if el == "string":
+                    xps = xps + "const char *const *, tycho_int"
+                else:
+                    xps = xps + "const " + _ctyz(&cs, el) + "*, tycho_int"
+                continue
+            xps = xps + _ctyz(&cs, cs.fds[xi].ptypes[xj])
+            if cs.fds[xi].pinout[xj]:
+                xps = xps + "*"
+        xrt := _ctyz(&cs, cs.fds[xi].ret)
+        # An `Option(string)` return crosses as a plain `char *`: NULL is None.
+        # Declaring it as the Option ENUM pointer made the caller read a tag out
+        # of a C string -- "tycho: non-exhaustive match" in core:io's line
+        # reader (iox_read_line).
+        if _is_optT(&cs, cs.fds[xi].ret) and _opt_inner(&cs, cs.fds[xi].ret) == "string":
+            xrt = "char *"
+        # An ARRAY return crosses the same way: void, plus (ptr, len) out-
+        # parameters. Declaring it as TychoArrInt made cc read a struct return
+        # where the shim writes through two pointers.
+        if _is_arr(cs.fds[xi].ret) and (_elem(cs.fds[xi].ret) == "int" or
+                _elem(cs.fds[xi].ret) == "float"):
+            xrt = "void "
+            if len(xps) > 0:
+                xps = xps + ", "
+            xps = xps + _ctyz(&cs, _elem(cs.fds[xi].ret)) + "**, tycho_int *"
+        if cs.fds[xi].ret == "bytes":
+            # A `bytes` return crosses the ABI as (ptr, len) OUT-PARAMETERS and
+            # the C function returns void; the caller wraps them with
+            # tycho_bytes_from_c. ./tychoc emits
+            #   extern void iox_read_file(char *, tycho_int *,
+            #                             unsigned char **, tycho_int *);
+            # Returning char * instead passes 2 arguments where the shim reads
+            # 4 -- which is why io.read_text answered NotFound for a file that
+            # exists, and why dropping the argument copy turned it into a
+            # segfault. A `string` return does NOT use this form.
+            xrt = "void "
+            if len(xps) > 0:
+                xps = xps + ", "
+            xps = xps + "unsigned char **, tycho_int *"
+        if len(xps) == 0:
+            xps = "void"
+        xpro = xpro + "extern " + xrt + cs.fds[xi].name +
+            "(" + xps + ");\n"
+    struct_pieces := []string
+    for i in _struct_order(&cs):
+        push(struct_pieces, "struct S_" + cs.sds[i].name + "_ {\n")
+        for j := 0; j < len(cs.sds[i].fnames); j += 1:
+            push(struct_pieces, "    " + _ctyz(&cs, cs.sds[i].ftypes[j]) + "f_" +
+                cs.sds[i].fnames[j] + ";\n")
+        if len(cs.sds[i].fnames) == 0:
+            push(struct_pieces, "    char _empty;\n")
+        if cs.sds[i].packed:
+            push(struct_pieces, "} __attribute__((packed));\n")
+            ws := []string
+            for j := 0; j < len(cs.sds[i].ftypes); j += 1:
+                _pk_widths(&cs, cs.sds[i].ftypes[j], &ws)
+            body := "0"
+            if len(ws) > 0:
+                body = ""
+                for j := 0; j < len(ws); j += 1:
+                    if j > 0:
+                        body = body + ", "
+                    body = body + ws[j]
+            push(struct_pieces, "static const int Pk_" + cs.sds[i].name + "_[] = { " + body + " };\n")
+        elif cs.sds[i].aln != 0:
+            push(struct_pieces, "} __attribute__((aligned(" + str(cs.sds[i].aln) + ")));\n")
+        else:
+            push(struct_pieces, "};\n")
+    head = head + _join_code(struct_pieces)
+    ftd := _fn_defs(&cs)
+    nfk := 0
+    for nfk != len(cs.fks):
+        nfk = len(cs.fks)
+        ftd = _fn_defs(&cs)
+    cpr, cbd := _clo_defs(&cs)
+    lpr := ""
+    lbd := ""
+    for x in cs.lamp:
+        lpr = lpr + x
+    for x in cs.lamd:
+        lbd = lbd + x
+    hpr := ""
+    hfb := ""
+    hp0, hf0 := _hash_defs(&cs)
+    hpr = hpr + hp0
+    hfb = hfb + hf0
+    chd := _chan_defs(&cs)
+    spd := ""
+    for x in cs.spawnd:
+        spd = spd + x
+    # THE CLOSURE. A helper's own body goes through the same funnels as ordinary
+    # emitted code, so writing one marks the ones it calls: a struct's str()
+    # marks the str of every field type, an array's copy marks the element's.
+    # Re-run every gated generator while the live set grows -- `_need` is what
+    # stops a re-run writing anything twice, so this costs one extra sweep over
+    # the registries and nothing else. Everything that can mark a name has run
+    # by here, channels and closures included.
+    nu := -1
+    for nu != len(cs.used):
+        nu = len(cs.used)
+        e2, ep2, eb2 := _enum_support(&cs)
+        edefs = edefs + e2
+        eproto = eproto + ep2
+        ebody = ebody + eb2
+        sp2, sb2 := _struct_support(&cs)
+        sproto = sproto + sp2
+        sbody = sbody + sb2
+        q1, q2, q3, q4 := _tup_defs(&cs)
+        ttd = ttd + q1
+        tsb = tsb + q2
+        tpr = tpr + q3
+        tfb = tfb + q4
+        hp2, hf2 := _hash_defs(&cs)
+        hpr = hpr + hp2
+        hfb = hfb + hf2
+        if nm != len(cs.mks):
+            nm = len(cs.mks)
+            mtd, msb, mpr, mfb = _map_defs(&cs)
+        if no != len(cs.oks):
+            no = len(cs.oks)
+            osb, ofb = _soa_defs(&cs)
+        b1, b2, b3, b4 := _arr_defs(&cs)
+        atd = atd + b1
+        asb = asb + b2
+        apr = apr + b3
+        afb = afb + b4
+        for nk != len(cs.akinds):
+            nk = len(cs.akinds)
+            b1, b2, b3, b4 = _arr_defs(&cs)
+            atd = atd + b1
+            asb = asb + b2
+            apr = apr + b3
+            afb = afb + b4
+    # Last, so every kind any body introduced is present. A vector element is a
+    # scalar by construction, so this registers nothing new and needs no fixpoint.
+    vsb, vpr, vfb := _vec_defs(&cs)
+    rpr, rbd := _recycle_defs(&cs)
+    htd := "\n/* ---- generated from Tycho source ---- */\n\n" + vsb
+    for sd in cs.sds:
+        htd = htd + "typedef struct S_" + sd.name + "_ S_" + sd.name + ";\n"
+    for ed in cs.eds:
+        htd = htd + "typedef struct E_" + ed.name + " E_" + ed.name + ";\n"
+    htd = htd + "\n" + mtd
+    ied := _inline_enum_defs(&cs)
+    head = atd + asb + msb + osb + "\n" + head
+    head = htd + ied + ttd + ftd + head + tsb + edefs + "\n" + apr + sproto + eproto +
+        tpr + mpr + hpr + vpr + rpr + "\n" + afb + vfb + sbody + ebody + tfb + hfb + mfb + ofb + rbd + "\n"
+
+    # `fn main() -> Result(void, string)`: an Err reaching the entry point is
+    # PRINTED and exits 1 -- the error type is the message (src/tychoc.c:10446).
+    mfi := _fidx(&cs, "main")
+    mcall := "    h_main(&_root);\n"
+    mtail := "    arena_free(&_root);\n    return 0;\n"
+    if mfi >= 0 and _is_resT(&cs, cs.fds[mfi].ret):
+        mcall = "    " + _ctyz(&cs, cs.fds[mfi].ret) + "_r = h_main(&_root);\n" +
+            "    int _st = 0;\n" +
+            "    if (_r->tag == 1) { tycho_eprint(_r->u.V_Err.f0); tycho_eprint(\"\\n\"); _st = 1; }\n"
+        mtail = "    arena_free(&_root);\n    return _st;\n"
+    entry := "int main(int argc, char **argv) {\n" +
+        "    tycho_hash_seed_init();  /* random per-process map-hash seed, before any map use */\n" +
+        "    tycho_argc = argc; tycho_argv = argv;  /* exposed to the program via args() */\n" +
+        "    Arena _root = arena_new(0);  /* root arena; default block size */\n" +
+        mcall + mtail + "}\n"
+    hfd := "static int tycho_fn_is_heap(void *p) {\n"
+    for nm in cs.fheap:
+        hfd = hfd + "    if (p == (void *)" + nm + ") return 1;\n"
+    hfd = hfd + "    return 0;\n}\n"
+    if brep:
+        return _brep_text(&cs)
+    return head + xpro + protos + cpr + lpr + "\n" + hfd + chd + spd + cbd + lbd + fns + entry

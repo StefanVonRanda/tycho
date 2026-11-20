@@ -1,0 +1,677 @@
+package emit
+
+import "../ast"
+import "core:strings"
+
+# Move-on-last-use (deep-copy elision) and bounds-check elision for monotone
+# loop indices. Moved verbatim out of emit.ty.
+
+# --- move-on-last-use (deep-copy elision) -----------------------------------
+#
+# src/tychoc.c@can_move_from, and the read-count scan src/tychoc.c@count_reads_b.
+# `b := a` / `b = a` normally deep-copies a heap value so the two are
+# independent. If `a` is a uniquely-owned local whose ONLY read is this one, the
+# copy is waste -- `b` takes over `a`'s buffer. The rule is conservative and
+# static: the source is a bare variable of heap type; it is read exactly once in
+# the whole function, so this read is its last use on every path INCLUDING loop
+# back-edges; the move is not lexically inside a loop, so that one textual read
+# is one dynamic read; and the source's arena equals the destination's, so the
+# handed-off buffer's lifetime matches. A parameter borrows the caller's buffer
+# and is never moved.
+
+# --- bounds-check elision for monotone loop indices -------------------------
+# src/tychoc.c:10510-10631. Inside `for i := 0; i < len(A); i += 1:` the access
+# `A[i]` is provably in [0, len(A)): `len` is an un-redefinable builtin over the
+# true length, Tycho has no in-place array-shrink op, and the body is verified
+# below never to reassign or shadow A or i and never to pass A whole to a call
+# (a possibly-`inout` callee, or `push`, could move the buffer). Every refusal
+# is the reference's -- an index wrongly proved in range is an out-of-bounds
+# read, not a slow program. Escape hatch: TYCHOC_NO_BOUNDS_ELISION=1.
+# The one reference refusal NOT ported is IS_BOUNDED: src/tychoc.c keeps a
+# bounded array in `.v`, where `.data[i]` would be wrong, while tychoc1 lowers
+# `bounded[N]T` to the dynamic array (compiler/emit/emit.ty@_ty) whose storage
+# IS `.data`.
+fn _elision_on() -> bool:
+    return len(getenv("TYCHOC_NO_BOUNDS_ELISION")) == 0
+
+# does `e` pass the whole array `arr` as a direct call argument?
+fn _pass_l(es: [ast.Expr], arr: string) -> bool:
+    for i := 0; i < len(es); i += 1:
+        if _pass_e(es[i], arr):
+            return true
+    return false
+
+fn _bare(es: [ast.Expr], arr: string) -> bool:
+    for i := 0; i < len(es); i += 1:
+        match es[i]:
+            ast.Name(l, n):
+                if n == arr:
+                    return true
+            # `f(&xs)`: an inout callee may resize xs
+            ast.Addr(l, k):
+                if _bare(k, arr):
+                    return true
+            _: pass
+    return false
+
+fn _pass_e(e: ast.Expr, arr: string) -> bool:
+    match e:
+        ast.Call(l, q, n, ts, k): return _bare(k, arr) or _pass_l(k, arr)
+        ast.CallVal(l, k): return _bare(k, arr) or _pass_l(k, arr)
+        ast.Field(l, k, f): return _pass_l(k, arr)
+        ast.TupIdx(l, k, i): return _pass_l(k, arr)
+        ast.Index(l, k): return _pass_l(k, arr)
+        ast.Slice(l, a, b, k): return _pass_l(k, arr)
+        ast.Named(l, n, k): return _pass_l(k, arr)
+        ast.Binop(l, o, k): return _pass_l(k, arr)
+        ast.Unop(l, o, k): return _pass_l(k, arr)
+        ast.IsVar(l, k, q, n): return _pass_l(k, arr)
+        ast.ArrLit(l, k): return _pass_l(k, arr)
+        ast.MapLit(l, k): return _pass_l(k, arr)
+        ast.Tuple(l, k): return _pass_l(k, arr)
+        ast.SomeE(l, k): return _pass_l(k, arr)
+        ast.OkE(l, k): return _pass_l(k, arr)
+        ast.ErrE(l, k): return _pass_l(k, arr)
+        ast.SpawnE(l, k): return _pass_l(k, arr)
+        ast.OrRet(l, b9, k): return _pass_l(k, arr)
+        ast.Spread(l, k): return _pass_l(k, arr)
+        ast.Addr(l, k): return _pass_l(k, arr)
+        ast.ChanE(l, t, k): return _pass_l(k, arr)
+        # a lambda body runs later and can call anything with what it captured;
+        # a parameter of its own named iv or arr shadows, which the reference's
+        # stmt_unsafe does not see and this refuses
+        ast.Lambda(l, ps, r, b): return true
+        _: return false
+    return false
+
+fn _uns_ns(ns: [string], iv: string, arr: string) -> bool:
+    for i := 0; i < len(ns); i += 1:
+        if ns[i] == iv or ns[i] == arr:
+            return true
+    return false
+
+fn _uns_a(ar: [ast.Arm], iv: string, arr: string) -> bool:
+    for i := 0; i < len(ar); i += 1:
+        if _uns_ns(ar[i].binds, iv, arr) or _uns_ns(ar[i].subbinds, iv, arr):
+            return true
+        for j := 0; j < len(ar[i].pats); j += 1:
+            if _uns_ns([ar[i].pats[j].loname, ar[i].pats[j].hiname], iv, arr):
+                return true
+        if _pass_l(ar[i].ch, arr) or _uns_b(ar[i].body, iv, arr):
+            return true
+    return false
+
+# could this statement invalidate `arr[iv] in range`?
+fn _uns_s(s: ast.Stmt, iv: string, arr: string) -> bool:
+    match s:
+        ast.ExprStmt(l, k): return _pass_l(k, arr)
+        ast.Decl(l, n, t, r, v):
+            return n == iv or n == arr or _pass_l(r, arr) or _uns_b(v, iv, arr)
+        ast.MDecl(l, d, ns, r): return _uns_ns(ns, iv, arr) or _pass_l(r, arr)
+        ast.Assign(l, n, r): return n == iv or n == arr or _pass_l(r, arr)
+        ast.PlaceSet(l, k): return _pass_l(k, arr)
+        ast.ConstS(l, n, k): return n == iv or n == arr or _pass_l(k, arr)
+        ast.ReturnS(l, k): return _pass_l(k, arr)
+        ast.IfS(l, arms, e):
+            for arm in arms:
+                if _pass_l(arm.cond, arr) or _uns_b(arm.body, iv, arr):
+                    return true
+            return _uns_b(e, iv, arr)
+        ast.WhileS(l, c, b): return _pass_l(c, arr) or _uns_b(b, iv, arr)
+        ast.For3(l, ip, c, b):
+            return _uns_b(ip, iv, arr) or _pass_l(c, arr) or _uns_b(b, iv, arr)
+        ast.ForIn(l, n, c, b, zpf):
+            return n == iv or n == arr or _pass_l(c, arr) or _uns_b(b, iv, arr)
+        ast.ForRange(l, n, c, b):
+            return n == iv or n == arr or _pass_l(c, arr) or _uns_b(b, iv, arr)
+        ast.ParallelS(l, w, b): return _pass_l(w, arr) or _uns_b(b, iv, arr)
+        ast.MatchS(l, c, a): return _pass_l(c, arr) or _uns_a(a, iv, arr)
+        ast.SelectS(l, a): return _uns_a(a, iv, arr)
+        ast.DeleteS(l, k): return _pass_l(k, arr)
+        _: return false
+    return false
+
+fn _uns_b(b: [ast.Stmt], iv: string, arr: string) -> bool:
+    for i := 0; i < len(b); i += 1:
+        if _uns_s(b[i], iv, arr):
+            return true
+    return false
+
+# src/tychoc.c@for3_elidable_arr -- the loop variable and the array it indexes,
+# or two empty strings. init `i := 0` with no value-if tail, cond `i < len(A)`,
+# post exactly `i += 1`, and a body that survives _uns_b.
+fn _for3_elide(ip: [ast.Stmt], c: [ast.Expr], b: [ast.Stmt]) -> (string, string):
+    no := ("", "")
+    if not _elision_on() or len(b) == 0:
+        return no
+    iv := ""
+    match ip[0]:
+        ast.Decl(l, n, t, r, v):
+            if len(v) > 0 or len(r) != 1:
+                return no
+            match r[0]:
+                ast.IntLit(l2, x):
+                    if x != 0:
+                        return no
+                _: return no
+            iv = n
+        _: return no
+    arr := ""
+    match c[0]:
+        ast.Binop(l, op, k):
+            if op != "<" or len(k) != 2:
+                return no
+            match k[0]:
+                ast.Name(l2, n2):
+                    if n2 != iv:
+                        return no
+                _: return no
+            match k[1]:
+                ast.Call(l3, q, fnm, ts, args):
+                    if len(q) > 0 or fnm != "len" or len(ts) > 0 or len(args) != 1:
+                        return no
+                    match args[0]:
+                        ast.Name(l4, an): arr = an
+                        _: return no
+                _: return no
+        _: return no
+    match ip[1]:
+        ast.Assign(l, n, r):
+            if n != iv or len(r) != 1:
+                return no
+            match r[0]:
+                ast.Binop(l2, op2, k2):
+                    if op2 != "+" or len(k2) != 2:
+                        return no
+                    match k2[0]:
+                        ast.Name(l3, n3):
+                            if n3 != iv:
+                                return no
+                        _: return no
+                    match k2[1]:
+                        ast.IntLit(l4, one):
+                            if one != 1:
+                                return no
+                        _: return no
+                _: return no
+        _: return no
+    if arr == iv or _uns_b(b, iv, arr):
+        return no
+    return (iv, arr)
+
+# src/tychoc.c@index_in_range -- is `base[idx]` a loop index proven in range?
+# --bounds-report: one record per array index site, tagged with the function
+# being emitted. A body emitted twice records twice; _brep_text dedupes.
+fn _bnote(cs: inout C, l: int, what: string):
+    if not cs.brep_on:
+        return
+    path := "?"
+    if cs.cf >= 0 and cs.cf < len(cs.fpath):
+        path = cs.fpath[cs.cf]
+    push(cs.brep, cs.pname + "\t" + path + ":" + str(l) + ": " + what)
+
+# Grouped per function in first-seen order, each followed by its summary.
+fn _brep_text(cs: inout C) -> string:
+    seen := []string: bool
+    fns := []string
+    rows := []string: string
+    nk := []string: int
+    ne := []string: int
+    for r in cs.brep:
+        if seen[r]:
+            continue
+        seen[r] = true
+        t := find(r, "\t")
+        f := r[0:t]
+        row := r[t + 1:len(r)]
+        if nk[f] + ne[f] == 0:
+            push(fns, f)
+        rows[f] = rows[f] + "  " + row + "\n"
+        if strings.contains(row, ": kept "):
+            nk[f] = nk[f] + 1
+        else:
+            ne[f] = ne[f] + 1
+    out := ""
+    for f in fns:
+        out = out + "fn " + f + ":\n" + rows[f] + "  " + f + ": " + str(nk[f]) + " kept, " + str(ne[f]) + " elided\n"
+    return out
+
+fn _in_range(cs: inout C, base: ast.Expr, idx: ast.Expr) -> bool:
+    bn := ""
+    ix := ""
+    match base:
+        ast.Name(l, n): bn = n
+        _: return false
+    match idx:
+        ast.Name(l, n): ix = n
+        _: return false
+    for k := len(cs.elv) - 1; k >= 0; k -= 1:
+        if cs.elv[k] == ix and cs.ela[k] == bn:
+            return true
+    return false
+
+fn _creads_l(es: [ast.Expr], nm: string) -> int:
+    c := 0
+    for i := 0; i < len(es); i += 1:
+        c += _creads_e(es[i], nm)
+    return c
+
+fn _creads_e(e: ast.Expr, nm: string) -> int:
+    match e:
+        ast.Name(l, n):
+            if n == nm:
+                return 1
+            return 0
+        ast.Field(l, k, f): return _creads_l(k, nm)
+        ast.TupIdx(l, k, i): return _creads_l(k, nm)
+        ast.Index(l, k): return _creads_l(k, nm)
+        ast.Slice(l, a, b, k): return _creads_l(k, nm)
+        ast.Call(l, q, n, ts, k): return _creads_l(k, nm)
+        ast.CallVal(l, k): return _creads_l(k, nm)
+        ast.Named(l, n, k): return _creads_l(k, nm)
+        ast.Binop(l, o, k): return _creads_l(k, nm)
+        ast.Unop(l, o, k): return _creads_l(k, nm)
+        ast.IsVar(l, k, q, n): return _creads_l(k, nm)
+        ast.ArrLit(l, k): return _creads_l(k, nm)
+        ast.MapLit(l, k): return _creads_l(k, nm)
+        ast.Tuple(l, k): return _creads_l(k, nm)
+        ast.SomeE(l, k): return _creads_l(k, nm)
+        ast.OkE(l, k): return _creads_l(k, nm)
+        ast.ErrE(l, k): return _creads_l(k, nm)
+        ast.SpawnE(l, k): return _creads_l(k, nm)
+        ast.OrRet(l, b9, k): return _creads_l(k, nm)
+        ast.Spread(l, k): return _creads_l(k, nm)
+        ast.Addr(l, k): return _creads_l(k, nm)
+        ast.ChanE(l, t, k): return _creads_l(k, nm)
+        # a lambda's env is built from its captures at creation, so a name its
+        # body reads is read HERE (src/tychoc.c counts the capture list; walking
+        # the body counts a name read twice in it twice, which only refuses more)
+        ast.Lambda(l, ps, r, b): return _creads_l(b, nm)
+        _: return 0
+    return 0
+
+fn _creads_a(ar: [ast.Arm], nm: string) -> int:
+    c := 0
+    for i := 0; i < len(ar); i += 1:
+        c += _creads_l(ar[i].ch, nm) + _creads_b(ar[i].body, nm)
+    return c
+
+fn _creads_s(s: ast.Stmt, nm: string) -> int:
+    match s:
+        ast.ExprStmt(l, k): return _creads_l(k, nm)
+        ast.Decl(l, n, t, r, v): return _creads_l(r, nm) + _creads_b(v, nm)
+        ast.MDecl(l, d, ns, r): return _creads_l(r, nm)
+        ast.Assign(l, n, r): return _creads_l(r, nm)
+        ast.PlaceSet(l, k): return _creads_l(k, nm)
+        ast.ConstS(l, n, k): return _creads_l(k, nm)
+        ast.ReturnS(l, k): return _creads_l(k, nm)
+        ast.IfS(l, arms, e):
+            count := 0
+            for arm in arms:
+                count = count + _creads_l(arm.cond, nm) + _creads_b(arm.body, nm)
+            return count + _creads_b(e, nm)
+        ast.WhileS(l, c2, b): return _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.For3(l, ip, c2, b): return _creads_b(ip, nm) + _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.ForIn(l, n, c2, b, zpf): return _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.ForRange(l, n, c2, b): return _creads_l(c2, nm) + _creads_b(b, nm)
+        ast.ParallelS(l, w, b): return _creads_l(w, nm) + _creads_b(b, nm)
+        ast.MatchS(l, c2, a): return _creads_l(c2, nm) + _creads_a(a, nm)
+        ast.SelectS(l, a): return _creads_a(a, nm)
+        ast.DeleteS(l, k): return _creads_l(k, nm)
+        _: return 0
+    return 0
+
+fn _creads_b(b: [ast.Stmt], nm: string) -> int:
+    c := 0
+    for i := 0; i < len(b); i += 1:
+        c += _creads_s(b[i], nm)
+    return c
+
+# O6: a write through a place is not a value read. Used for return moves and
+# for the return-only escape set, so a map built by `m[k] = ...` and returned
+# can hand off its buffers.
+fn _cvreads_s(s: ast.Stmt, nm: string) -> int:
+    match s:
+        ast.ExprStmt(l, k): return _creads_l(k, nm)
+        ast.Decl(l, n, t, r, v): return _creads_l(r, nm) + _cvreads_b(v, nm)
+        ast.MDecl(l, d, ns, r): return _creads_l(r, nm)
+        ast.Assign(l, n, r): return _creads_l(r, nm)
+        ast.PlaceSet(l, k):
+            if len(k) == 2:
+                return _creads_e(k[1], nm)
+            return 0
+        ast.ConstS(l, n, k): return _creads_l(k, nm)
+        ast.ReturnS(l, k): return _creads_l(k, nm)
+        ast.IfS(l, arms, e):
+            c := 0
+            for arm in arms:
+                c += _creads_l(arm.cond, nm) + _cvreads_b(arm.body, nm)
+            return c + _cvreads_b(e, nm)
+        ast.WhileS(l, c2, b): return _creads_l(c2, nm) + _cvreads_b(b, nm)
+        ast.For3(l, ip, c2, b): return _cvreads_b(ip, nm) + _creads_l(c2, nm) + _cvreads_b(b, nm)
+        ast.ForIn(l, n, c2, b, zpf): return _creads_l(c2, nm) + _cvreads_b(b, nm)
+        ast.ForRange(l, n, c2, b): return _creads_l(c2, nm) + _cvreads_b(b, nm)
+        ast.ParallelS(l, w, b): return _creads_l(w, nm) + _cvreads_b(b, nm)
+        ast.MatchS(l, c2, a):
+            c := _creads_l(c2, nm)
+            for arm in a:
+                c += _cvreads_b(arm.body, nm)
+            return c
+        ast.SelectS(l, a):
+            c := 0
+            for arm in a:
+                c += _creads_l(arm.ch, nm) + _cvreads_b(arm.body, nm)
+            return c
+        ast.DeleteS(l, k): return 0
+        _: return 0
+    return 0
+
+fn _cvreads_b(b: [ast.Stmt], nm: string) -> int:
+    c := 0
+    for s in b:
+        c += _cvreads_s(s, nm)
+    return c
+
+fn _returns_reads_b(b: [ast.Stmt], nm: string) -> int:
+    c := 0
+    for s in b:
+        match s:
+            ast.ReturnS(l, k): c += _creads_l(k, nm)
+            _: pass
+        for sb in _stmt_bs(s):
+            c += _returns_reads_b(sb, nm)
+    return c
+
+fn _every_return_has(b: [ast.Stmt], nm: string) -> bool:
+    for s in b:
+        match s:
+            ast.ReturnS(l, k):
+                if _creads_l(k, nm) == 0:
+                    return false
+            _: pass
+        for sb in _stmt_bs(s):
+            if not _every_return_has(sb, nm):
+                return false
+    return true
+
+# Disjoint fields of an owned local may survive its reconstruction. Collect
+# maximal projections only; ordinary calls/indices/closures keep copying.
+fn _rebuild_owned(cs: inout C, n: string, arena: string) -> bool:
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return i >= cs.fnbase and cs.vlocal[i] and cs.vown[i] == arena
+    return false
+
+fn _rebuild_path(e: ast.Expr, root: string) -> string:
+    match e:
+        ast.Field(l, k, f):
+            match k[0]:
+                ast.Name(l2, n):
+                    if n == root:
+                        return "." + f
+                _: pass
+            p := _rebuild_path(k[0], root)
+            if len(p) > 0:
+                return p + "." + f
+        _: pass
+    return ""
+
+# Follow the call dispatch before accepting a constructor: a local fn or UFCS
+# receiver can shadow a type name, and generic functions precede generic types.
+fn _rebuild_ctor(cs: inout C, q: string, n: string) -> bool:
+    if len(q) > 0:
+        if len(_vtype(&cs, q)) > 0 or not _ispkg(&cs, q):
+            return false
+        return _rebuild_ctor(&cs, "", _qpfx(&cs, q) + n)
+    if _is_fn(_vtype(&cs, n)) or _gfidx(&cs, n) >= 0:
+        return false
+    if n == "zero" or n == "size_of" or n == "from_bytes":
+        return false
+    return _gsidx(&cs, n) >= 0 or _sidx(&cs, n) >= 0
+
+fn _rebuild_reads(cs: inout C, e: ast.Expr, root: string, paths: inout [string]) -> bool:
+    match e:
+        ast.Field(l, k, f):
+            p := _rebuild_path(e, root)
+            if len(p) > 0:
+                push(paths, p)
+                return true
+            return _rebuild_reads(&cs, k[0], root, &paths)
+        ast.Name(l, n): return n != root
+        ast.IntLit(l, v): return true
+        ast.FloatLit(l, v): return true
+        ast.StrLit(l, v): return true
+        ast.CharLit(l, v): return true
+        ast.BoolLit(l, v): return true
+        ast.Binop(l, op, k): return _rebuild_list(&cs, k, root, &paths)
+        ast.Unop(l, op, k): return _rebuild_list(&cs, k, root, &paths)
+        ast.ArrLit(l, k): return _rebuild_list(&cs, k, root, &paths)
+        ast.Named(l, n, k): return _rebuild_list(&cs, k, root, &paths)
+        ast.Call(l, q, n, ts, k):
+            return _rebuild_ctor(&cs, q, n) and _rebuild_list(&cs, k, root, &paths)
+        _: return false
+    return false
+
+fn _rebuild_list(cs: inout C, es: [ast.Expr], root: string, paths: inout [string]) -> bool:
+    for e in es:
+        if not _rebuild_reads(&cs, e, root, &paths):
+            return false
+    return true
+
+fn _take_rebuild_field(cs: inout C, e: ast.Expr) -> bool:
+    if len(cs.rebuild_name) == 0:
+        return false
+    p := _rebuild_path(e, cs.rebuild_name)
+    if len(p) == 0:
+        return false
+    if not _rebuild_owned(&cs, cs.rebuild_name, cs.arena):
+        return false
+    hits := 0
+    for q in cs.rebuild_paths:
+        if q == p:
+            hits += 1
+        elif strings.starts_with(q, p + ".") or strings.starts_with(p, q + "."):
+            return false
+    return hits == 1
+
+# may `b := rhs` / `b = rhs` take rhs's buffer instead of deep-copying it, given
+# the destination lives in arena `owner`?
+fn _canmove(cs: inout C, e: ast.Expr, owner: string) -> bool:
+    n := ""
+    match e:
+        ast.Name(l, nm): n = nm
+        _: return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i < cs.fnbase or not cs.vlocal[i]:
+                return false          # parameters/pattern bindings may borrow
+            if cs.loopdepth != 0 and cs.vloop[i] != cs.loopdepth:
+                return false          # a local from outside this loop is reused each iteration
+            if cs.vown[i] != owner:
+                return false
+            if _creads_b(cs.pbody, n) == 1:
+                return true
+            # A return is terminal; writes before it are not observations.
+            return cs.in_ret and _cvreads_b(cs.pbody, n) == 1
+    return false
+
+# src/tychoc.c@can_move_into_sink -- move-on-last-use minus the same-arena
+# requirement. A `sink` parameter is CONSUMED by the callee, which owns and may
+# mutate it, so the argument must be independent of the caller. A tracked local
+# read exactly once outside any loop can be handed off instead: its arena
+# strictly encloses the per-call argument scratch, so the buffer outlives the
+# call, and the one read is its last on every path. Anything else -- a param
+# (it borrows the caller's buffer), a field or element (no part moves out of a
+# value), a read inside a loop -- copies. src/tychoc.c's four die arms are not
+# repeated here: compiler/types/zsema.ty rejects those before emission.
+fn _canmove_sink(cs: inout C, e: ast.Expr) -> bool:
+    n := ""
+    match e:
+        ast.Name(l, nm): n = nm
+        _: return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i < cs.fnbase or not cs.vlocal[i]:
+                return false          # parameters/pattern bindings may borrow
+            if cs.loopdepth != 0 and cs.vloop[i] != cs.loopdepth:
+                return false          # a local from outside this loop is reused each iteration
+            return _creads_b(cs.pbody, n) == 1
+    return false
+
+fn _borrows_heap_arg(cs: inout C, e: ast.Expr, dst: string) -> bool:
+    if _place(e):
+        if _heap(&cs, _expr_type(&cs, e)) and _ownerof(&cs, e) != dst:
+            return true
+        return false
+    match e:
+        ast.Call(l, q, n, ts, args):
+            for a in args:
+                if _borrows_heap_arg(&cs, a, dst):
+                    return true
+        ast.CallVal(l, k):
+            for a in k:
+                if _borrows_heap_arg(&cs, a, dst):
+                    return true
+        _: pass
+    return false
+
+fn _canmove_push(cs: inout C, arr: ast.Expr, val: ast.Expr, et: string) -> bool:
+    if len(getenv("TYCHOC_NO_MOVE_PUSH")) > 0 or not _heap(&cs, et):
+        return false
+    # A fresh non-place is built in the array's arena by the push emitter
+    # above. It cannot alias the array, and no later name observes it, so the
+    # receiver may adopt it. Places still take the copy path. A call can hand
+    # back a heap place from another arena (a newtype/identity wrapper), so it
+    # is only fresh when no argument borrows one.
+    if not _place(val):
+        if _borrows_heap_arg(&cs, val, _ownerof(&cs, arr)):
+            return false
+        return len(getenv("TYCHOC_NO_FRESH_PUSH")) == 0
+    n := ""
+    match val:
+        ast.Name(l, nm): n = nm
+        _: return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i < cs.fnbase or not cs.vlocal[i]:
+                return false
+            if cs.loopdepth != 0 and cs.vloop[i] != cs.loopdepth:
+                return false
+            src := cs.vown[i]
+            if len(src) == 0:
+                return false
+            root := _pname(arr)
+            if len(root) == 0 or root == n:
+                return false
+            for j := len(cs.vnames) - 1; j >= 0; j -= 1:
+                if cs.vnames[j] == root:
+                    if j < cs.fnbase or not cs.vlocal[j] or cs.vown[j] != src:
+                        return false
+                    return _creads_b(cs.pbody, n) == 1
+            return false
+    return false
+
+# O3: a loop-local built only to be pushed into an enclosing array is built in
+# that array's arena, so the push can adopt it instead of copying out of the
+# per-iteration scratch. Mirrors src/tychoc.c@push_decl_arena.
+fn _push_find_e(e: ast.Expr, name: string, arr: inout [ast.Expr], hits: inout int):
+    match e:
+        ast.Lambda(l, ps, r, b): return   # deferred: not this declaration's last use
+        ast.Call(l, q, n, ts, k):
+            if len(q) == 0 and n == "push" and len(k) >= 2:
+                match k[1]:
+                    ast.Name(l2, nm):
+                        if nm == name:
+                            push(arr, k[0])
+                            hits = hits + 1
+                    _: pass
+        _: pass
+    for c in ast.kids(e):
+        _push_find_e(c, name, &arr, &hits)
+
+fn _push_find_b(b: [ast.Stmt], name: string, arr: inout [ast.Expr], hits: inout int):
+    for st in b:
+        for e in _stmt_es(st):
+            _push_find_e(e, name, &arr, &hits)
+        for sb in _stmt_bs(st):
+            _push_find_b(sb, name, &arr, &hits)
+
+fn _pname(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, k, f): return _pname(k[0])
+        ast.Index(l, k): return _pname(k[0])
+        _: return ""
+    return ""
+
+fn _push_decl_arena(cs: inout C, name: string) -> string:
+    if len(getenv("TYCHOC_NO_MOVE_PUSH")) > 0 or cs.loopdepth == 0:
+        return ""
+    if _creads_b(cs.pbody, name) != 1:
+        return ""
+    arr := []ast.Expr
+    hits := 0
+    _push_find_b(cs.pbody, name, &arr, &hits)
+    if hits != 1 or len(arr) == 0:
+        return ""
+    root := _pname(arr[0])
+    if len(root) == 0 or root == name:
+        return ""
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == root:
+            if i < cs.fnbase or not cs.vlocal[i] or len(cs.vown[i]) == 0:
+                return ""
+            return cs.vown[i]
+    return ""
+
+fn _ex_view(cs: inout C, e: ast.Expr) -> (string, string):
+    save := cs.slice_view
+    cs.slice_view = true
+    c, t := _ex(&cs, e)
+    cs.slice_view = save
+    return (c, t)
+
+fn _rhs2(cs: inout C, e: ast.Expr, want: string, arena: string) -> (string, string):
+    return _rhs3(&cs, e, want, arena, false)
+
+# `mv`: this is a `b := rhs` / `b = rhs` site, where a dead same-arena local may
+# be MOVED rather than copied (src/tychoc.c@can_move_from).
+fn _rhs3(cs: inout C, e: ast.Expr, want: string, arena: string, mv: bool) -> (string, string):
+    sw := cs.want
+    cs.want = want
+    # A string or bytes slice lowers to tycho_str_substr, a FRESH allocation
+    # that aliases nothing -- so aimed at the destination arena it needs no
+    # copy-on-bind, and the lexer stopped allocating each identifier twice.
+    sa9 := cs.arena
+    sl9 := false
+    match e:
+        ast.Slice(l9, a9, b9, k9): sl9 = true
+        _: pass
+    if sl9:
+        cs.arena = arena
+    cs.shared_get = false
+    c, t := _ex(&cs, e)
+    cs.arena = sa9
+    cs.want = sw
+    if sl9 and (t == "string" or t == "bytes"):
+        return (c, t)
+    if _place(e) and _heap(&cs, t):
+        if _own_path_ok(&cs, e):
+            return (c, t)
+        if _shared_get_expr(&cs, e):
+            return (c, t)
+        if cs.share_place and _share_bind_ok(&cs, e, t, arena):
+            return (c, t)
+        # A STRING already in the destination arena is shared, not copied. The
+        # copy exists so a later write to the destination cannot be seen through
+        # the source, and a string has no in-place write: `s = s + x` concatenates
+        # into a fresh buffer, and the accumulator starts at cap 0 ("not yet
+        # owned") so its first append reallocates too. Same arena means the two
+        # also die together, so there is no lifetime to extend. Arrays and maps
+        # ARE mutable and still copy.
+        if not _shares(&cs, e, t, arena) and not (mv and _canmove(&cs, e, arena)):
+            c = _copy(&cs, c, t, arena)
+    if len(want) > 0 and want == "float" and t == "int":
+        c = _tofloat(c)
+        t = "float"
+    return (c, t)

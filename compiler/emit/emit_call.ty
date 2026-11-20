@@ -1,0 +1,1404 @@
+package emit
+
+import "../ast"
+import "../types"
+import "core:strings"
+
+# Calls and builtins, plus O5 owned-field moves and the O5 discovery of
+# `t = f(t, ...)` that builds owned variants. Moved verbatim out of emit.ty.
+
+# --- calls ------------------------------------------------------------------
+
+# --- O5: owned-field moves --------------------------------------------------
+# A variant's owned parameter is dead after the call: the caller read it once
+# and rebound it. Inside a RETURN (terminal, so no later read can observe the
+# old value) a field or match payload of that value may occupy the result's
+# owning slot instead of being deep-copied. Borrow reads (`size(l)`) are not
+# owning slots. Mirrors src/tychoc.c@owned_path_return_ok.
+
+fn _own_is_name(cs: inout C, n: string) -> bool:
+    # Resolve through the scope stack: an inner declaration that shadows the
+    # owned name is an ordinary local and must never inherit its moves.
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return cs.vowned[i]
+    return false
+
+fn _own_path(cs: inout C, e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n):
+            if _own_is_name(&cs, n):
+                return n
+        ast.Field(l, k, f):
+            p := _own_path(&cs, k[0])
+            if len(p) > 0:
+                return p + "." + f
+        ast.TupIdx(l, k, i):
+            p := _own_path(&cs, k[0])
+            if len(p) > 0:
+                return p + "." + str(i)
+        _: pass
+    return ""
+
+fn _own_prefix(a: string, b: string) -> bool:
+    return a == b or (len(a) < len(b) and strings.starts_with(b, a + "."))
+
+fn _own_ctor(cs: inout C, q: string, n: string) -> bool:
+    if _rebuild_ctor(&cs, q, n):
+        return true
+    if len(q) == 0 and _bare_variant(&cs, n) >= 0:
+        return true
+    return false
+
+fn _own_retains(cs: inout C, e: ast.Expr, retain: bool, out: inout [string], poison: inout bool):
+    match e:
+        ast.Lambda(l, _, _, _):
+            poison = true
+        ast.Name(l, n):
+            if retain:
+                p := _own_path(&cs, e)
+                if len(p) > 0:
+                    push(out, p)
+        ast.Field(l, k, f):
+            p := _own_path(&cs, e)
+            if len(p) > 0:
+                if retain:
+                    push(out, p)
+                return
+            _own_retains(&cs, k[0], false, &out, &poison)
+        ast.TupIdx(l, k, i):
+            p := _own_path(&cs, e)
+            if len(p) > 0:
+                if retain:
+                    push(out, p)
+                return
+            _own_retains(&cs, k[0], false, &out, &poison)
+        ast.CallVal(l, k):
+            # unknown callee: assume every argument may be retained
+            for x in k:
+                _own_retains(&cs, x, true, &out, &poison)
+        ast.Call(l, q, n, ts, args):
+            ctor := _own_ctor(&cs, q, n)
+            for i := 0; i < len(args); i += 1:
+                r := ctor
+                if not ctor:
+                    nm := n
+                    if len(q) > 0:
+                        nm = _qpfx(&cs, q) + n
+                    if len(cs.own_orig) > 0 and nm == cs.own_orig and
+                            cs.own_idx > 0 and i == cs.own_idx - 1:
+                        r = true
+                    else:
+                        fi := _fidx(&cs, nm)
+                        if fi >= 0 and i < len(cs.fds[fi].psink) and cs.fds[fi].psink[i]:
+                            r = true
+                _own_retains(&cs, args[i], r, &out, &poison)
+        ast.Named(l, n, k):
+            if len(k) > 0:
+                _own_retains(&cs, k[0], retain, &out, &poison)
+        ast.Spread(l, k):
+            if len(k) > 0:
+                _own_retains(&cs, k[0], retain, &out, &poison)
+        ast.ArrLit(l, k):
+            for x in k:
+                _own_retains(&cs, x, true, &out, &poison)
+        ast.MapLit(l, k):
+            for x in k:
+                _own_retains(&cs, x, true, &out, &poison)
+        ast.Tuple(l, k):
+            for x in k:
+                _own_retains(&cs, x, true, &out, &poison)
+        ast.SomeE(l, k):
+            _own_retains(&cs, k[0], true, &out, &poison)
+        ast.OkE(l, k):
+            if len(k) > 0:
+                _own_retains(&cs, k[0], true, &out, &poison)
+        ast.ErrE(l, k):
+            _own_retains(&cs, k[0], true, &out, &poison)
+        _:
+            for c in ast.kids(e):
+                _own_retains(&cs, c, false, &out, &poison)
+
+fn _own_path_ok(cs: inout C, e: ast.Expr) -> bool:
+    if not cs.in_ret:
+        return false
+    p := _own_path(&cs, e)
+    if len(p) == 0:
+        return false
+
+    out := []string
+    poison := false
+    _own_retains(&cs, cs.ret_ast, true, &out, &poison)
+    if poison:
+        return false
+    exact := 0
+    for q in out:
+        if q == p:
+            exact += 1
+    if exact != 1:
+        return false
+    for q in out:
+        if q != p and (_own_prefix(q, p) or _own_prefix(p, q)):
+            return false
+    return true
+
+fn _owned_arg_ok(cs: inout C, e: ast.Expr) -> bool:
+    if _own_path_ok(&cs, e):
+        return true
+    n := _pname(e)
+    if len(n) == 0:
+        return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i < cs.fnbase or not cs.vlocal[i]:
+                return false
+            if cs.loopdepth != 0 and cs.vloop[i] != cs.loopdepth:
+                return false
+            return _creads_b(cs.pbody, n) == 1
+    return false
+
+fn _own_local(cs: inout C, n: string) -> bool:
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            return i >= cs.fnbase and cs.vlocal[i] and not cs.vowned[i]
+    return false
+
+# The variant this assignment's call must use, or "". Mirrors the discovery
+# gate: t is read once in the RHS and immediately rebound.
+fn _own_site(cs: inout C, n: string, rhs: [ast.Expr]) -> string:
+    if not _own_local(&cs, n) or len(rhs) != 1:
+        return ""
+    match rhs[0]:
+        ast.Call(l, q, cn, ts, args):
+            if _creads_l(rhs, n) != 1:
+                return ""
+            nm := cn
+            if len(q) > 0:
+                nm = _qpfx(&cs, q) + cn
+            fi := _fidx(&cs, nm)
+            if fi < 0:
+                return ""
+            for j := 0; j < len(args); j += 1:
+                match args[j]:
+                    ast.Name(l2, jn):
+                        if jn == n:
+                            key := cs.fds[fi].name + "|" + str(j)
+                            if key in cs.own_sel:
+                                cs.force_orig = cs.fds[fi].name
+                                return cs.own_sel[key]
+                    _: pass
+        _: pass
+    return ""
+
+fn _call(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Expr]) -> (string, string):
+    return _call_with_types(&cs, l, q, n, tas, args, [])
+
+fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Expr], hints: [string]) -> (string, string):
+    if len(q) > 0:
+        # `m.get(k)` lexes as a qualifier-dot-name call; a local of map type
+        # named `m` is the map-read, not a package.
+        qt := _vtype(&cs, q)
+        if n == "get" and _is_map(qt):
+            return _mapget(&cs, _vcname(&cs, q), qt, args)
+        if _is_struct(qt):
+            si3 := _sidx(&cs, _tname(qt))
+            for j := 0; j < len(cs.sds[si3].fnames); j += 1:
+                if cs.sds[si3].fnames[j] == n and _is_fn(cs.sds[si3].ftypes[j]):
+                    kk2 := []ast.Expr
+                    push(kk2, ast.Field(l, [ast.Name(l, q)], n))
+                    for a in args:
+                        push(kk2, a)
+                    return _callval(&cs, kk2)
+        if len(qt) > 0:
+            # UFCS: `x.f(a)` on a local value is `f(x, a)`.
+            ua := []ast.Expr
+            push(ua, ast.Name(l, q))
+            for a in args:
+                push(ua, a)
+            # `g.edge(1)` where edge is a subscript inlines to its yielded place.
+            sxi := _subidx(&cs, n)
+            if sxi >= 0:
+                return _subinline(&cs, sxi, ua, false)
+            return _call(&cs, l, "", _ufcs_name(&cs, n, qt), tas, ua)
+        if _ispkg(&cs, q):
+            pfx := _qpfx(&cs, q)
+            qv := _qvariant(&cs, pfx, n)
+            if qv >= 0:
+                return _variant(&cs, qv, n, args)
+            qta := []string
+            for t in tas:
+                push(qta, _ty(&cs, t))
+            qgv := _gen_variant_in(&cs, pfx, n, qta, args)
+            if len(qgv) > 0:
+                qei := _eidx(&cs, _tname(qgv))
+                if qei >= 0:
+                    return _variant(&cs, qei, n, args)
+            m := pfx + n
+            if _fidx(&cs, m) < 0 and _isext(&cs, n):
+                m = n
+            return _call(&cs, l, "", m, tas, args)
+        _bad("package-qualified call '" + q + "." + n + "' -- Phase 8")
+    if _is_fn(_vtype(&cs, n)):
+        # `f(5)` where f is a LOCAL of fn type: the parser cannot tell this from
+        # a named call, so the local wins here exactly as it does for a map.
+        kk := []ast.Expr
+        push(kk, ast.Name(l, n))
+        for a in args:
+            push(kk, a)
+        return _callval(&cs, kk)
+    ta := []string
+    for t in tas:
+        push(ta, _ty(&cs, t))
+    if n == "zero" and len(ta) == 1 and len(args) == 0:
+        return (_zero(&cs, ta[0]), ta[0])
+    if n == "size_of" and len(ta) == 1 and len(args) == 0:
+        return ("((tycho_int)sizeof(" + _cty(&cs, ta[0]) + "))", "int")
+    if n == "from_bytes" and len(ta) == 1 and len(args) == 1:
+        bc, _bt := _ex(&cs, args[0])
+        if _is_arr(ta[0]):
+            e := _elem(ta[0])
+            if not _is_struct(e):
+                _bad("from_bytes$([...]) takes an array of a packed struct")
+            ct := _cty(&cs, ta[0])
+            v2 := _fresh(&cs, "_pkr")
+            bsrc := _fresh(&cs, "_pkb")
+            nlen := _fresh(&cs, "_pkn")
+            dp := _fresh(&cs, "_pkd")
+            return ("(__extension__ ({ char *" + bsrc + " = " + bc + "; tycho_int " + nlen +
+                " = 0; void *" + dp + " = tycho_unpack_arr(" + cs.arena + ", " + bsrc +
+                ", Pk_" + _tname(e) + "_, " + str(_pk_n(&cs, e)) + ", (tycho_int)sizeof(" +
+                _cty(&cs, e) + "), \"[" + _pk_disp(_tname(e)) + "]\", &" + nlen + "); " +
+                ct + " " + v2 + "; " + v2 + ".data = (" + _cty(&cs, e) + " *)" + dp + "; " +
+                v2 + ".len = " + nlen + "; " + v2 + ".cap = " + nlen + "; " + v2 + "; }))", ta[0])
+        v2 := _fresh(&cs, "_pkr")
+        return ("(__extension__ ({ " + _ctyz(&cs, ta[0]) + v2 + "; tycho_unpack(&" + v2 +
+            ", Pk_" + _tname(ta[0]) + "_, " + str(_pk_n(&cs, ta[0])) +
+            ", (tycho_int)sizeof(" + _cty(&cs, ta[0]) + "), " + bc + ", \"" +
+            _pk_disp(_tname(ta[0])) + "\"); " + v2 + "; }))", ta[0])
+    gfi := _gfidx(&cs, n)
+    if gfi >= 0:
+        tps := cs.gf[gfi].typarams
+        bs := ta
+        if len(bs) < len(tps):
+            bs = _blank(len(tps))
+            for j := 0; j < len(ta); j += 1:
+                bs[j] = ta[j]
+            ats := hints
+            if len(ats) != len(args):
+                ats = _argtypes(&cs, args)
+            for j := 0; j < len(cs.gf[gfi].params) and j < len(ats); j += 1:
+                if len(cs.gf[gfi].params[j].ty) > 0:
+                    aj := ats[j]
+                    # `f(xs...)` at a `...$T` parameter binds $T to the
+                    # ELEMENT, not to the array the spread names.
+                    if cs.gf[gfi].params[j].is_variadic and (args[j] is ast.Spread) and _is_arr(aj):
+                        aj = _elem(aj)
+                    _unify(&cs, cs.gf[gfi].params[j].ty[0], aj, tps, &bs)
+        for j := 0; j < len(bs); j += 1:
+            if len(bs[j]) == 0:
+                _bad("cannot infer '$" + tps[j] + "' at a call to '" + n + "'")
+        fj := _inst_fn(&cs, n, bs)
+        return _call(&cs, l, "", cs.fds[fj].name, []ast.Ty, args)
+    gsi := _gsidx(&cs, n)
+    if gsi >= 0:
+        tps2 := cs.gs[gsi].typarams
+        bs2 := ta
+        if len(bs2) < len(tps2):
+            bs2 = _blank(len(tps2))
+            for j := 0; j < len(ta); j += 1:
+                bs2[j] = ta[j]
+            if _is_struct(cs.want) and _inst_base(&cs, _tname(cs.want)) == n:
+                wa := _inst_of(&cs, _tname(cs.want))
+                for j := 0; j < len(bs2) and j < len(wa); j += 1:
+                    if len(bs2[j]) == 0:
+                        bs2[j] = wa[j]
+            ats2 := _argtypes(&cs, _reorder(&cs, _fieldnames(&cs, gsi), args, n))
+            for j := 0; j < len(cs.gs[gsi].fields) and j < len(ats2); j += 1:
+                _unify(&cs, cs.gs[gsi].fields[j].ty, ats2[j], tps2, &bs2)
+        for j := 0; j < len(bs2); j += 1:
+            if len(bs2[j]) == 0:
+                _bad("cannot infer '$" + tps2[j] + "' constructing '" + n + "'")
+        it := _inst_struct(&cs, n, bs2)
+        return _call(&cs, l, "", _tname(it), []ast.Ty, args)
+    gei := _geidx(&cs, n)
+    if gei >= 0:
+        _bad("a generic enum is named by a variant, not by the enum")
+    ni := _ntidx(&cs, n)
+    if ni >= 0:
+        if len(args) != 1:
+            _bad("newtype " + n + " takes exactly one value")
+        ac, at := _ex(&cs, args[0])
+        u := cs.ntu[ni]
+        if u == "float" and at == "int":
+            ac = "(double)(" + ac + ")"
+        return (ac, u)
+    ei := _bare_variant(&cs, n)
+    if ei >= 0:
+        return _variant(&cs, ei, n, args)
+    gv := _gen_variant(&cs, n, ta, args)
+    if len(gv) > 0:
+        return _variant(&cs, _eidx(&cs, _tname(gv)), n, args)
+    si := _sidx(&cs, n)
+    if si >= 0:
+        sn := cs.sds[si].name
+        args = _reorder(&cs, cs.sds[si].fnames, args, n)
+        if len(args) != len(cs.sds[si].ftypes):
+            _bad("struct " + n + " takes " + str(len(cs.sds[si].ftypes)) + " field(s)")
+        out := "((S_" + sn + "){ "
+        for i := 0; i < len(args); i += 1:
+            ft := cs.sds[si].ftypes[i]
+            sw := cs.want
+            cs.want = ft
+            cs.shared_get = false
+            # The field is built in cs.arena, not always &_scope: the copy
+            # decision below already reads cs.arena, and a struct built in
+            # _parent whose array field was built in &_scope holds a pointer
+            # into an arena that is freed on the way out.
+            # Both arms are cs.arena now: forcing &_scope here overrode the
+            # scratch a push had already selected for its value, so every
+            # field of a per-iteration struct outlived the iteration
+            # (bench/structarr_build.ty).
+            pa4 := cs.arena
+            path4 := cs.projection
+            cs.projection = []string
+            if len(path4) > 0 and cs.sds[si].fnames[i] == path4[0]:
+                if len(path4) == 1 and _heap(&cs, ft):
+                    cs.arena = "_parent"
+                    cs.ret_placed = true
+                elif _projection_ctor(&cs, args[i]):
+                    cs.projection = path4[1:]
+            ac, at := _ex(&cs, args[i])
+            cs.want = sw
+            if _place(args[i]) and _heap(&cs, ft) and not _shares(&cs, args[i], ft, cs.arena) and
+                    not _own_path_ok(&cs, args[i]) and not _shared_get_expr(&cs, args[i]) and
+                    not _take_rebuild_field(&cs, args[i]) and not _canmove(&cs, args[i], cs.arena):
+                ac = _copy(&cs, ac, ft, cs.arena)
+            cs.arena = pa4
+            cs.projection = path4
+            if i > 0:
+                out = out + ", "
+            out = out + ac
+        return (out + " })", "S~" + sn)
+    if len(tas) > 0:
+        _bad("explicit type arguments -- Phase 8")
+    fi := _fidx(&cs, n)
+    if fi >= 0 and (not _shadowable(n) or
+        (len(_pfx(&cs)) > 0 and cs.fds[fi].name == _pfx(&cs) + n)):
+        np := len(cs.fds[fi].ptypes)
+        args = _reorder(&cs, cs.fds[fi].pnames, args, n)
+        if cs.fds[fi].pvar:
+            if len(args) < np - 1:
+                _bad("'" + n + "' takes at least " + str(np - 1) + " argument(s)")
+        else:
+            if len(args) != np:
+                _bad("'" + n + "' takes " + str(np) + " argument(s)")
+        # A callee whose RESULT is not heap puts nothing in the arena it is
+        # handed, so the caller's own _parent serves and the statement scratch
+        # (&_t) stays unmentioned -- which is what lets _uses_t elide it.
+        pa := cs.arena
+        sarg := cs.arena
+        if not _heap(&cs, cs.fds[fi].ret):
+            pa = "_parent"
+            # ...but inside a loop _parent is the caller's own arena and lives for
+            # the whole call, so a transient built for this callee survives every
+            # iteration. Hand it the innermost scratch, as src/tychoc.c does
+            # (bench/heap_transient.ty retained all 400 trees).
+            if len(cs.ascope) > 0:
+                pa = _curown(&cs)
+                cs.arena = pa
+        # O5: the outer `t = f(t, ...)` site forces its variant; inside a
+        # variant, a recursive call whose owned argument is a terminal
+        # field/payload move calls the same variant.
+        cname9 := cs.fds[fi].name
+        if len(cs.force_own) > 0 and cname9 == cs.force_orig:
+            cname9 = cs.force_own
+            cs.force_own = ""
+            cs.force_orig = ""
+        elif len(cs.own_orig) > 0 and cname9 == cs.own_orig and cs.own_idx > 0 and
+                cs.own_idx - 1 < len(args) and _owned_arg_ok(&cs, args[cs.own_idx - 1]):
+            cname9 = cs.own_clone
+        out2 := "h_" + cname9 + "(" + pa
+        xtn := _isext(&cs, cs.fds[fi].name)
+        if xtn:
+            out2 = cs.fds[fi].name + "(@"
+        packed_pre := ""
+        packed_post := ""
+        packed_any := false
+        for i := 0; i < np; i += 1:
+            pt := cs.fds[fi].ptypes[i]
+            if cs.fds[fi].pvar and i == np - 1:
+                out2 = out2 + ", " + _pack(&cs, _elem(pt), args, i)
+                continue
+            if cs.fds[fi].pinout[i]:
+                packed_place := ""
+                if args[i] is ast.Addr:
+                    packed_place = _packed_field_byteptr(&cs, ast.kids(args[i])[0])
+                if len(packed_place) > 0:
+                    tmp := _fresh(&cs, "_packed_v")
+                    pptr := _fresh(&cs, "_packed_p")
+                    packed_pre = packed_pre + _cty(&cs, pt) + " " + tmp + "; void *" + pptr +
+                        " = " + packed_place + "; memcpy(&" + tmp + ", " + pptr + ", sizeof " + tmp + "); "
+                    packed_post = packed_post + "memcpy(" + pptr + ", &" + tmp + ", sizeof " + tmp + "); "
+                    out2 = out2 + ", &" + tmp
+                    packed_any = true
+                else:
+                    out2 = out2 + ", " + _addr_of(&cs, args[i])
+                if _heap(&cs, pt):
+                    # The arena is the root's owner. A subscript call wraps
+                    # the root (`&g.friends_of(a)` is Addr(Call)), so look
+                    # through it exactly as the lvalue path does when it
+                    # builds `ua2`: the receiver is `q` when qualified, else
+                    # the first call argument. Without this the wrapper's
+                    # root is unresolvable and the call gets `"&_scope"`,
+                    # so a push through the projection grew into an arena
+                    # freed on return. Method-style `g.edge(1)` (CallVal)
+                    # is covered by `_rootname`'s CallVal arm instead.
+                    ow8 := _ownerof(&cs, args[i])
+                    match args[i]:
+                        ast.Addr(la, ka):
+                            if len(ka) > 0:
+                                match ka[0]:
+                                    ast.Call(lc, qc, nc, tc, ac):
+                                        if _subidx(&cs, nc) >= 0:
+                                            if len(qc) > 0:
+                                                ow8 = _ownerof(&cs, ast.Name(lc, qc))
+                                            elif len(ac) > 0:
+                                                ow8 = _ownerof(&cs, ac[0])
+                                    _: pass
+                        _: pass
+                    out2 = out2 + ", " + ow8
+                if not xtn and (pt == "string" or pt == "bytes"):
+                    out2 = out2 + ", " + _append_arg(&cs, args[i])
+                continue
+            if xtn and _is_fn(pt):
+                out2 = out2 + ", " + _cb_arg(&cs, args[i], pt)
+                continue
+            sw := cs.want
+            cs.want = pt
+            ac := ""
+            at := ""
+            if not xtn and pt == "string":
+                ac, at = _ex_view(&cs, args[i])
+            else:
+                ac, at = _ex(&cs, args[i])
+            cs.want = sw
+            if xtn and pt == "string":
+                ac = "tycho_str_cstr(" + cs.arena + ", " + ac + ")"
+            if pt == "float" and at == "int":
+                ac = "(double)(" + ac + ")"
+            # An extern's `bytes` PARAMETER crosses as two C arguments -- the
+            # data pointer and its length -- exactly as a `bytes` RETURN crosses
+            # as two out-parameters. Passing it as one `char *` put the NEXT
+            # argument in the length slot, and iox_write_bytes then wrote
+            # through a bogus status pointer: SIGSEGV in core:io and core:os.
+            if xtn and _is_arr(pt):
+                xa := _fresh(&cs, "_xa")
+                cast9 := "(const " + _ctyz(&cs, _elem(pt)) + "*)"
+                if _elem(pt) == "string":
+                    cast9 = "(const char *const *)"
+                out2 = out2 + ", ({ " + _ctyz(&cs, pt) + "" + xa + " = " + ac + "; " +
+                    cast9 + xa + ".data; })" + ", ({ " + _ctyz(&cs, pt) + "" + xa +
+                    "b = " + ac + "; " + xa + "b.len; })"
+                continue
+            if xtn and pt == "bytes":
+                xb := _fresh(&cs, "_xb")
+                out2 = out2 + ", ({ char *" + xb + " = " + ac +
+                    "; (const unsigned char *)" + xb + "; })" +
+                    ", tycho_str_len(" + ac + ")"
+                continue
+            # NO COPY passing an ARRAY or MAP down. runtime/tycho_rt.c's header states the
+            # model: an argument is a pointer into the caller's arena and the
+            # callee's arena is a CHILD, so the value outlives the call. The
+            # copy here made every `_k(toks, i)` clone the whole token array --
+            # 42,626 elements per call, quadratic, and the reason gen-2 could
+            # not compile the compiler. Anything that RETAINS a value past the
+            # call copies at that point instead (see `push`).
+            # NO COPY for ANY heap value passed down, strings included: the
+            # callee's arena is a CHILD, so the argument outlives the call, and
+            # whatever RETAINS it copies at the retention point. Copying strings
+            # here deep-copied core:json's 3.5 MB document on every one of
+            # 50,000 parse_value calls -- 5.7 GiB live, and the benchmark died.
+            # ...but a `sink` parameter is the exception: the callee OWNS it and
+            # may mutate it in place, so it must NOT alias the caller's value
+            # (src/tychoc.c@sink_arg_into). A place that cannot be adopted is
+            # copied; a fresh value already owns its bytes.
+            if cs.fds[fi].psink[i] and _heap(&cs, pt) and _place(args[i]) and
+                    not _canmove_sink(&cs, args[i]):
+                ac = _copy(&cs, ac, pt, "&_scope")
+            out2 = out2 + ", " + ac
+        cs.arena = sarg
+        if xtn:
+            # drop the separator the arena would have needed
+            out2 = strings.replace(out2, "(@, ", "(")
+            out2 = strings.replace(out2, "(@", "(")
+            if cs.fds[fi].ret == "string":
+                # A C `char *` is NOT a tycho string: tycho's carries its length
+                # in the 8 bytes BEFORE the buffer, so using the raw pointer read
+                # whatever sat there as the length (garbage, then SIGSEGV in
+                # core:os). NULL becomes "".
+                xs9 := _fresh(&cs, "_x")
+                return ("tycho_str_from_c(" + cs.arena + ", ({ " + packed_pre + "const char *" + xs9 +
+                    " = " + out2 + "); " + packed_post + xs9 + " ? " + xs9 + " : \"\"; }))", "string")
+            if _is_optT(&cs, cs.fds[fi].ret) and _opt_inner(&cs, cs.fds[fi].ret) == "string":
+                # NULL is None; anything else is Some(str). The wrap mirrors
+                # ./tychoc's, in this compiler's enum representation.
+                ot := cs.fds[fi].ret
+                oi := _eidx(&cs, _tname(ot))
+                en := cs.eds[oi].name
+                xv := _fresh(&cs, "_x")
+                ov2 := _fresh(&cs, "_ov")
+                return ("({ " + packed_pre + "const char *" + xv + " = " + out2 + "); " + packed_post +
+                    " E_" + en + " *" + ov2 + " = &_sing_" + en + "_" + str(_tag(&cs, oi, "None")) + "; if (" + xv + ") { " +
+                    # cs.arena, NOT &_scope: this is a RETURN value in io.read_line,
+                    # and _scope is freed on the same line. Three consecutive reads
+                    # then aliased one recycled block -- line1 printed "two" and the
+                    # third read found a garbage tag ("non-exhaustive match").
+                    ov2 + " = (E_" + en + " *)arena_alloc(" + cs.arena + ", offsetof(E_" + en +
+                    ", u) + sizeof(" + _vpaytype(en, "Some") + ")); " + ov2 + "->tag = " +
+                    str(_tag(&cs, oi, "Some")) + "; " + ov2 + "->u." + _vfield("Some") + ".f0 = tycho_str_from_c(" +
+                    cs.arena + ", " + xv + "); } " + ov2 + "; })", ot)
+            # An ARRAY return crosses as two out-parameters, exactly as `bytes`
+            # does below: `[int] f()` is `void f(tycho_int **out, tycho_int *len)`.
+            # tychoc1 emitted the call with NEITHER, so the C function wrote
+            # *out and *len through whatever the registers held -- ASan reported
+            # allocation-size-too-big in ffi_iota (tests/ffi).
+            if _is_arr(cs.fds[fi].ret) and (_elem(cs.fds[fi].ret) == "int" or
+                    _elem(cs.fds[fi].ret) == "float"):
+                aet := _elem(cs.fds[fi].ret)
+                aov := _fresh(&cs, "_o")
+                aol := _fresh(&cs, "_ol")
+                sep3 := ", "
+                if strings.ends_with(out2, "("):
+                    sep3 = ""
+                return ("({ " + packed_pre + _ctyz(&cs, aet) + "*" + aov + " = 0; tycho_int " + aol +
+                    " = 0; " + out2 + sep3 + "&" + aov + ", &" + aol + "); " + packed_post +
+                    " " + _arrf(&cs, aet, "_from_c") + "(" + cs.arena + ", " + aov + ", " +
+                    aol + "); })", cs.fds[fi].ret)
+            if cs.fds[fi].ret == "bytes":
+                ov := _fresh(&cs, "_o")
+                ol := _fresh(&cs, "_ol")
+                sep2 := ", "
+                if strings.ends_with(out2, "("):
+                    sep2 = ""
+                return ("({ " + packed_pre + "unsigned char *" + ov + " = 0; tycho_int " + ol + " = 0; " +
+                    out2 + sep2 + "&" + ov + ", &" + ol + "); " + packed_post + " tycho_bytes_from_c(" +
+                    cs.arena + ", " + ov + ", " + ol + "); })", "bytes")
+        call2 := out2 + ")"
+        if packed_any:
+            if cs.fds[fi].ret == "void":
+                return ("({ " + packed_pre + call2 + "; " + packed_post + "})", "void")
+            result := _fresh(&cs, "_packed_r")
+            return ("({ " + packed_pre + _cty(&cs, cs.fds[fi].ret) + " " + result + " = " +
+                call2 + "; " + packed_post + result + "; })", cs.fds[fi].ret)
+        return (call2, cs.fds[fi].ret)
+    return _builtin(&cs, n, args)
+
+# An `inout` argument is written `&place` at the call and is a pointer in the
+# ABI, so the place is taken as an lvalue rather than read.
+# A variant name that belongs to a GENERIC enum template: the instance is the
+# wanted type when there is one, otherwise it is inferred from the payload.
+fn _gen_variant(cs: inout C, n: string, ta: [string], args: [ast.Expr]) -> string:
+    return _gen_variant_in(&cs, "", n, ta, args)
+
+fn _gen_variant_in(cs: inout C, pfx: string, n: string, ta: [string], args: [ast.Expr]) -> string:
+    for gi := 0; gi < len(cs.ge); gi += 1:
+        if pfx != "" and cs.fpfx[cs.gef[gi]] != pfx:
+            continue
+        vi := -1
+        for j := 0; j < len(cs.ge[gi].variants); j += 1:
+            if cs.ge[gi].variants[j].name == n:
+                vi = j
+        if vi < 0:
+            continue
+        tps := cs.ge[gi].typarams
+        if _is_enum(cs.want) and _inst_base(&cs, _tname(cs.want)) == cs.ge[gi].name:
+            return cs.want
+        bs := _blank(len(tps))
+        for j := 0; j < len(ta) and j < len(bs); j += 1:
+            bs[j] = ta[j]
+        ats := _argtypes(&cs, args)
+        pl := cs.ge[gi].variants[vi].payload
+        for j := 0; j < len(pl) and j < len(ats); j += 1:
+            _unify(&cs, pl[j], ats[j], tps, &bs)
+        ok := true
+        for j := 0; j < len(bs); j += 1:
+            if len(bs[j]) == 0:
+                ok = false
+        if not ok:
+            continue
+        return _inst_enum(&cs, cs.ge[gi].name, bs)
+    return ""
+
+fn _fieldnames(cs: inout C, gi: int) -> [string]:
+    out := []string
+    for f in cs.gs[gi].fields:
+        push(out, f.name)
+    return out
+
+# Infer a call's result without emitting its arguments. Generic inference can be
+# nested (`id(id(...))`) and `_ex` here used to generate and discard each child,
+# then generate it again for the real call. In a UFCS chain that repeated subtree
+# work grew exponentially. This type-only path follows calls/constructors
+# recursively; uncommon expression forms fall back to `_ex` once.
+fn _callval_type(cs: inout C, k: [ast.Expr]) -> string:
+    if len(k) == 0:
+        _bad("empty indirect call")
+    match k[0]:
+        ast.Field(l, r, f):
+            if len(r) > 0:
+                match r[0]:
+                    ast.Name(lq, q):
+                        if len(_vtype(&cs, q)) == 0 and _ispkg(&cs, q):
+                            args := []ast.Expr
+                            for i := 1; i < len(k); i += 1:
+                                push(args, k[i])
+                            return _call_type(&cs, l, q, f, []ast.Ty, args, [])
+                    _: pass
+            rt := _argtypes(&cs, [r[0]])[0]
+            if _is_struct(rt):
+                si := _sidx(&cs, _tname(rt))
+                if si >= 0:
+                    for j := 0; j < len(cs.sds[si].fnames); j += 1:
+                        if cs.sds[si].fnames[j] == f and _is_fn(cs.sds[si].ftypes[j]):
+                            return _fret(&cs, cs.sds[si].ftypes[j])
+            if f == "get" and _is_map(rt):
+                return _mval(&cs, rt)
+            args2 := [r[0]]
+            argtypes2 := [rt]
+            rest := []ast.Expr
+            for i := 1; i < len(k); i += 1:
+                push(args2, k[i])
+                push(rest, k[i])
+            for t in _argtypes(&cs, rest):
+                push(argtypes2, t)
+            return _call_type(&cs, l, "", f, []ast.Ty, args2, argtypes2)
+        _: pass
+    ft := _argtypes(&cs, [k[0]])[0]
+    if _is_fn(ft):
+        return _fret(&cs, ft)
+    call_code, call_type := _ex(&cs, ast.CallVal(ast.line_of(k[0]), k))
+    return call_type
+
+fn _call_type(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [ast.Expr], hints: [string]) -> string:
+    if len(q) > 0:
+        qt := _vtype(&cs, q)
+        if n == "get" and _is_map(qt):
+            return _mval(&cs, qt)
+        if _is_struct(qt):
+            si := _sidx(&cs, _tname(qt))
+            if si >= 0:
+                for j := 0; j < len(cs.sds[si].fnames); j += 1:
+                    if cs.sds[si].fnames[j] == n and _is_fn(cs.sds[si].ftypes[j]):
+                        return _fret(&cs, cs.sds[si].ftypes[j])
+        if len(qt) > 0:
+            ua := []ast.Expr
+            push(ua, ast.Name(l, q))
+            for a in args:
+                push(ua, a)
+            return _call_type(&cs, l, "", _ufcs_name(&cs, n, qt), tas, ua, [])
+        if _ispkg(&cs, q):
+            pfx := _qpfx(&cs, q)
+            qv := _qvariant(&cs, pfx, n)
+            if qv >= 0:
+                return "E~" + cs.eds[qv].name
+            qta := []string
+            for t in tas:
+                push(qta, _ty(&cs, t))
+            qgv := _gen_variant_in(&cs, pfx, n, qta, args)
+            if len(qgv) > 0:
+                return qgv
+            m := pfx + n
+            if _fidx(&cs, m) < 0 and _isext(&cs, n):
+                m = n
+            return _call_type(&cs, l, "", m, tas, args, [])
+        _bad("unknown call qualifier '" + q + "'")
+    ft0 := _vtype(&cs, n)
+    if _is_fn(ft0):
+        return _fret(&cs, ft0)
+    ta := []string
+    for t in tas:
+        push(ta, _ty(&cs, t))
+    gfi := _gfidx(&cs, n)
+    if gfi >= 0:
+        tps := cs.gf[gfi].typarams
+        bs := ta
+        if len(bs) < len(tps):
+            bs = _blank(len(tps))
+            for j := 0; j < len(ta); j += 1:
+                bs[j] = ta[j]
+            ats := hints
+            if len(ats) != len(args):
+                ats = _argtypes(&cs, args)
+            for j := 0; j < len(cs.gf[gfi].params) and j < len(ats); j += 1:
+                if len(cs.gf[gfi].params[j].ty) > 0:
+                    aj := ats[j]
+                    if cs.gf[gfi].params[j].is_variadic and (args[j] is ast.Spread) and _is_arr(aj):
+                        aj = _elem(aj)
+                    _unify(&cs, cs.gf[gfi].params[j].ty[0], aj, tps, &bs)
+        for j := 0; j < len(bs); j += 1:
+            if len(bs[j]) == 0:
+                _bad("cannot infer '$" + tps[j] + "' at a call to '" + n + "'")
+        fj := _inst_fn(&cs, n, bs)
+        return cs.fds[fj].ret
+    gsi := _gsidx(&cs, n)
+    if gsi >= 0:
+        tps2 := cs.gs[gsi].typarams
+        bs2 := ta
+        if len(bs2) < len(tps2):
+            bs2 = _blank(len(tps2))
+            for j := 0; j < len(ta); j += 1:
+                bs2[j] = ta[j]
+            if _is_struct(cs.want) and _inst_base(&cs, _tname(cs.want)) == n:
+                wa := _inst_of(&cs, _tname(cs.want))
+                for j := 0; j < len(bs2) and j < len(wa); j += 1:
+                    if len(bs2[j]) == 0:
+                        bs2[j] = wa[j]
+            ats2 := _argtypes(&cs, _reorder(&cs, _fieldnames(&cs, gsi), args, n))
+            for j := 0; j < len(cs.gs[gsi].fields) and j < len(ats2); j += 1:
+                _unify(&cs, cs.gs[gsi].fields[j].ty, ats2[j], tps2, &bs2)
+        for j := 0; j < len(bs2); j += 1:
+            if len(bs2[j]) == 0:
+                _bad("cannot infer '$" + tps2[j] + "' constructing '" + n + "'")
+        return _inst_struct(&cs, n, bs2)
+    if _geidx(&cs, n) >= 0:
+        _bad("a generic enum is named by a variant, not by the enum")
+    ni := _ntidx(&cs, n)
+    if ni >= 0:
+        return cs.ntu[ni]
+    ei := _bare_variant(&cs, n)
+    if ei >= 0:
+        return "E~" + cs.eds[ei].name
+    gv := _gen_variant(&cs, n, ta, args)
+    if len(gv) > 0:
+        return gv
+    si := _sidx(&cs, n)
+    if si >= 0:
+        return "S~" + cs.sds[si].name
+    fi := _fidx(&cs, n)
+    if fi >= 0 and (not _shadowable(n) or
+        (len(_pfx(&cs)) > 0 and cs.fds[fi].name == _pfx(&cs) + n)):
+        return cs.fds[fi].ret
+    # Builtins and less common call shapes already have complete type logic in
+    # `_ex`; keep that single fallback, now with nested generic arguments using
+    # this non-emitting inference path.
+    call_code, call_type := _call(&cs, l, "", n, tas, args)
+    return call_type
+
+fn _expr_type(cs: inout C, e: ast.Expr) -> string:
+    match e:
+        ast.IntLit(l, v): return "int"
+        ast.FloatLit(l, v): return "float"
+        ast.CharLit(l, v): return "char"
+        ast.BoolLit(l, v): return "bool"
+        ast.StrLit(l, v): return "string"
+        ast.NullLit(l): return "ptr"
+        ast.Name(l, n):
+            t := _vtype(&cs, n)
+            if len(t) > 0:
+                return t
+            ci := _cidx(&cs, n)
+            if ci >= 0:
+                return cs.ctypes[ci]
+            ei := _bare_variant(&cs, n)
+            if ei >= 0:
+                return "E~" + cs.eds[ei].name
+            fi := _fidx(&cs, n)
+            if fi >= 0:
+                return _fn_of(&cs, cs.fds[fi].ret, cs.fds[fi].ptypes)
+        ast.Call(l, q, n, tas, args):
+            return _call_type(&cs, l, q, n, tas, args, [])
+        ast.CallVal(l, k):
+            return _callval_type(&cs, k)
+        ast.Named(l, n, k):
+            return _expr_type(&cs, k[0])
+        ast.Spread(l, k):
+            return _expr_type(&cs, k[0])
+        ast.EmptyArr(l, ts):
+            if len(ts) > 0:
+                empty_code, empty_type := _ex(&cs, e)
+                return empty_type
+            if len(cs.want) > 0:
+                return cs.want
+            return ""
+        ast.NoneE(l): return ""
+        ast.OkE(l, k): return ""
+        ast.ErrE(l, k): return ""
+        _: pass
+    fallback_code, fallback_type := _ex(&cs, e)
+    return fallback_type
+
+# The concrete type of each argument, inferred without generating C for calls.
+fn _argtypes(cs: inout C, args: [ast.Expr]) -> [string]:
+    out := []string
+    sw := cs.want
+    path := cs.projection
+    cs.projection = []string           # type probes do not place runtime values
+    cs.want = ""
+    for a in args:
+        match a:
+            ast.NoneE(l): push(out, "")
+            ast.OkE(l, k): push(out, "")
+            ast.ErrE(l, k): push(out, "")
+            ast.EmptyArr(l, ts):
+                if len(ts) == 0:
+                    push(out, "")
+                else:
+                    push(out, _expr_type(&cs, a))
+            ast.Named(l, nm, k):
+                push(out, _expr_type(&cs, k[0]))
+            _:
+                push(out, _expr_type(&cs, a))
+    cs.want = sw
+    cs.projection = path
+    return out
+
+fn _addr_of(cs: inout C, e: ast.Expr) -> string:
+    match e:
+        ast.Addr(l, k):
+            lc, lt := _lvalue(&cs, k[0])
+            return "&(" + lc + ")"
+        _:
+            lc2, lt2 := _lvalue(&cs, e)
+            return "&(" + lc2 + ")"
+    return ""
+
+# A variadic tail is packed into a fresh array; `xs...` passes one through.
+fn _pack(cs: inout C, et: string, args: [ast.Expr], from: int) -> string:
+    if len(args) == from + 1:
+        match args[from]:
+            ast.Spread(l, k):
+                sc, st := _ex(&cs, k[0])
+                return sc
+            _: pass
+    v := _fresh(&cs, "_va")
+    n := len(args) - from
+    arena := _curown(&cs)
+    out := "({ " + _ctyz(&cs, "[" + et + "]") + "" + v + " = " + _arrf(&cs, et, "_with_cap") +
+        "(" + arena + ", " + str(n) + "LL); "
+    for i := from; i < len(args); i += 1:
+        sw := cs.want
+        cs.want = et
+        ac, at := _ex_cur(&cs, args[i])
+        cs.want = sw
+        if et == "float" and at == "int":
+            ac = "(double)(" + ac + ")"
+        if _place(args[i]) and _heap(&cs, et) and not _canmove(&cs, args[i], arena):
+            ac = _copy(&cs, ac, et, arena)
+        out = out + v + ".data[" + str(i - from) + "] = " + ac + "; "
+    return out + v + ".len = " + str(n) + "LL; " + v + "; })"
+
+# A `name: value` argument is positional once the declared names are known.
+fn _reorder(cs: inout C, names: [string], args: [ast.Expr], who: string) -> [ast.Expr]:
+    any := false
+    for a in args:
+        match a:
+            ast.Named(l, n, k): any = true
+            _: pass
+    if not any:
+        return args
+    out := []ast.Expr
+    for i := 0; i < len(names); i += 1:
+        push(out, ast.NullLit(0))
+    seen := []bool
+    for i := 0; i < len(names); i += 1:
+        push(seen, false)
+    for i := 0; i < len(args); i += 1:
+        match args[i]:
+            ast.Named(l, n, k):
+                j := -1
+                for q := 0; q < len(names); q += 1:
+                    if names[q] == n:
+                        j = q
+                if j < 0:
+                    _bad("'" + who + "' has no parameter named '" + n + "'")
+                out[j] = k[0]
+                seen[j] = true
+            _:
+                out[i] = args[i]
+                seen[i] = true
+    for i := 0; i < len(names); i += 1:
+        if not seen[i]:
+            _bad("'" + who + "' is missing an argument for '" + names[i] + "'")
+    return out
+
+fn _shadowable(n: string) -> bool:
+    # Keep this in lockstep with compiler/types/resolve.ty@_shadowable and
+    # src/tychoc.c@shadows_builtin: when a builtin wins name resolution, an
+    # emitter-only omission silently dispatches to the same-named user proc.
+    for b in ["str", "substr", "chr", "split", "keys", "find", "char_at", "len",
+              "push", "pop", "reserve", "map_get", "map_has", "map_set", "map_del",
+              "sqrt", "pow", "floor", "fabs", "to_float", "to_int", "to_str", "to_bool",
+              "to_bytes", "to_ptr", "to_u8", "to_u16", "to_u32", "to_u64",
+              "to_i8", "to_i16", "to_i32", "to_i64", "to_f32", "is_null",
+              "to_char", "hash", "print", "println", "eprint", "eprintln", "input", "read_all",
+              "write_file", "list_dir", "getenv", "args", "die", "now", "clock",
+              "ncpu", "channel", "send", "recv", "close"]:
+        if b == n:
+            return true
+    return false
+
+# push/pop/reserve MUTATE their first argument, so it has to be reached as a
+# place: `push(m["g"], 3)` on a map element is the map's value slot, not the
+# copy a read would hand back.
+fn _target(cs: inout C, e: ast.Expr) -> (string, string):
+    if _place(e):
+        return _lvalue(&cs, e)
+    return _ex(&cs, e)
+
+fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
+    if n == "str" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return (_tostr(&cs, c, t), "string")
+    if n == "len" and len(args) == 1:
+        c, t := _ex_view(&cs, args[0])
+        if t == "string" or t == "bytes":
+            return ("tycho_str_len(" + c + ")", "int")
+        if _is_vec(t):
+            # a constant: the count is in the TYPE, so no field is read
+            return ("((void)(" + c + "), (tycho_int)" + str(_vn(&cs, t)) + ")", "int")
+        if _is_arr(t) or _is_map(t) or _is_soa(t):
+            return ("((" + c + ").len)", "int")
+        _bad("len() of unsupported type '" + t + "'")
+    if n == "print" and len(args) == 1:
+        c, t := _ex_view(&cs, args[0])
+        return ("tycho_print_s(" + c + ")", "void")
+    if n == "println" and len(args) == 1:
+        c, t := _ex_view(&cs, args[0])
+        return ("(tycho_print_s(" + c + "), tycho_print(\"\\n\"))", "void")
+    if n == "eprint" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("tycho_eprint(" + c + ")", "void")
+    if n == "eprintln" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("(tycho_eprint(" + c + "), tycho_eprint(\"\\n\"))", "void")
+    if n == "die" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("tycho_die(" + c + ")", "void")
+    if n == "exit" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("exit((int)(" + c + "))", "void")
+    if n == "push" and len(args) == 2:
+        rc, rt := _target(&cs, args[0])
+        # The value is emitted under the target's ELEMENT type, so a bare
+        # `None`/`Ok` in `push(xs, None)` knows which Option/Result it belongs
+        # to. Without it the element type is only discoverable from the value,
+        # which a bare None does not carry.
+        swp := cs.want
+        if _is_arr(rt):
+            cs.want = _elem(rt)
+        elif _is_soa(rt):
+            cs.want = _selem(&cs, rt)
+        # Only when the ARRAY itself lives in the innermost scratch: pushing a
+        # scratch-built value into a longer-lived array leaves it dangling at
+        # the next arena_reset, and _shares cannot see that (examples/json.ty
+        # read ["arena","arena"] for ["systems","arena"]).
+        # Build the pushed value in the ARRAY'S OWN arena, not in &_scope. The
+        # two die together, so it cannot dangle at a reset the way a
+        # scratch-built value pushed into a longer-lived array did
+        # (examples/json.ty read ["arena","arena"] for ["systems","arena"]),
+        # and it is strictly tighter than the function arena: prongB dispatch
+        # built 2000x2000 closure envs in &_scope and freed none until main
+        # returned.
+        va := _ownerof(&cs, args[0])
+        vc := ""
+        vt := ""
+        if va == _curown(&cs):
+            vc, vt = _ex_cur(&cs, args[1])
+        else:
+            sav3 := cs.arena
+            cs.arena = va
+            vc, vt = _ex(&cs, args[1])
+            cs.arena = sav3
+        cs.want = swp
+        if strings.starts_with(rt, "?A"):
+            pi := strings.parse_int_prefix(rt[2:])
+            rt = "[" + vt + "]"
+            cs.ptv[pi] = rt
+            _vset(&cs, _rootname(args[0]), rt)
+        if _is_soa(rt):
+            return (_spfx(&cs, rt) + "_push(" + _ownerof(&cs, args[0]) + ", &(" + rc +
+                "), " + vc + ")", "void")
+        if not _is_arr(rt):
+            _bad("push() on a non-array")
+        cap9 := _cap_of_target(&cs, args[0])
+        et := _elem(rt)
+        if et == "float" and vt == "int":
+            vc = "(double)(" + vc + ")"
+        ow := _ownerof(&cs, args[0])
+        if et == "int" and vt == "bytes":
+            # One growth for the whole run, and the source is evaluated ONCE:
+            # a bare `vc` used twice would re-run a to_bytes(packed) statement
+            # expression (and its allocation).
+            pb := _fresh(&cs, "_pb")
+            return ("(__extension__ ({ char *" + pb + " = " + vc + "; " +
+                _u(&cs, "tycho_arr_int_append_bytes") + "(" + ow + ", &(" + rc + "), " + pb +
+                ", tycho_str_len(" + pb + ")); }))", "void")
+        mv := _canmove_push(&cs, args[0], args[1], et)
+        # A CONSTRUCTED value needs the copy as much as a place does: its
+        # interior strings/arrays were allocated in the caller's temporary
+        # scope, and pushing the struct by value leaves them dangling once that
+        # scope is reused. Observed in the self-compile as an FD whose `name`
+        # pointed into generated C text.
+        # ...but only when the value is NOT already whole in that same arena.
+        # _ex_scope built it in &_scope, so a constructed value pushed into an
+        # array that also lives there is already where it belongs; a place is
+        # still somebody else's and copies. Narrow on purpose: evaluating the
+        # value in `ow` instead reddened 190 fixtures.
+        # A value the expression built in `va` is already whole there, so a
+        # push into an array owned by the SAME arena needs nothing; the q
+        # defect this once guarded against was upstream, at the declaration.
+        fi9 := -1
+        mapidx := false
+        match args[0]:
+            ast.Name(l9, n9): fi9 = _fuse_idx(&cs, n9)
+            ast.Index(l9, k9):
+                if len(k9) >= 2:
+                    bn9 := _rootname(k9[0])
+                    if len(bn9) > 0:
+                        mt9 := _vtype(&cs, bn9)
+                        if _is_map(mt9) and _mkey(&cs, mt9) == "string" and
+                                _is_arr(_mval(&cs, mt9)) and _elem(_mval(&cs, mt9)) == "int":
+                            mapidx = true
+            _: pass
+        # tycho_arr_str_push already copies the bytes into the owner arena, so an
+        # emit-side copy on top is a second allocation of the same string --
+        # ./tychoc emits one where this emitted two, on every in-loop string push.
+        # The fused form calls no helper, so there the copy is still ours to make.
+        helpercp := _apfx(&cs, et) == "tycho_arr_str" and fi9 < 0
+        didcp := false
+        if _heap(&cs, et) and (_place(args[1]) or ow != va) and
+                not _shares(&cs, args[1], et, ow) and not helpercp and not mv:
+            vc = _copy(&cs, vc, et, ow)
+            didcp = true
+        if fi9 >= 0 and cap9 == 0:
+            fdn := cs.fuid[fi9]
+            # tycho_arr_str_push COPIES the bytes into the owner arena on its way
+            # in; the other push families store the value as given. Writing
+            # `fd[l++] = v` raw drops that copy, so a string built in the loop
+            # scratch was stored by pointer and dangled at the next reset --
+            # corelib zip, tycho-ledger and tycho-snap, all string pushes.
+            if _apfx(&cs, et) == "tycho_arr_str" and not didcp and not mv:
+                vc = "tycho_str_copy(" + ow + ", " + vc + ")"
+            tgt := _pname(args[0])
+            if len(tgt) > 0 and _pcap(&cs, _vcname(&cs, tgt)):
+                return ("({ " + fdn + "[" + fdn + "l++] = " + vc + "; })", "void")
+            return ("({ if (" + fdn + "l == " + fdn + "c) " + _arrf(&cs, et, "_grow") +
+                "(" + ow + ", &" + fdn + ", &" + fdn + "c, " + fdn + "l); " +
+                fdn + "[" + fdn + "l++] = " + vc + "; })", "void")
+        pfn := _arrf(&cs, et, "_push")
+        if et == "string" and mv:
+            pfn = _arrf(&cs, et, "_push_move")
+        pc9 := pfn + "(" + ow + ", &(" + rc + "), " + vc + ")"
+        if mapidx and cap9 == 0 and fi9 < 0:
+            apt9 := _ctyz(&cs, rt) + " *"
+            mb9 := _vcname(&cs, _rootname(args[0]))
+            cond9 := "(" + mb9 + ").len < 8192 && _mapv->len == 0"
+            return ("({ " + apt9 + "_mapv = &(" + rc + "); if (" + cond9 + ") " +
+                _arrf(&cs, et, "_reserve") + "(" + ow + ", _mapv, 768); " +
+                pfn + "(" + ow + ", _mapv, " + vc + "); })", "void")
+        if cap9 > 0:
+            # the capacity trap: a bounded array refuses the push that would
+            # exceed its declared N (src/tychoc.c's per-capacity push helper)
+            pc9 = "({ if ((" + rc + ").len >= " + str(cap9) + "LL) { " +
+                "fprintf(stderr, \"tycho: push to a full bounded[" + str(cap9) + "]\\n\"); TYCHO_EXIT(); } " +
+                pc9 + "; })"
+        return (pc9, "void")
+    if n == "pop" and len(args) == 1:
+        rc, rt := _target(&cs, args[0])
+        if _is_soa(rt):
+            return (_spfx(&cs, rt) + "_pop(&(" + rc + "))", _selem(&cs, rt))
+        if not _is_arr(rt):
+            _bad("pop() on a non-array")
+        et := _elem(rt)
+        return (_arrf(&cs, et, "_pop") + "(" + _ownerof(&cs, args[0]) + ", &(" + rc + "))", et)
+    if n == "keys" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        if not _is_map(t):
+            _bad("keys() takes a map")
+        kt := _mkey(&cs, t)
+        return (_mpfx(&cs, t) + "_keys(" + cs.arena + ", " + c + ")", "[" + kt + "]")
+    if n == "reserve" and len(args) == 2:
+        rc, rt := _target(&cs, args[0])
+        vc, vt := _ex(&cs, args[1])
+        ow2 := _ownerof(&cs, args[0])
+        if _is_map(rt):
+            return (_mpfx(&cs, rt) + "_reserve(" + ow2 + ", &(" + rc + "), " + vc + ")", "void")
+        if not _is_arr(rt):
+            _bad("reserve() on a non-array")
+        return (_arrf(&cs, _elem(rt), "_reserve") + "(" + ow2 + ", &(" + rc + "), " + vc + ")", "void")
+    if n == "chr" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("tycho_chr(" + cs.arena + ", " + c + ")", "string")
+    if n == "to_char" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("((tycho_int)(unsigned char)tycho_chr(" + cs.arena + ", " + c + ")[0])", "char")
+    if n == "char_at" and len(args) == 2:
+        c, t := _ex(&cs, args[0])
+        ic, it := _ex(&cs, args[1])
+        return ("tycho_str_get(" + c + ", " + ic + ")", "char")
+    if (n == "to_under" or n == "to_str" or n == "to_bool") and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return (c, t)
+    if n == "to_int" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        if t == "float" or t == "f32":
+            return ("tycho_f2i(" + c + ")", "int")
+        return ("((tycho_int)" + c + ")", "int")
+    if len(n) > 3 and n[0:3] == "to_" and _is_sized(n[3:]) and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        w := n[3:]
+        if t == "float" or t == "f32":
+            if w == "f32":
+                return ("((float)(" + c + "))", "f32")
+            return ("((" + _cty(&cs, w) + ")tycho_f2u64(" + c + "))", w)
+        return ("((" + _cty(&cs, w) + ")(" + c + "))", w)
+    if n == "to_bytes" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        if _is_arr(t):
+            # [int] -> bytes is a real conversion (each element & 0xFF);
+            # string -> bytes is the same buffer -- src/tychoc.c:14288
+            e := _elem(t)
+            if e == "int":
+                return ("tycho_bytes_from_intarr(" + cs.arena + ", " + c + ")", "bytes")
+            if not _is_struct(e):
+                _bad("to_bytes([...]) takes an array of a packed struct")
+            ct := _cty(&cs, t)
+            v := _fresh(&cs, "_pka")
+            return ("(__extension__ ({ " + ct + " " + v + " = " + c +
+                "; tycho_pack_arr(" + cs.arena + ", " + v + ".data, " + v + ".len, Pk_" +
+                _tname(e) + "_, " + str(_pk_n(&cs, e)) + ", (tycho_int)sizeof(" +
+                _cty(&cs, e) + ")); }))", "bytes")
+        if _is_struct(t):
+            v := _fresh(&cs, "_pkv")
+            return ("(__extension__ ({ " + _ctyz(&cs, t) + v + " = " + c +
+                "; tycho_pack(" + cs.arena + ", &" + v + ", Pk_" + _tname(t) + "_, " +
+                str(_pk_n(&cs, t)) + ", (tycho_int)sizeof(" + _cty(&cs, t) + ")); }))", "bytes")
+        return (c, "bytes")
+    if n == "to_float" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("((double)(" + c + "))", "float")
+    if n == "sqrt" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("sqrt(" + c + ")", "float")
+    if n == "pow" and len(args) == 2:
+        a, at := _ex(&cs, args[0])
+        b, bt := _ex(&cs, args[1])
+        return ("pow(" + a + ", " + b + ")", "float")
+    if n == "floor" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("floor(" + c + ")", "float")
+    # The two FFI escapes: an opaque handle's NULL test, and an int used as a
+    # sentinel pointer (SQLITE_TRANSIENT is (void*)-1).
+    if n == "is_null" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("((" + c + ") == 0)", "bool")
+    if n == "to_ptr" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("((void*)(tycho_int)(" + c + "))", "ptr")
+    if n == "fabs" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("fabs(" + c + ")", "float")
+    if n == "list_dir" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("tycho_list_dir(" + cs.arena + ", " + c + ")", "[string]")
+    if n == "getenv" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("tycho_getenv(" + cs.arena + ", " + c + ")", "string")
+    if n == "find" and len(args) == 2:
+        c, t := _ex(&cs, args[0])
+        sc, st := _ex(&cs, args[1])
+        return ("tycho_str_find(" + c + ", " + sc + ")", "int")
+    if n == "split" and len(args) == 2:
+        c, t := _ex(&cs, args[0])
+        sc, st := _ex(&cs, args[1])
+        return ("tycho_str_split(" + cs.arena + ", " + c + ", " + sc + ")", "[string]")
+    if n == "substr" and len(args) == 3:
+        c, t := _ex(&cs, args[0])
+        ac, at := _ex(&cs, args[1])
+        bc, bt := _ex(&cs, args[2])
+        if cs.slice_view and len(getenv("TYCHOC_NO_SLICE_VIEW")) == 0:
+            return ("tycho_str_view_alloc(" + cs.arena + ", " + c + ", " + ac + ", " + bc + ")", "string")
+        return ("tycho_str_substr(" + cs.arena + ", " + c + ", " + ac + ", " + bc + ")", "string")
+    if n == "input" and len(args) == 0:
+        return ("tycho_input(" + cs.arena + ")", "string")
+    if n == "read_all" and len(args) == 0:
+        return ("tycho_read_all(" + cs.arena + ")", "string")
+    if n == "args" and len(args) == 0:
+        return ("tycho_args(" + cs.arena + ")", "[string]")
+    if n == "now" and len(args) == 0:
+        return ("tycho_now()", "int")
+    if n == "read_file" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("tycho_read_file(" + cs.arena + ", " + c + ")", "string")
+    if n == "write_file" and len(args) == 2:
+        c, t := _ex(&cs, args[0])
+        d, dt := _ex(&cs, args[1])
+        return ("tycho_write_file(" + c + ", " + d + ")", "int")
+    if n == "send" and len(args) == 2:
+        c, t := _ex(&cs, args[0])
+        et := _cinner(t)
+        sw := cs.want
+        cs.want = et
+        v, vt := _ex(&cs, args[1])
+        cs.want = sw
+        if et == "float" and vt == "int":
+            v = "(double)(" + v + ")"
+        return ("tycho_chan_send_" + str(_ckind(&cs, et)) + "(" + c + ", " + v + ")", "void")
+    if n == "recv" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return _recv_expr(&cs, c, _cinner(t), "tycho_chan_recv_")
+    if n == "try_recv" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return _recv_expr(&cs, c, _cinner(t), "tycho_chan_tryrecv_")
+    if n == "close" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        if _is_chan(t):
+            return ("tycho_chan_close(" + c + ")", "void")
+        if _is_handle(t):
+            # an explicit close runs the destructor NOW and clears the slot, so
+            # the scope-exit finalizer does not run it twice
+            fr := _hfree(&cs, t)
+            return ("({ if (" + c + ") { " + fr + "(" + c + "); " + c + " = 0; } })", "void")
+    if n == "wait" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        rt := _cinner(t)
+        v := _fresh(&cs, "_tk")
+        # A task BOUND to a name is finished at its scope's exit, so wait only
+        # releases its arena; an unbound `wait(spawn f(x))` has no scope exit to
+        # reach it, so wait frees the handle too (src/tychoc.c does both).
+        rel := "tycho_task_free(" + v + ")"
+        if args[0] is ast.Name:
+            rel = "arena_free(&" + v + "->root)"
+        if rt == "void":
+            return ("({ HTask *" + v + " = " + c + "; tycho_task_join(" + v + "); " + rel + "; })", "void")
+        w := _fresh(&cs, "_w")
+        # the value lives in the TASK's arena, which is released here -- copy first
+        val := _copy(&cs, "(*(" + _ctyz(&cs, rt) + "*)" + v + "->ret)", rt, cs.arena)
+        return ("({ HTask *" + v + " = " + c + "; tycho_task_join(" + v + "); " +
+            _ctyz(&cs, rt) + "" + w + " = " + val + "; " + rel + "; " + w + "; })", rt)
+    if n == "hash" and len(args) == 1:
+        c, t := _ex(&cs, args[0])
+        return ("((tycho_int)(" + _hash_det(&cs, t, c) + "))", "int")
+    if n == "ncpu" and len(args) == 0:
+        return ("tycho_ncpu()", "int")
+    if n == "clock" and len(args) == 0:
+        return ("tycho_clock()", "int")
+    _bad("unsupported call '" + n + "' with " + str(len(args)) + " argument(s)")
+    return ("", "")
+
+# --- O5: discover `t = f(t, ...)` and build owned variants -------------------
+# Mirrors src/tychoc.c@collect_owned_variants / owned_site_callee. The variant
+# shares the original body; _fnbody selects the owned rules from own_idx.
+
+fn _own_param(f: ast.Fn, n: string) -> bool:
+    for p in f.params:
+        if p.name == n:
+            return true
+    return false
+
+fn _own_binds_a(arms: [ast.Arm], n: string) -> bool:
+    for a in arms:
+        for b in a.binds:
+            if b == n:
+                return true
+        for b in a.subbinds:
+            if b == n:
+                return true
+        if _own_binds_b(a.body, n):
+            return true
+    return false
+
+fn _own_binds_b(b: [ast.Stmt], n: string) -> bool:
+    for s in b:
+        match s:
+            ast.MatchS(l, c, a):
+                if _own_binds_a(a, n):
+                    return true
+            ast.SelectS(l, a):
+                if _own_binds_a(a, n):
+                    return true
+            _: pass
+        for sb in _stmt_bs(s):
+            if _own_binds_b(sb, n):
+                return true
+    return false
+
+fn _own_fn_for(cs: inout C, program: types.Program, fi: int) -> ast.Fn:
+    for i := 0; i < len(program.files); i += 1:
+        cs.cf = i
+        for f in program.files[i].unit.fns:
+            if f.is_extern or len(f.typarams) > 0:
+                continue
+            if _fidx(&cs, f.name) == fi:
+                return f
+    _bad("internal error: an owned variant has no source function")
+    return ast.Fn("", []ast.Param, []ast.Ty, []string, []string, []ast.Stmt, false, "", "", 0)
+
+fn _own_make(cs: inout C, program: types.Program, fi: int, idx: int):
+    fd := cs.fds[fi]
+    key := fd.name + "|" + str(idx)
+    if key in cs.own_sel:
+        return
+    vn := fd.name + "__own" + str(idx)
+    n := 2
+    for true:
+        if _fidx(&cs, vn) < 0:
+            break
+        vn = fd.name + "__own" + str(idx) + "_" + str(n)
+        n += 1
+    push(cs.fds, FD(vn, fd.pnames, fd.ptypes, fd.pinout, fd.psink, fd.pvar, fd.ret, fd.psize))
+    push(cs.own_fd, len(cs.fds) - 1)
+    push(cs.own_fns, _own_fn_for(&cs, program, fi))
+    push(cs.own_cf, cs.cf)
+    cs.own_sel[key] = vn
+    cs.own_idxv[vn] = idx + 1
+    cs.own_orgv[vn] = fd.name
+
+fn _own_scan_site(cs: inout C, program: types.Program, f: ast.Fn, s: ast.Stmt):
+    match s:
+        ast.Assign(l, n, rhs):
+            if len(rhs) == 1:
+                match rhs[0]:
+                    ast.Call(l2, q, cn, ts, args):
+                        nm := cn
+                        if len(q) > 0:
+                            nm = _qpfx(&cs, q) + cn
+                        fi := _fidx(&cs, nm)
+                        if fi >= 0 and not _isext(&cs, cs.fds[fi].name) and
+                                _heap(&cs, cs.fds[fi].ret) and not _own_param(f, n) and
+                                not _own_binds_b(f.body, n) and _creads_l(rhs, n) == 1:
+                            idx := -1
+                            dup := false
+                            for j := 0; j < len(args); j += 1:
+                                match args[j]:
+                                    ast.Name(l3, jn):
+                                        if jn == n:
+                                            if idx >= 0:
+                                                dup = true
+                                            idx = j
+                                    _: pass
+                            if idx >= 0 and not dup and idx < len(cs.fds[fi].ptypes) and
+                                    not cs.fds[fi].pinout[idx] and not cs.fds[fi].psink[idx] and
+                                    not (cs.fds[fi].pvar and idx == len(cs.fds[fi].ptypes) - 1) and
+                                    _heap(&cs, cs.fds[fi].ptypes[idx]):
+                                _own_make(&cs, program, fi, idx)
+                    _: pass
+        _: pass
+
+fn _own_scan_block(cs: inout C, program: types.Program, f: ast.Fn, b: [ast.Stmt]):
+    for s in b:
+        _own_scan_site(&cs, program, f, s)
+        for sb in _stmt_bs(s):
+            _own_scan_block(&cs, program, f, sb)
+
+fn _own_find(cs: inout C, program: types.Program):
+    # Benchmark control: the same compiler, variants not generated.
+    if len(getenv("TYCHOC_NO_DEST_PASS")) > 0:
+        return
+    for i := 0; i < len(program.files); i += 1:
+        cs.cf = i
+        for f in program.files[i].unit.fns:
+            if f.is_extern or len(f.typarams) > 0:
+                continue
+            _own_scan_block(&cs, program, f, f.body)
+    cs.cf = -1

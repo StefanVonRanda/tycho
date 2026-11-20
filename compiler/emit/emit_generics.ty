@@ -1,0 +1,707 @@
+package emit
+
+import "../ast"
+import "core:strings"
+
+# O6 shareable shapes, declaration lookups, and generics: monomorphised
+# instances, one per distinct binding. Moved verbatim out of emit.ty.
+
+# --- O6: shareable shapes ---------------------------------------------------
+# Every mutable part is a composite map (shared bit + copy-on-write) or is
+# immutable (scalars, strings, enums). Arrays have no shared bit yet, so a
+# struct that inlines one is not shareable. A recursive struct is coinductive:
+# reaching a type already on the stack is accepted.
+fn _can_share_seen(cs: inout C, t: string, seen: inout [string]) -> bool:
+    if t == "int" or t == "float" or t == "bool" or t == "char" or t == "f32" or
+            t == "string" or t == "bytes" or _is_sized(t):
+        return true
+    if _is_enum(t):
+        return true
+    for s in seen:
+        if s == t:
+            return true
+    if len(seen) >= 32:
+        return false
+    push(seen, t)
+    if strings.starts_with(t, "M~"):
+        mv := _mval(&cs, t)
+        if mv == "string" or mv == "bytes":
+            return false   # a direct string value has a recycling overwrite path
+        return _can_share_seen(&cs, mv, &seen)
+    if _is_struct(t):
+        i := _sidx(&cs, _tname(t))
+        if i < 0:
+            return false
+        for ft in cs.sds[i].ftypes:
+            if not _can_share_seen(&cs, ft, &seen):
+                return false
+        return true
+    return false
+
+fn _can_share_raw(cs: inout C, t: string) -> bool:
+    seen := []string
+    return _can_share_seen(&cs, t, &seen)
+
+fn _can_share(cs: inout C, t: string) -> bool:
+    if len(getenv("TYCHOC_NO_COW")) > 0:
+        return false
+    return _can_share_raw(&cs, t)
+
+fn _struct_needs_share(cs: inout C, t: string) -> bool:
+    if not _is_struct(t):
+        return false
+    i := _sidx(&cs, _tname(t))
+    if i < 0:
+        return false
+    for ft in cs.sds[i].ftypes:
+        if strings.starts_with(ft, "M~") and _can_share_raw(&cs, ft):
+            return true
+        if _is_struct(ft) and _struct_needs_share(&cs, ft):
+            return true
+    return false
+
+fn _share_fn(cs: inout C, t: string) -> string:
+    if not _can_share_raw(&cs, t):
+        return ""
+    if strings.starts_with(t, "M~"):
+        return _mpfx(&cs, t) + "_share"
+    if _is_struct(t) and _struct_needs_share(&cs, t):
+        return "tycho_share_S_" + _tname(t)
+    return ""
+
+fn _share_call(cs: inout C, t: string, lvalue: string) -> string:
+    f := _share_fn(&cs, t)
+    if len(f) == 0:
+        return ""
+    return f + "(&(" + lvalue + "))"
+
+fn _simple_place(e: ast.Expr) -> bool:
+    match e:
+        ast.Name(l, n): return true
+        ast.Field(l, k, f): return _simple_place(k[0])
+        ast.TupIdx(l, k, n): return _simple_place(k[0])
+        _: pass
+    return false
+
+fn _share_bind_ok(cs: inout C, e: ast.Expr, t: string, owner: string) -> bool:
+    if not _can_share(&cs, t) or len(_share_fn(&cs, t)) == 0 or
+            not _place(e) or not _simple_place(e):
+        return false
+    n := _pname(e)
+    if len(n) == 0:
+        return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i >= cs.fnbase:
+                return cs.vown[i] == owner
+            if cs.vowned[i]:
+                return owner == "_parent" or cs.vown[i] == owner
+            if strings.starts_with(cs.vown[i], "_ina_"):
+                return cs.vown[i] == owner
+            return false
+    return false
+
+fn _shared_get_ok(cs: inout C, e: ast.Expr, mt: string, arena: string) -> bool:
+    if not _is_map(mt) or not strings.starts_with(mt, "M~"):
+        return false
+    mv := _mval(&cs, mt)
+    # A scalar/string value has no mutable nested part to protect. Marking the
+    # source map shared would force a full-map CoW on its next write for no
+    # benefit (the LRU benchmark: 21 MB -> 121 GB), so require a share fn.
+    if not _can_share(&cs, mv) or len(_share_fn(&cs, mv)) == 0 or not _simple_place(e):
+        return false
+    n := _pname(e)
+    if len(n) == 0:
+        return false
+    for i := len(cs.vnames) - 1; i >= 0; i -= 1:
+        if cs.vnames[i] == n:
+            if i < cs.fnbase and not cs.vowned[i] and not strings.starts_with(cs.vown[i], "_ina_"):
+                return false
+            if arena == "_parent" and cs.vown[i] != "_parent" and not cs.vowned[i]:
+                return false
+            return true
+    return false
+
+fn _shared_get_expr(cs: inout C, e: ast.Expr) -> bool:
+    if not cs.shared_get:
+        return false
+    match e:
+        ast.Index(l, k): return true
+        _: return false
+    return false
+
+fn _sidx(cs: inout C, n: string) -> int:
+    if len(cs.smap) != len(cs.sds):
+        cs.smap = []string: int
+        for i := 0; i < len(cs.sds); i += 1:
+            if not (cs.sds[i].name in cs.smap):
+                cs.smap[cs.sds[i].name] = i
+    p := _pfx(&cs)
+    if len(p) > 0 and (p + n) in cs.smap:
+        return cs.smap[p + n]
+    if n in cs.smap:
+        return cs.smap[n]
+    return -1
+
+fn _eidx(cs: inout C, n: string) -> int:
+    if len(cs.emap) != len(cs.eds):
+        cs.emap = []string: int
+        for i := 0; i < len(cs.eds); i += 1:
+            if not (cs.eds[i].name in cs.emap):
+                cs.emap[cs.eds[i].name] = i
+    p := _pfx(&cs)
+    if len(p) > 0 and (p + n) in cs.emap:
+        return cs.emap[p + n]
+    if n in cs.emap:
+        return cs.emap[n]
+    return -1
+
+fn _cidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.cnames); i += 1:
+            if cs.cnames[i] == p + n:
+                return i
+    for i := 0; i < len(cs.cnames); i += 1:
+        if cs.cnames[i] == n:
+            return i
+    return -1
+
+# An extern is called by its BARE C name with no arena: it is a foreign symbol,
+# not a Tycho proc. `./tychoc` emits `strx_parse_double(h_s, &(h_st))`.
+fn _isext(cs: inout C, n: string) -> bool:
+    for i := 0; i < len(cs.exn); i += 1:
+        if cs.exn[i] == n:
+            return true
+    return false
+
+# A MAP, not a scan. This is called once per emitted call and the table holds
+# every function in the program: callgrind put the linear version at 6.1% of a
+# self-compile, with its string compares showing up again under memcmp.
+fn _fidx(cs: inout C, n: string) -> int:
+    if len(cs.fmap) != len(cs.fds):
+        cs.fmap = []string: int
+        for i := 0; i < len(cs.fds); i += 1:
+            if not (cs.fds[i].name in cs.fmap):
+                cs.fmap[cs.fds[i].name] = i
+    p := _pfx(&cs)
+    if len(p) > 0 and (p + n) in cs.fmap:
+        return cs.fmap[p + n]
+    if n in cs.fmap:
+        return cs.fmap[n]
+    return -1
+
+# The generated-array registry. int/float/string reuse the runtime's own three
+# array types; everything else gets a stamped-out TychoArrK<n>.
+fn _akind(cs: inout C, elem: string) -> int:
+    if elem == "void":
+        _bad("array of 'void'")
+    for i := 0; i < len(cs.akinds); i += 1:
+        if cs.akinds[i] == elem:
+            return i
+    push(cs.akinds, elem)
+    return len(cs.akinds) - 1
+
+# `_apfx` names the family; `_arrf` names ONE operation and marks it live. Every
+# site that spells an array helper goes through it, which is what lets
+# `_arr_defs` write `_reserve` for a kind that reserves and not for one that
+# does not. int/float/string arrays are the RUNTIME's types, so marking them is
+# a no-op -- nothing gates them.
+fn _arrf(cs: inout C, elem: string, op: string) -> string:
+    n := _apfx(&cs, elem) + op
+    return _u(&cs, n)
+
+fn _apfx(cs: inout C, elem: string) -> string:
+    if elem == "int":
+        return "tycho_arr_int"
+    if elem == "float":
+        return "tycho_arr_float"
+    if elem == "string":
+        return "tycho_arr_str"
+    return "tycho_arr_K" + str(_akind(&cs, elem))
+
+# --- generics: monomorphised, one deep instance per distinct binding ---------
+# src/tychoc.c:17411 clones the template body per instance and resolves it; the
+# same shape here, with a `tpn/tpv` binding stack instead of a substitution pass.
+# A binding is pushed while an instance's types (or body) are resolved and popped
+# after, so a nested instantiation sees only its own parameters.
+
+fn _gsidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.gs); i += 1:
+            if cs.gs[i].name == p + n:
+                return i
+    for i := 0; i < len(cs.gs); i += 1:
+        if cs.gs[i].name == n:
+            return i
+    return -1
+
+fn _geidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.ge); i += 1:
+            if cs.ge[i].name == p + n:
+                return i
+    for i := 0; i < len(cs.ge); i += 1:
+        if cs.ge[i].name == n:
+            return i
+    return -1
+
+fn _gfidx(cs: inout C, n: string) -> int:
+    p := _pfx(&cs)
+    if len(p) > 0:
+        for i := 0; i < len(cs.gf); i += 1:
+            if cs.gf[i].name == p + n:
+                return i
+    for i := 0; i < len(cs.gf); i += 1:
+        if cs.gf[i].name == n:
+            return i
+    return -1
+
+fn _tpget(cs: inout C, n: string) -> string:
+    for i := len(cs.tpn) - 1; i >= 0; i -= 1:
+        if cs.tpn[i] == n:
+            return cs.tpv[i]
+    return ""
+
+fn _bind(cs: inout C, ns: [string], vs: [string]) -> int:
+    m := len(cs.tpn)
+    for i := 0; i < len(ns); i += 1:
+        push(cs.tpn, ns[i])
+        if i < len(vs):
+            push(cs.tpv, vs[i])
+        else:
+            push(cs.tpv, "")
+    return m
+
+fn _unbind(cs: inout C, m: int):
+    for len(cs.tpn) > m:
+        pop(cs.tpn)
+        pop(cs.tpv)
+
+fn _iidx(cs: inout C, key: string) -> int:
+    for i := 0; i < len(cs.ikey); i += 1:
+        if cs.ikey[i] == key:
+            return i
+    return -1
+
+# Without this a recursive generic at a GROWING type (`grow([x])` binding $T to
+# int, [int], [[int]] ...) never reaches the fixpoint and allocates until the
+# OOM killer fires. src/tychoc.c caps at the same 1024 and refuses.
+fn _inst_cap(n: int):
+    if n > 1024:
+        _bad("too many generic instantiations (> 1024) -- a recursive generic at a growing type?")
+
+# src/tychoc.c@type_mangle_ident: an instance is named by its type ARGUMENTS,
+# not by a serial, so the name is stable across unrelated edits. "" means this
+# type has no spelling here (a sized int, bytes, a handle) and the caller falls
+# back to the serial, which stays unique.
+fn _tmang(cs: inout C, t: string) -> string:
+    if t == "int" or t == "float" or t == "string" or t == "bool" or t == "char" or t == "void":
+        return t
+    if _is_arr(t):
+        e := _tmang(&cs, _elem(t))
+        if len(e) == 0:
+            return ""
+        return "arr_" + e
+    if _is_vec(t):
+        ve := _tmang(&cs, _velem(&cs, t))
+        if len(ve) == 0:
+            return ""
+        return "vec" + str(_vn(&cs, t)) + "_" + ve
+    if _is_map(t):
+        k := _tmang(&cs, _mkey(&cs, t))
+        v := _tmang(&cs, _mval(&cs, t))
+        if len(k) == 0 or len(v) == 0:
+            return ""
+        return "map_" + k + "_" + v
+    if _is_chan(t):
+        c := _tmang(&cs, _cinner(t))
+        if len(c) == 0:
+            return ""
+        return "chan_" + c
+    if _is_soa(t):
+        st := _tmang(&cs, cs.oks[strings.parse_int_prefix(_tname(t))])
+        if len(st) == 0:
+            return ""
+        return "soa_" + st
+    if _is_tup(t):
+        es := _telems(&cs, t)
+        out := "tup"
+        for i := 0; i < len(es); i += 1:
+            one := _tmang(&cs, es[i])
+            if len(one) == 0:
+                return ""
+            out = out + "_" + one
+        return out
+    if _is_optT(&cs, t):
+        inr := _tmang(&cs, _opt_inner(&cs, t))
+        if len(inr) == 0:
+            return ""
+        return "opt_" + inr
+    if _is_resT(&cs, t):
+        ei := _eidx(&cs, _tname(t))
+        ok := "void"
+        op := cs.eds[ei].vpay[_tag(&cs, ei, "Ok")].ptypes
+        if len(op) > 0:
+            ok = _tmang(&cs, op[0])
+        ep := cs.eds[ei].vpay[_tag(&cs, ei, "Err")].ptypes
+        er := ""
+        if len(ep) > 0:
+            er = _tmang(&cs, ep[0])
+        if len(ok) == 0 or len(er) == 0:
+            return ""
+        return "res_" + ok + "_" + er
+    if _is_struct(t) or _is_enum(t):
+        return _tname(t)
+    return ""
+
+# src/tychoc.c:2626@g_structs and src/tychoc.c:2671@g_enums append one `__<type>` per type PARAMETER.
+fn _instname(cs: inout C, gn: string, targs: [string]) -> string:
+    base := gn
+    for i := 0; i < len(targs); i += 1:
+        one := _tmang(&cs, targs[i])
+        if len(one) == 0:
+            base = gn + "__" + str(len(cs.ikey))
+            break
+        base = base + "__" + one
+    out := base
+    suffix := 2
+    for true:
+        clash := false
+        for nm in cs.iname:
+            if nm == out:
+                clash = true
+        for sd in cs.sds:
+            if sd.name == out:
+                clash = true
+        for ed in cs.eds:
+            if ed.name == out:
+                clash = true
+        if not clash:
+            break
+        out = base + "_" + str(suffix)
+        suffix += 1
+    return out
+
+fn _inst_struct(cs: inout C, n: string, targs: [string]) -> string:
+    gi := _gsidx(&cs, n)
+    gn := cs.gs[gi].name
+    key := "S|" + gn + "|" + _tjoin(targs)
+    ex := _iidx(&cs, key)
+    if ex >= 0:
+        return "S~" + cs.iname[ex]
+    _inst_cap(len(cs.ikey))
+    mang := _instname(&cs, gn, targs)
+    push(cs.ikey, key)
+    push(cs.iname, mang)
+    push(cs.iarg, _tjoin(targs))
+    push(cs.pendk, -1)
+    push(cs.sds, SD(mang, [], [], [], cs.gs[gi].packed, cs.gs[gi].aln))
+    si := len(cs.sds) - 1
+    m := _bind(&cs, cs.gs[gi].typarams, targs)
+    save := cs.cf
+    cs.cf = cs.gsf[gi]
+    for f in cs.gs[gi].fields:
+        push(cs.sds[si].fnames, f.name)
+        push(cs.sds[si].ftypes, _ty(&cs, f.ty))
+        push(cs.sds[si].fcaps, _capof(&cs, f.ty))
+    cs.cf = save
+    _unbind(&cs, m)
+    return "S~" + mang
+
+fn _inst_enum(cs: inout C, n: string, targs: [string]) -> string:
+    gi := _geidx(&cs, n)
+    gn := cs.ge[gi].name
+    key := "E|" + gn + "|" + _tjoin(targs)
+    ex := _iidx(&cs, key)
+    if ex >= 0:
+        return "E~" + cs.iname[ex]
+    _inst_cap(len(cs.ikey))
+    mang := _instname(&cs, gn, targs)
+    push(cs.ikey, key)
+    push(cs.iname, mang)
+    push(cs.iarg, _tjoin(targs))
+    push(cs.pendk, -1)
+    push(cs.eds, ED(mang, [], []))
+    push(cs.edp, cs.fpfx[cs.gef[gi]])
+    ei := len(cs.eds) - 1
+    m := _bind(&cs, cs.ge[gi].typarams, targs)
+    save := cs.cf
+    cs.cf = cs.gef[gi]
+    for v in cs.ge[gi].variants:
+        push(cs.eds[ei].vnames, v.name)
+        ps := []string
+        for pt in v.payload:
+            push(ps, _ty(&cs, pt))
+        push(cs.eds[ei].vpay, VD(v.name, ps))
+    cs.cf = save
+    _unbind(&cs, m)
+    return "E~" + mang
+
+# The instance's own type arguments, read back out of the registry so a call
+# site can unify a template type against a concrete instance.
+fn _inst_of(cs: inout C, mang: string) -> [string]:
+    for i := 0; i < len(cs.iname); i += 1:
+        if cs.iname[i] == mang:
+            return split(cs.iarg[i], "|")
+    return []string
+
+# `intern__Interner` -> `Interner`; a name with no package prefix is unchanged.
+fn _shortn(n: string) -> string:
+    for i := 0; i + 1 < len(n); i += 1:
+        if n[i] == 95 and n[i + 1] == 95:
+            return n[i + 2:]
+    return n
+
+fn _inst_base(cs: inout C, mang: string) -> string:
+    for i := 0; i < len(cs.iname); i += 1:
+        if cs.iname[i] == mang:
+            return split(cs.ikey[i], "|")[1]
+    return ""
+
+# A call site binds the type parameters by matching the DECLARED parameter type
+# against the argument's concrete type -- the same shape src/tychoc.c infers,
+# structurally and left to right, first binding wins.
+# Is a struct/enum declared whose SHORT name is `n`? The tables key on the
+# package-mangled name, so the comparison drops the prefix.
+fn _declared_short(cs: inout C, n: string) -> bool:
+    for i := 0; i < len(cs.sds); i += 1:
+        if _shortn(cs.sds[i].name) == n:
+            return true
+    for i := 0; i < len(cs.eds); i += 1:
+        if _shortn(cs.eds[i].name) == n:
+            return true
+    return false
+
+fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
+    if len(a) == 0:
+        return
+    match t:
+        ast.TParam(n):
+            for i := 0; i < len(tps); i += 1:
+                if tps[i] == n and len(bs[i]) == 0:
+                    bs[i] = a
+            return
+        ast.TArr(es):
+            if _is_arr(a):
+                _unify(&cs, es[0], _elem(a), tps, &bs)
+            return
+        ast.TSoa(es):
+            if _is_soa(a):
+                _unify(&cs, es[0], _selem(&cs, a), tps, &bs)
+            return
+        # A FUNCTION type. Without this arm `Plan($T)` holding
+        # `[fn($T) -> $T]` cannot bind $T from a `[fn(int) -> int]` argument:
+        # TArr recurses to the element, finds a fn, and stops. ast.TFn stores
+        # the params in order with the return type LAST (compiler/ast/ast.ty:22).
+        # `bounded[N]T` lowers to the dynamic array (Phase 7b), so its element
+        # unifies exactly as an array's does -- `Box($T)` with `xs: bounded[4]$T`.
+        ast.TBnd(nn, es):
+            if _is_arr(a):
+                _unify(&cs, es[0], _elem(a), tps, &bs)
+            return
+        ast.TVec(nn3, es):
+            if _is_vec(a):
+                _unify(&cs, es[0], _velem(&cs, a), tps, &bs)
+            return
+        ast.TFix(nn2, es):
+            # `[$N]$T` -- the SIZE is not a type parameter (emit lowers every
+            # array to the dynamic one and reads N as the argument's length),
+            # but the ELEMENT still is.
+            if _is_arr(a):
+                _unify(&cs, es[0], _elem(a), tps, &bs)
+            return
+        ast.TFn(hr, es):
+            if _is_fn(a):
+                aps := _fps(&cs, a)
+                np := len(es)
+                if hr:
+                    np = np - 1
+                for fi := 0; fi < np and fi < len(aps); fi += 1:
+                    _unify(&cs, es[fi], aps[fi], tps, &bs)
+                if hr and np < len(es):
+                    _unify(&cs, es[np], _fret(&cs, a), tps, &bs)
+            return
+        ast.TMap(es):
+            if _is_map(a):
+                _unify(&cs, es[0], _mkey(&cs, a), tps, &bs)
+                _unify(&cs, es[1], _mval(&cs, a), tps, &bs)
+            return
+        ast.TTup(es):
+            if _is_tup(a):
+                el := _telems(&cs, a)
+                for i := 0; i < len(es) and i < len(el); i += 1:
+                    _unify(&cs, es[i], el[i], tps, &bs)
+            return
+        ast.TName(q, n, targs):
+            if len(targs) == 0:
+                # A bare `T` is the `$T` of the same short name UNLESS a type of
+                # that name is DECLARED: corelib/testing has both (`t: inout T`
+                # is the struct, `got: $T` the parameter), and binding the
+                # struct first gave every instance the wrong element type.
+                if _declared_short(&cs, n):
+                    return
+                for i := 0; i < len(tps); i += 1:
+                    if tps[i] == n and len(bs[i]) == 0:
+                        bs[i] = a
+                return
+            if n == "Option" and _is_optT(&cs, a):
+                ei := _eidx(&cs, _tname(a))
+                _unify(&cs, targs[0], cs.eds[ei].vpay[1].ptypes[0], tps, &bs)
+                return
+            if n == "Channel" and _is_chan(a):
+                _unify(&cs, targs[0], _cinner(a), tps, &bs)
+                return
+            if n == "Task" and _is_task(a):
+                _unify(&cs, targs[0], _cinner(a), tps, &bs)
+                return
+            if n == "Result" and _is_resT(&cs, a):
+                ei2 := _eidx(&cs, _tname(a))
+                ok := cs.eds[ei2].vpay[0].ptypes
+                if len(targs) > 0 and len(ok) > 0:
+                    _unify(&cs, targs[0], ok[0], tps, &bs)
+                elif len(targs) > 0:
+                    # `Result(void, E)`: the Ok arm carries NO payload, so the
+                    # pattern's `$T` has nothing to bind against and the call
+                    # was refused as uninferrable. It is void.
+                    _unify(&cs, targs[0], "void", tps, &bs)
+                er := cs.eds[ei2].vpay[1].ptypes
+                if len(targs) > 1 and len(er) > 0:
+                    _unify(&cs, targs[1], er[0], tps, &bs)
+                return
+            if not (_is_struct(a) or _is_enum(a)):
+                return
+            # The pattern names the template UNQUALIFIED (`Interner($K,$V)` as
+            # written inside its own package) while the instance's base carries
+            # the package prefix, so compare the short names.
+            if _shortn(_inst_base(&cs, _tname(a))) != _shortn(n):
+                return
+            ia := _inst_of(&cs, _tname(a))
+            for i := 0; i < len(targs) and i < len(ia); i += 1:
+                _unify(&cs, targs[i], ia[i], tps, &bs)
+            return
+        _: return
+    return
+
+fn _blank(n: int) -> [string]:
+    out := []string
+    for i := 0; i < n; i += 1:
+        push(out, "")
+    return out
+
+fn _inst_fn(cs: inout C, n: string, targs: [string]) -> int:
+    gi := _gfidx(&cs, n)
+    gn := cs.gf[gi].name
+    key := "F|" + gn + "|" + _tjoin(targs)
+    ex := _iidx(&cs, key)
+    if ex >= 0:
+        return _fidx(&cs, cs.iname[ex])
+    _inst_cap(len(cs.ikey))
+    mang := _instname(&cs, gn, targs)
+    push(cs.ikey, key)
+    push(cs.iname, mang)
+    push(cs.iarg, _tjoin(targs))
+    push(cs.pendk, -1)
+    ii := len(cs.ikey) - 1
+    m := _bind(&cs, cs.gf[gi].typarams, targs)
+    save := cs.cf
+    cs.cf = cs.gff[gi]
+    pn := []string
+    pt := []string
+    pio := []bool
+    psk := []bool
+    psz := []string
+    pv := false
+    for prm in cs.gf[gi].params:
+        if len(prm.ty) == 0:
+            _bad("untyped parameter on '" + n + "'")
+        one := _ty(&cs, prm.ty[0])
+        if prm.is_variadic:
+            pv = true
+            one = "[" + one + "]"
+        push(pn, prm.name)
+        push(pt, one)
+        push(pio, prm.is_inout)
+        push(psk, prm.is_sink)
+        push(psz, _sizep_of(prm.ty))
+    rt := _tyo(&cs, cs.gf[gi].ret)
+    cs.cf = save
+    _unbind(&cs, m)
+    push(cs.fds, FD(mang, pn, pt, pio, psk, pv, rt, psz))
+    cs.pendk[ii] = len(cs.fds) - 1
+    return len(cs.fds) - 1
+
+# src/tychoc.c@c_type returns a value type WITH a trailing space and a pointer
+# type ending in `*`, which is visible in every `(T){0}` it prints.
+fn _ctyz(cs: inout C, t: string) -> string:
+    c := _cty(&cs, t)
+    if strings.ends_with(c, "*"):
+        return c
+    return c + " "
+
+fn _cty(cs: inout C, t: string) -> string:
+    if t == "int" or t == "char":
+        return "tycho_int"
+    if t == "float":
+        return "double"
+    if t == "bool":
+        return "int"
+    if t == "string" or t == "bytes":
+        return "char *"
+    if t == "ptr":
+        return "void *"
+    if t == "u8":
+        return "unsigned char"
+    if t == "u16":
+        return "unsigned short"
+    if t == "u32":
+        return "unsigned int"
+    if t == "u64":
+        return "unsigned long long"
+    if t == "i8":
+        return "signed char"
+    if t == "i16":
+        return "short"
+    if t == "i32":
+        return "int"
+    if t == "i64":
+        return "long long"
+    if t == "f32":
+        return "float"
+    if t == "void":
+        return "void"
+    if _is_handle(t):
+        return "void *"
+    if _is_chan(t):
+        return "HChan *"
+    if _is_task(t):
+        return "HTask *"
+    if _is_struct(t):
+        return "S_" + _tname(t)
+    if _is_enum(t):
+        if _inline_enum(&cs, _tname(t)):
+            return "E_" + _tname(t)
+        return "E_" + _tname(t) + " *"
+    if _is_tup(t):
+        return "TychoTup" + _tname(t)
+    if _is_fn(t):
+        return "FnC" + _tname(t)
+    if _is_map(t):
+        return "TychoMapM" + _tname(t)
+    if _is_soa(t):
+        return "Soa" + _tname(t)
+    if _is_vec(t):
+        return "TychoVecV" + _tname(t)
+    if _is_arr(t):
+        e := _elem(t)
+        if e == "int":
+            return "TychoArrInt"
+        if e == "float":
+            return "TychoArrFloat"
+        if e == "string":
+            return "TychoArrStr"
+        return "TychoArrK" + str(_akind(&cs, e))
+    _bad("no C type for '" + t + "'")
+    return ""

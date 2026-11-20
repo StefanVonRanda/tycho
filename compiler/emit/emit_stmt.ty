@@ -1,0 +1,1376 @@
+package emit
+
+import "../ast"
+import "../parse"
+import "core:strings"
+
+# Places (assignment targets), the statement emitter (_stmt), and match with
+# its arm payload borrow. Moved verbatim out of emit.ty.
+
+# --- places (assignment targets) --------------------------------------------
+
+fn _lvalue(cs: inout C, e: ast.Expr) -> (string, string):
+    match e:
+        ast.Name(l, n):
+            t := _vtype(&cs, n)
+            if len(t) == 0:
+                _bad("assignment to unknown name '" + n + "'")
+            return (_vcname(&cs, n), t)
+        ast.Field(l, r, f):
+            # The scatter write `ps[i].x = v`. The projection is already a C
+            # lvalue, so the read and write paths emit the same expression.
+            match r[0]:
+                ast.Index(l3, k3):
+                    bc3, bt3 := _lvalue(&cs, k3[0])
+                    if _is_soa(bt3):
+                        ic4, it4 := _ex(&cs, k3[1])
+                        return _soafld(&cs, bc3, bt3, ic4, f)
+                _: pass
+            rc, rt := _lvalue(&cs, r[0])
+            lc8, lt8, lok8 := _lane_place(&cs, rc, rt, f)
+            if lok8:
+                return (lc8, lt8)
+            si := _sidx(&cs, _tname(rt))
+            if si < 0:
+                _bad("field assignment on a non-struct")
+            for i := 0; i < len(cs.sds[si].fnames); i += 1:
+                if cs.sds[si].fnames[i] == f:
+                    return ("((" + rc + ").f_" + f + ")", cs.sds[si].ftypes[i])
+            _bad("no field '" + f + "' on " + _tname(rt))
+        ast.TupIdx(l, k, n):
+            rc, rt := _lvalue(&cs, k[0])
+            if not _is_tup(rt):
+                _bad("`.` assignment on a non-tuple")
+            es := _telems(&cs, rt)
+            return ("((" + rc + ").f" + str(n) + ")", es[n])
+        ast.Index(l, k):
+            rc, rt := _lvalue(&cs, k[0])
+            ic, it := _ex(&cs, k[1])
+            if _is_map(rt):
+                vt := _mval(&cs, rt)
+                return ("(*" + _mpfx(&cs, rt) + "_slotptr(" + _ownerof(&cs, k[0]) + ", &(" + rc + "), " +
+                    _keyrt(&cs, _mkey(&cs, rt), ic) + "))", vt)
+            if _is_vec(rt):
+                lk2 := _vlane(&cs, rt, k[1])
+                if lk2 >= 0:
+                    return ("((" + rc + ").v[" + str(lk2) + "])", _velem(&cs, rt))
+                return ("(*" + _u(&cs, _vecf(&cs, rt, "_ptr")) + "(&(" + rc + "), " + ic + "))",
+                    _velem(&cs, rt))
+            if not _is_arr(rt):
+                _bad("indexed assignment on a non-array")
+            et := _elem(rt)
+            if _in_range(&cs, k[0], k[1]):   # monotone loop index: project without the check
+                _bnote(&cs, l, "elided monotone")
+                return ("((" + rc + ").data[" + ic + "])", et)
+            _bnote(&cs, l, "kept set")
+            return ("(*" + _arrf(&cs, et, "_ptr") + "(&(" + rc + "), " + ic + "))", et)
+        ast.Call(l, q, n, tas, args):
+            # A subscript call IS a place: `g.edge(1).weight = 99` writes
+            # through the projection, so the lvalue path inlines it too.
+            sxl := _subidx(&cs, n)
+            if sxl < 0:
+                _bad("unsupported assignment target")
+            ua2 := []ast.Expr
+            if len(q) > 0:
+                push(ua2, ast.Name(l, q))
+            for a in args:
+                push(ua2, a)
+            return _subinline(&cs, sxl, ua2, true)
+        ast.CallVal(l, k):
+            sc2, st4, ok4 := _subcallval(&cs, k, true)
+            if not ok4:
+                _bad("unsupported assignment target")
+            return (sc2, st4)
+        _: _bad("unsupported assignment target")
+    return ("", "")
+
+# --- statements -------------------------------------------------------------
+
+# src/tychoc.c@cond_unwrap -- an if/while condition drops ONE redundant outer
+# paren pair, so `if ((a > b))` reads `if (a > b)`.
+# src/tychoc.c@expr_has_orreturn
+fn _hasorr(e: ast.Expr) -> bool:
+    match e:
+        ast.OrRet(l, b9, k): return true
+        _: pass
+    for c in ast.kids(e):
+        if _hasorr(c):
+            return true
+    return false
+
+# src/tychoc.c@expr_has_call
+fn _hascall(e: ast.Expr) -> bool:
+    match e:
+        ast.Call(l, q, n, t, a): return true
+        ast.CallVal(l, k): return true
+        _: pass
+    for c in ast.kids(e):
+        if _hascall(c):
+            return true
+    return false
+
+# src/tychoc.c@expr_refs_local: does this initialiser read the name it binds?
+# A lambda contributes only its CAPTURES, so a parameter of the same name is
+# not a reference to the enclosing binding.
+fn _refslocal(e: ast.Expr, n: string) -> bool:
+    match e:
+        ast.Name(l, v): return v == n
+        ast.Call(l, q, cn, t, a):
+            if len(q) == 0 and cn == n:      # calling the fn value it rebinds
+                return true
+        ast.Lambda(l, p, r, b):
+            for q in p:
+                if q.name == n:
+                    return false
+        _: pass
+    for c in ast.kids(e):
+        if _refslocal(c, n):
+            return true
+    return false
+
+fn _cunwrap(s: string) -> string:
+    n := len(s)
+    if n < 3 or s[0] != 40:
+        return s
+    if s[1] == 123:
+        return s
+    d := 0
+    i := 0
+    for i < n:
+        c := s[i]
+        if c == 34 or c == 39:
+            i += 1
+            for i < n and s[i] != c:
+                if s[i] == 92 and i + 1 < n:
+                    i += 1
+                i += 1
+            if i >= n:
+                return s
+            i += 1
+            continue
+        if c == 40:
+            d += 1
+        elif c == 41:
+            d -= 1
+            if d == 0:
+                if i + 1 != n:
+                    return s
+                return s[1:n - 1]
+        i += 1
+    return s
+
+fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
+    match s:
+        ast.PassS(l):
+            return ""                  # src/tychoc.c:16991 -- the no-op emits none
+        ast.ExprStmt(l, es):
+            # src/tychoc.c@S_EXPR: a top-level statement's transients live in a
+            # per-statement arena. Only at the proc top level, and never around
+            # an or_return (which leaves the block).
+            sav := cs.arena
+            sw := cs.want
+            cs.want = ""
+            if sav == "&_scope" and not _hasorr(es[0]):
+                cs.arena = "&_t"
+                c2, t2 := _ex(&cs, es[0])
+                cs.arena = sav
+                cs.want = sw
+                # no transient landed in it -- do not pay arena_new/arena_free
+                if not _uses_t(c2):
+                    return ind + c2 + ";\n"
+                return ind + "{ Arena _t = arena_new(0); " + c2 + "; arena_free(&_t); }\n"
+            c, t := _ex(&cs, es[0])
+            cs.want = sw
+            return ind + c + ";\n"
+        ast.Decl(l, n, ann, rhs, vv):
+            if len(vv) > 0:
+                # `x := if c: a else: b` -- declare the variable, then run the
+                # control statement with every value tail rewritten to assign it.
+                t0 := ""
+                if len(ann) > 0:
+                    t0 = _ty(&cs, ann[0])
+                if len(t0) == 0:
+                    t0 = "?"
+                cn0 := _push(&cs, n, t0)
+                if len(ann) > 0:
+                    cs.vcaps[len(cs.vcaps) - 1] = _capof(&cs, ann[0])
+                slot := len(cs.vnames) - 1
+                body := _stmt(&cs, parse.rewrite_tails(vv[0], "assign", n, []ast.Expr), ind)
+                cs.vlocal[slot] = true
+                if cs.vtypes[slot] == "?":
+                    _bad("a value-if/value-match with no value tail to type it")
+                state := _append_binding(&cs, n, cs.vtypes[slot], cn0, ind)
+                return ind + _ctyz(&cs, cs.vtypes[slot]) + "" + cn0 + ";\n" + state + body
+            want := ""
+            if len(ann) > 0:
+                want = _ty(&cs, ann[0])
+            if len(rhs) == 0:
+                _bad("a declaration with no initialiser")
+            if len(ann) == 0 and not _is_arr(cs.want):
+                # `out := []` -- the element type comes from the first push into
+                # it, which is only known once the rest of the body is walked.
+                # The declaration is emitted with a placeholder and patched in
+                # _fnbody, the same shape the value-if declaration uses.
+                match rhs[0]:
+                    ast.EmptyArr(l2, ts):
+                        if len(ts) == 0:
+                            cs.tmp += 1
+                            kk := cs.tmp
+                            push(cs.pk, kk)
+                            push(cs.ptv, "")
+                            cnp := _push(&cs, n, "?A" + str(len(cs.pk) - 1))
+                            return ind + "_PT" + str(kk) + " " + cnp + " = _PE" + str(kk) + ";\n"
+                    ast.NoneE(l2):
+                        # `o := None` -- the Option is fixed by the first
+                        # assignment, exactly as a bare `[]`'s element is fixed
+                        # by the first push.
+                        cs.tmp += 1
+                        kn := cs.tmp
+                        push(cs.pk, kn)
+                        push(cs.ptv, "")
+                        cnn := _push(&cs, n, "?A" + str(len(cs.pk) - 1))
+                        return ind + "_PT" + str(kn) + " " + cnn + " = _PE" + str(kn) + ";\n"
+                    _: pass
+            # src/tychoc.c@S_DECL: a NON-heap top-level local whose RHS calls
+            # something builds that call's transients in a per-statement arena.
+            sav5 := cs.arena
+            uset := sav5 == "&_scope" and _hascall(rhs[0]) and not _hasorr(rhs[0])
+            # src/tychoc.c:16085 -- the return-slot move. A local this function
+            # hands back by name is built in the caller's arena from birth, so
+            # the return copies nothing. Top level only (_curown is still the
+            # proc's own &_scope), never a loop or if-body scratch. The arena
+            # has to move with it: a literal is built through cs.arena, and
+            # recording _parent while building in &_scope returns freed memory.
+            # A decl inside a loop body belongs to that body's scratch, not the
+            # whole function: prongB dispatch kept every pass's closures alive,
+            # 62 MB against ./tychoc's 1 MB. _push already records _curown.
+            own5 := _curown(&cs)
+            if _curown(&cs) == "&_scope" and _heap(&cs, cs.cur_ret) and _isesc(&cs, n) and cs.ret_local != n:
+                own5 = "_parent"
+            promoted := ""
+            if cs.loopdepth > 0 and len(want) > 0 and _heap(&cs, want):
+                promoted = _push_decl_arena(&cs, n)
+                if len(promoted) > 0:
+                    own5 = promoted
+            if uset:
+                cs.arena = "&_t"
+            elif len(promoted) > 0:
+                cs.arena = promoted
+            elif own5 == "_parent":
+                cs.arena = "_parent"
+            path5 := cs.projection
+            cs.projection = []string
+            if cs.ret_local == n and cs.ret_update < 0:
+                cs.projection = cs.ret_fields
+            oldconcat := cs.concat_scratch
+            if len(promoted) > 0:
+                cs.concat_scratch = sav5
+            cs.share_place = true
+            c, t := _rhs3(&cs, rhs[0], want, own5, true)
+            cs.share_place = false
+            cs.concat_scratch = oldconcat
+            cs.projection = path5
+            cs.arena = sav5
+            if len(want) > 0:
+                t = want
+            if uset and _heap(&cs, t):
+                uset = false
+                c = _sub_t(c, own5)
+            if uset and not _uses_t(c):
+                uset = false
+            # src/tychoc.c:16129 -- `y := f(y)` must land in a temp declared
+            # BEFORE the new C local, or the initialiser reads the inner
+            # uninitialised one.
+            # A place rooted in a CALL result -- `op := cur(ts, p).text` -- is the
+            # one shape _rhs3 neither copies nor moves: it aliases a field of a
+            # temporary built in the statement scratch. Recording own5 for it
+            # below would then be a lie, and every later _shares believes it.
+            if _place(rhs[0]) and _heap(&cs, t) and len(_rootname(rhs[0])) == 0:
+                c = _copy(&cs, c, t, own5)
+            # The RHS is resolved before this new binding enters Tycho scope.
+            # If it calls a same-named function, however, declaring h_n before
+            # the initializer would make C resolve that call to the local.
+            sh := _refslocal(rhs[0], n)
+            cn := _push(&cs, n, t)
+            cs.vlocal[len(cs.vlocal) - 1] = true
+            if len(ann) > 0:
+                cs.vcaps[len(cs.vcaps) - 1] = _capof(&cs, ann[0])
+            if own5 == "_parent" and _heap(&cs, t):
+                cs.vown[len(cs.vown) - 1] = "_parent"
+            elif len(promoted) > 0:
+                cs.vown[len(cs.vown) - 1] = promoted
+            elif _place(rhs[0]) and _heap(&cs, t):
+                # A PLACE right-hand side lands in own5 whichever way _rhs3
+                # took it -- copied, shared, or moved, all three leave the value
+                # there. _push recorded _curown instead, which inside a loop is
+                # the body scratch, so `h_text = tycho_str_copy(&_scope, ...)`
+                # was then copied AGAIN into every Tok built from it.
+                cs.vown[len(cs.vown) - 1] = own5
+            out9 := ind + _ctyz(&cs, t) + "" + cn + " = " + c + ";\n"
+            if _share_bind_ok(&cs, rhs[0], t, own5):
+                sh1 := _share_call(&cs, t, cn)
+                src9, _st9 := _lvalue(&cs, rhs[0])
+                sh2 := _share_call(&cs, t, src9)
+                if len(sh1) > 0:
+                    out9 = out9 + ind + sh1 + ";\n"
+                if len(sh2) > 0:
+                    out9 = out9 + ind + sh2 + ";\n"
+            if sh:
+                out9 = ind + _ctyz(&cs, t) + "_sh_" + n + " = " + c + "; " +
+                    _ctyz(&cs, t) + cn + " = _sh_" + n + ";\n"
+            if uset:
+                out9 = ind + _ctyz(&cs, t) + "" + cn + "; { Arena _t = arena_new(0); " +
+                    cn + " = " + c + "; arena_free(&_t); }\n"
+                if sh:
+                    out9 = ind + _ctyz(&cs, t) + "_sh_" + n +
+                        "; { Arena _t = arena_new(0); _sh_" + n + " = " + c +
+                        "; arena_free(&_t); } " + _ctyz(&cs, t) + cn + " = _sh_" + n + ";\n"
+            return out9 + _append_binding(&cs, n, t, cn, ind)
+        ast.ConstS(l, n, k):
+            # src/tychoc.c:16990 -- a local const emits NO runtime storage; each
+            # use folds to the literal. Binding the C "name" to the literal code
+            # itself makes _vcname do the folding at every read.
+            c, t := _ex(&cs, k[0])
+            _push(&cs, n, t)
+            cs.vcn[len(cs.vcn) - 1] = c
+            return ""
+        ast.Assign(l, n, k):
+            t := _vtype(&cs, n)
+            if len(t) == 0:
+                _bad("assignment to unknown name '" + n + "'")
+            if strings.starts_with(t, "?A"):
+                # the first assignment is what types a pending binding
+                pi9 := strings.parse_int_prefix(t[2:])
+                gc, gt := _ex(&cs, k[0])
+                cs.ptv[pi9] = gt
+                _vset(&cs, n, gt)
+                return ind + _vcname(&cs, n) + " = " + gc + ";\n"
+            if t == "?":
+                t = ""
+            # `out = out + X` on an accumulator becomes an in-place append,
+            # which is what makes a concat loop linear instead of quadratic.
+            if (t == "string" or t == "bytes") and len(_accof(&cs, n)) > 0:
+                match k[0]:
+                    ast.Binop(l9, op9, bk9):
+                        if op9 == "+" and len(bk9) == 2:
+                            # The accumulator sits at the LEFT SPINE's leaf:
+                            # `doc = doc + a + b + c` parses as (((doc+a)+b)+c),
+                            # so only walking one level missed every multi-term
+                            # append and materialised a whole copy per term --
+                            # bench/json needed 7.2 GiB and died.
+                            terms := []ast.Expr
+                            push(terms, bk9[1])
+                            spine := bk9[0]
+                            for true:
+                                done9 := true
+                                match spine:
+                                    ast.Binop(l7, op7, bk7):
+                                        if op7 == "+" and len(bk7) == 2:
+                                            push(terms, bk7[1])
+                                            spine = bk7[0]
+                                            done9 = false
+                                    _: pass
+                                if done9:
+                                    break
+                            isself := false
+                            match spine:
+                                ast.Name(l8, n8):
+                                    if n8 == n:
+                                        isself = true
+                                _: pass
+                            # Inout state also survives ordinary rebinds. Check
+                            # each statement: later pieces must not observe an
+                            # already-grown prefix, nor may a piece mutate it.
+                            for term in terms:
+                                if _mut_e(term, n) or (len(terms) >= 2 and _mentions(term, n)):
+                                    isself = false
+                            if isself:
+                                state9 := _append_ptr(&cs, n)
+                                ptr9 := "&" + _vcname(&cs, n)
+                                append_code := ""   # distinct from the declaration formatter's out9: keep accumulator recognition
+                                # The appended TERMS are copied into the
+                                # accumulator's own buffer, so their
+                                # intermediates die with the statement -- in the
+                                # function's arena they lived to the end of the
+                                # run (bench/json: 5.7 GiB).
+                                # src/tychoc.c:16370-16390 -- the appended terms
+                                # are built in the ACCUMULATOR'S arena, one plain
+                                # statement each. The `_t` scratch this used was
+                                # an optimisation the reference does not have.
+                                ow9 := _ownerof(&cs, ast.Name(l, n))
+                                sav9 := cs.arena
+                                cs.arena = ow9
+                                # src/tychoc.c:16308-16364 -- two or more pieces
+                                # are pre-evaluated into `_ap<n>` temps against
+                                # the accumulator's ORIGINAL value, THEN appended
+                                # in source order. The first append grows the
+                                # buffer, so an operand read afterwards would see
+                                # the grown value. The ids are reserved before any
+                                # operand is generated, because generating one can
+                                # itself take numbers off the same counter.
+                                if len(terms) >= 2:
+                                    id0 := cs.tmp
+                                    cs.tmp += len(terms)
+                                    aps := []string
+                                    for q8 := len(terms) - 1; q8 >= 0; q8 -= 1:
+                                        tc8, tt8 := _ex(&cs, terms[q8])
+                                        cty8 := "char*"
+                                        fn8 := "tycho_str_append"
+                                        if tt8 != "string" and tt8 != "bytes":
+                                            cty8 = "char"
+                                            fn8 = "tycho_str_append_char"
+                                        nm8 := "_ap" + str(id0 + len(aps))
+                                        push(aps, fn8 + "(" + ow9 + ", " + ptr9 +
+                                            ", " + state9 + ", " + nm8 + ");\n")
+                                        append_code = append_code + ind + cty8 + " " + nm8 + " = " + tc8 + ";\n"
+                                    for a8 in aps:
+                                        append_code = append_code + ind + a8
+                                    cs.arena = sav9
+                                    return append_code
+                                for q9 := len(terms) - 1; q9 >= 0; q9 -= 1:
+                                    tc9, tt9 := _ex(&cs, terms[q9])
+                                    fnq := "tycho_str_append"
+                                    if tt9 != "string" and tt9 != "bytes":
+                                        fnq = "tycho_str_append_char"
+                                    append_code = append_code + ind + fnq + "(" + ow9 +
+                                        ", " + ptr9 + ", " + state9 + ", " + tc9 + ");\n"
+                                cs.arena = sav9
+                                return append_code
+                    _: pass
+            # The value is built in the TARGET's arena. For an `inout` string
+            # or array parameter that is the caller's arena, not this scope --
+            # `pre = pre + "..."` inside emit@_hoist_legs was allocating the new
+            # string in the callee's _scope and writing the pointer through, so
+            # the caller was left holding freed memory the moment the callee
+            # returned. It reads correctly whenever the freed block still holds
+            # the bytes, which is why it survived: the tree was green by luck,
+            # and any perturbation of emit.ty could expose it.
+            ow4 := _ownerof(&cs, ast.Name(l, n))
+            sa4 := cs.arena
+            # ...but only a HEAP target owns anything. `sum = sum + f(x)` at an
+            # int target has nothing to place in sum's arena, and hoisting the
+            # whole right-hand side out of the loop scratch is what kept every
+            # transient f() built alive for the rest of the function.
+            if len(t) == 0 or _heap(&cs, t):
+                cs.arena = ow4
+            cs.rebuild_name = ""
+            cs.rebuild_paths = []string
+            if strings.starts_with(t, "S~") and _rebuild_owned(&cs, n, ow4):
+                match k[0]:
+                    ast.Call(l4, q4, ctor4, tas4, args4):
+                        paths4 := []string
+                        if _rebuild_reads(&cs, k[0], n, &paths4):
+                            cs.rebuild_name = n
+                            cs.rebuild_paths = paths4
+                    _: pass
+            fo4 := _own_site(&cs, n, k)
+            if len(fo4) > 0:
+                cs.force_own = fo4
+            rc, rt := _rhs3(&cs, k[0], t, ow4, true)
+            cs.force_own = ""
+            cs.force_orig = ""
+            cs.rebuild_name = ""
+            cs.rebuild_paths = []string
+            cs.arena = sa4
+            if len(t) == 0:
+                _vset(&cs, n, rt)
+            # src/tychoc.c@do_recycle. `a = step(a)` in a loop leaves the OLD
+            # spine unreachable but still charged to the arena, so it grows once per
+            # iteration: bench/prongB iter-transform ran 1534 MB against ./tychoc's
+            # 4 MB. Soundness comes from the read count -- move-on-last-use only
+            # moves a var read EXACTLY once, so >= 2 reads means this var never
+            # sourced a move and cannot be sharing its buffer with a live name.
+            # An inout target owns nothing here (its arena is the caller's `_ina_`),
+            # and an accumulator is appended to rather than replaced.
+            if len(cs.lmark) > 0 and _is_arr(t) and len(_accof(&cs, n)) == 0 and
+                    not strings.starts_with(ow4, "_ina_") and _creads_b(cs.pbody, n) >= 2:
+                rid := _fresh(&cs, "_rec")
+                cn4 := _vcname(&cs, n)
+                return ind + _cty(&cs, t) + " " + rid + " = " + rc + ";\n" +
+                    ind + "if (" + cn4 + ".data && " + cn4 + ".data != " + rid +
+                    ".data) arena_recycle(" + ow4 + ", " + cn4 + ".data, (size_t)" +
+                    cn4 + ".cap * sizeof(*" + cn4 + ".data));\n" +
+                    ind + cn4 + " = " + rid + ";\n"
+            return ind + _vcname(&cs, n) + " = " + rc + ";\n"
+        ast.PlaceSet(l, k):
+            # `m[f()] += 1` desugars to `m[f()] = m[f()] + 1` with the SAME key
+            # node on both sides; hoist every side-effecting leg into a temp so
+            # each is evaluated exactly once, in source order, as src/tychoc.c does.
+            rhs := k[1]
+            pre := ""
+            tmps := []string
+            lhs := _hoist_legs(&cs, k[0], ind, &pre, &tmps)
+            if len(tmps) > 0:
+                match rhs:
+                    ast.Binop(l3, op3, bk):
+                        # Only compound assignment copies the original place into
+                        # the RHS. A plain `place = len(other)` must not substitute
+                        # its index temps into that unrelated call argument.
+                        if len(bk) > 0 and _same_place(bk[0], k[0]):
+                            n3 := 0
+                            rhs = ast.Binop(l3, op3, [_subst_legs(bk[0], tmps, &n3), bk[1]])
+                    _: pass
+            k = [lhs, rhs]
+            match k[0]:
+                ast.Index(l5, k5):
+                    bc5, bt5 := _lvalue(&cs, k5[0])
+                    if _is_map(bt5):
+                        keyt := _mkey(&cs, bt5)
+                        valt := _mval(&cs, bt5)
+                        keyc, _keytype := _ex(&cs, k5[1])
+                        keytmp := _fresh(&cs, "_mk")
+                        keyct := _cty(&cs, keyt)
+                        if _kclass(&cs, keyt) == "enum":
+                            keyct = "tycho_int"
+                        valtmp := _fresh(&cs, "_mv")
+                        owmap := _ownerof(&cs, k5[0])
+                        scratchmap := _curown(&cs)
+                        fresh := not _place(k[1]) and _can_share(&cs, valt)
+                        vmap := scratchmap
+                        if fresh:
+                            vmap = owmap
+                        savemap := cs.arena
+                        cs.arena = vmap
+                        valc, _valt := _rhs2(&cs, k[1], valt, vmap)
+                        cs.arena = savemap
+                        pfn := _mpfx(&cs, bt5) + "_put"
+                        if fresh:
+                            pfn = pfn + "_fresh"
+                        return pre + ind + keyct + " " + keytmp + " = " +
+                            _keyrt(&cs, keyt, keyc) + ";\n" + ind + _cty(&cs, valt) + " " + valtmp + " = " +
+                            valc + ";\n" + ind + pfn + "(" + owmap + ", &(" +
+                            bc5 + "), " + keytmp + ", " + valtmp + ");\n"
+                    if _is_soa(bt5):
+                        ic5, it5 := _ex(&cs, k5[1])
+                        ow5 := _ownerof(&cs, k5[0])
+                        sav5 := cs.arena
+                        cs.arena = ow5
+                        vc5, vt5 := _rhs2(&cs, k[1], _selem(&cs, bt5), ow5)
+                        cs.arena = sav5
+                        sp5 := _fresh(&cs, "_ps")
+                        return pre + ind + _cty(&cs, _selem(&cs, bt5)) + " " + sp5 + " = " + vc5 + ";\n" +
+                            ind + _spfx(&cs, bt5) + "_set(" + ow5 + ", &(" +
+                            bc5 + "), " + ic5 + ", " + sp5 + ");\n"
+                    if _is_arr(bt5) and _heap(&cs, _elem(bt5)):
+                        elt6 := _elem(bt5)
+                        ic6, _it6 := _ex(&cs, k5[1])
+                        ow6 := _ownerof(&cs, k5[0])
+                        scratch6 := _curown(&cs)
+                        sav6 := cs.arena
+                        cs.arena = scratch6
+                        vc6, _vt6 := _rhs2(&cs, k[1], elt6, scratch6)
+                        cs.arena = sav6
+                        sp6 := _fresh(&cs, "_ps")
+                        _bnote(&cs, ast.line_of(k5[1]), "kept set")
+                        return pre + ind + _cty(&cs, elt6) + " " + sp6 + " = " + vc6 + ";\n" +
+                            ind + _arrf(&cs, elt6, "_set") + "(" + ow6 + ", &(" + bc5 + "), " +
+                            ic6 + ", " + sp6 + ");\n"
+                _: pass
+            lc, lt := _lvalue(&cs, k[0])
+            ow := _ownerof(&cs, k[0])
+            # A subscript call as the target is rooted in its receiver, but
+            # `_ownerof` sees only the wrapper (`Addr(Call(...)))`), whose
+            # root is unresolvable. Resolve it the way the lvalue path builds
+            # `ua2`: the receiver is `q` when qualified, else the first call
+            # argument. (Bare `CallVal` method calls are already covered by
+            # `_rootname`'s CallVal arm.)
+            subown := false
+            match k[0]:
+                ast.Call(sbl, sbq, sbn, sbt, sba):
+                    if _subidx(&cs, sbn) >= 0:
+                        subown = true
+                        if len(sbq) > 0:
+                            ow = _ownerof(&cs, ast.Name(sbl, sbq))
+                        elif len(sba) > 0:
+                            ow = _ownerof(&cs, sba[0])
+                ast.CallVal(sbl, sbk):
+                    # A method-style subscript survived `_lvalue` above, so
+                    # it resolved; anything else (a fn-value call) fails
+                    # there. A resolvable receiver root means subscript.
+                    if len(_rootname(k[0])) > 0:
+                        subown = true
+                _: pass
+            if cs.ret_store:
+                if len(cs.ret_loop_bound) > 0:
+                    ow = "((" + _vcname(&cs, cs.ret_loop_iv) + " == (" + cs.ret_loop_bound + " - 1)) ? _parent : " + ow + ")"
+                else:
+                    ow = "_parent"
+            rhs2 := k[1]
+            oldpre := ""
+            match rhs2:
+                ast.Binop(bl, bo, bk):
+                    if len(bk) > 0 and _same_place(k[0], bk[0]):
+                        oldn := _fresh(&cs, "_po")
+                        oldcn := _push(&cs, oldn, lt)
+                        oldpre = ind + _cty(&cs, lt) + " " + oldcn + " = " + lc + ";\n"
+                        rhs2 = ast.Binop(bl, bo, [ast.Name(bl, oldn), bk[1]])
+                _: pass
+            sav2 := cs.arena
+            cs.arena = ow
+            rc2, rt2 := _rhs2(&cs, rhs2, lt, ow)
+            if cs.ret_store:
+                cs.ret_placed = true
+            cs.arena = sav2
+            # The old value is read before the RHS for compound assignment; the
+            # RHS is then materialized before forming the final place address.
+            # An inout call can grow/re-hash the container between those steps.
+            tmp3 := _fresh(&cs, "_ps")
+            if subown and _heap(&cs, lt) and not cs.ret_store:
+                # A heap value stored through a subscript place must be
+                # deep-copied into the owner's arena with the displaced
+                # value recycled -- exactly what the direct-index path gets
+                # from the `_set` family. A raw `lc = tmp3` aliases buffers
+                # that die with the caller's scope (use after free, then
+                # garbage) and leaks the old value.
+                old3 := _fresh(&cs, "_po")
+                return pre + oldpre + ind + _cty(&cs, lt) + " " + tmp3 + " = " + rc2 + ";\n" +
+                    ind + _cty(&cs, lt) + " " + old3 + " = " + lc + ";\n" +
+                    ind + lc + " = " + _copy(&cs, tmp3, lt, ow) + ";\n" +
+                    ind + _recycle_call(&cs, ow, old3, lt) + "\n"
+            return pre + oldpre + ind + _cty(&cs, lt) + " " + tmp3 + " = " + rc2 + ";\n" +
+                ind + lc + " = " + tmp3 + ";\n"
+        ast.ReturnS(l, k):
+            # An early return leaves the scope too, so every live channel and
+            # task must be released HERE -- the block's own finalizers sit after
+            # the return and are unreachable.
+            fin := _finalizers(&cs, cs.fnbase, "")
+            if len(k) == 0:
+                return ind + "{ " + _oneline(fin) + _scr_frees(&cs) +
+                    "if (_scope.head) arena_free(&_scope); return; }\n"
+            cs.in_ret = true
+            cs.ret_ast = k[0]
+            c := _retval(&cs, k[0])
+            cs.in_ret = false
+            cs.ret_ast = ast.NullLit(0)
+            rt := cs.cur_ret
+            v := "_ret"
+            return ind + "{ " + _ctyz(&cs, rt) + "" + v + " = " + c + "; " +
+                _oneline(fin) + _scr_frees(&cs) + "arena_free(&_scope); return " + v + "; }\n"
+        ast.BreakS(l):
+            # Leaving the loop leaves every scope inside it: the block's own
+            # finalizers sit after this jump and never run.
+            return ind + "{ " + _oneline(_lpfin(&cs)) + "break; }\n"
+        ast.ContinueS(l):
+            # src/tychoc.c:17006 -- inside a three-clause `for` the post clause
+            # sits at the body's end, so `continue` must jump TO it, not over it.
+            if len(cs.lpost) > 0 and cs.lpost[len(cs.lpost) - 1] >= 0:
+                return ind + "{ " + _oneline(_lpfin(&cs)) + "goto _post" + str(cs.lpost[len(cs.lpost) - 1]) + "; }\n"
+            return ind + "continue;\n"
+        ast.IfS(l, arms, e):
+            projected_if := cs.ret_store and cs.ret_loop_inner >= 0
+            pieces := []string
+            for i := 0; i < len(arms); i += 1:
+                cc0, ct := _ex(&cs, arms[i].cond[0])
+                cc := _cunwrap(cc0)
+                if i == 0:
+                    push(pieces, ind + "if (" + cc + ") {\n")
+                else:
+                    push(pieces, " else if (" + cc + ") {\n")
+                update := -1
+                if projected_if:
+                    update = _projection_last_store(arms[i].body)
+                push(pieces, _block_projection(&cs, arms[i].body, ind + "    ", projected_if, update))
+                push(pieces, ind + "}")
+            if len(e) > 0:
+                push(pieces, " else {\n")
+                update := -1
+                if projected_if:
+                    update = _projection_last_store(e)
+                push(pieces, _block_projection(&cs, e, ind + "    ", projected_if, update))
+                push(pieces, ind + "}")
+            push(pieces, "\n")
+            return _join_code(pieces)
+        ast.WhileS(l, c, b):
+            # the condition is re-evaluated every iteration but belongs to the
+            # ENCLOSING arena, exactly as src/tychoc.c:17020 generates it
+            svw := cs.arena
+            idw := _fresh(&cs, "_scr")
+            lw := cs.lbl
+            cs.lbl += 1
+            cc := "1"
+            if len(c) > 0:
+                c2, ct2 := _ex(&cs, c[0])
+                cc = _cunwrap(c2)
+            push(cs.ascope, "&" + idw)
+            cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
+            push(cs.lpost, -1)
+            push(cs.lmark, _mark(&cs))
+            cs.arena = "&" + idw
+            fow, fnw := _fuse_open(&cs, b, ind + "    ", c)
+            bdw := _block(&cs, b, ind + "        ")
+            pop(cs.lpost)
+            pop(cs.lmark)
+            pop(cs.ascope)
+            cs.loopdepth -= 1
+            cs.arena = svw
+            # a body that allocates nothing pays no child/reset/free per pass
+            openw := ""
+            resw := ""
+            closw := ""
+            uidw, fidw := _uses_scr(bdw, idw)
+            if uidw:
+                openw = ind + "    Arena " + idw + " = arena_child(" + svw + "); " +
+                    idw + ".name = \"" + cs.pname + ":" + str(lw) + "\";\n"
+                resw = ind + "        arena_reset(&" + idw + ");\n"
+                closw = ind + "    arena_free(&" + idw + ");\n"
+            elif fidw:
+                bdw = _replace(bdw, "arena_free(&" + idw + "); ", "")
+            fcw := _fuse_close(&cs, fnw, ind + "    ")
+            return ind + "{\n" + openw + fow + _unroll_hint(&cs, ind, b) + ind + "    while (" + cc + ") {\n" + resw +
+                bdw + ind + "    }\n" + fcw + closw + ind + "}\n"
+        ast.For3(l, ip, c, b):
+            m := _mark(&cs)
+            # init runs once and the loop variable is written by the post clause
+            # and by the body, so its storage must NOT be the scratch a reset
+            # recycles -- src/tychoc.c:17038-17047 says exactly this.
+            sv3 := cs.arena
+            k3 := cs.tmp
+            id3 := _fresh(&cs, "_scr")
+            init := _stmt(&cs, ip[0], "")
+            l3 := cs.lbl
+            cs.lbl += 1
+            cc0, ct := _ex(&cs, c[0])
+            cc := _cunwrap(cc0)
+            push(cs.ascope, "&" + id3)
+            cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
+            push(cs.lpost, k3)
+            push(cs.lmark, _mark(&cs))
+            cs.arena = "&" + id3
+            # `for i := 0; i < len(A); i += 1:` proves A[i] in range for the body
+            ev3, ea3 := _for3_elide(ip, c, b)
+            if len(ea3) > 0:
+                push(cs.elv, ev3)
+                push(cs.ela, ea3)
+            # The post and continue target are in the loop scope, outside the
+            # body's C block, so body-local shadows cannot capture post reads.
+            fo3, fn3 := _fuse_open(&cs, b, ind + "    ", c)
+            projected_loop := cs.ret_store and cs.ret_loop_inner >= 0
+            bd3 := _block_projection(&cs, b, ind + "            ", projected_loop, cs.ret_loop_inner)
+            if projected_loop:
+                cs.ret_placed = true
+            post := _stmt(&cs, ip[1], ind + "        ")
+            if len(ea3) > 0:
+                pop(cs.elv)
+                pop(cs.ela)
+            pop(cs.lpost)
+            pop(cs.lmark)
+            pop(cs.ascope)
+            cs.loopdepth -= 1
+            cs.arena = sv3
+            lab3 := ""
+            gt3 := "goto _post" + str(k3) + ";"
+            if _hassub(bd3, gt3):
+                lab3 = ind + "        _post" + str(k3) + ": ;\n"
+            open3 := ""
+            res3 := ""
+            clos3 := ""
+            u3, f3 := _uses_scr(bd3, id3)
+            up3, fp3 := _uses_scr(post, id3)
+            if u3 or up3:
+                open3 = ind + "    Arena " + id3 + " = arena_child(" + sv3 + "); " +
+                    id3 + ".name = \"" + cs.pname + ":" + str(l3) + "\";\n"
+                res3 = ind + "        arena_reset(&" + id3 + ");\n"
+                clos3 = ind + "    arena_free(&" + id3 + ");\n"
+            elif f3 or fp3:
+                bd3 = _replace(bd3, "arena_free(&" + id3 + "); ", "")
+                post = _replace(post, "arena_free(&" + id3 + "); ", "")
+            fc3 := _fuse_close(&cs, fn3, ind + "    ")
+            out := ind + "{\n" + ind + "    " + _trim_nl(init) + open3 + fo3 +
+                _unroll_hint(&cs, ind, b) + ind + "    while (" + cc + ") {\n" + res3 +
+                ind + "        {\n" + bd3 + ind + "        }\n" + lab3 + post +
+                ind + "    }\n" + fc3 + clos3 + ind + "}\n"
+            _restore(&cs, m)
+            return out
+        ast.ForIn(l, n, c, b, zpf):
+            svo := _split_view(&cs, n, c, b, ind)
+            if len(svo) > 0:
+                return svo
+            cc, ct := _ex(&cs, c[0])
+            if ct == "string":
+                fs := _fresh(&cs, "_fs")
+                fj := _fresh(&cs, "_fj")
+                ms := _mark(&cs)
+                scn := _push(&cs, n, "char")
+                svs := cs.arena
+                ids := _fresh(&cs, "_scr")
+                push(cs.ascope, "&" + ids)
+                cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
+                push(cs.lpost, -1)
+                push(cs.lmark, _mark(&cs))
+                cs.arena = "&" + ids
+                fos, fns := _fuse_open(&cs, b, ind + "    ", c)
+                bds := _block(&cs, b, ind + "        ")
+                pop(cs.lpost)
+                pop(cs.lmark)
+                pop(cs.ascope)
+                cs.loopdepth -= 1
+                cs.arena = svs
+                opens := ""
+                ress := ""
+                closs := ""
+                uids, fids := _uses_scr(bds, ids)
+                if uids:
+                    opens = ind + "    Arena " + ids + " = arena_child(" + svs + ");\n"
+                    ress = ind + "        arena_reset(&" + ids + ");\n"
+                    closs = ind + "    arena_free(&" + ids + ");\n"
+                elif fids:
+                    bds = _replace(bds, "arena_free(&" + ids + "); ", "")
+                fcs := _fuse_close(&cs, fns, ind + "    ")
+                outs := ind + "{\n" + ind + "    char *" + fs + " = " + cc + ";\n" + opens + fos +
+                    ind + "    for (tycho_int " + fj + " = 0; " + fj +
+                    " < tycho_str_len(" + fs + "); " + fj + " += 1) {\n" + ress +
+                    ind + "        tycho_int " + scn + " = tycho_str_get(" + fs + ", " + fj + ");\n" +
+                    bds + ind + "    }\n" + fcs + closs + ind + "}\n"
+                _restore(&cs, ms)
+                return outs
+            if _is_soa(ct):
+                et := _selem(&cs, ct)
+                fc := _fresh(&cs, "_fc")
+                fi := _fresh(&cs, "_fi")
+                m := _mark(&cs)
+                fcn := _push(&cs, n, et)
+                cc2 := cc
+                if _place(c[0]) and _mut_b(b, _rootname(c[0])):
+                    cc2 = _copy(&cs, cc, ct, "&_scope")
+                sva := cs.arena
+                ida := _fresh(&cs, "_scr")
+                push(cs.ascope, "&" + ida)
+                cs.loopdepth += 1
+                push(cs.lpost, -1)
+                push(cs.lmark, _mark(&cs))
+                cs.arena = "&" + ida
+                foa, fna := _fuse_open(&cs, b, ind + "    ", c)
+                bda := _block(&cs, b, ind + "        ")
+                pop(cs.lpost)
+                pop(cs.lmark)
+                pop(cs.ascope)
+                cs.loopdepth -= 1
+                cs.arena = sva
+                opena := ""
+                resa := ""
+                closa := ""
+                uida, fida := _uses_scr(bda, ida)
+                if uida:
+                    opena = ind + "    Arena " + ida + " = arena_child(" + sva + ");\n"
+                    resa = ind + "        arena_reset(&" + ida + ");\n"
+                    closa = ind + "    arena_free(&" + ida + ");\n"
+                elif fida:
+                    bda = _replace(bda, "arena_free(&" + ida + "); ", "")
+                fna2 := _fuse_close(&cs, fna, ind + "    ")
+                outa := ind + "{\n" + ind + "    " + _ctyz(&cs, ct) + "" + fc +
+                    " = " + cc2 + ";\n" + opena + foa +
+                    ind + "    for (tycho_int " + fi + " = 0; " + fi + " < " + fc + ".len; " + fi + " += 1) {\n" + resa +
+                    ind + "        " + _ctyz(&cs, et) + "" + fcn + " = " + _spfx(&cs, ct) +
+                    "_get(&(" + fc + "), " + fi + ");\n" + bda + ind + "    }\n" + fna2 + closa + ind + "}\n"
+                _restore(&cs, m)
+                return outa
+            if not (_is_arr(ct) or _is_vec(ct)):
+                _bad("for-in over '" + ct + "' -- only arrays here, maps are Phase 8")
+            et := ""
+            if _is_vec(ct):
+                et = _velem(&cs, ct)
+            else:
+                et = _elem(ct)
+            fc := _fresh(&cs, "_fc")
+            fi := _fresh(&cs, "_fi")
+            m := _mark(&cs)
+            fcn := _push(&cs, n, et)
+            statea := _append_binding(&cs, n, et, fcn, ind + "        ")
+            # The snapshot is what lets the body push to the array it is walking
+            # without the walk following. A collection that came from a CALL is
+            # already a private temporary in this arena, so there is nothing for
+            # anyone else to mutate and nothing to snapshot.
+            cc2 := cc
+            # The snapshot is what lets the body push to the array it is walking
+            # without the walk following. A body that never writes the collection
+            # needs none -- and every AST walker in this compiler is that shape,
+            # `for e in k:` over a child list, which was deep-copying the list and
+            # every node under it at each level. Same test as the match arm's.
+            if _place(c[0]) and _mut_b(b, _rootname(c[0])):
+                cc2 = _copy(&cs, cc, ct, "&_scope")
+            sva := cs.arena
+            ida := _fresh(&cs, "_scr")
+            push(cs.ascope, "&" + ida)
+            cs.loopdepth += 1   # src/tychoc.c@g_loop_depth -- moves are unsafe inside a loop
+            push(cs.lpost, -1)
+            push(cs.lmark, _mark(&cs))
+            cs.arena = "&" + ida
+            foa, fna := _fuse_open(&cs, b, ind + "    ", c)
+            bda := _block(&cs, b, ind + "        ")
+            pop(cs.lpost)
+            pop(cs.lmark)
+            pop(cs.ascope)
+            cs.loopdepth -= 1
+            cs.arena = sva
+            opena := ""
+            resa := ""
+            closa := ""
+            uida, fida := _uses_scr(bda, ida)
+            if uida:
+                opena = ind + "    Arena " + ida + " = arena_child(" + sva + ");\n"
+                resa = ind + "        arena_reset(&" + ida + ");\n"
+                closa = ind + "    arena_free(&" + ida + ");\n"
+            elif fida:
+                bda = _replace(bda, "arena_free(&" + ida + "); ", "")
+            fct := _ctyz(&cs, "[" + et + "]")
+            fbound := fc + ".len"
+            fslot := fc + ".data[" + fi + "]"
+            if _is_vec(ct):
+                # a vector has its count in the TYPE and its lanes inline
+                fct = _ctyz(&cs, ct)
+                fbound = str(_vn(&cs, ct))
+                fslot = fc + ".v[" + fi + "]"
+            out := ind + "{\n" + ind + "    " + fct + "" + fc +
+                " = " + cc2 + ";\n" + opena + foa +
+                ind + "    for (tycho_int " + fi + " = 0; " + fi + " < " + fbound +
+                "; " + fi + " += 1) {\n" + resa +
+                ind + "        " + _ctyz(&cs, et) + "" + fcn + " = " + fslot + ";\n" + statea +
+                bda + ind + "    }\n" + _fuse_close(&cs, fna, ind + "    ") + closa + ind + "}\n"
+            _restore(&cs, m)
+            return out
+        ast.MatchS(l, subj, arms):
+            return _match(&cs, subj[0], arms, ind)
+        ast.MDecl(l, d, ns, r):
+            rc, rt := _ex(&cs, r[0])
+            if not _is_tup(rt):
+                _bad("a destructuring list needs a tuple on the right")
+            es := _telems(&cs, rt)
+            if len(es) != len(ns):
+                _bad("destructuring " + str(len(ns)) + " names from a " +
+                    str(len(es)) + "-element tuple")
+            tv := _fresh(&cs, "_ds")
+            out := ind + _ctyz(&cs, rt) + "" + tv + " = " + rc + ";\n"
+            # every target is read out of the temporary FIRST, so `a, b = b, a`
+            # swaps rather than clobbering.
+            cns := []string
+            for i := 0; i < len(ns); i += 1:
+                if d:
+                    push(cns, "")
+                else:
+                    t2 := _vtype(&cs, ns[i])
+                    if len(t2) == 0:
+                        _bad("assignment to unknown name '" + ns[i] + "'")
+                    push(cns, _vcname(&cs, ns[i]))
+            for i := 0; i < len(ns); i += 1:
+                v := "(" + tv + ".f" + str(i) + ")"
+                # A tuple that came from a CALL was built in this arena already
+                # -- the call was handed cs.arena as its _parent -- so reading a
+                # field out of it needs no copy. `a, b := f(...)` is the shape
+                # every recursive-descent function in this compiler returns, and
+                # each one was copying both results back into the arena they were
+                # already in. A PLACE on the right still belongs to someone else.
+                # A single `x := f()` leaves the result wherever the call
+                # built it and lets each USE copy; a destructuring one forced a
+                # copy into &_scope too, which inside a loop body meant TWO deep
+                # copies of every parser node -- one out of the scratch and one
+                # at the push. The scratch is reset at the top of the NEXT
+                # iteration, after the last read, so the value is good for the
+                # whole iteration exactly as the single-name form assumes.
+                # ...and only for a DECLARATION. An ASSIGNMENT writes a name
+                # declared further out, which outlives this arena: `h_mtd =
+                # (_ds.f0)` read after arena_free(&_scr) hands str_append a
+                # garbage length header and it doubles nc until it overflows.
+                if _heap(&cs, es[i]) and (_place(r[0]) or not d):
+                    v = _copy(&cs, v, es[i], "&_scope")
+                if d:
+                    cn := _push(&cs, ns[i], es[i])
+                    out = out + ind + _ctyz(&cs, es[i]) + "" + cn + " = " + v + ";\n"
+                    out = out + _append_binding(&cs, ns[i], es[i], cn, ind)
+                else:
+                    out = out + ind + cns[i] + " = " + v + ";\n"
+            return out
+        ast.ForRange(l, n, c, b): _bad("stmt:ForRange -- Phase 8")
+        ast.ParallelS(l, w, b):
+            return _parfor(&cs, b, ind, w)
+        ast.SelectS(l, a):
+            return _select(&cs, a, ind)
+        ast.DeleteS(l, k):
+            match k[0]:
+                ast.Index(l2, ix):
+                    mc, mt := _lvalue(&cs, ix[0])
+                    kc, kt := _ex(&cs, ix[1])
+                    if not _is_map(mt):
+                        _bad("`delete` takes a map element")
+                    return ind + _mpfx(&cs, mt) + "_del(" + _ownerof(&cs, ix[0]) + ", &(" + mc + "), " +
+                        _keyrt(&cs, _mkey(&cs, mt), kc) + ");\n"
+                _: _bad("`delete` takes a map element")
+            return ""
+        _: _bad("unsupported statement -- Phase 8")
+    return ""
+
+# The first value tail of a value-if/value-match, which is what types the
+# variable being declared when there is no annotation.
+fn _tail_expr(s: ast.Stmt) -> [ast.Expr]:
+    match s:
+        ast.ExprStmt(l, es): return es
+        ast.IfS(l, arms, e):
+            for arm in arms:
+                if len(arm.body) > 0:
+                    r := _tail_expr(arm.body[len(arm.body) - 1])
+                    if len(r) > 0:
+                        return r
+            if len(e) > 0:
+                return _tail_expr(e[len(e) - 1])
+            return []ast.Expr
+        ast.MatchS(l, sub, arms):
+            for a in arms:
+                if len(a.body) > 0:
+                    r2 := _tail_expr(a.body[len(a.body) - 1])
+                    if len(r2) > 0:
+                        return r2
+            return []ast.Expr
+        _: return []ast.Expr
+    return []ast.Expr
+
+# A for-3 post clause has to run on `continue`, so the loop is a real C `for`
+# and the post statement becomes its third clause -- an expression, not a
+# statement. tests/for3.ty documents why: `i` advances only there.
+# The finalizer block, folded onto one line for a `{ ... return x; }` statement.
+fn _oneline(s: string) -> string:
+    out := ""
+    for i := 0; i < len(s); i += 1:
+        if s[i] == 10:
+            out = out + " "
+        else:
+            out = out + s[i:i + 1]
+    return out
+
+
+fn _trim_nl(s: string) -> string:
+    if len(s) > 0 and s[len(s) - 1] == 10:
+        return s[0:len(s) - 1] + "\n"
+    return s + "\n"
+
+# A scalar pattern is a literal or the NAME of a const, which src/tychoc.c has
+# already folded to one literal by the time it reaches here.
+# --- match-arm payload borrow (deep-copy elision) ---------------------------
+# Binding a heap payload deep-copies its whole subtree into the arm's arena. But
+# the scrutinee's payload already outlives the match and an enum value is
+# immutable, so the binding can BORROW it -- the same handoff an array parameter
+# makes. The exception is an arm that WRITES THROUGH the binding: that write
+# would reach into the matched value (tests/match_payload_mut.ty), so a mutated
+# binding keeps its owning copy. ./tychoc does this in can_move_from's
+# neighbourhood (src/tychoc.c@block_mutates); this is the same rule.
+fn _mroot(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, k, f): return _mroot(k[0])
+        ast.TupIdx(l, k, n): return _mroot(k[0])
+        ast.Index(l, k): return _mroot(k[0])
+        ast.Slice(l, a, b, k): return _mroot(k[0])
+        ast.Addr(l, k): return _mroot(k[0])
+        _: return ""
+    return ""
+
+# The children are walked through a parameter rather than a returned [Expr]:
+# returning the child array is a RETENTION and deep-copies the whole subtree,
+# which cost more than the copy this pass removes (measured: _mroot alone).
+fn _mut_e(e: ast.Expr, nm: string) -> bool:
+    match e:
+        ast.Addr(l, k):
+            if _mroot(k[0]) == nm:
+                return true
+            return _mut_es(k, nm)
+        ast.Call(l, q, n, ts, k):
+            # The three builtins that WRITE their receiver, which they take
+            # first. Nothing else here can: an `inout` parameter needs `&x` at
+            # the call site, and that is an Addr, caught above.
+            #
+            # This was once conservative at ANY unqualified call, which is the
+            # shape of every recursive AST walker -- _mut_es(k, nm),
+            # _names_in(kk, &out) -- so every walker deep-copied its payload at
+            # every node, and so did every analysis written on top of one. The
+            # two fixtures that made the conservative form look necessary were
+            # the assignment-arena bug in 8fc08efc, not a mutation missed here.
+            if len(q) == 0 and len(k) > 0 and (n == "push" or n == "pop" or n == "reserve"):
+                if _mroot(k[0]) == nm:
+                    return true
+            return _mut_es(k, nm)
+        ast.Field(l, k, f): return _mut_es(k, nm)
+        ast.TupIdx(l, k, n): return _mut_es(k, nm)
+        ast.Index(l, k): return _mut_es(k, nm)
+        ast.Slice(l, a2, b2, k): return _mut_es(k, nm)
+        ast.CallVal(l, k): return _mut_es(k, nm)
+        ast.Named(l, n, k): return _mut_es(k, nm)
+        ast.Binop(l, o, k): return _mut_es(k, nm)
+        ast.Unop(l, o, k): return _mut_es(k, nm)
+        ast.IsVar(l, k, q, n): return _mut_es(k, nm)
+        ast.ArrLit(l, k): return _mut_es(k, nm)
+        ast.MapLit(l, k): return _mut_es(k, nm)
+        ast.Tuple(l, k): return _mut_es(k, nm)
+        ast.SomeE(l, k): return _mut_es(k, nm)
+        ast.OkE(l, k): return _mut_es(k, nm)
+        ast.ErrE(l, k): return _mut_es(k, nm)
+        ast.SpawnE(l, k): return _mut_es(k, nm)
+        ast.OrRet(l, b9, k): return _mut_es(k, nm)
+        ast.Spread(l, k): return _mut_es(k, nm)
+        ast.ChanE(l, t, k): return _mut_es(k, nm)
+        ast.Lambda(l, pr, r, k): return _mut_es(k, nm)
+        _: return false
+    return false
+
+fn _mut_es(k: [ast.Expr], nm: string) -> bool:
+    for e in k:
+        if _mut_e(e, nm):
+            return true
+    return false
+
+fn _mut_arms(arms: [ast.Arm], nm: string) -> bool:
+    for a in arms:
+        if _mut_es(a.ch, nm) or _mut_b(a.body, nm):
+            return true
+    return false
+
+fn _mut_s(s: ast.Stmt, nm: string) -> bool:
+    match s:
+        ast.ExprStmt(l, k): return _mut_es(k, nm)
+        ast.Decl(l, n, t, k, vb): return _mut_es(k, nm) or _mut_b(vb, nm)
+        ast.MDecl(l, d, ns, k):
+            for n2 in ns:
+                if n2 == nm:
+                    return true
+            return _mut_es(k, nm)
+        ast.Assign(l, n, k):
+            if n == nm:
+                return true
+            return _mut_es(k, nm)
+        ast.PlaceSet(l, k):
+            if len(k) > 0 and _mroot(k[0]) == nm:
+                return true
+            return _mut_es(k, nm)
+        ast.ConstS(l, n, k): return _mut_es(k, nm)
+        ast.ReturnS(l, k): return _mut_es(k, nm)
+        ast.IfS(l, arms, e2):
+            for arm in arms:
+                if _mut_es(arm.cond, nm) or _mut_b(arm.body, nm):
+                    return true
+            return _mut_b(e2, nm)
+        ast.WhileS(l, c, b): return _mut_es(c, nm) or _mut_b(b, nm)
+        ast.For3(l, i2, c, b): return _mut_b(i2, nm) or _mut_es(c, nm) or _mut_b(b, nm)
+        ast.ForIn(l, n, k, b, zpf): return _mut_es(k, nm) or _mut_b(b, nm)
+        ast.ForRange(l, n, k, b): return _mut_es(k, nm) or _mut_b(b, nm)
+        ast.ParallelS(l, k, b): return _mut_es(k, nm) or _mut_b(b, nm)
+        ast.MatchS(l, k, arms): return _mut_es(k, nm) or _mut_arms(arms, nm)
+        ast.SelectS(l, arms): return _mut_arms(arms, nm)
+        ast.DeleteS(l, k):
+            if len(k) > 0 and _mroot(k[0]) == nm:
+                return true
+            return _mut_es(k, nm)
+        _: return false
+    return false
+
+fn _mut_b(b: [ast.Stmt], nm: string) -> bool:
+    for s in b:
+        if _mut_s(s, nm):
+            return true
+    return false
+
+fn _patv(cs: inout C, kind: string, v: int, nm: string) -> string:
+    if kind == "name":
+        ci := _cidx(&cs, nm)
+        if ci >= 0:
+            return cs.ccode[ci]
+        t := _vtype(&cs, nm)
+        if len(t) > 0:
+            return _vcname(&cs, nm)
+        _bad("unknown name '" + nm + "' in a match pattern")
+    return _ilit(v)
+
+# src/tychoc.c:17301 prints the arm's resolved value with %lld -- no suffix.
+fn _pats(cs: inout C, kind: string, v: int, nm: string) -> string:
+    if kind == "name":
+        return _patv(&cs, kind, v, nm)
+    return str(v)
+
+fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
+    sc, st := _ex(&cs, subj)
+    v := _fresh(&cs, "_m")
+    # A payload binding that is NOT deep-copied is a BORROW into the subject's
+    # own storage, so it lives in the SUBJECT's arena -- not in whichever loop
+    # scratch happens to be open. Recording the scratch made `sp = bk[0]`
+    # (walking a spine by rebinding an outer local) deep-copy the subtree once
+    # per iteration: 36e6 Ir in _acc_scan alone. A subject with no root name is
+    # a temporary built in cs.arena, which is the honest answer for it.
+    sown := cs.arena
+    if len(_rootname(subj)) > 0:
+        sown = _ownerof(&cs, subj)
+    # O5: a payload borrowed from the owned parameter may be moved on return.
+    owned_subj := len(_own_path(&cs, subj)) > 0
+    if _is_enum(st):
+        ei := _eidx(&cs, _tname(st))
+        inl := _inline_enum(&cs, _tname(st))
+        nel := _nul_enum(&cs, _tname(st))
+        tagp := "->tag"
+        usep := "->u."
+        if inl:
+            tagp = ".tag"
+            usep = ".u."
+        out := ind + "{\n" + ind + "    E_" + _tname(st) + " " + v + " = " + sc + ";\n"
+        if not inl:
+            out = ind + "{\n" + ind + "    E_" + _tname(st) + " *" + v + " = " + sc + ";\n"
+        first := true
+        deflt := ""
+        hasdef := false
+        for a in arms:
+            if a.kind == "default" or a.name == "_":
+                deflt = _block(&cs, a.body, ind + "        ")
+                hasdef = true
+                continue
+            if a.kind != "variant":
+                _bad("unsupported match arm on an enum")
+            tag := _tag(&cs, ei, a.name)
+            pay := cs.eds[ei].vpay[tag].ptypes
+            head := ind + "    if"
+            if not first:
+                head = ind + "    else if"
+            first = false
+            m := _mark(&cs)
+            binds := ""
+            nulsub := ""
+            for i := 0; i < len(a.binds); i += 1:
+                if i >= len(pay):
+                    _bad("variant " + a.name + " binds more than its payload")
+                # `Err(NotFound)` -- a NULLARY nested variant. It has no parens,
+                # so the parser cannot tell it from a binding name and files it
+                # under binds; only the payload's own variant list can. Without
+                # this the arm emits no inner tag test and swallows every Err.
+                pei := _eidx(&cs, _tname(pay[i]))
+                nt := -1
+                if pei >= 0:
+                    nt = _tagopt(&cs, pei, a.binds[i])
+                if nt >= 0:
+                    nulsub = str(nt)
+                    continue
+                # BY VALUE, deep-copied: ./tychoc binds a payload as a copy, so
+                # `xs[0] = 50` inside the arm leaves the matched value alone
+                # (tests/match_payload_mut.out). A pointer binding aliased it.
+                # src/tychoc.c@bind_is_discard: `_` fills a payload slot and
+                # binds nothing -- two of them in one pattern would otherwise
+                # emit two C locals named h__.
+                if a.binds[i] == "_":
+                    continue
+                bcn := _push(&cs, a.binds[i], pay[i])
+                psrc := v + usep + _vfield(a.name) + ".f" + str(i)
+                if nel:
+                    psrc = "((" + _vpaytype(_tname(st), a.name) + " *)" + v + ")->f" + str(i)
+                pv := psrc
+                cs.vown[len(cs.vown) - 1] = sown
+                if owned_subj:
+                    cs.vowned[len(cs.vowned) - 1] = true
+                if _mut_b(a.body, a.binds[i]):
+                    pv = _copy(&cs, psrc, pay[i], cs.arena)
+                    cs.vown[len(cs.vown) - 1] = cs.arena
+                    cs.vowned[len(cs.vowned) - 1] = false
+                binds = binds + ind + "        " + _ctyz(&cs, pay[i]) + "" + bcn +
+                    " = " + pv + ";\n" + _append_binding(&cs, a.binds[i], pay[i], bcn, ind + "        ")
+            # A NESTED pattern -- `Err(TooBig(n))`. The Arm has carried
+            # sub/subbinds since the parser, and nothing read them until now, so
+            # the inner binding was simply never in scope. The payload is itself
+            # an enum: test its tag too, and bind from ITS payload.
+            cond := v + tagp + " == " + str(tag)
+            if nel:
+                if len(pay) == 0:
+                    cond = v + " == NULL"
+                else:
+                    cond = v + " != NULL"
+            if len(nulsub) > 0:
+                if nel:
+                    _bad("a nested nullary pattern is not supported on a nullable enum")
+                npsep := "->tag"
+                if len(pay) > 0 and _inline_enum(&cs, _tname(pay[0])):
+                    npsep = ".tag"
+                cond = "(" + cond + ") && ((" + v + usep + _vfield(a.name) + ".f0)" + npsep + " == " + nulsub + ")"
+            if len(a.sub) > 0:
+                if nel:
+                    _bad("a nested pattern is not supported on a nullable enum")
+                if len(pay) != 1:
+                    _bad("a nested pattern needs a single-payload variant")
+                ii := _eidx(&cs, _tname(pay[0]))
+                if ii < 0:
+                    _bad("nested pattern on a non-enum payload '" + pay[0] + "'")
+                itag := _tag(&cs, ii, a.sub)
+                iv := v + usep + _vfield(a.name) + ".f0"
+                pinl := _inline_enum(&cs, _tname(pay[0]))
+                ptag := "->tag"
+                puse := "->u."
+                if pinl:
+                    ptag = ".tag"
+                    puse = ".u."
+                cond = "(" + cond + ") && ((" + iv + ")" + ptag + " == " + str(itag) + ")"
+                ipay := cs.eds[ii].vpay[itag].ptypes
+                for j := 0; j < len(a.subbinds); j += 1:
+                    if j >= len(ipay):
+                        _bad("variant " + a.sub + " binds more than its payload")
+                    if a.subbinds[j] == "_":
+                        continue
+                    scn := _push(&cs, a.subbinds[j], ipay[j])
+                    ssrc := "(" + iv + ")" + puse + _vfield(a.sub) + ".f" + str(j)
+                    sv2 := ssrc
+                    cs.vown[len(cs.vown) - 1] = sown
+                    if owned_subj:
+                        cs.vowned[len(cs.vowned) - 1] = true
+                    if _mut_b(a.body, a.subbinds[j]):
+                        sv2 = _copy(&cs, ssrc, ipay[j], cs.arena)
+                        cs.vown[len(cs.vown) - 1] = cs.arena
+                        cs.vowned[len(cs.vowned) - 1] = false
+                    binds = binds + ind + "        " + _ctyz(&cs, ipay[j]) + "" + scn +
+                        " = " + sv2 + ";\n" + _append_binding(&cs, a.subbinds[j], ipay[j], scn, ind + "        ")
+            body := _block(&cs, a.body, ind + "        ")
+            _restore(&cs, m)
+            out = out + head + " (" + cond + ") {\n" + binds + body +
+                ind + "    }\n"
+        if first:
+            return out + deflt + ind + "}\n"
+        if hasdef:
+            out = out + ind + "    else {\n" + deflt + ind + "    }\n"
+        else:
+            out = out + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT(); }\n"
+        return out + ind + "}\n"
+    # scalar subject
+    out2 := ind + "{\n" + ind + "    " + _ctyz(&cs, st) + "" + v + " = " + sc + ";\n"
+    first2 := true
+    deflt2 := ""
+    hasdef2 := false
+    for a in arms:
+        if a.kind == "default" or a.name == "_":
+            deflt2 = _block(&cs, a.body, ind + "        ")
+            hasdef2 = true
+            continue
+        # A bare NAME arm on a scalar subject parses as a `variant` -- nothing
+        # in the syntax separates `OP_LOAD:` (an int const) from an enum
+        # variant. On a scalar it is the const's value.
+        pats := a.pats
+        if a.kind == "variant" and len(pats) == 0 and len(a.name) > 0:
+            push(pats, ast.Pat("name", 0, 0, a.name, "", false))
+        elif a.kind != "scalar":
+            _bad("unsupported match arm on a scalar")
+        # src/tychoc.c:17013-17023 -- each piece is bare `_mN == K`, the
+        # literal in plain decimal (the subject is already its own C type, so
+        # the LL suffix an int expression carries is not written here), and the
+        # pieces are joined by `||` with no parentheses at all.
+        cond := ""
+        for p in pats:
+            one := ""
+            if p.ranged:
+                one = v + " >= " + _pats(&cs, p.kind, p.lo, p.loname) + " && " + v +
+                    " <= " + _pats(&cs, p.kind, p.hi, p.hiname)
+            else:
+                one = v + " == " + _pats(&cs, p.kind, p.lo, p.loname)
+            if len(cond) > 0:
+                cond = cond + " || "
+            cond = cond + one
+        head2 := ind + "    if"
+        if not first2:
+            head2 = ind + "    else if"
+        first2 = false
+        out2 = out2 + head2 + " (" + cond + ") {\n" + _block(&cs, a.body, ind + "        ") +
+            ind + "    }\n"
+    if first2:
+        return out2 + deflt2 + ind + "}\n"
+    if hasdef2:
+        out2 = out2 + ind + "    else {\n" + deflt2 + ind + "    }\n"
+    else:
+        # src/tychoc.c:16914 -- unreachable, and emitted anyway so the generated
+        # C provably returns on every path.
+        out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT(); }\n"
+    return out2 + ind + "}\n"
