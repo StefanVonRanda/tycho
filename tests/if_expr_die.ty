@@ -1,0 +1,24 @@
+# A value `if` branch may end in `die`/`exit` (spec §14.8, §29.12.1): a
+# diverging tail is no branch result, so the other branches alone fix the type
+# -- the rule `match` already applied. tychoc1 used to refuse this with
+# `if/match branches produce different types (int and void)`.
+
+fn pick(n: int) -> int:
+    v := if n > 0:
+        n * 2
+    elif n == 0:
+        exit(3)
+    else:
+        die("negative")
+    return v
+
+fn name(ok: bool) -> string:
+    s := if not ok:
+        die("not ok")
+    else:
+        "fine"
+    return s
+
+fn main():
+    println(str(pick(21)))
+    println(name(true))

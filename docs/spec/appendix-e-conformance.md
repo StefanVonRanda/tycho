@@ -198,7 +198,7 @@ drawn from:
 | §29.6 | array builtins; `len` on scalar rejected | `tests/pop`, `tests/reservecomposite`, `reject/len_scalar` |
 | §29.12 | abnormal termination (`die`) | `tests/die` |
 | §29.12 | `exit(code)` terminates with an explicit status (`0` included) | `server/main.ty` (`--help`); no `tests/` fixture |
-| §29.12.1 | `die`/`exit` are diverging: legal as a value `if`/`match` tail; all-diverging rejected | `server/main.ty` (`srv := match net.listen(...)`); no `tests/` fixture |
+| §29.12.1 | `die`/`exit` are diverging: legal as a value `if`/`match` tail; all-diverging rejected | `server/main.ty` (`srv := match net.listen(...)`); `tests/if_expr_die.ty`, `tests/reject/value_ctrl_all_diverge.ty` |
 | §30.1 | defined two's-complement wraparound | `tests/int_overflow` |
 | §30.2 | the abort set (div0, bounds, empty pop, …) | `tests/abort/div_zero`, `abort/div_overflow`, `abort/mod_zero`, `abort/index_oob`, `abort/chr_oob`, `abort/pop_empty`, `abort/reserve_range` |
 | §30.4 | defined string/map behavior (byte-safe, insertion order) | `tests/string_nul`, `tests/map_insorder`, `tests/maparraykey` |

@@ -3391,8 +3391,9 @@ fn _tail_type(cs: inout C, s: ast.Stmt, want: string) -> string:
             return t1
         ast.ExprStmt(l, k):
             t2 := _ex2(&cs, k[0], want)
-            if not _tail_diverges(k[0]):     # die()/exit(): no branch result at all
-                _tail_add(&cs, l, t2)
+            if _tail_diverges(k[0]):     # die()/exit(): no branch result at all
+                return "?"               # so a value `if` skips it, as `match` does
+            _tail_add(&cs, l, t2)
             return t2
         ast.IfS(l, arms, e):
             ta := "?"
