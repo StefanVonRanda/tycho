@@ -41,7 +41,7 @@ const K_COMMENT = 12
 # The spelling a diagnostic prints. Only error paths and `--dump-tokens` reach
 # here, so the chain costs nothing on the accepting path.
 # The path this token array was lexed from. It rides on the K_EOF token, which
-# every array ends with; an array from tokenize()/tokenize_ex() names no file and
+# every array ends with; an array from tokenize_all() names no file and
 # gets "" here, which is the bare `tychoc1: line N:` form parse.ty falls back to.
 fn file_of(toks: [Tok]) -> string:
     if len(toks) == 0:
@@ -662,12 +662,6 @@ fn is_op_start(c: int) -> bool:
     return c == 94 or c == 126 or c == 36
 
 # --- the lexer --------------------------------------------------------------
-
-fn tokenize(src: string) -> [Tok]:
-    return tokenize_ex(src, false)
-
-fn tokenize_ex(src: string, keep_trivia: bool) -> [Tok]:
-    return tokenize_all(src, keep_trivia).0
 
 # The path-carrying entry. `tokenize_all` keeps its old shape so the token dump,
 # round-trip and census modes are untouched.

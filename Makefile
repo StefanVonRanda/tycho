@@ -79,6 +79,16 @@ TYCHOC1_SRC := compiler/main.ty $(wildcard compiler/*/*.ty)
 #   making a PIE object; recompile with -fPIE
 # -flto=auto, not bare -flto: the 36-48 LTRANS jobs are independent, and bare
 # -flto runs them serially (70s versus ~6s on the compiler translation unit).
+# Darwin: cc is clang and there is no static linking, so --param and -static-pie
+# are ignored with a warning each. -Wno-pass-failed: clang cannot honour every
+# unroll hint emit_scope.ty@_unroll_hint asks for and says so per loop; under LTO
+# ld64 runs that pass and says it again, which only -Wl,-w quiets.
+# ponytail: -Wl,-w hides every ld64 warning for this one binary; Linux links still
+# show them. Keyed on Darwin, not on clang; a Linux clang still warns on --param.
+ifeq ($(shell uname -s),Darwin)
+TYCHOC1_CFLAGS ?= -flto=auto -fPIE -Wno-pass-failed -Wl,-w
+TOOL_CFLAGS ?= -fPIE
+endif
 TYCHOC1_CFLAGS ?= --param inline-unit-growth=150 -static-pie -flto=auto -fPIE
 tychoc1: bootstrap-tychoc $(TYCHOC1_SRC)
 	@set -e; s=tychoc1-stage1.$$$$; t=tychoc1.$$$$; \

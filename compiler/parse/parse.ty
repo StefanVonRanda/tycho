@@ -118,7 +118,7 @@ fn _isid(toks: [lex.Tok], i: int, s: string) -> bool:
 # array is one file, so lex.file_of() reads it off the K_EOF token; it was on
 # every token until 2026-08-26 and cost a string copy per token for this one cold
 # read. `toks` was already in scope at all 73 _die sites.
-# gap: a token lexed through tokenize()/tokenize_ex() carries no file, so those
+# gap: a token lexed through tokenize_all() carries no file, so those
 # paths still print the bare `tychoc1: line N:` form. The compile path
 # (tokenize_file) and the parse-only path (driver.ty) are covered; emit's
 # f-string hole calls remain uncovered because the file is not in scope:
