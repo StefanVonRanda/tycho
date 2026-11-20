@@ -6,7 +6,7 @@ and what's a decided non-goal. The argument for the model is in
 
 ## The pieces
 
-**One compiler ships.** `compiler/` is 26,729 lines of Tycho across 25 files,
+**One compiler ships.** `compiler/` is 26,733 lines of Tycho across 25 files,
 built as `tychoc1` and installed as `tychoc`. Six packages: `lex`, `parse`,
 `ast`, `types`, `emit`, `driver`. The [spec](spec/) is normative; the compiler
 is the reference implementation in practice, and every suite here defaults to
