@@ -55,9 +55,7 @@ payload bindings are visible only within that arm.
 A declaration in a nested block MAY **shadow** a name from an enclosing block;
 within the nested block the inner binding is the one in scope, and the outer
 binding is unaffected after the block ends. A counting-`for` loop variable is
-scoped to the loop body. Because Tycho has value semantics, a shadowing
-declaration takes an independent copy; mutating the inner name never affects the
-shadowed outer value.
+scoped to the loop body.
 
 ## 12.4 Compound assignment
 
@@ -66,8 +64,7 @@ shadowed outer value.
 and the store; a **side-effecting call inside the place is evaluated once** (the
 implementation hoists it), while a pure index sub-expression may be evaluated
 twice — exactly as writing the assignment out longhand would
-([§13.4](09-expressions.md#134-evaluation-order); resolved by probing, both
-compilers agree).
+([§13.4](09-expressions.md#134-evaluation-order)).
 
 ## 12.5 Name resolution
 

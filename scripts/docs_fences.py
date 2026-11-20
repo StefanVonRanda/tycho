@@ -842,7 +842,6 @@ def main():
     UNTAGGED_OK = {
         'docs/internals/FRICTION.md': 'a defect record: the code is what FAILED',
         '.github/ISSUE_TEMPLATE/bug_report.md': 'a form the reporter fills in',
-        'docs/rfc/parallel-for-width.md': 'grammar, not a program',
     }
     stray = []
     for f in sorted(subprocess.run(['git', 'ls-files', '*.md'], capture_output=True,

@@ -48,13 +48,14 @@ result into the waiting scope, and yields it.
 A `Task(T)` handle is **affine and structured**:
 
 - it MUST NOT be copied, reassigned, stored in a container, captured by a
-  closure, or discarded;
+  closure, passed as an argument, or discarded;
 - it MUST be waited **at most once** (a second `wait` aborts at run time);
 - any task still running when its handle's scope exits — at block end, `break`,
   `continue`, an early `return`, or `or_return` — is **implicitly joined** there.
 
 Consequently a function can never return while a task it spawned is still
-running, and a spawned task can neither leak nor detach.
+running, a spawned task can neither leak nor detach, and a task is always waited
+on its spawning thread.
 
 The number of concurrently-live (started-but-not-joined) tasks has a **hard
 ceiling** (default 1024; an implementation MAY expose an override, as the
@@ -63,15 +64,9 @@ fork-bomb fails closed rather than exhausting the system. It is a ceiling, not a
 pool: every admitted task runs immediately, so a task blocked waiting for another
 cannot be starved.
 
-A `Task` handle cannot be copied, reassigned, stored in a container, captured by
-a closure, or passed as an argument (it is affine and non-storable). It therefore
-can never reach a thread other than the one that created it, so a task is always
-waited on its spawning thread; waiting a task from another thread is not
-expressible in the language.
-
 ## 22. `parallel for`
 
-`parallel for` applies to a **counting** or a **foreach** loop
+`parallel for` applies to a `0..<N` counting loop or a **foreach** loop
 ([§14.4](10-statements.md#144-loops)) and runs its iterations across worker
 threads. The iteration space is split into chunks; the reference implementation
 uses `min(ncpu(), N)` chunks, MAY expose an override (`TYCHO_THREADS`), and MAY
@@ -86,30 +81,27 @@ chunk starts. It replaces `ncpu()` in the rule above; the `min(…, N)` and the
 An explicit width **overrides `TYCHO_THREADS`** — the variable is the default
 for a program that did not choose. A width outside `1..64` is refused: a
 literal at compile time, and a computed one aborts at run time rather than
-clamping, because a clamped width answers a different question than the one
-asked. Omitting the width is unchanged in every respect.
+clamping.
 
 Each chunk's captured values are deep-copied into it, **with one exception: a
 `Channel(T)` capture is a scalar handle and is passed by value.** Every chunk
-therefore shares the one queue rather than receiving a private copy of it. This
-is not a detail of the reference implementation — it is what makes a worker pool
-expressible at all, and an implementation MUST NOT deep-copy a captured channel.
+therefore shares the one queue rather than receiving a private copy of it; an
+implementation MUST NOT deep-copy a captured channel.
 
 The counting spelling is `parallel for i in 0..<N:`, and this is the **only**
 context in which `0..<N` is legal — a sequential `for i in 0..<N:` is a compile
 error naming the three-clause form as its replacement ([§14.4](10-statements.md#144-loops)).
 `0` MUST be a literal `0` (a non-zero or computed lower bound is a compile
 error), `N` is an ordinary `int` expression evaluated **once** at the fan-out,
-the bound is **exclusive**, and the step is implicitly `1` — so, unlike the
-`range(a, b, step)` form this replaced, there is no step to be zero and nothing
-to diagnose. `parallel for x in xs:` is the foreach spelling and `xs` MUST be a
+the bound is **exclusive**, and the step is implicitly `1`. `parallel for x in xs:` is the foreach spelling and `xs` MUST be a
 bare name (an array or a `Channel`), not an expression.
 
 The three-clause and infinite `for` shapes **cannot** be parallel: a chunk is a
 statically shaped sub-range of a known iteration space, and a three-clause
 loop's post clause is arbitrary code, so its iteration count is not knowable
 before the loop runs. `parallel for init; cond; post:` and `parallel for:` are
-compile errors.
+compile errors. So are `break`, `return` and `or_return` at the parallel-loop
+level: an early exit can never cross a chunk boundary.
 
 The only outer-scope write a `parallel for` body may perform is into a
 **reduction accumulator** — a variable combined with `+` or `*` (on `int` or
@@ -148,10 +140,7 @@ whose body loops on `recv(ch)` and stops when the channel is closed **and**
 drained. The producer MUST `close(ch)`; without it the chunks never finish and
 the statement never joins.
 
-The fail-closed rules of §22 are unchanged inside such a body: `break`,
-`return` and `or_return` at the parallel-loop level are still compile errors, so
-an early exit can never cross a chunk boundary.
-
+The early-exit refusals of §22 hold inside such a body too.
 
 ## 23. Channels and `select`
 
@@ -161,7 +150,7 @@ an early exit can never cross a chunk boundary.
 queue of `T`, legal only as the direct right-hand side of a declaration. The
 requested capacity `cap` MUST be at least 1 and is rounded up to a power of two
 (minimum ring size 2). A `Channel(T)` cannot be returned, stored in a container,
-or captured; it is freed when its creating scope exits (after implicit task
+or captured by a closure; it is freed when its creating scope exits (after implicit task
 joins).
 
 - `send(ch, v)` deep-copies `v` into the channel and blocks while the channel is
@@ -201,5 +190,4 @@ A `select` MUST have at least one arm.
 Ready arms are tried in **listed (lexical) order**, and the first ready arm is
 taken; `select` is not fair, so an earlier-listed ready channel is always
 preferred over a later one. When no `recv` arm is ready and no `default` is
-present, `select` blocks (spinning, then yielding, then briefly sleeping) until
-one becomes ready or the `closed` condition holds.
+present, `select` blocks until one becomes ready or the `closed` condition holds.

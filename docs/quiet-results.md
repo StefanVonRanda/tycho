@@ -6,14 +6,10 @@ cleanly rather than proceeding into undefined behavior
 null, `Result` removes exceptions, and an integer divided by zero stops the
 program rather than inventing an answer.
 
-This page lists those exceptions — the few operations that return a value
-instead of stopping. Each one is intentional, and each has a stricter
-alternative listed beside it.
-
-They matter because they fail quietly: the program keeps running with an
-answer you did not mean. No compiler error, no crash, no failing test.
-
-Read it once before your first real program. Every output below is printed by
+This page lists the exceptions: the few operations that return a value instead
+of stopping. Each is intentional, each has a stricter alternative beside it, and
+each fails quietly — the program keeps running with an answer you did not mean.
+Read it once before your first real program; every output below is printed by
 the code beside it.
 
 | What you write | What you get | The fail-closed form |

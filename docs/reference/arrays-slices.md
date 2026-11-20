@@ -20,10 +20,8 @@ xs[0] = 99              # index write (bounds-checked)
 _zs := xs                # value semantics: zs is an independent deep copy
 ```
 
-An out-of-bounds index aborts with a message rather than reading stray memory. The
-check is always on. Assignment is a **deep** copy: copying a `[string]`, `[Point]`, or `[[int]]` duplicates the element
-bytes, nested structs, and inner buffers too, so mutating the copy never touches the
-original.
+An out-of-bounds index aborts with a message. Assignment is a **deep** copy: copying a
+`[string]`, `[Point]` or `[[int]]` duplicates the inner buffers too.
 
 ```tycho
 struct Point:
@@ -291,8 +289,8 @@ it somewhere, it deep-copies into an owning array, so value semantics still hold
 came from. Slices work on
 every array type and compose (`xs[1:5][1:3]`). One rule to remember: you cannot pass a slice
 of `xs` and a `inout` of `xs` to the same call, since the `inout` could reallocate the viewed buffer.
-A string slice `s[a:b]` works too — with the same `s[a:]` / `s[:b]` / `s[:]` forms — and
-follows the same rule: passed straight to a function it is a zero-copy view of `s`, and stored,
+A string slice `s[a:b]` takes the same forms — but its bounds **clamp** instead of
+aborting — and follows the same view rule: passed straight to a function it is a zero-copy view of `s`, and stored,
 returned, pushed or bound to a name it copies into a fresh substring. `for part in split(s, sep)`
 whose body only reads `part` (compares it, takes `len`, indexes or slices it, passes it to a
 function) walks views of `s` with no `[string]` and no per-part copy; a body that stores or binds

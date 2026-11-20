@@ -3,8 +3,7 @@
 A green test suite is evidence of nothing until you know each test can go red.
 That sounds obvious and it is routinely untrue: a check that passes because it
 is broken looks exactly like a check that passes because the code is right.
-Tycho has no cloud CI, 102 entries in a defect log, and a rule that fell out of
-both — **every gate here has to demonstrate it can redden, and the demonstration
+Tycho has no cloud CI, a long defect log, and a rule that fell out of both — **every gate here has to demonstrate it can redden, and the demonstration
 is part of the gate.**
 
 This page is four cases where that rule paid off. Every number below is from
@@ -34,7 +33,7 @@ different and worse problem, because it has no symptom. (`FRICTION.md` entry 72.
 ## 2. The flag that quietly emptied the corpus
 
 `make ci N=0` is documented as "skip the slow fuzz lanes for a quick check".
-`scripts/format_diff.sh` read its corpus size from a bare `N=${N:-400}`. Make
+`scripts/format_diff.sh` then read its corpus size from a bare `N=${N:-400}`. Make
 exports its variables, so the differential picked up the same `N`:
 
 ```
@@ -95,14 +94,13 @@ both directions: a read of an unwritten arena slot fires `Conditional jump or
 move depends on uninitialised value(s)` and exits 42, and the same slot written
 first is silent and exits 0. Without the first, a clean sweep is indistinguishable
 from a dead detector. Without the second, it is indistinguishable from a detector
-that flags everything. (`internals/probe-uninit-arena-2026-09-11.md`.)
+that flags everything. (`ba952872:docs/internals/probe-uninit-arena-2026-09-11.md`.)
 
 ## The practice
 
-- **Every closed entry names a command that would catch its regression.** 93
-  closed, 92 pinned by 66 distinct commands, 1 excused with a stated reason, 0
-  unpinned — and `make friction-check` *runs the pins*, so the log is executable
-  rather than decorative. An entry claiming a fix that no longer holds turns the
+- **Every closed entry names a command that would catch its regression**, or a
+  stated reason it cannot — and `make friction-check` *runs the pins*, so the
+  log is executable rather than decorative. An entry claiming a fix that no longer holds turns the
   gate red.
 - **Skips are enumerated, never silent.** A lane that cannot run on this host
   names itself and the reason; an unenumerated skip is a failure.

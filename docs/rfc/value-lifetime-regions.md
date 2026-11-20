@@ -224,7 +224,7 @@ takes (`docs/memory-model.md:35-36`). The lowering is nearly free; the entire
 cost is in the source language and the checker.
 
 **Verdict.** This is a lifetime-annotation system with a different keyword. It
-contradicts `docs/thesis.md:11@borrow` ("no lifetime annotations, no borrow checker") at the load-bearing joint. Reject.
+contradicts the thesis ("no lifetime annotations, no borrow checker") at the load-bearing joint. Reject.
 
 ### 4.2 Design B — the value-homed arena (the region is a hidden field, never a type variable)
 
@@ -342,7 +342,7 @@ because it is consumed.
 `arena_recycle` on each against `x`'s home arena. The one-level version of exactly this
 walk already ships as element-overwrite recycling
 (`docs/memory-model.md:121-126`), and the recursive shape already ships as the
-deep-copy walk emitted at every escape point (`docs/memory-model.md:200-205`).
+deep-copy walk emitted at every escape point ([memory model](../memory-model.md)).
 
 **The objection that sinks it.** Correctness in this model rests on a single asymmetry,
 stated normatively: *under value semantics, a wrong escape decision can change only

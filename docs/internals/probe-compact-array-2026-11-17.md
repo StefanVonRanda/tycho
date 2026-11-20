@@ -3,8 +3,7 @@
 **Verdict: go, with conditions. An 8-byte prefixed-pointer `[T]` cuts peak RSS by 37% on a struct with three mostly empty array fields, 13% on `bench/dijkstra`-shaped adjacency and 11% on nested `[Item]` in `[Order]`. Time is flat on two workloads and 10-30% slower on the third. Two things must be designed before the emitter work starts: zero-copy slice views, and the runtime's own typedefs. A `TYCHOC_NO_COMPACT_ARRAY` control is not practical.**
 
 This is the measurement half of plan phase 3.1
-([plan-goose-transfers.md](plan-goose-transfers.md)). The emitter change has
-not been started. Host: the macOS arm64 laptop, `cc -O2`, other agents running
+([plan-goose-transfers.md](plan-goose-transfers.md)). Host: the macOS arm64 laptop, `cc -O2`, other agents running
 on the machine at the same time, so the times are noisy.
 
 ## What the probe models
@@ -13,7 +12,7 @@ on the machine at the same time, so the times are noisy.
 two binaries from one source:
 
 - **wide** (today): `{data, len, cap}`, 24 bytes, the same layout as
-  `TychoArrInt` (`runtime/tycho_rt.c` ~2127) and the emitter's per-type
+  `TychoArrInt` (`runtime/tycho_rt.c@TychoArrInt`) and the emitter's per-type
   `struct ct_ { T *data; tycho_int len; tycho_int cap; }`.
 - **compact** (`-DCOMPACT`): one pointer to a buffer laid out as `{len, cap}`
   followed by the elements. An empty array is `NULL` and allocates nothing.
@@ -75,30 +74,30 @@ on emitted code, not assumed.
 ## Implementation sketch
 
 **Runtime (`runtime/tycho_rt.c`, `corelib/tycho.h`).** `TychoArrInt`,
-`TychoArrFloat` and `TychoArrStr` (~2127, ~2311, ~2404) and every function that
+`TychoArrFloat` and `TychoArrStr` (`runtime/tycho_rt.c@TychoArrInt`, `runtime/tycho_rt.c@TychoArrFloat`, `runtime/tycho_rt.c@TychoArrStr`) and every function that
 takes or returns them by value (`_with_cap`, `_push`/`_push_slow`, `_grow`,
 `_reserve`, `_copy`, `tycho_bytes_from_intarr`, about 78 `.data/.len/.cap`
 uses) change to a `Hdr *`. `with_cap(0)` returns `NULL`. `_grow` moves from
 `(T **data, tycho_int *cap, len)` to `(Hdr **)`. `arena_recycle` sizes gain
 `+ sizeof(Hdr)`.
 
-**Emitter (`compiler/emit/emit.ty`).**
+**Emitter (`compiler/emit/emit_support.ty`).**
 
-- Array type definition (~9774, `struct ct_ { et *data; ... }`) becomes a
+- Array type definition (`struct ct_ { et *data; ... }`) becomes a
   pointer typedef to a header struct.
 - Every emitted `.data[`, `.len`, `.cap` (about 19 `.data[`, 34 `.len`, 9 `.cap`
   in string templates) is rewritten through three macros (`TY_ALEN`,
   `TY_ADATA`, `TY_ACAP`), so the layout lives in one place.
-- Push-loop fusion grow hooks (~9791) take `Hdr **`. The cached `data` pointer
+- The per-type `_grow` hooks take `Hdr **`. The cached `data` pointer
   must be reloaded after every grow, because the header moves with the buffer.
 - Bounds checks read `len` through a possibly `NULL` pointer. That is a cheap
   test, but every site needs it.
-- **SoA arrays** (~9687, `{ f0*, f1*, ..., len, cap }`) are a separate
+- **SoA arrays** (`{ f0*, f1*, ..., len, cap }`) are a separate
   representation and can stay as they are in the first cut.
 
 **Zero-copy slice views are the blocker.** `xs[a:b]` passed to a read-only
 parameter is a zero-copy view today
-([arrays-slices.md](../reference/arrays-slices.md) line ~282): a
+([arrays-slices.md](../reference/arrays-slices.md)): a
 `{data + a, b - a}` pair in the same 24-byte type. A pointer into the middle of
 a buffer has no `{len, cap}` in front of it, so the compact type cannot express
 it. There are two ways out:
@@ -123,7 +122,7 @@ compact is 4, so the relative saving is bigger. The header stays
 `make ilp32` covers this.
 
 **Bootstrap.** `bootstrap/tycho_compiler.c` mentions the runtime array types
-about 1,483 times, and the compiler is heavily built on arrays. The runtime ABI
+over 1,400 times, and the compiler is heavily built on arrays. The runtime ABI
 changes, so the bootstrap must be regenerated with the new compiler, and
 `make bootstrap-check` and `make fixpoint-check` must pass. The sequence is:
 land the runtime and emitter together, build `tychoc1` with the old bootstrap

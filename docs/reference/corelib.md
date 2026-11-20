@@ -5,8 +5,8 @@
 > C-owned opaque handle (`ptr`) from the C-backed packages below, which is not
 > caller-managed: release it with that package's own free function.
 
-corelib is Tycho's core library: a set of packages under `corelib/`, imported with the
-`core:` collection root. The modules below are usable today.
+corelib is Tycho's core library: the packages under `corelib/`, imported with the
+`core:` collection root.
 
 ```tycho
 package main
@@ -19,28 +19,19 @@ fn main():
 
 ## Quick start
 
-1. `import "core:<pkg>"` in your source. The name `<pkg>` is bound to the package.
-   The transpiler finds `corelib/` next to its own binary by default, so no setup is
-   needed in this repo. Set `TYCHO_CORELIB` to a corelib directory to override.
+1. `import "core:<pkg>"` resolves to `<corelib>/<pkg>` and binds the name `<pkg>`, where
+   `<corelib>` is `TYCHO_CORELIB` if set, otherwise `corelib/` next to the transpiler
+   binary. Non-`core:` imports stay relative to the importing package.
 2. Call its functions either free-standing (`math.gcd(12, 18)`) or method-style
    (`x.abs()` — any function can be called with its first argument as the
    receiver, see [Methods](functions.md#methods-ufcs)).
-
-## Resolution
-
-`import "core:<pkg>"` resolves to `<corelib>/<pkg>` and binds the name `<pkg>`, where
-`<corelib>` is `TYCHO_CORELIB` if set, otherwise `corelib/` next to the transpiler binary.
-Non-`core:` imports stay relative to the importing package, unchanged. `tychoc` resolves `core:` natively, with no
-bundling step required.
 
 ## How corelib is shaped
 
 corelib is **generic free functions over a type parameter `$T`**, with `where`
 constraints (`comparable(T)`, `numeric(T)`, `has_str(T)`) picking which element
-types each function accepts. Array and iterator utilities are single generic
-packages over any element type `[$T]` (`core:arrays`, `core:iter`) rather than
-one package per element type. The functions are also callable method-style
-through method-style call, so `index_of(xs, v)` and `xs.index_of(v)` are the same call.
+types each function accepts — one `core:arrays` / `core:iter` over any `[$T]`, not
+one package per element type.
 
 Higher-order helpers (map / filter / reduce that take a function) live in `core:iter` and
 its siblings, and take a first-class `fn`/closure argument. Lambdas in Tycho are
@@ -89,17 +80,14 @@ expression-bodied; pass a named function where you need a multi-line body.
   right/up/forward basis, origin and uniform scale without copying the mesh.
   `examples/gfx/3d`, `examples/gfx/orbit` and `examples/gfx/rotor` are its
   callers.
-- **`gfxgpu`** — the first SDL_GPU backend. It owns a GPU device, swapchain,
+- **`gfxgpu`** — an SDL_GPU backend. It owns a GPU device, swapchain,
   depth texture and graphics pipeline for a `gfx.Window`; the Tycho side is the
   affine `Gpu` handle plus an external frame call. Shaders are committed SPIR-V
   and are translated to the native backend by SDL_shadercross. Build the pinned
   runtime with `scripts/build-shadercross.sh`; this package is not available on
   a host without SDL_shadercross. The public function is `gfxgpu_close`; the
   handle-returning open and frame entry points are declared by the caller, the
-  same affine-opener pattern as `core:gfx`. The probe draws a depth-tested
-  triangle; Vector Vault and Rotor Run render world-space scenes with camera MVP
-  uniforms and GPU HUD overlays directly to the SDL_GPU swapchain. The offscreen
-  readback variant remains available as a fallback/probe path.
+  same affine-opener pattern as `core:gfx`.
 - **`char`** — byte/char classification & conversion over int byte values (what
   `s[i]`/`chr` use): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
   `is_space`, `is_hex`, `to_upper`/`to_lower` (one byte), `digit_val` (−1 if not a
@@ -242,8 +230,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   `is_sorted`, `min`, `max` (`where comparable` — int/char/float/string); `sum`, `product`
   (`where numeric` — int/float); `join(xs, sep)` (`where` the element converts to a string).
   All return a new array — value semantics, the input is never mutated. `min`/`max`/`sum`/
-  `product` seed from `xs[0]`, so they need a non-empty array. (`push`/`pop`/`len`/`range`
-  are builtins; higher-order `map`/`filter`/`reduce` live in `iter`.) Index-pool helpers:
+  `product` seed from `xs[0]`, so they need a non-empty array. (`push`/`pop`/`len` are
+  builtins; higher-order `map`/`filter`/`reduce` live in `iter`.) Index-pool helpers:
   `push_index(&xs, v) -> int` appends and returns the new index (the one helper that
   mutates its input); `OptIndex` is a "maybe index" stored as one int, `-1` for none —
   `no_index()`, `some_index(i)`, `is_none(o)`, `get_or(o, default)`.
@@ -258,13 +246,12 @@ expression-bodied; pass a named function where you need a multi-line body.
   orders the keys — generic over any comparable key type (int/float/string/char). The way
   to order data by a derived value: keep it in parallel arrays, argsort one, and walk every
   array through the permutation. All stable. Plus `by_key(xs, key)`: sort an array by a
-  derived int key (a fn/closure) — **deprecated since 0.5.0, removed in 1.0**:
+  derived int key (a fn/closure) — **deprecated, removed in 1.0**:
   it is `sort_by(xs, fn(a, b) -> int: key(a) - key(b))`. When the order needs more than one key, mixed
   directions, or a type with no `comparable` instance, `sort_by(xs, cmp)` takes a
   three-way compare `fn($T, $T) -> int` — bottom-up merge, stable, so equal elements
-  keep their input order under a descending compare too. `asc(a, b)` and
-  `desc(a, b)` are the two ready-made comparators for that parameter, so the
-  common orderings need no lambda: `sort_by(xs, sort.asc)`.
+  keep their input order under a descending compare too. For the plain orderings,
+  `asc(xs)` / `desc(xs)` sort the values themselves (stable, a new array).
 - **`edit`** — byte-oriented edit distance: `levenshtein(a, b)` (two-row, O(min)
   memory), `damerau(a, b)` (unrestricted adjacent transposition) and
   `similarity(a, b) -> float` (`1 - distance / max(len)`; both empty is `1.0`).
@@ -561,12 +548,11 @@ expression-bodied; pass a named function where you need a multi-line body.
   `is_valid` (strict), `version` (the version nibble, `-1` if invalid). v1 and the
   name-based v3/v5 are out of scope. Zero bytes survive formatting.
 - **`hash`** — non-cryptographic hashes for hash tables / checksums / dedup
-  (NOT for cryptographic use): `fnv1a_32`, `djb2`, `sdbm`, `crc32`, and
-  xxHash `xxh32(s, seed)` / `xxh64(s, seed)`. The old 32-bit helpers remain.
-  Also `crc16_ccitt` (CRC-16/CCITT-FALSE), `crc64_ecma` (CRC-64/ECMA-182),
-  `adler32`, `murmur3_32(s, seed)` and `fnv1a_64`.
-  security): `fnv1a_32`, `djb2`, `sdbm`, and `crc32` (IEEE/zlib, bit-by-bit), plus `to_hex`
-  (8-digit lowercase). All return a non-negative int in `[0, 2^32)`. Matches published vectors:
+  (NOT for cryptographic use). `fnv1a_32`, `djb2`, `sdbm`, `crc32` (IEEE/zlib),
+  `crc16_ccitt` (CRC-16/CCITT-FALSE) and `adler32` return a non-negative `int` in
+  `[0, 2^32)`, and `to_hex` renders one as 8 lowercase digits. `xxh32(s, seed)` and
+  `murmur3_32(s, seed)` return `u32`; `xxh64(s, seed)`, `crc64_ecma` (CRC-64/ECMA-182)
+  and `fnv1a_64` return `u64`. Matches published vectors:
   `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`. For a hash of
   **any** hashable value (struct/tuple/array, not just a string) use the generic builtin
   `hash(x)` — deterministic (the same value hashes the same on every run and machine),
@@ -743,7 +729,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   `l := log.init(log.level_info(), false)`, then `log.debug/info/warn/error(&l,
   msg)` — each prints `[level] message`, dropping messages below the logger's
   level; `to_stderr` selects stderr over stdout. The level constants are
-  functions: `level_info()`, `level_warn()`, `level_error()` (and `level_debug()`).
+  functions: `level_info()`, `level_warn()`, `level_error()`; there is no public debug
+  level function, so a logger that shows `debug` messages is `log.init(0, false)`.
   No timestamps (they would make output non-deterministic); prepend your own.
 - **`utf8`** — Unicode validation and codepoint iteration over byte strings:
   `valid(s)` (strict — rejects overlong, surrogates, truncated), `decode(s, at)`
@@ -999,8 +986,7 @@ expression-bodied; pass a named function where you need a multi-line body.
   **unknown extension yields `application/octet-stream`, never `text/plain`**.
   Keep-alive: `connection_close(req)` (HTTP/1.1 defaults open, 1.0 defaults closed, an
   empty `bad_request()` always closes) and `with_connection(r, alive)`; pair it with
-  `net.set_read_timeout_ms` so an idle peer cannot pin a worker. CRLF is built with
-  `chr(13)` (tycho strings have no `\r` escape).
+  `net.set_read_timeout_ms` so an idle peer cannot pin a worker.
   **Framing is refused, never guessed**, by all three read entry points: any
   `Transfer-Encoding` field and an empty/invalid `Content-Length` are refused —
   **chunked bodies are not decoded** — a `Content-Length` that is not a plain decimal,
@@ -1120,11 +1106,12 @@ flag that **varies by platform** — declares it in a `corelib/<module>/deps` ma
 pkg-config package names, one per line (`#` comments and blank lines ignored). For
 example `corelib/http/deps` is just `libcurl`.
 
-The `deps`-backed modules are `http` (libcurl) and `crypto` (libcrypto), documented above,
-plus four more:
+The `deps`-backed modules are `http` (libcurl), `crypto` (libcrypto), `gfx` (sdl3),
+`gfxgpu` (sdl3, sdl3-shadercross), `sqlite` (sqlite3), `x509` (openssl), all documented
+above, and `compress`, `xz`, `image` and `tls` below. (`net`, `nbio`, `signal` and
+`regex` carry a `deps` file only for a Windows link flag.)
 
-- **`gfx`** — SDL3 window/render/audio (`deps: sdl3`); see the package entry above.
-- **`lz4`** — a pure LZ4 block codec, no external library. `compress(src)` is
+- **`lz4`** — a pure LZ4 block codec, no external library and no `deps`. `compress(src)` is
   greedy and emits a valid block; `decompress(src, out_len)` needs the original
   size because a block does not carry it, and `compress_bound(n)` is the safe
   output bound. Errors are `Truncated`, `BadOffset`, `OutputTooSmall` and

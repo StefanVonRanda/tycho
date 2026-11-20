@@ -96,11 +96,8 @@ enum Tree($T):
 
 Construct an instance by supplying values; the type argument is inferred from them — `Box(7)` is
 a `Box(int)`, and `Leaf(7)` a `Tree(int)`. A payload-less variant that cannot fix the parameter
-from a value takes an **explicit type argument**: `Empty$(int)`.
-
-Generic enums work like generic structs, including **recursive payloads that
-name the enum itself** — directly (`Node(Tree($T), $T, Tree($T))`) and through a container
-(`Node([Tree($T)])`).
+from a value takes an **explicit type argument**: `Empty$(int)`. A generic enum's payload
+may name the enum itself, directly or through a container.
 
 **A type argument list is all-parameters or all-concrete.** Applying a generic to
 its own parameters, in order, is a recursive reference and is deferred until the
@@ -121,12 +118,8 @@ form matches by **name**: `Node($T)` inside `Node` is the recursive reference;
 an enclosing generic's differently named parameter (`Node($V)`) is not.
 
 
-## Composition
-
-A generic type composes with the rest of the language uniformly — a `Box(int)` may be a map
-value, a channel element, a `Task` result, a struct field, or another generic's argument
-(`Box(Box(int))`), and a generic function may return a generic value. Each combination is just
-another monomorphized instance.
+A generic type composes like any other — a `Box(int)` may be a map value, a channel element,
+a `Task` result, a struct field, or another generic's argument (`Box(Box(int))`).
 
 ## How inference works
 

@@ -3,9 +3,8 @@
 > **Memory:** Copying a struct copies its whole tree — strings, arrays, and nested
 > structs included — so two variables never share storage. Tuples copy the same way.
 
-Both are product types — a value made of several fields. A `struct` names its fields and is
-declared as a type; a tuple is anonymous and is how a function returns more than one value.
-Both are values, deep-copied on every bind, so two never share storage.
+A `struct` is a named product type; a tuple is an anonymous one, and is how a function
+returns more than one value.
 
 ## Structs
 
@@ -53,9 +52,7 @@ even of the struct being defined, so `children: [Node]` builds a recursive tree)
 the struct infinitely large *by value* — `next: Option(Node)` directly inside `Node` — is a
 compile error; use indirection through an array (`[Node]`), whose elements are arena-allocated.
 
-Structs are values, and the copy is **deep**: a field that owns heap bytes (a `string` or
-array, at any nesting depth) is duplicated too, so copying a struct copies its whole tree and
-two struct variables never share storage.
+The copy is **deep**: a `string` or array field, at any depth, is duplicated too.
 
 ```tycho
 struct Person:
@@ -67,12 +64,10 @@ b := a                         # deep copy: b.name and b.tags are independent
 b.name = "Alan"                # never touches a
 ```
 
-Fields are read with `p.x` and written with `p.x = v`, including nested (`r.lo.x = v`) and an
-array-field element (`p.tags[0] = v`). Construction is positional, in declaration order, and
-a struct must be declared before it is used as a type. Two structs compare by value with
-`==`/`!=` — field-wise, recursing into nested structs, arrays, and strings — so `a == b` is
-true exactly when `b` is an independent copy of `a`. A struct may be a method receiver
-(`r.area()` calls `area(r)`); see [Methods](functions.md#methods-ufcs).
+Fields are written in place, including nested (`r.lo.x = v`) and an array-field element
+(`p.tags[0] = v`). Two structs compare with `==`/`!=` field-wise, recursing into nested
+structs, arrays and strings. A struct may be a method receiver (`r.area()` calls
+`area(r)`); see [Methods](functions.md#methods-ufcs). Declaration order does not matter.
 
 ### Layout: `packed` and `align(N)`
 
@@ -99,7 +94,7 @@ fn main():
 9 9 -1
 ```
 
-Every field must be fixed-width: `int`, `float`, `bool`, `char`, a sized numeric
+Every field must be fixed-width: `int`, `float`, `bool`, a sized numeric
 (`u8`…`u64`, `i8`…`i64`, `f32`), a newtype over one, or another packed struct. A `string`,
 array, map, `Option` or other heap-owning field is refused. `from_bytes$` aborts unless the
 length is exactly `size_of$(T)`; see [builtins](builtins.md).
@@ -116,8 +111,7 @@ and `from_bytes$` still take only a packed struct, because only a packed struct 
 byte-exact layout.
 
 Worked examples: `BmpHeader` in [`corelib/raster/raster.ty`](../../corelib/raster/raster.ty) and
-`TgaHeader` in [`tools/tycho-grade/`](../../tools/tycho-grade/main.ty). Neither uses `align(N)`, for
-the reason above.
+`TgaHeader` in [`tools/tycho-grade/`](../../tools/tycho-grade/main.ty).
 
 Rules: [spec §17.1a](../spec/12-aggregates.md#171a-packed-layout).
 

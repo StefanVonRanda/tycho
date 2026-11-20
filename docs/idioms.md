@@ -2,8 +2,7 @@
 
 Tycho has no references, no stored borrows, and no interface values. This page
 is what to reach for instead — one idiom per shape, each the recommended way
-rather than a workaround. Every idiom below is also the faster and safer
-spelling: the performance note with each one says by how much.
+rather than a workaround, and usually also the faster spelling.
 
 ## Graphs: hold nodes in a pool, link by index
 
@@ -39,10 +38,9 @@ fn main():
 
 Why this way: one contiguous array, 8-byte indices instead of scattered
 pointers, traversal that walks cache lines. The same layout data-oriented C
-engines choose on purpose — value semantics make it the default. Measured: a
-300k-node graph as index adjacency is ~1.3× C's memory (vs ~1.55× by value),
-and the shape expresses sharing — DAGs, cycles — that by-value storage cannot
-represent at all. When nodes must be *deleted*, reach for `core:pool`, the
+engines choose on purpose. Measured: index adjacency on the dijkstra graph
+peaks at 0.99× C's memory, and the shape expresses sharing — DAGs, cycles —
+that by-value storage cannot represent at all. When nodes must be *deleted*, reach for `core:pool`, the
 packaged generational pool: per-slot generations reject stale indices instead
 of silently aliasing a reused slot. The full figures are in
 [internals/value-semantics-limits.md](internals/value-semantics-limits.md).
@@ -80,6 +78,11 @@ fn main():
 10 parent=0
 root has parent: false
 ```
+
+A `subscript` is a zero-copy view — usable for reads, writes and `inout` — that
+cannot be stored or carried past its statement, which is what keeps it sound:
+it reads like a pointer and stores like an index. See
+[subscripts](reference/subscripts.md).
 
 When slots are deleted, `core:pool`'s typed ids carry the element type:
 `pool.add_typed` returns an `Id(Node)`, and passing it to a `Pool(Edge)` is a
@@ -245,8 +248,8 @@ offset per use instead of a string header per record. Measured on
 [`bench/flat-state`](../bench/flat-state/RESULTS.md) (11,673 albums, 186,768
 tracks, nine interleaved runs): 41 vs 113 MiB peak RSS, 3.31 vs 4.43 MB on
 disk, save 7.7 vs 25.9 ms, load 3.7 vs 12.0 ms, teardown 0.9 vs 18.5 ms.
-`to_bytes(xs)` / `from_bytes$([T])(b)` move a whole `[packed T]` in one copy
-(V2b), which is what keeps save and load from visiting every record. The cost
+`to_bytes(xs)` / `from_bytes$([T])(b)` move a whole `[packed T]` in one copy,
+which is what keeps save and load from visiting every record. The cost
 is build: 10.4 vs 7.2 ms, because interning hashes every name. Query is parity.
 Deletion needs a policy — tombstone the pool slot and leave the child range, or
 compact both arrays and rewrite offsets.
@@ -262,32 +265,6 @@ transients holds its high-water mark. Splitting the load from the loop turns
 bulk-free into per-item free with no code beyond a function boundary. See
 [from `malloc` to arenas](from-c-to-arenas.md) and the
 [limits note](internals/value-semantics-limits.md).
-
-## Views: name a projection with `subscript`
-
-When pool indexing gets noisy, name the projection. A `subscript` is a
-zero-copy view into a value you already hold — usable for reads, writes, and
-`inout` — that cannot be stored or carried past its statement, which is what
-keeps it sound.
-
-```tycho
-struct Node:
-    weight: int
-struct Graph:
-    nodes: [Node]
-
-subscript edge(g: Graph, i: int) -> inout Node:
-    yield &g.nodes[i]
-
-fn main():
-    g := Graph([Node(1), Node(2)])
-    g.edge(1).weight = 10
-    println(str(g.edge(1).weight))   # 10
-```
-
-Why this way: it reads like a pointer and stores like an index — the
-ergonomics of references over the representation that fits the model. See
-[subscripts](reference/subscripts.md).
 
 ## Updates: transform, then write back
 

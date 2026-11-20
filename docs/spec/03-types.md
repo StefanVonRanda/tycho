@@ -16,9 +16,7 @@ on a target where C `long` is 32 bits).
 
 ## 5.1 The type-identity model
 
-Two types are **the same type** iff they are identical (the reference
-implementation interns every type to a single integer id and compares by
-equality). Type constructors fall into two groups:
+Two types are **the same type** iff they are identical. Type constructors fall into two groups:
 
 - **Nominal** — `struct`, `enum`, `newtype`, and `handle` types are identified
   by their declaration. Two distinct declarations are distinct types even with
@@ -51,9 +49,7 @@ denoting a non-negative value; `−2^63` is obtained only by computation.
 
 `float` is an **IEEE-754 binary64** (double-precision) value. Its arithmetic,
 rounding, and special values (signed zero, infinities, NaN) follow IEEE-754.
-`/` is true division and does not trap.
-
-Division never traps: `0.0/0.0` is `NaN`, `1.0/0.0` is `+inf`, and `-1.0/0.0` is
+`/` is true division and never traps: `0.0/0.0` is `NaN`, `1.0/0.0` is `+inf`, and `-1.0/0.0` is
 `-inf`. `NaN` is unordered — `NaN == NaN` is `false`,
 and every ordering comparison with a `NaN` operand is `false`. The float *values*
 are fully defined by IEEE-754; only the *textual* form `str` produces for
@@ -76,21 +72,11 @@ is comparable and ordered (§5.5). `str(char)` yields the one-byte **glyph**
 string (so a `char` interpolates in an f-string); `to_int(char)` / `to_u32(char)`
 yield the byte **value**; `to_char(n)` converts the other way, aborting rather
 than wrapping for an `n` outside `0..255`
-([§29.4](16-builtins.md#294-conversions)).
-
-**There is no `char` type keyword, and its absence is normative** — it is
-restated at [§3.6](01-lexical.md#36-keywords) and
-[§4.2](02-grammar.md#42-types). Every `char`-valued expression therefore reaches
-its type by inference: a character literal, `char_at`, `to_char`, or arithmetic
-on those. `char`'s operator set is **narrower than `int`'s**
-(`+` and `-` only, §13.2).
-
-Indexing a `string` does **not** produce a `char`: `s[i]` yields `int` (§5.2.5).
-The `char`-typed reader is the builtin `char_at(s, i)`
-([§29.5](16-builtins.md#295-strings)), so `char_at(s, 1) == 'e'` is the way to
-compare a string's byte against a character literal — `s[1] == 'e'` is a type
-error, because `int` and `char` are distinct types and Tycho does not compare
-across types (§13.2).
+([§29.4](16-builtins.md#294-conversions)). The absence of a `char` keyword is
+normative ([§3.6](01-lexical.md#36-keywords), [§4.2](02-grammar.md#42-types)):
+a `char` comes only from a character literal, `char_at`, `to_char`, or
+arithmetic on those. `char`'s operator set is **narrower than `int`'s** (`+` and
+`-` only, §13.2).
 
 ### 5.2.5 `string`
 
@@ -102,12 +88,12 @@ byte as an `int` in `0..255` and aborts if `i` is out of bounds; a `string` is
 not assignable through an index (`s[i] = v` is a compile error). Operations are
 detailed in §16.
 
-`s[i]` yields `int`, not `char`. The builtin `char_at(s, i)` ([§29.5](16-builtins.md#295-strings))
-reads the same byte with the same out-of-bounds abort but with static type
-`char`, so `char_at(s, i) == 'e'` is the supported spelling
-and `to_int(char_at(s, i)) == s[i]` holds for every in-range `i`.
-
-Rationale: an `int` result avoids silent wrapping in arithmetic and indexing.
+`s[i]` yields `int`, not `char`, so `s[1] == 'e'` is a type error (`int` and
+`char` are distinct, §13.2). The builtin `char_at(s, i)`
+([§29.5](16-builtins.md#295-strings)) reads the same byte with the same
+out-of-bounds abort but with static type `char`: `char_at(s, i) == 'e'` is the
+supported spelling, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`.
+An `int` result avoids silent byte wrapping in arithmetic and indexing.
 
 ### 5.2.6 `bytes`
 
@@ -136,10 +122,9 @@ silent: on a 5-byte `bytes`, `b[2:10]` is three bytes and `b[7:9]` is zero, and
 neither form reports that the requested range did not exist. An **array** slice
 written the same way aborts instead — `[1,2,3,4,5][2:10]` dies
 `tycho: slice [2:10] out of bounds (len 5)`
-([§16.6](12-aggregates.md#166-slices-xsab)). The two MUST differ: a `bytes` or
-`string` slice is exactly `substr` (§29), the function form, which clamps by
-definition, while an array slice has no such equivalent. A program therefore
-MUST NOT infer from a slice that returned normally that its bounds were in
+([§16.6](12-aggregates.md#166-slices-xsab)). A `bytes` or `string` slice is
+exactly `substr` (§29), which clamps by definition. A program therefore MUST NOT
+infer from a slice that returned normally that its bounds were in
 range. Where the range is itself the thing being verified — a parser reading a
 fixed-width field, say — `strings.slice_bytes(b, start, stop)` and
 `strings.slice_str(s, start, stop)` ([§32.4](18-library.md#324-strings)) take
@@ -237,12 +222,10 @@ structurally. Its elements are accessed by position (`t.0`, `t.1`) and are
 assignable places. Multiple return values and destructuring use tuples
 (§17).
 
-**A tuple is the shape for "a value AND a classification."** Since §6.2(7) a tuple
-**literal**'s elements are checked against the declared element types, so a
-`Result` element may be written inline (`return (Err(Timeout), buf)`) without a
-typed local.
-
-Rationale: a tuple needs neither a caller-declared out-parameter nor a nominal wrapper type per call site.
+**A tuple is the shape for "a value AND a classification"**, with no
+out-parameter or per-call-site wrapper type. A tuple **literal**'s elements are
+checked against the declared element types ([§6.2](04-inference.md#62-what-checking-adds-beyond-synthesis)),
+so a `Result` element may be written inline (`return (Err(Timeout), buf)`).
 
 ```tycho
 # The value and the verdict leave together; nothing is a sentinel.
@@ -271,8 +254,8 @@ fn main():
 0 false
 ```
 
-Examples in the corelib use this shape: `strings.split_once`, `path.split_path`,
-`datetime.parse_offset`, `bignum.divmod`, and `httpd.read_request_capped`.
+Corelib examples of this shape: `strings.split_once`, `path.split_path`,
+`bignum.divmod`, and `httpd.read_request_capped`.
 For a C function that must classify a payload the FFI has its own
 shape, since a tuple does not cross the boundary — see
 [§24.1.1](14-ffi.md#2411-returning-a-payload-and-a-classification).
@@ -499,8 +482,7 @@ type `U`. `U` MUST be one of: `int`, `float`, `string`, `bool`, an array type, a
 map type, or a struct type. It MUST NOT be an enum, a tuple, a sized numeric
 (`u8`…`u64`/`i8`…`i64`/`f32`), `char`, `bytes`, `ptr`, an `Option`/`Result`, a
 function type, a `soa`, a channel, a task handle, a typed handle, or another
-newtype. The permitted list is closed, so a shape named in neither list — `soa`
-was one — is refused by the same rule.
+newtype. The permitted list is closed: every other type is refused.
 
 `X` is type-incompatible with `U` and with every other newtype: passing a `U`
 where `X` is expected, or mixing `X` with `U` in arithmetic, is a compile error.
@@ -519,13 +501,13 @@ type** (§5.1); `void` values are not comparable. Equality is **structural and
 deep**: scalars compare by value; `string`, `bytes`, arrays, structs, tuples,
 maps, enums, `Option`, and `Result` compare by content, recursing through nesting
 — so `a == b` holds exactly when `b` is an independent deep copy of `a`.
-**Function values are not comparable:** applying `==`/`!=` directly to a function value is a **compile error**.
-Compare the values a function produces instead.
+Comparing values of two different types is a compile error.
 
-Rationale: closures with different captured environments but identical behavior are indistinguishable. A function stored *inside* an aggregate does not block that aggregate's
-equality: the aggregate still compares structurally, and a function field within
-it compares by identity. Comparing values of two different types is a compile
-error.
+**Function values are not comparable:** `==`/`!=` on a function value is a
+**compile error** (closures with different environments but identical behavior
+cannot be told apart); compare the values it produces instead. A function stored
+*inside* an aggregate does not block that aggregate's equality: the aggregate
+compares structurally, and the function field compares by identity.
 
 **Ordering (`<`, `>`, `<=`, `>=`).** Both operands MUST have the same type, and
 that type's underlying scalar MUST be `int`, `float`, `char`, `string`, or a
@@ -533,8 +515,4 @@ sized numeric (`u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, `f32`) — 
 newtype over one of these. Structs, tuples,
 arrays, maps, enums, and `bool` are **not** ordered. String ordering is
 byte-lexicographic.
-
-One asymmetry follows and is intentional: `bool` is comparable and `str`-able but
-is not ordered. (`char` is comparable, ordered, and `str`-able — its `str` is the
-one-byte glyph.)
 

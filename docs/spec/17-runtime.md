@@ -18,6 +18,7 @@ diagnostic text is not ([§1.1](00-conventions.md)).
   It never traps. (The reference realizes this by compiling with `-fwrapv`.)
 - **Unsigned overflow** (`u32`, `u64`) wraps modulo `2^32` / `2^64`, by
   definition.
+
 Integer overflow and an over-wide shift count (`≥` the operand's bit width,
 defined as `0`) are the arithmetic conditions that are fully defined rather than
 aborting; every other numeric edge either aborts (§30.2 — including a negative
@@ -78,24 +79,18 @@ The following are **unspecified**: this specification imposes no requirement, an
 a conforming program MUST NOT depend on them. They are collected in
 [Appendix F](appendix-f-impl-defined.md).
 
-- **Argument and operand evaluation order** within one expression (§13.4;
-  *probed* — inherited from the target, not sequenced by Tycho). **Exception:** a
-  side-effecting **index in an assignment place** (`a[f()] = g()`) IS sequenced
-  **left-to-right** — the index runs before the RHS, identically in both
-  compilers — so that one case is specified, not target-inherited, and a program
-  MAY depend on it.
+- **Argument and operand evaluation order** within one expression (§13.4).
+  **Exception:** a side-effecting **index in an assignment place**
+  (`a[f()] = g()`) is sequenced **left-to-right** — the index runs before the
+  RHS — and a program MAY depend on it.
 - **Floating-point reduction reassociation** in `parallel for` (§22): a
   floating-point reduction result MAY differ across thread counts. (An integer
   reduction is deterministic and is *not* unspecified.)
 - **The textual rendering of `NaN`/`inf` by `str`** (e.g. `-nan` vs `nan`) is
   **implementation-defined** (derived from the C library). The float *values*
   themselves are IEEE-754 and fully defined (§5.2.2).
-- **Using a typed handle after `close(h)`** — passes null to C; a logic bug, not
-  memory corruption, and not compile-rejected (§25).
+- **Using a typed handle after a `close(h)` nested in a branch or loop** —
+  passes null to C; a logic bug, not memory corruption. A use after a `close(h)`
+  statement in the same block is compile-rejected (§25).
 - **Any behavior on the far side of the FFI boundary** — C-side global/`static`
   races and misuse are outside every Tycho guarantee (§26).
-
-Aside from this register, Tycho has essentially no implementation-defined or
-undefined behavior: value semantics removes the aliasing UB of pointer languages,
-defined integer wrap removes overflow UB, and the fail-closed aborts of §30.2
-convert the remaining partial operations into clean termination.

@@ -36,5 +36,5 @@ A user enum whose payloads are all scalar is stored as a packed `tag` plus a
 union of the variants, rather than as a pointer to an arena cell. It is still a
 value: assignment copies it, `==` compares the tag and active payload, and
 `match` reads the same fields. Recursive, generic, fieldless, package-mangled
-and heap-payload enums remain pointer cells. Both compilers use this lowering;
-`TYCHOC_NO_INLINE_ENUM=1` keeps the old representation for benchmarking.
+and heap-payload enums remain pointer cells. `TYCHOC_NO_INLINE_ENUM=1` keeps
+every user enum in a pointer cell, for benchmarking.

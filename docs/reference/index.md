@@ -5,8 +5,6 @@ Start with the [tutorial](../tutorial.md). Curious why the language
 works this way? Read [From `malloc` to arenas](../from-c-to-arenas.md),
 then the [thesis](../thesis.md) for the full argument.
 
-Every example compiles and prints the output shown.
-
 ## Pages
 
 | Page | Covers |
@@ -33,7 +31,7 @@ Every example compiles and prints the output shown.
 - **Values copy.** `b := a` gives `b` its own independent copy. Two
   variables never share mutable storage. Each page shows what that means
   for its own types.
-- **Examples run.** Every sample compiles under `tychoc`. Output shown
+- **Examples run.** Every sample compiles under `tychoc`, and output shown
   in a comment is the actual output.
 
 Before the first real program, read [Quiet results](../quiet-results.md) —

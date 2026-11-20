@@ -20,12 +20,16 @@ measurements, and they assume you already know the codebase.
 - [`design-enums.md`](design-enums.md) — enum payloads and error operators.
 - [`design-functions.md`](design-functions.md) — closure capture and `sink` adoption.
 - [`design-scalar-match.md`](design-scalar-match.md) — scalar patterns in `match`.
+- [`design-strings-v2.md`](design-strings-v2.md) — the `{ptr,len}` and
+  small-string design and probe that the open Goose phase 4.4 executes.
 - [`goose-review.md`](goose-review.md) — which Goose design ideas transfer to
   Tycho, with the incompatible ones named.
 
 ## Records
 
-- [`1.0-readiness.md`](1.0-readiness.md) — the 2026-11-10 readiness snapshot:
+- [`corelib-parity.md`](corelib-parity.md) — Odin `core` capability map and the
+  explicit non-goals.
+- [`1.0-readiness.md`](1.0-readiness.md) — the 2026-11-12 readiness snapshot:
   internal gates, current performance, and the two external requirements.
 - [`archived-c-compiler.md`](archived-c-compiler.md) — the deleted C compiler,
   the revision its citations resolve against, and the frozen reject-site index.
@@ -33,37 +37,24 @@ measurements, and they assume you already know the codebase.
   writing real programs against this language. The primary source for what is
   actually hard here.
 - [`audit-brief.md`](audit-brief.md) — what a third-party reviewer would need.
-- [`cold-probe-binary-2026-10-26.md`](cold-probe-binary-2026-10-26.md) — a
-  docs-only binary-protocol server/client probe, its friction and the doc or
-  corelib fixes it produced.
-- [`ffi-review-2026-08-14.md`](ffi-review-2026-08-14.md) — an FFI boundary review.
-- [`audit-2026-08-16.md`](audit-2026-08-16.md) — security audit across the whole
-  threat model: two vulnerabilities found and fixed, and what it did not cover.
-- [`audit-2026-09-25.md`](audit-2026-09-25.md) — a defect hunt across the compilers,
-  runtime, shims, network stack, tycho-db and parsers: 90 baseline defects recorded,
-  all 90 fixed, none open.
-- [`roadmap-closed-2026-08.md`](roadmap-closed-2026-08.md) — the 1.0 conditions
-  closed in August 2026, moved out of `ROADMAP.md`.
+- [`probe-procedure.md`](probe-procedure.md) — how to run an outside-program
+  probe, and which surfaces earlier probes covered.
+- [`probe-flat-state-2026-11-13.md`](probe-flat-state-2026-11-13.md) — flat state
+  vs nested values; cited by `bench/flat-state/`, two follow-ups still open.
+- [`probe-compact-array-2026-11-17.md`](probe-compact-array-2026-11-17.md) — the
+  measurement half of the open compact-array phase in `plan-goose-transfers.md`.
+- [`runtime-tuning.md`](runtime-tuning.md) — the per-scope arena tuning diary
+  behind [`docs/performance.md`](../performance.md).
 - [`windows-port.md`](windows-port.md) — the design record of the native
   Windows port. Cited by `tests/run.sh`, `scripts/ci.sh` and the wine lanes.
 
+Finished plans, probes, audits and reviews are deleted once closed; git history
+keeps them (for example `git show ba952872:docs/internals/audit-2026-09-25.md`,
+or `git log --diff-filter=D --name-only -- docs/internals`).
+
 ## Active plans
 
-- [`corelib-parity.md`](corelib-parity.md) — Odin `core` capability map, the
-  explicit non-goals, and the staged order for closing the gaps.
 - [`plan-value-storage-places.md`](plan-value-storage-places.md) — storage reuse,
   the `inout` append fix, and follow-up evidence/documentation corrections.
-
-## Completed plans
-
-Each `plan-*-DONE.md` is the finished record of one campaign, kept for its
-evidence rather than its instructions:
-[repo-polish](plan-repo-polish-DONE.md),
-[chess](plan-tycho-chess-DONE.md),
-[kv](plan-tycho-kv-DONE.md),
-[kvsrv](plan-tycho-kvsrv-DONE.md),
-[rsa](plan-tycho-rsa-DONE.md),
-[sat](plan-tycho-sat-DONE.md),
-[scheme](plan-tycho-scheme-DONE.md),
-[scheme-compiler](plan-tycho-scheme-compiler-DONE.md),
-[vm](plan-tycho-vm-DONE.md).
+- [`plan-goose-transfers.md`](plan-goose-transfers.md) — the five Goose
+  transfers; phases 3.1, 4.4, 5 and the wrap-up are open.

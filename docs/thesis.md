@@ -1,30 +1,18 @@
 # The Tycho thesis: value semantics makes implicit arenas work
 
-This is the *why* behind Tycho. The
-[language reference](reference/index.md) describes *what* the language does;
-the [aggregates design note](internals/design-aggregates.md) covers how
-deep-copied aggregates stay sound. Here is the case for the model, backed by
-running, measured code.
-
-Tycho is a small, ahead-of-time language: Python-looking syntax,
-value semantics, no garbage collector, no `malloc`/`free`, no
-lifetime annotations, no borrow checker. Programs are written as if memory were
-managed, and it is. The claim is not "arenas are good" — that is well known.
-The claim is sharper:
+This is the *why* behind Tycho; the [README](../README.md) says what the
+language is, and the [language reference](reference/index.md) what it does.
+The claim is not "arenas are good" — that is well known. It is sharper:
 
 > **Value semantics is the missing ingredient that lets hierarchical arena
 > allocation be fully *implicit* — inferred from lexical scope and signatures
 > alone, with no whole-program analysis and no visible memory constructs —
-> at 40% of C's memory on tree workloads, with no GC and no reference
-> counting (§4, [performance.md](performance.md)).**
+> at about a third of C's peak memory on binary-trees, with no GC and no
+> reference counting (§4, [performance.md](performance.md)).**
 
-It is a general-purpose systems language with a data-oriented core: the same
-value model is meant for compilers, data tools, services and real-time loops.
-
-Measurement method: cross-language *ratios* are the claim, not absolute times,
-and every fixture is checked under sanitizers against its golden output. See
-[performance.md](performance.md) and [controls.md](controls.md) for the method;
-it is not repeated per figure below.
+Cross-language *ratios* are the claim, not absolute times, and every fixture is
+checked under sanitizers against its golden output; the method is in
+[performance.md](performance.md) and [controls.md](controls.md).
 
 ## 1. The idea
 
@@ -75,12 +63,12 @@ and every level wanted the same fix. Call it **the seam**:
 A bare variable read allocates nothing — it's a pointer copy. So returning or
 assigning a bare local heap value, naively, leaves a pointer into a scope
 that's about to be freed: a use-after-free. The fix is **deep copy on
-cross-arena move** (`copy_into` in the transpiler; per-struct `tycho_copy_S_X`
+cross-arena move** (`_copy` in `compiler/emit/emit_copy.ty`; per-struct `tycho_copy_S_X`
 deep-copy functions generated into the output C). It nests: copying a
 `[string]` copies the buffer *and* every element's bytes; copying a struct
 copies each heap field, recursing. Structural equality (`==`) is the mirror
-image — compare by content, recursing the same way (`gen_eq`,
-`tycho_eq_S_X`) — so `a == b` is true exactly when `b` is an independent copy
+image — compare by content, recursing the same way
+(`tycho_eq_S_X`) — so `a == b` is true exactly when `b` is an independent copy
 of `a`.
 
 Immutability is not a substitute for this copy. Immutability makes *aliasing*
@@ -117,8 +105,8 @@ wall — not left as a footnote to §4b.
 ### 4a. The return-path copy tax → return-slot move
 
 "Build a value locally, then return it" (`r := []int; …; return r`) naively
-deep-copies the whole result into the caller on the way out. But a function
-escape analysis (`collect_escapes`) can see that `r` is returned by name and
+deep-copies the whole result into the caller on the way out. But the emitter
+can see that `r` is returned by name and
 allocate it in the *caller's* arena from birth — so the `return` is a header
 move, not an O(n) copy. It composes across call frames: a value returned up
 several levels is built once, in the final consumer's arena, with **zero copy
@@ -169,7 +157,7 @@ buffer — one byte written into a hole per keystroke instead of one copy per
 keystroke — flattens the drift to ~100% with the millionth keystroke ~10×
 cheaper, while peak RSS stays at 95.7 MB in both modes (the resident set is the
 undo journal doing its job, not churn). The full journal with all controls is in
-[internals/editor-churn-2026-08-12.md](internals/editor-churn-2026-08-12.md);
+`git show ba952872:docs/internals/editor-churn-2026-08-12.md`;
 the representation idiom is in
 [internals/value-semantics-limits.md](internals/value-semantics-limits.md).
 
@@ -206,14 +194,11 @@ which makes this the one place the model is not invisible.
   cycle* is traversed correctly today using **indices instead of references** —
   CSR adjacency arrays plus a `visited[]` array. (BFS over a literal 3-cycle
   works; this is also how cache-efficient graph code is written anyway.) Value
-  semantics forbids *pointer* cycles, not *modeled* cycles. *Measured*: a
-  by-value recursive trie costs **~1.55× C's memory** (children stored inline,
-  not shared by pointer — down from ~3.2× once its per-node maps moved to a
-  compact indexed-dict layout), and the same shape as a flat `[Node]` pool
-  linked by integer indices is **~1.3× C** on a 300k-node graph (`bench/trie`,
-  `bench/dijkstra`). Even the naive by-value form is now within a small factor
-  of C; the index-pool idiom closes the rest and is what makes genuine *sharing*
-  (DAGs, cycles) expressible at all. The full measured loss column with the
+  semantics forbids *pointer* cycles, not *modeled* cycles. *Measured*
+  (large size, [`bench/RESULTS.md`](../bench/RESULTS.md)): a by-value
+  recursive trie peaks at **0.89× C's memory**, and a flat `[Node]` pool linked
+  by integer indices at **0.99× C** on the dijkstra graph. The index-pool idiom
+  is what makes genuine *sharing* (DAGs, cycles) expressible at all. The full measured loss column with the
   idiom for each case is in
   [the value-semantics limits note](internals/value-semantics-limits.md).
 
@@ -260,8 +245,8 @@ The verdict:
 
 - For **tree-shaped, scope-shaped, build-and-return, accumulate** programs —
   compilers and compiler passes, request handlers, batch transforms, CLI
-  tools, frame-loop logic — the model delivers **zero memory cognition at 40%
-  of C's memory on binary-trees**. The two optimizations move it from "cute"
+  tools, frame-loop logic — the model delivers **zero memory cognition at about a
+  third of C's memory on binary-trees**. The two optimizations move it from "cute"
   to there — a 1.75× return path and an 828 MB → 4 MB append (§4a/§4b) — and
   they were free because the model's safety asymmetry hands them over.
 
@@ -285,25 +270,14 @@ disappear* — and the scope is large and real.
 
 ## 7. Reproducing the numbers
 
-The figures above are measured on the committed compiler. To reproduce:
-
 ```sh
 make                                    # build ./tychoc
 ./tychoc examples/accumulate_big.ty     # in-place append, large N
 ./tychoc examples/memo.ty               # inout memoized fib(40)
-# (the return-slot A/B -- this compiler vs a pre-return-slot baseline built from an
-#  earlier commit against a regenerated embed header -- is scripted in bench/*/RESULTS.md)
 ```
 
-Peak-RSS and sanitizer method are as stated in [performance.md](performance.md)
-and [controls.md](controls.md): ratios across languages are the claim, and every
-example and feature program is checked against its golden under sanitizers.
-
-Three further things back the thesis up, written up separately.
-
-**Head-to-head performance.** The cross-language benchmark suite under `bench/`
-(Tycho vs C, Go, Rust, and Koka's Perceus reference-counting) and
-the compiler and codegen numbers are in [docs/perf.md](perf.md).
+**Head-to-head performance.** The cross-language suite under `bench/` (Tycho vs
+C, Rust, Go, Java and Swift) is summarized in [performance.md](performance.md).
 
 **Concurrency reuses the call convention.** The same call convention — deep-copy in, copy
 out, a private arena per call — is already a sound thread boundary, so

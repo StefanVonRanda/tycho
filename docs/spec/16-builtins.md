@@ -1,18 +1,11 @@
 # 29. Builtins
 
 A **builtin** is a function that is part of the Tycho *language* rather than of
-the corelib: it is in scope in every module with no `import`, and its
-name resolves without qualification. This chapter is the complete, normative
-catalog of the builtins — grouped by category, each with its argument and result
-types and a one-line semantics, and each marked **Sig** or **magic** (§29.2).
-
-The construction, mutation, and place semantics of the aggregates these builtins
-operate on are specified in Part VI (§16–§19); their arena and
-value-copy behavior in [§9](07-memory-model.md); the conversions' full
-accepts→yields table in [§8.2](06-conversions.md#82-explicit-conversion-builtins).
-Operators and keywords that read as calls but are **not** builtins — `m[k]`,
-`k in m`, `delete m[k]`, `for x in xs`, `&place`, `or_return` — are specified in
-their own chapters and are out of scope here.
+the corelib: it is in scope in every module with no `import`, and its name
+resolves without qualification. This chapter is the complete, normative catalog
+of the builtins, each marked **Sig** or **magic** (§29.2). Operators that read as
+calls — `m[k]`, `k in m`, `delete m[k]`, `&place`, `or_return` — are not
+builtins and are specified in their own chapters.
 
 
 ## 29.1 Builtins are part of the language
@@ -20,46 +13,26 @@ their own chapters and are out of scope here.
 Every builtin named in this chapter is **always available**. A conforming
 implementation MUST make it resolvable in any module with no import and no
 package qualifier, and MUST NOT require a builtin to be declared, imported, or
-enabled by a flag. Builtins share the ordinary call syntax; they are
-distinguished from user functions only by being predefined.
+enabled by a flag. Builtins share the ordinary call syntax.
 
-The line between the **language** and the **corelib** is drawn precisely:
-
-- A name is a **builtin** (part of the language) iff `register_builtins`
-  registers it **or** a case in `resolve_expr` /
-  codegen special-cases it by name (§29.2). Such a name is available with no
-  import.
-- Every other predefined function is a **corelib** procedure, reached only
-  through `import "core:…"` and specified in [Part XVIII](README.md) (the
-  corelib). Corelib is *layered on* the language; it is
-  not part of it.
-
-This distinction is normative: it fixes which names a conforming implementation
-MUST provide unconditionally (the builtins) versus which it MAY split across the
-core and extended tiers ([§1.3](00-conventions.md#13-conformance)).
+Every other predefined function is a **corelib** procedure, reached only through
+`import "core:…"` ([§31](18-library.md)). The distinction is normative: the
+builtins are what a conforming implementation MUST provide unconditionally; the
+corelib MAY be split across the core and extended tiers
+([§1.3](00-conventions.md#13-conformance)).
 
 ## 29.2 `Sig` builtins and `magic` builtins
 
 Builtins fall into two kinds, and each entry below is marked with one:
 
-- **Sig** — registered in `register_builtins` with a **fixed, monomorphic
-  signature** and resolved by ordinary signature lookup, arity check, and
-  argument type-checking, exactly like a user function (§15). A
-  `Sig` builtin is never overloaded and takes its arguments by value.
-- **magic** — recognized **by name in `resolve_expr`** (and in codegen) *before*
-  signature lookup. A magic builtin MAY be polymorphic (its result or accepted
+- **Sig** — a **fixed, monomorphic signature**, checked by ordinary signature
+  lookup, arity check, and argument type-checking, exactly like a user function
+  (§15). A `Sig` builtin is never overloaded and takes its arguments by value.
+- **magic** — recognized **by name** *before* signature lookup. A magic builtin MAY be polymorphic (its result or accepted
   types depend on an argument's type), MAY have a restricted parse form (e.g.
   `channel` only as a declaration RHS), MAY require an lvalue argument, or MAY
-  lower to a literal or an operator rather than a call. Because it is intercepted
-  ahead of the `Sig` table, a magic builtin is not an ordinary signature and its
-  checking rules are stated per entry.
-
-Three names — `str`, `to_ptr`, `to_i32` — carry **both** a `Sig` registration
-and a `resolve_expr` special-case; the special-case governs. Classification here
-follows observable behavior: `str` is polymorphic and is marked **magic**;
-`to_ptr` keeps a single fixed `int` signature and is marked **Sig**; the
-fixed-width conversions `to_u8`…`to_i64`/`to_f32` (including `to_i32`) are
-numeric-polymorphic like `str`.
+  lower to a literal or an operator rather than a call. Its checking rules are
+  stated per entry.
 
 ## 29.3 I/O and process
 
@@ -77,7 +50,7 @@ numeric-polymorphic like `str`.
 | `exit(code)` | `int -> void` | Sig | Terminate the process with exit status `code`, printing nothing; never returns (§29.12). |
 
 `print`, `println`, `eprint`, and `eprintln` accept a `string` only; they do not implicitly
-stringify. All nine are `Sig` builtins with fixed signatures.
+stringify. All ten are `Sig` builtins with fixed signatures.
 
 `input()` cannot distinguish EOF from an empty line; both produce `""`. Use the
 streaming `core:io` line reader when EOF is a distinct outcome. `print` and
@@ -90,8 +63,8 @@ process exits; `io.flush_stdout()` is the explicit flush.
 Tycho performs **no implicit value conversion** ([§8](06-conversions.md)); every
 value-level conversion is one of the builtins below. The full **accepts→yields**
 table — the exact set of source types each accepts and the type each yields — is
-[§8.2](06-conversions.md#82-explicit-conversion-builtins) and is **not**
-duplicated here; this section states only each builtin's kind and one-line role.
+[§8.2](06-conversions.md#82-explicit-conversion-builtins); this section states
+only each builtin's kind and role.
 
 | Builtin | Role | Kind |
 |---|---|---|
@@ -104,10 +77,10 @@ duplicated here; this section states only each builtin's kind and one-line role.
 | `to_bool(x)` | A `bool`-newtype → `bool` (unwrap). | magic |
 | `to_under(x)` | Any newtype → its underlying type (generic zero-cost unwrap). | magic |
 | `chr(n)` | `int -> string`: the one-byte string for byte value `n` (`0`–`255`); a value outside `0..255` **aborts**. | Sig |
-| `to_char(n)` | `int -> char`: the byte value `n` (`0`–`255`) as a [`char`](03-types.md#524-char); a value outside `0..255` **aborts**, with `chr`'s message — it is the same conversion, differing only in whether the byte comes back as a `char` or as a one-byte `string`. | Sig |
+| `to_char(n)` | `int -> char`: the byte value `n` (`0`–`255`) as a [`char`](03-types.md#524-char); a value outside `0..255` **aborts**, with `chr`'s message. | Sig |
 | `to_ptr(n)` | `int -> ptr`: an opaque FFI sentinel pointer, never dereferenced ([§24](14-ffi.md)). | Sig |
-| `to_u8`…`to_i64`, `to_f32` | numeric `-> ` the named fixed-width type ([§5.2.7](03-types.md#527-fixed-width-integers-u8u16u32u64-i8i16i32i64)); narrow/reinterpret, total. | Sig |
-| `is_null(p)` | `ptr -> bool`, and `handle -> bool`: test an opaque FFI pointer or a typed handle for `NULL` ([§24](14-ffi.md)). On a handle it is how an opener's failure is detected, and it reads true after `close(h)` ([§25](14-ffi.md)). | Sig |
+| `to_u8`…`to_i64` | Any numeric scalar `->` the named fixed-width type ([§5.2.7](03-types.md#527-fixed-width-integers-u8u16u32u64-i8i16i32i64)); narrow/reinterpret, total. | magic |
+| `is_null(p)` | `ptr -> bool`, and `handle -> bool`: test an opaque FFI pointer or a typed handle for `NULL` ([§24](14-ffi.md)). On a handle it is how an opener's failure is detected, and after a `close(h)` nested in a branch it reads true; straight after a `close(h)` statement in the same block it is rejected as a constant ([§25](14-ffi.md)). | Sig |
 
 The base-specific `to_int`/`to_float`/`to_str`/`to_bool` and the generic
 `to_under` are the newtype unwrappers ([§8.3](06-conversions.md#83-newtype-unwrapping),
@@ -117,13 +90,10 @@ string ([§5.2.4](03-types.md#524-char)).
 `to_char` is the **only** way into `char` from an `int`, and its result type
 cannot be written down — `char` has no type keyword ([§5.2.4](03-types.md#524-char)),
 so `to_char`, like `char_at`, is reached through inference alone. Its
-out-of-range answer is an **abort**, not a wrap, following `chr` and
-`to_int(float)`: those are conversions with a *domain*, and a value outside it is
-a program error. The `to_u8`…`to_i64` family wraps instead, but those are
-documented as **total** reinterpretations — a different category, not a
-counter-example. Two limits apply:
-the abort message names `chr` even when the call was `to_char`, and `to_char` is not in the UFCS builtin set, so `to_char(n)` is the
-only spelling — `n.to_char()` is not.
+out-of-range answer is an **abort**, not a wrap, as for `chr`: a conversion with
+a *domain* treats a value outside it as a program error. The `to_u8`…`to_i64`
+family is total and wraps. The abort message names `chr` even when the call was
+`to_char`.
 
 
 ## 29.5 Strings
@@ -143,9 +113,9 @@ yields the byte count.
 
 `char_at` is the `char`-typed companion to string indexing. `s[i]` yields `int`
 and MUST keep yielding `int`, so `s[i] == 'e'` is a type error; `char_at(s, i) ==
-'e'` is the supported spelling. The two read the same byte with the same checks, so neither is faster or safer than the
-other, and `to_int(char_at(s, i)) == s[i]` for every in-range `i`. See
-[§5.2.5](03-types.md#525-string) for why the wart exists.
+'e'` is the supported spelling. The two read the same byte with the same checks,
+and `to_int(char_at(s, i)) == s[i]` for every in-range `i`
+([§5.2.5](03-types.md#525-string)).
 
 ## 29.6 Arrays
 
@@ -182,11 +152,9 @@ newtypes, fieldless enums, and composites of hashable leaves; a bare
 legal top-level key). It is **deterministic** — fixed keys/seed, so the same
 value hashes the same on every run and every machine (equal-by-`==` values
 always hash equal) — which makes it usable as a checksum / content-address
-over composites, not just an in-process table hash. The MAP's internal
-hashing stays per-process seeded (hash-flooding defense); only the
-user-facing `hash(x)` is deterministic. A composite arg gets its per-type hash
-function on demand, so hashing a struct that is never a
-map key still works.
+over composites. The map's internal hashing stays per-process seeded
+(hash-flooding defense); only the user-facing `hash(x)` is deterministic. A
+struct that is never a map key can still be hashed.
 
 `m.get` is **method sugar** on a map receiver: `m.get(k)` is equivalent to the `m[k]`
 rvalue read and `m.get(k, d)` to the default-read form. It resolves on a map receiver only; on
@@ -194,12 +162,9 @@ any non-map type `get` falls through to ordinary UFCS resolution.
 
 The map operators `m[k]` (as a place and as an absent-key read yielding the
 value's zero), `k in m`, and `delete m[k]` are **not** builtins — they are
-operators/keywords specified in §18. The former functions
-`map_set`, `map_get`, `map_has`, and `map_del` have been **removed**: a
-user-written call to any of them is a **hard parse error** directing the author
-to `m[k] = v`, `m.get(k, default)`, `k in m`, and `delete m[k]` respectively.
-(The identically-named nodes that the desugars build internally are not
-user-callable.)
+operators/keywords specified in §18. A call to `map_set`, `map_get`,
+`map_has`, or `map_del` is a compile error naming its replacement — `m[k] = v`,
+`m.get(k, default)`, `k in m`, `delete m[k]` respectively.
 
 ## 29.8 Type builtins
 
@@ -307,9 +272,7 @@ the low 8 bits are observable by the parent (`wait(2)`), exactly as in C. Buffer
 stdout written before the call is flushed. `exit` exists because `die` cannot
 answer `--help`: a program that has done what it was asked needs status `0`, and
 routing that through `die` would report failure. There is **no** `assert`,
-`panic`, or `abort` builtin — no such name is registered in `register_builtins`
-and none is special-cased in `resolve_expr` (verified by searching
-).
+`panic`, or `abort` builtin (`assert` is `core:debug`'s).
 
 ### 29.12.1 Both are DIVERGING calls
 
@@ -320,14 +283,14 @@ a value `if`/`match` branch, even though the branch produces no value:
 
 <!-- fence-skip: norun: binds a socket; built and type-checked, but the gate does not listen on a port -->
 ```tycho
+package main
 import "core:net"
 
-host := "127.0.0.1"
-port := 8080
-
-_srv := match net.listen(host, port):
-    Ok(fd): fd
-    Err(e): die("cannot bind")
+fn main():
+    srv := match net.listen("127.0.0.1", 8080):
+        Ok(fd): fd
+        Err(_): die("cannot bind")
+    println(str(srv))
 ```
 
 A diverging tail takes no part in branch unification ([§6.5](04-inference.md)) and
@@ -335,17 +298,13 @@ is not rewritten into an assignment to the destination — it stays the plain
 statement it is. If **every** branch diverges there is nothing to bind and the
 declaration is rejected; write the `if`/`match` as a statement instead.
 
-Divergence is recognized by name, and that is sound rather than convenient:
-`die`/`exit` are registered builtins, so a program that defines either name is
-rejected (`error: 'die' is already defined`) and the name cannot mean anything
-else. A qualified `pkg.die` or a call through a function *value* is not diverging.
+Divergence is recognized by name. That is sound because a program that defines
+either name is rejected (`error: 'die' is already defined`), so the name cannot
+mean anything else. A qualified `pkg.die` or a call through a function *value* is not diverging.
 
 The runtime does abort on its own for defined error conditions — an
 out-of-bounds index, a `pop` on an empty array, division or modulo by a zero
 *value*, a `split` on an empty separator, a `send` on a closed channel, and the
-other cases enumerated in [§30](17-runtime.md). Those aborts are
-**internal**: they are emitted by the runtime, not exposed as callable functions,
-and a conforming program cannot invoke them directly. This is the language's
-**fail-closed** posture ([§1.3](00-conventions.md#13-conformance)) — abnormal
-conditions terminate rather than proceed into undefined behavior.
+other cases enumerated in [§30](17-runtime.md). Those aborts are internal to the
+runtime and not callable.
 

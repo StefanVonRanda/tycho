@@ -1,21 +1,20 @@
 # The Tycho language specification
 
-> **Status: ratified — Tycho 0.5, maintained against the current release (0.9.2).
-> Where the two differ, `CHANGELOG.md` records the change.**
+> **Status: ratified — Tycho 0.5, maintained against the current release.
+> `CHANGELOG.md` records each change.**
 > This document is the normative contract a conforming implementation must satisfy.
 >
-> Internal links, `§`-labels, and section cross-references are verified mechanically.
-> The `make spec-check` gate regenerates the collected grammar ([Appendix A](appendix-a-grammar.md)) from
-> the defining chapters §3/§4, asserts every fixture the conformance
-> matrix ([Appendix E](appendix-e-conformance.md)) cites exists, and builds and
-> runs every runnable `tycho`/`output` example
+> `make spec-check` regenerates the collected grammar
+> ([Appendix A](appendix-a-grammar.md)) from §3/§4, asserts every fixture the
+> conformance matrix ([Appendix E](appendix-e-conformance.md)) cites exists, and
+> runs every `tycho`/`output` example
 > ([§2.3](00-conventions.md#23-examples-and-code-fences)) against its shown output.
 
 ## What this document is
 
 Where the [reference pages](../reference/index.md) teach the language by
 example, this document defines it by rule. On any conflict, **the specification
-governs**, and the divergence is logged in [Appendix H](appendix-h-differences.md).
+governs**.
 
 ## How to read it
 
@@ -54,8 +53,6 @@ indentation-sensitive; see [§3](01-lexical.md)).
 | D | [Builtin index](appendix-d-builtins.md) | locator | **1.0** |
 | E | [Conformance map](appendix-e-conformance.md) | clause → fixture | **1.0** |
 | F | [Impl-defined register](appendix-f-impl-defined.md) | unspecified + impl-defined | **1.0** |
-| G | [Glossary](appendix-g-glossary.md) | terms | **1.0** |
-| H | [Differences](appendix-h-differences.md) | reference-doc drift log | **1.0** |
 
 ## Conformance in one paragraph
 
@@ -63,7 +60,7 @@ An implementation **conforms at the core tier** iff, across the conformance
 suite ([Appendix E](appendix-e-conformance.md)), it accepts exactly the
 programs the reference accepts, rejects exactly those it rejects, and produces
 byte-identical program output — for the language and the pure-Tycho + libc-only
-corelib. The **extended tier** additionally provides the `deps`/pkg-config
-corelib packages (`http`, `crypto`, `compress`, `image`, `tls`); an
+corelib. The **extended tier** additionally provides the pkg-config-backed
+corelib packages ([§31.2](18-library.md)); an
 implementation MAY omit them and still conform at the core tier
 ([§1](00-conventions.md#13-conformance)).

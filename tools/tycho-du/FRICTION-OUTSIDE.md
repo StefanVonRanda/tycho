@@ -8,7 +8,7 @@ each is what the docs or the compiler said BEFORE, and the report is left in the
 tense it was written in, because the point of this file is the experience rather
 than the changelog. What is fixed, what is still open, and one finding that is
 **wrong** are scored in
-[`docs/internals/probe-handle-2026-09-21.md`](../../docs/internals/probe-handle-2026-09-21.md)
+`git show ba952872:docs/internals/probe-handle-2026-09-21.md`
 and [FRICTION 122-128](../../docs/internals/FRICTION.md).
 
 Two specific corrections, because leaving them unmarked would let this file rot:

@@ -14,9 +14,7 @@ mentions a `$T` or `$N` in its signature is generic (§7). A function MUST NOT
 return a `handle` ([§25](14-ffi.md)), and MUST NOT declare more than **16**
 parameters (the same cap for an `extern fn`; a *function type*, which is a
 distinct construct, allows up to 8 — [§5.3.8](03-types.md#538-function-types)).
-The 16-parameter cap applies to a **generic template** exactly as it does to a
-concrete function: being generic defers what the parameters *are*, never how
-many there may be.
+The 16-parameter cap applies to a generic template as well.
 Exactly one function named `main`, with no parameters and `void` return, is the
 program entry point ([§27](15-program.md)).
 
@@ -36,8 +34,7 @@ A parameter is passed in one of three modes:
   The call-site cost is the size of the emitted value: a descriptor is a fixed
   few words, while `[N]T` and inline-array structs copy all N elements. Use
   `inout` for a mutable borrow and `sink` to move ownership when that copy is
-  the cost you are trying to avoid. The table below is the boundary; "large
-  value" is not a separate rule.
+  the cost to avoid. There is no separate "large value" rule:
 
   | shape | what crosses the call | backing storage |
   |---|---|---|
@@ -61,15 +58,12 @@ A parameter is passed in one of three modes:
   with nothing on the heap has nothing to move; `sink` on it is accepted
   but not enforced.
 
-  Rationale: moving a scalar would copy no heap storage, so there is nothing to protect.
-
   | parameter type | consume rule |
   |---|---|
   | `string`, `[T]`, a struct with any heap field, a newtype over one | enforced |
   | `int`, `float`, `bool`, a struct of scalars only, a newtype over a scalar | **not enforced** — the variable stays usable |
 
-  `sink` on a scalar is legal and means nothing. **The meaning of a signature
-  can change when a type gains a field**: `fn take(p: sink Point)` over
+  **The meaning of a signature can change when a type gains a field**: `fn take(p: sink Point)` over
   `Point{int, int}` enforces nothing, and starts enforcing consumption on
   every caller if `Point` gains a `string` field. A fresh literal or a local on
   its last use is adopted with **no copy**; a copy is made only where value

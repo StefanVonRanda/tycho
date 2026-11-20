@@ -50,13 +50,8 @@ leaves it nothing to find and the `.dSYM` comes out empty
 resolves to no locations).
 
 (`-g` alone still produces a runnable binary on macOS; the `.dSYM` step is only
-needed for source-level stepping.)
-
-> **Each block is checked on the host that can run it.** `make docs-fences`
-> executes every command block in the docs and requires exit 0. `gdb` is not in
-> the macOS toolchain and `dsymutil` is Xcode-only, so the gdb block runs on
-> Linux and the lldb block on macOS; on each platform the other block is an
-> enumerated skip in `scripts/docs_fences.py` rather than an unchecked category.
+needed for source-level stepping. `make docs-fences` runs the gdb block on Linux
+and the lldb block on macOS.)
 
 ## `tycho debug` — the gdb adapter
 
@@ -108,11 +103,8 @@ It is a gdb adapter, not a re-implementation: expressions are the emitted C
 names (`h_x`, `*h_x` for an `inout`), and `$` hands anything gdb understands
 straight through. It needs `gdb` on `PATH`; `TYCHOC` selects the compiler and
 `TYCHODEBUG` the debugger binary, same as `TYCHOFMT` does for the formatter.
-The debugger is itself a Tycho program (`make tycho-debug`), dogfooding
-core:strings over a small spawn/pipe/signal shim (`debug_shim.c`); it is gated
-by `make debug-check`. Its shell-outs go through the shim rather than core:os
-because `os.system` reaches cmd.exe verbatim on Windows, which cannot execute a
-command name written with forward slashes.
+The debugger is itself a Tycho program (`make tycho-debug`) over a small
+spawn/pipe/signal shim (`debug_shim.c`), gated by `make debug-check`.
 
 ## Runtime traps
 
@@ -169,9 +161,10 @@ in a debugger:
 
 ## Where the memory lives: `TYCHO_ARENA_STATS`
 
-Set the env var on any Tycho binary (built by either compiler — no rebuild, no
+Set the env var on any Tycho binary (no rebuild, no
 flag) and a residency summary prints to stderr at exit:
 
+```text
 [tycho arena stats]
   peak live:   75.9 MiB   (working-set high-water)
   bump-alloc:  315.6 MiB over 11177285 allocations

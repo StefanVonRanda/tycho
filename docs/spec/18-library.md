@@ -6,12 +6,11 @@ packages under `corelib/` imported through the `core:` collection root
 the contract every corelib package satisfies and defines the two conformance
 tiers of [§1.3](00-conventions.md#13-conformance); §32 catalogs the core-tier
 packages a conforming implementation MUST provide; §33 catalogs the extended-tier
-packages it MAY omit. This is a **catalog** — each subsection gives a package's
-purpose, its realization kind, and its key exported functions and types. Full
-per-function API semantics (argument-by-argument behavior, edge cases, error
-values) are **deferred**; until they are written, the
-[reference pages](../reference/index.md) and each package's source and golden
-tests are the authoritative description of a function's exact behavior.
+packages it MAY omit. Each subsection gives a package's purpose, realization
+kind and key exports. Per-function semantics are not written here: the
+[corelib catalogue](../reference/corelib.md), each package's source, and its
+golden tests are the authoritative description. The catalogue also lists
+packages this chapter does not yet cover.
 
 
 ## 31. The library contract
@@ -24,10 +23,8 @@ and returns independent values, never aliasing the caller's inputs and never
 retaining a reference to them past the call. A corelib call is, for the purposes
 of the memory model, an ordinary function call; corelib introduces no hidden
 global state, no shared mutable buffers, and no lifetime escaping the caller's
-arena. Where a package threads mutable state (for example a PRNG seed), it does
-so through an explicit `inout` parameter at the call site, not through a global
-([§11](07-memory-model.md#11-inout)).
-
+arena. Mutable state (for example a PRNG seed) is threaded through an explicit
+`inout` parameter, not a global ([§11](07-memory-model.md#11-inout)).
 
 The one exception is a **C-owned opaque handle** returned as `ptr`
 (§31.3): such a handle is *not* arena-managed and MUST be released by the
@@ -44,7 +41,7 @@ tiers, determined by what each package depends on:
   standard library** (a libc-only shim; §31.3). A conforming implementation
   **MUST** provide every core-tier package (§32). Core-tier packages are the ones
   the reference test harness builds and runs unconditionally.
-- **Extended tier.** Packages whose shim depends on an **external C library** via
+- **Extended tier.** Packages that depend on an **external C library** via
   `pkg-config`, declared in a `corelib/<pkg>/deps` manifest (§33). An
   implementation **MAY** omit the extended tier and still conform at the core
   tier. A program that imports an absent extended package **MUST** be diagnosed
@@ -53,8 +50,10 @@ tiers, determined by what each package depends on:
   **skips** (does not fail) a package's test when its C library is absent.
 
 A package's tier is mechanically identifiable from its directory: a `deps` file
-present ⇒ extended tier; a `<pkg>_shim.c` with no `deps` ⇒ libc-only shim, core
-tier; neither ⇒ pure Tycho, core tier.
+naming a pkg-config package ⇒ extended tier; otherwise a `<pkg>_shim.c` ⇒
+libc-only shim, core tier; neither ⇒ pure Tycho, core tier. A `deps` file whose
+only content is a `_WIN32:` section (raw Windows link flags, §28.6) does not
+change the tier.
 
 ### 31.3 Realization kinds
 
@@ -64,20 +63,18 @@ for each package in §32–§33.
 1. **Pure Tycho** — no shim, no FFI. The package is ordinary Tycho source
    (`math`, `json`, `sha256`, `bignum`, …).
 2. **Libc-only C shim** — a sibling `<pkg>_shim.c` the transpiler auto-compiles
-   and links on `import "core:<pkg>"`, calling only libc (POSIX). No `deps`
-   manifest, nothing external to install. The `.ty` declares the shim's entry
+   and links on `import "core:<pkg>"`, calling only libc (POSIX). No pkg-config
+   dependency, nothing external to install. The `.ty` declares the shim's entry
    points with `extern fn` (`regex`, `os`, `net`, and `datetime`'s timezone
    helpers). **Core tier.**
-3. **pkg-config `deps`** — a `<pkg>_shim.c` plus a `corelib/<pkg>/deps` manifest
-   naming pkg-config packages, one per line. On import the transpiler runs
+3. **pkg-config `deps`** — a `corelib/<pkg>/deps` manifest naming pkg-config
+   packages, one per line, usually with a `<pkg>_shim.c`. On import the transpiler runs
    `pkg-config --cflags --libs <name>` for each and splices the result onto the
-   cc line (`add_pkg_deps`), so the include path and link flags resolve per
+   cc line, so the include path and link flags resolve per
    platform. **Extended tier.**
 
-The `core:<pkg>` resolution, the auto-compile/link of shims, the `extern "Lib" fn`
-bare-`-lLib` form, and the `deps` skip-don't-fail policy are specified in
-[§28](15-program.md); this part references them without restating
-the mechanism.
+The mechanism — `core:<pkg>` resolution, shim auto-linking, `extern "Lib" fn`,
+and `deps` — is specified in [§28](15-program.md).
 
 ## 32. Core-tier packages
 
@@ -91,20 +88,22 @@ Scalar math (pure Tycho). Generic `min`/`max`/`clamp(x, lo, hi)` over any
 comparable type, and lane-wise over a `vector[N]T` ([§5.3.11](03-types.md#5311-vectornt));
 `sign(x)` over any numeric (returns int −1/0/1); integer-specific
 `abs`, `gcd`, `ipow(base, exp)`. (`sqrt`/`pow`/`floor`/`fabs` are float builtins,
-not here.) `docs/reference/corelib.md:57-60`.
+not here.)
 
 ### 32.2 `fmath`
 
-Float-only helpers (pure Tycho): constant-valued nullary functions `pi()`, `e()`; `round` (half away from
-zero), `trunc`, `lerp(a, b, t)`, `approx_eq(a, b, eps)`. No trig (no libm sin/cos
-builtin). `docs/reference/corelib.md:61-63`.
+Float-only helpers: `pi()`, `e()`; `round` (half away from zero), `trunc`,
+`lerp(a, b, t)`, `approx_eq(a, b, eps)`, `degrees`/`radians`; and a libm bridge
+through `extern fn` (`-lm` is always linked, §27.4): `sin`, `cos`, `tan`, `asin`,
+`acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `log`, `log2`, `log10`,
+`hypot`.
 
 ### 32.3 `char`
 
 Byte/char classification and conversion over the int byte values `s[i]`/`chr`
 produce (pure Tycho): `is_digit`, `is_alpha`, `is_alnum`, `is_upper`, `is_lower`,
 `is_space`, `is_hex`; `to_upper`/`to_lower` (one byte); `digit_val` (−1 if not a
-digit), `hex_val` (0..15 or −1). The lexer/parser workhorse. `docs/reference/corelib.md:64-67`.
+digit), `hex_val` (0..15 or −1). The lexer/parser workhorse.
 
 ### 32.4 `strings`
 
@@ -118,7 +117,7 @@ String utilities (pure Tycho): `to_upper`, `to_lower`, `starts_with`,
 `-> Result(_, SliceErr)`, for callers that need the bounds checked rather than
 clamped ([§5.2.6](03-types.md#526-bytes)).
 (`split`/`find`/`substr`/`len`/`chr` are
-builtins.) `docs/reference/corelib.md:69-77`.
+builtins.)
 
 ### 32.5 `path`
 
@@ -129,7 +128,7 @@ quoting for display; an embedded quote is `'\''`). The filesystem fence adds
 `real(p)` (fail-closed resolved path), `real_checked(p) -> Result(string, PathErr)`
 with `NotFound` / `Denied` / `TooLong` / `BadPath` / `Failed`, `under(root, p)`
 and `resolve_under(base, rel)`; these four use the package's libc-only
-`path_shim.c`. `docs/reference/corelib.md:78-130`.
+`path_shim.c`.
 
 ### 32.6 `arrays`
 
@@ -137,7 +136,7 @@ Generic utilities over any element type `[T]` (pure Tycho), all returning a new
 array: `contains`, `index_of`, `count`, `reverse`, `take`, `drop`, `concat`,
 `fill(n, v)`, `dedup`; `sort`, `is_sorted`, `min`, `max` (`where comparable`);
 `sum`, `product` (`where numeric`); `join(xs, sep)` (element convertible to
-string). (`push`/`pop`/`len`/`range` are builtins.) `docs/reference/corelib.md:122-129`.
+string). (`push`/`pop`/`len` are builtins.)
 
 ### 32.7 `iter`
 
@@ -145,27 +144,25 @@ Generic higher-order helpers over any `[T]`, each taking a `fn`/closure (pure
 Tycho): `map`, `filter`, `reduce`, `count`, `any`. `map` is the one that may
 change the element type — `map(xs: [$T], f: fn($T) -> $U) -> [$U]`, so
 `map(ints, to_str)` is a `[string]`; the rest are type-preserving.
-`docs/reference/corelib.md:130-137`.
 
 ### 32.8 `sort`
 
 Stable index-permutation sorting (pure Tycho): `argsort(keys)` /
 `argsort_desc(keys)` return the permutation ordering any comparable key type;
-`by_key(xs, key)` sorts by a derived int key (a `fn`/closure); **deprecated since
-0.5.0**, it is `sort_by(xs, fn(a, b) -> int: key(a) - key(b))`.
-`docs/reference/corelib.md:138-146`.
+`by_key(xs, key)` sorts by a derived int key (a `fn`/closure); deprecated in
+favour of `sort_by(xs, fn(a, b) -> int: key(a) - key(b))`.
 
 ### 32.9 `rand`
 
 Deterministic (non-cryptographic) xorshift32 (pure Tycho); state is an explicit
 int threaded via `inout`: `seed(n)`, `next(&st)` (`[1, 2^32)`), `below(&st, n)`
-(`[0, n)`), `shuffle(&st, xs)` (Fisher-Yates, new array). `docs/reference/corelib.md:173-180`.
+(`[0, n)`), `shuffle(&st, xs)` (Fisher-Yates, new array).
 
 ### 32.10 `time`
 
 Wraps the `clock()` (monotonic ns) and `now()` (UNIX seconds) builtins: stopwatch
 `start()`, `elapsed_ns`/`elapsed_us`/`elapsed_ms`; conversions
-`ns_to_us`/`ns_to_ms`/`ns_to_s`; wall clock `unix_secs()`. `docs/reference/corelib.md:181-190`.
+`ns_to_us`/`ns_to_ms`/`ns_to_s`; wall clock `unix_secs()`.
 The clock surface is pure Tycho, but the package carries a **libc-only shim**
 (`time_shim.c`) for blocking sleep: `sleep_ms(ms)` and `sleep_ns(ns)` over POSIX
 `nanosleep`. Core tier. Three semantics are normative for the package: a
@@ -182,9 +179,9 @@ Civil (proleptic Gregorian) calendar math over UNIX timestamps (Howard Hinnant's
 `days_from_civil`/`civil_from_days`). A `DateTime` struct (UTC). `from_unix(secs)`
 / `to_unix(dt)`; the day-count core; `weekday(y,m,d)`, `is_leap`, `days_in_month`;
 `now_utc()`; formatting `format_iso`, `weekday_name`, `month_name`, `pad2`/`pad4`.
-The calendar core is pure Tycho, but the package now carries a **libc-only shim**
+The calendar core is pure Tycho, but the package carries a **libc-only shim**
 (`datetime_shim.c`) exposing DST-aware timezone offsets: `dtx_local_offset(secs)`
-and `dtx_offset_at(tz, secs)`. Core tier. `docs/reference/corelib.md:191-206`; shim
+and `dtx_offset_at(tz, secs)`. Core tier. Shim
 `corelib/datetime/datetime_shim.c`.
 
 ### 32.12 `json`
@@ -194,7 +191,7 @@ enum (`JNull`/`JBool`/`JNum`/`JStr`/`JArr`/`JObj`). `parse(s) -> Json` (fails
 closed to `JNull`), `stringify(j) -> string` (compact); typed queries `kind`,
 `get(j, key)`, `at(j, i)`, `keys`, `len_of`, `as_num`/`as_str`/`as_bool`.
 Variants are constructible cross-package (`json.JNum(1)`). Scope: integers only,
-four common escapes. `docs/reference/corelib.md:226-249`.
+four common escapes.
 
 ### 32.13 `csv`
 
@@ -202,52 +199,49 @@ RFC 4180 CSV parser + serializer (pure Tycho); a document is `[[string]]`.
 `parse(s) -> [[string]]` (small state machine; quoted fields, `""` escape,
 LF/CRLF/lone-CR; fails closed), `stringify(rows) -> string` (round-trips
 `parse`); `parse_delim`/`stringify_delim` for an arbitrary single-byte delimiter
-(TSV = `parse_delim(s, 9)`); `get(rows, r, c)` (bounds-safe). `docs/reference/corelib.md:250-260`.
+(TSV = `parse_delim(s, 9)`); `get(rows, r, c)` (bounds-safe).
 
 ### 32.14 `base64`
 
 Base64 (RFC 4648) `encode`/`decode`, plus `encode_url` (URL-safe alphabet, no
 padding) (pure Tycho, no bit-operators). `decode` is lenient (skips non-alphabet
-bytes). Byte-safety caveat: `decode` silently drops interior `0x00`.
-`docs/reference/corelib.md:268-276`.
+bytes); interior `0x00` bytes are preserved.
 
 ### 32.15 `hex`
 
 Hexadecimal `encode` (lowercase) / `encode_upper` / `decode`, plus `is_valid`
 (strict) (pure Tycho). `decode` is lenient (skips non-hex bytes), reuses
-`char.hex_val`. Same `0x00` decode caveat as `base64`. `docs/reference/corelib.md:277-280`.
+`char.hex_val`.
 
 ### 32.16 `url`
 
 URL percent-encoding (RFC 3986) (pure Tycho): component-style `encode` (like
 `encodeURIComponent`), `encode_form`/`decode_form` (`x-www-form-urlencoded`,
 space ↔ `+`), and `decode` (`%XX`, leaving `+`; lenient). Reuses `char.hex_val`.
-Same `0x00` decode caveat. `docs/reference/corelib.md:281-286`.
 
 ### 32.17 `uuid`
 
 Random version-4 UUIDs (RFC 4122) (pure Tycho): `v4(&st)` (draws 16 bytes from
 `core:rand`, state via `inout`), `nil()`, `parse(s) -> [int]` (16 bytes, lenient),
 `format(bytes) -> string` (canonical 8-4-4-4-12), `is_valid` (strict), `version`.
-`docs/reference/corelib.md:287-295`.
 
 ### 32.18 `hash`
 
 Non-cryptographic 32-bit hashes — for hash tables / checksums / dedup, **not
 security** (pure Tycho): `fnv1a_32`, `djb2`, `sdbm`, `crc32` (IEEE/zlib), plus
-`to_hex`. All return a non-negative int in `[0, 2^32)`. `docs/reference/corelib.md:294-305`.
+`to_hex`. All return a non-negative int in `[0, 2^32)`.
 
 ### 32.19 `md5`
 
 MD5 message-digest (RFC 1321) (pure 32-bit-arithmetic Tycho): `hex(s)` (32-char)
 and `digest(s)` (16 raw bytes). **Broken for security** — checksums/interop only.
-Bit-exact against RFC 1321 vectors. `docs/reference/corelib.md:306-311`.
+Bit-exact against RFC 1321 vectors.
 
 ### 32.20 `sha256`
 
 SHA-256 (FIPS 180-4) (pure 32-bit-arithmetic Tycho): `hex(s)` (64-char) and
 `digest(s)` (32 raw bytes). A real cryptographic digest (not a standalone
-password hash — use a KDF). Bit-exact against NIST vectors. `docs/reference/corelib.md:312-316`.
+password hash — use a KDF). Bit-exact against NIST vectors.
 
 ### 32.21 `io`
 
@@ -266,7 +260,7 @@ component was created, `Ok(false)` if every one already existed, `Err` at the
 first component that failed. A bare Windows drive letter (`C:`) is a root and is
 skipped rather than created; a UNC root (`//host/share`) is not handled. Core tier. Nothing aborts; a call returns
 `Result(T, IoErr)` wherever a sentinel would be ambiguous and mirrors the
-builtins' sentinels elsewhere. `docs/reference/corelib.md:439-494`; shim
+builtins' sentinels elsewhere. Shim
 `corelib/io/io_shim.c`.
 
 `mtime(p) -> Result(int, IoErr)` is when `p` was last modified, in whole seconds
@@ -275,10 +269,9 @@ bytes `p` holds, without reading them. `read_at(p, off, n) -> Result(bytes,
 IoErr)` reads at most `n` bytes starting at byte offset `off`, over `pread(2)`,
 which disturbs no file offset. Five semantics are normative for the three:
 
-- **A directory is `Ok` for `mtime` and `Err(IsDir)` for `size`.** `IsDir` is likewise absent from `is_dir`, where being a directory is
-  the answer rather than a failure to give one.
-
-  Rationale: a directory has a modification time the kernel reports, while its `st_size` is filesystem-dependent entry metadata no read can produce.
+- **A directory is `Ok` for `mtime` and `Err(IsDir)` for `size`** (its
+  `st_size` is filesystem-dependent metadata no read can produce). `is_dir`
+  never answers `IsDir`: being a directory is its answer, not a failure.
 - **`size` succeeds on exactly the paths `read_at` can read.** Regular file →
   both `Ok`; directory → both `Err(IsDir)`; a fifo, socket, device or anything
   else unseekable → both `Err(Failed)`. For an ordinary seekable file,
@@ -291,13 +284,11 @@ which disturbs no file offset. Five semantics are normative for the three:
   payload, so a failure is an `Err` and cannot present as a small number.
 - **`read_at`'s allocation is bounded by the FILE, not by `n`.** It allocates
   `min(n, size - off)`, so `read_at(p, 0, 10^12)` on a 26-byte file allocates 26
-  bytes, and no further cap is imposed. That bound, not a policy limit, is what
-  makes `n` safe to take from untrusted input such as a `Range` header.
-- **A read starting at or past EOF is `Ok` with zero bytes, not an error.** The
-  caller chose the offset, so "no bytes there" is a complete answer to the
-  question asked. An `n` running past EOF is a short `Ok` with no padding —
-  `len(b)` is the count, which is why no separate out-parameter exists — and
-  `n == 0` is `Ok` with zero bytes. A negative `off` or `n` is `Err(Failed)`,
+  bytes. That bound is what makes `n` safe to take from untrusted input such as
+  a `Range` header.
+- **A read starting at or past EOF is `Ok` with zero bytes, not an error.** An
+  `n` running past EOF is a short `Ok` with no padding (`len(b)` is the count),
+  and `n == 0` is `Ok` with zero bytes. A negative `off` or `n` is `Err(Failed)`,
   refused before `open(2)` so it can never be sign-extended into a wild read.
 
 `stat(p)` and `lstat(p)` return `Result(Stat, IoErr)` with a `FileKind`
@@ -309,12 +300,11 @@ where the platform does not expose them. `same_file(a, b) -> Result(bool,
 IoErr)` is true exactly when both names resolve to one file (device + inode on
 POSIX, volume + file index on Windows), which is the hard-link test.
 `read_link(p) -> Result(string, IoErr)` is the target text `lstat` cannot give;
-a dangling link is still a link, so its text is `Ok`. POSIX `readlink(2)` only —
+a dangling link's text is `Ok`. POSIX `readlink(2)` only —
 Windows exposes no target string, so an existing reparse point is `Err(Failed)`
 and a missing path is `Err(NotFound)`. `read_stdin_bytes() -> Result(bytes,
 IoErr)` reads stdin to EOF as raw bytes; EOF is `Ok` (possibly empty) and only a
 read failure is `Err(Failed)`.
-`docs/reference/corelib.md:487-493`; shim `corelib/io/io_shim.c`.
 
 ### 32.22 `os`
 
@@ -329,20 +319,19 @@ shell; they fail closed with `-1` on an empty argv, a build failure, or an
 unspawnable program. `exec_capture(argv) -> Capture{code, out, err}` is
 `exec_out` with stderr captured separately; both pipes are drained concurrently
 and the same fail-closed contract applies, with both strings empty on failure.
-`docs/reference/corelib.md:495-514`.
 
 ### 32.23 `regex`
 
 POSIX extended regular expressions (ERE) via a **libc-only shim** (`regex_shim.c`
-over `<regex.h>`; no `deps`). Core tier. `compile(pat) -> ptr` (opaque handle;
+over `<regex.h>`; its `deps` names only the Windows `-lpcre2-posix`). Core tier. `compile(pat) -> ptr` (opaque handle;
 `ok`/`is_null`), `is_match`, `find`/`find_end` (offset or −1), `matched` (first
 match), `release` (the pattern is C-malloc'd, **not** arena-managed — release when
-done; §31.1). `docs/reference/corelib.md:207-213`.
+done; §31.1).
 
 ### 32.24 `net`
 
-TCP and UDP sockets via a **libc-only shim** (`net_shim.c`, pure POSIX sockets; no
-`deps`, same self-contained model as `core:os`). Core tier. A socket is a file
+TCP and UDP sockets via a **libc-only shim** (`net_shim.c`, pure POSIX sockets;
+its `deps` names only the Windows `-lws2_32`). Core tier. A socket is a file
 descriptor (`int`); every fallible call returns `Result(..., NetErr)` rather
 than a negative-int sentinel, and payloads are binary-safe `bytes`. TCP:
 `listen(host, port) -> Result(int, NetErr)` (port 0 ⇒ ephemeral),
@@ -377,20 +366,23 @@ Arbitrary-precision base-10 fixed-point (pure Tycho; built on `core:bignum`). A
 `Decimal` is an integer coefficient (`bignum.Big`) times `10^(-scale)`, so it is
 base-10 exact (`0.1 + 0.2 == 0.3`) — the right type for money. `from_int(n)`,
 `from_str(s)`; `neg`, `abs`, `is_zero`; `add`, `sub`, `mul`, `cmp` (exact,
-scale-preserving); `rescale(a, newscale)` (truncates toward zero); `to_str`.
-Division is deferred (needs a target scale + rounding policy). Source
+scale-preserving); `rescale(a, newscale)` (truncates toward zero); `to_str`;
+`div(a, b, scale, mode) -> Result(Decimal, DivErr)`, which takes the target
+scale and rounding mode explicitly. Source
 `corelib/decimal/decimal.ty`.
 
 ### 32.27 `signal`
 
 Clean shutdown on `SIGTERM`/`SIGINT` — and nothing else — via a
-**libc-only shim** (`signal_shim.c` over `sigaction(2)` and `shutdown(2)`; no
-`deps`, the same self-contained model as `core:os` and `core:net`). Core tier.
-`on_shutdown(fd) -> bool` installs one handler for both signals whose only effect
-is `shutdown(fd, SHUT_RDWR)` on the listening socket `fd`, so every thread blocked
-in `accept` on it (§32.24) is released and the program winds down through the
-failure path it already has; `shutdown_requested() -> bool` reports whether such a
-signal has arrived since. `on_shutdown` **MUST** fail closed: on a descriptor it
+**libc-only shim** (`signal_shim.c` over `sigaction(2)` and `shutdown(2)`; its
+`deps` names only the Windows `-lws2_32`). Core tier.
+`on_shutdown(fd) -> bool` installs one handler for both signals whose effect is
+`shutdown(fd, SHUT_RDWR)` on the listening socket `fd` and on every connection
+published with `register_conn(slot, fd) -> bool` (slots `0..255`;
+`retire_conn(slot)` clears one and MUST precede closing that fd), so every
+thread blocked in `accept` or a read on them (§32.24) is released and the
+program winds down through the failure path it already has;
+`shutdown_requested() -> bool` reports whether such a signal has arrived since. `on_shutdown` **MUST** fail closed: on a descriptor it
 cannot register or a handler it cannot install it returns `false` and leaves the
 default disposition in place (the process dies on `SIGTERM`), never a half-armed
 state. Source `corelib/signal/signal.ty`, `corelib/signal/signal_shim.c`.
@@ -399,7 +391,7 @@ state. Source `corelib/signal/signal.ty`, `corelib/signal/signal_shim.c`.
 `signal.on(sig, handler)`, and an implementation **MUST NOT** run Tycho code in
 handler context. Every Tycho value lives in a bump-allocated arena (§31.1,
 [§9](07-memory-model.md)) whose allocator is not re-entrant, and channel
-operations park behind a mutex ; a handler that interrupts the
+operations park behind a mutex; a handler that interrupts the
 allocator or a lock holder and then allocates or touches a channel corrupts or
 deadlocks the process it was invoked to shut down. A wider surface is therefore a
 language feature rather than a library one, and would need at minimum: an
@@ -413,34 +405,26 @@ clause in this chapter.
 
 #### The handler's async-signal-safety contract
 
-The installed handler performs **exactly five actions**
-(`corelib/signal/signal_shim.c:77-85`), and every one is either an access to a
-`volatile sig_atomic_t` — the one object type POSIX permits a handler to write
-while the rest of the program reads it — or a call POSIX lists as
-async-signal-safe:
+The installed POSIX handler (`sigx_handler` in `corelib/signal/signal_shim.c`)
+does only these, each either an access to a `volatile sig_atomic_t` or a call
+POSIX lists as async-signal-safe:
 
-1. save `errno` into an automatic `int`, because `shutdown()` may clobber it and
-   the interrupted thread is entitled to find its own value;
-2. store `1` to the flag `shutdown_requested` reads
-   (`corelib/signal/signal_shim.c:65@sigx_flag`);
-3. load the registered descriptor (`corelib/signal/signal_shim.c:66@sigx_fd`);
-4. if that descriptor is non-negative, call `shutdown(fd, SHUT_RDWR)`
-   (`corelib/signal/signal_shim.c:70@shutdown`) — a bare syscall that allocates
-   nothing and takes no userspace lock the interrupted thread could already hold;
+1. save `errno`, because `shutdown()` may clobber it;
+2. store `1` to the flag `shutdown_requested` reads;
+3. load the listening descriptor and, if non-negative, call
+   `shutdown(fd, SHUT_RDWR)` — a bare syscall that allocates nothing and takes
+   no userspace lock;
+4. `shutdown` each registered connection descriptor the same way;
 5. restore `errno`.
 
-No `malloc`, no stdio, no `pthread_*`, no arena access, so the handler holds no
-lock the interrupted thread can deadlock against. `memset`, `sigemptyset` and
-`sigaction` (`corelib/signal/signal_shim.c:104-110`) run inside `on_shutdown`,
-which is ordinary code. Two orderings are load-bearing and an implementation
-**MUST** preserve both:
+No `malloc`, no stdio, no `pthread_*`, no arena access. `sigaction` runs inside
+`on_shutdown`, which is ordinary code. Two orderings are load-bearing and an
+implementation **MUST** preserve both:
 
-- **The descriptor is registered before the first `sigaction`**
-  (`corelib/signal/signal_shim.c:107@sigx_fd`), so a signal arriving mid-install
+- **The descriptor is registered before the first `sigaction`**, so a signal arriving mid-install
   can never find a handler in place and a stale or absent descriptor to act on. An
   unregistered descriptor **MUST** leave the handler setting only the flag.
-- **The handler is installed with `sa_flags = 0`**
-  (`corelib/signal/signal_shim.c:112@sa_flags`), that is, **without
+- **The handler is installed with `sa_flags = 0`**, that is, **without
   `SA_RESTART`**. This is observable, so it is normative: with `sa_flags = 0` the
   thread that receives the signal finds its `accept` interrupted and `net.accept`
   reports `Err` (§32.24), which is the wind-down path a program is entitled to
@@ -451,7 +435,7 @@ which is ordinary code. Two orderings are load-bearing and an implementation
   to see an interrupted `accept` as a failed one rather than as a silently
   restarted call.
 
-**What it costs, recorded because it is not portable.** `shutdown()` waking a
+**Portability.** `shutdown()` waking a
 thread blocked in `accept` on a *listening* socket is a Linux behaviour, not a
 POSIX guarantee, and connections still sitting in the backlog are dropped rather
 than drained. An implementation on another platform **MUST** re-establish the
@@ -474,7 +458,7 @@ An HTTP(S) client over **libcurl** (`deps` → `libcurl`). `get(url) -> ptr` /
 handle (or null on transport failure; `ok`/`is_null`); `status(r)`, `body(r)`
 (arena-copied), `release(r)`. Convenience `get_body(url)` / `get_status(url)` do
 the request and free the handle. The arena-copied body truncates at an interior
-`0x00` (text APIs). `docs/reference/corelib.md:214-225`.
+`0x00` (text APIs).
 
 ### 33.2 `crypto` — libcrypto (OpenSSL)
 
@@ -484,10 +468,9 @@ The security-grade module, a shim over OpenSSL **libcrypto** (`deps` →
 `sha256`/`sha512` of binary, `hmac_sha256`, `pbkdf2_sha256`, constant-time
 `ct_equal`, ChaCha20-Poly1305 AEAD (`aead_encrypt`/`aead_decrypt`, `"!err"` on
 auth failure), Ed25519 (`ed25519_pubkey`/`sign`/`verify`), X25519
-(`x25519_pubkey`/`shared`). Every value crosses as lowercase hex (a Tycho string
-can't hold `0x00`; use `core:hex` to convert text). Bound to OpenSSL rather than
+(`x25519_pubkey`/`shared`). Every value crosses as lowercase hex (`core:hex`
+converts). Bound to OpenSSL rather than
 reimplemented because real crypto must be constant-time and audited.
-`docs/reference/corelib.md:327-342`.
 
 ### 33.3 `compress` — zlib
 
@@ -500,9 +483,8 @@ gzip *or* zlib stream), plus `raw_compress(data) -> bytes` and
 and `TooBig` (the decompressed output exceeds the limit). The default output
 limit is 1 GiB, or the zlib `uInt` limit when lower. **An `Ok` of length 0 is a
 real empty payload and is distinct from every failure** — a decompressor must
-not signal failure by returning empty bytes.
-Conflating the two is a data-loss bug, not a style choice: for a container format
-it makes a corrupt member read as a legitimate zero-byte file. On a raw deflate
+not signal failure by returning empty bytes, or a corrupt container member reads
+as a legitimate zero-byte file. On a raw deflate
 stream `Truncated` also covers "not a deflate stream at all", since a headerless
 stream carries no wrapper or checksum to tell those apart. Binary-safe
 (`bytes`, interior NUL preserved). **`compress` is byte-deterministic**: for a
@@ -510,9 +492,7 @@ given zlib build it is a pure function of its input, so the same bytes in give
 byte-identical bytes out across processes, wall-clock times, locales and time
 zones. Concretely, RFC 1952's MTIME header field is **zero** — an implementation
 must not fill it from the clock or from a source file's mtime, the way `gzip(1)`
-does. This is a requirement on any implementation of `core:compress`, not an
-accident of zlib's defaults: `tools/tycho-ar`'s reproducibility gate ("archive
-the same tree twice, `cmp`-identical") rests on it. The compressed *length* is a
+does (`tools/tycho-ar`'s reproducible archives rest on this). The compressed *length* is a
 zlib tuning detail and is not fixed by this spec. Source
 `corelib/compress/compress.ty`, `corelib/compress/deps`.
 
@@ -529,10 +509,8 @@ truncated or damaged), `BadDims` (encode: a width or height ≤ 0, or beyond the
 implementation's bound), `ShortPixels` (encode: fewer than `width*height*4` pixel
 bytes) and `Failed` (libpng or an allocation failed). Decode returns the first
 three and `Failed`; encode returns the last three. **Every failure must be an
-`Err`, never an empty or zero-dimension `Ok`** — the same requirement §33.3 makes
-of `decompress`, for the same reason: a sentinel makes a truncated PNG, a JPEG
-renamed `.png` and an empty file one answer, and the caller who forgets to test
-it gets silence instead of an error. A 0-width or 0-height image is not
+`Err`, never an empty or zero-dimension `Ok`**, as §33.3 requires of
+`decompress`. A 0-width or 0-height image is not
 representable in PNG (IHDR rejects a zero dimension), so an `Ok` from `decode`
 always carries `width ≥ 1` and `height ≥ 1`, and an `Ok` from `encode` always
 carries a non-empty buffer; a caller may rely on both. The libpng decode handle

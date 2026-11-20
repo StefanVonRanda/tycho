@@ -3,10 +3,8 @@
 > **Memory:** Newtypes cost nothing at runtime, and every value — scalar or
 > aggregate — copies deeply on assignment.
 
-Tycho is statically typed, and every value has a type known at compile time. This page
-covers the scalar types, the `bytes` buffer, distinct `type` newtypes, and how
-inference lets you leave most annotations off. The compound types — arrays, structs, maps, tuples, enums — each have
-their own page.
+Every value has a type known at compile time. This page covers the scalars, `bytes`,
+newtypes and inference; each compound type has its own page.
 
 ## Scalars
 
@@ -16,24 +14,25 @@ their own page.
 | `float` | 64-bit IEEE-754 double |
 | `bool` | `true` / `false` |
 | `string` | an immutable, length-counted byte string |
-| `char` | a single byte (`0`–`255`) |
-| `u32` / `u64` | 32- / 64-bit **unsigned** integer, wraps at 2³² / 2⁶⁴ |
+| `char` | a single byte (`0`–`255`); inferred only — there is no `char` type keyword |
+| `u8` `u16` `u32` `u64` | **unsigned** integers of that width, wrapping |
+| `i8` `i16` `i32` `i64` | signed integers of that width |
 | `f32` | 32-bit IEEE-754 single-precision float |
 
 `int` and `float` never mix implicitly — there is no automatic widening. Convert
 explicitly with `to_float(n)` and `to_int(x)` (the latter truncates toward zero). The
 operators each type supports are in [Basics](basics.md#expressions).
 
-### `u32` / `u64` / `f32`
+### Sized numerics
 
-Fixed-width numerics for bit-twiddling, hashing, and crypto (`corelib/sha256` is written
-in `u32`). They behave like `int`/`float` but at a defined width:
+Fixed-width numerics for bit-twiddling, hashing, crypto and C interop (`corelib/sha256` is
+written in `u32`). They behave like `int`/`float` but at a defined width:
 
-- **Wrap is defined.** `u32`/`u64` arithmetic (`+ - * << ~` …) wraps modulo 2³²/2⁶⁴ — no
+- **Wrap is defined.** Unsigned arithmetic (`+ - * << ~` …) wraps modulo 2ᴺ — no
   masking needed. `>>` is a logical shift; `/` and `%` abort cleanly on a zero divisor.
 - **Distinct and non-mixing**, like `char`. A `u32` never silently becomes an `int`.
-  Bridge explicitly with `to_u32(x)`, `to_u64(x)`, `to_f32(x)`, `to_int(x)`, `to_float(x)`
-  (each takes any numeric scalar). A bare **int literal adapts** to a `u32`/`u64` operand
+  Bridge explicitly with `to_u8` … `to_u64`, `to_i8` … `to_i64`, `to_f32`, `to_int` and
+  `to_float` (each takes any numeric scalar). A bare **int literal adapts** to a sized operand
   and a numeric literal to `f32`, so `h ^ 16777619` and `x & 255` need no cast on the
   constant; a non-literal `int` does (`state[i]` → `to_u32(state[i])`).
 - Arrays (`[u32]`, `[f32]`, …), struct fields, `str(...)`, and f-strings all work.
@@ -57,8 +56,8 @@ for d := 0; d < 10; d += 1:
     s = s + ('0' + d)          # zero-allocation one-byte append per digit
 ```
 
-`char` does not silently become `int` elsewhere — `str(c)` and `c == n` (mixing `char`
-and `int`) are type errors, so the byte/number distinction is never lost by accident.
+`char` does not silently become `int` elsewhere: `c == n` (mixing `char` and `int`) is a
+type error. `str(c)` is the one-byte glyph string; `to_int(c)` is the byte value.
 
 ### `bytes`
 

@@ -1,11 +1,8 @@
 # Appendix A — Collected grammar
 
 This appendix collects every grammar production of the language into a single
-listing for at-a-glance reference. It is **normative but not authoritative**: the
-productions are reproduced verbatim from their defining chapters, which remain
-the source of truth. On any discrepancy the in-chapter definition governs, and
-the discrepancy is a bug in this appendix (the `make spec-check` gate exists to
-prevent one — see the invariant note at the end).
+listing for at-a-glance reference. The productions are reproduced verbatim from
+their defining chapters, which govern on any discrepancy (§A.5).
 
 The grammar is defined in two chapters:
 
@@ -25,7 +22,7 @@ double-quoted string is a literal token. Grammar terminals are the token kinds o
 `STR`, `CHAR`, the layout tokens `NEWLINE`, `INDENT`, `DEDENT`, `EOF`, and the
 reserved words ([§3.6](01-lexical.md#36-keywords), listed in
 [Appendix B](appendix-b-keywords.md)). Some words the grammar uses as literal
-terminals — `soa`, `channel`, `None`, `Some`, `Ok`, `Err`, and the builtin names
+terminals — `channel`, `bounded`, `vector`, `packed`, `align`, `None`, `Some`, `Ok`, `Err`, and the builtin names
 — are **contextual identifiers** ([§3.7](01-lexical.md#37-contextual-identifiers)),
 not reserved: they are keywords only in the positions shown here.
 
@@ -78,7 +75,7 @@ WhereClause ::= "where" Constraint ( "," Constraint )*
 Constraint  ::= Predicate "(" IDENT ")"
               | IDENT ":" Type ( "|" Type )*
 Predicate   ::= "numeric" | "comparable" | "has_str" | "hashable" | "defaultable"
-Struct     ::= "packed"? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
+Struct     ::= ( "packed" | "align" "(" INT ")" )? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
 FieldDecl  ::= IDENT ":" Type NEWLINE
 Enum       ::= "enum" IDENT TypeParams? ":" NEWLINE INDENT VariantDecl+ DEDENT
 VariantDecl::= IDENT ( "(" Type ( "," Type )* ")" )? NEWLINE
@@ -108,7 +105,7 @@ ArrayOrMap::= "$" IDENT "]" Type                              /* [$N]T  size-par
 TypeArgs  ::= "(" Type ( "," Type )* ")"
 QualName  ::= IDENT ( "." IDENT )?                            /* Name or pkg.Name */
 PrimType  ::= "int" | "float" | "bool" | "string" | "ptr" | "bytes"
-            | "u32" | "u64" | "f32"
+            | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" | "f32"
 Block ::= INDENT Stmt+ DEDENT
 Stmt  ::= ConstStmt | DeleteStmt | Return | Break | Continue | PassStmt
         | Select | Match | If | ParallelFor | For
@@ -200,16 +197,8 @@ LambdaParams ::= IDENT ( ":" Type )? ( "," IDENT ( ":" Type )? )*
 ```
 <!-- END GENERATED -->
 
-**Note — `RawPiece` ([§3.9.4](01-lexical.md#394-string-literals)).** The
-`RawElem` production above says which *bytes* a backtick-delimited piece may
-contain; the rule it cannot express is that **no escape is interpreted** inside
-one. A backslash is a backslash, so `` `a\nb` `` is four characters, and an
-embedded newline is a literal newline byte — `RawPiece` is the only literal
-terminal that spans source lines. Having no escape at all, it has no backtick
-escape either, so it cannot contain a backtick; one is written by joining a
-`QuotedPiece`, in which a backtick is an ordinary byte. `RawPiece` is a
-`StrPiece`, so it joins with adjacent pieces of either kind, and there is no
-`` f`…` `` interpolated raw form.
+**Note — `RawPiece`.** No escape is interpreted inside a raw piece; that rule,
+which the EBNF cannot express, is in [§3.9.4](01-lexical.md#394-string-literals).
 
 
 ## A.4 Non-terminals defined in prose elsewhere
@@ -233,11 +222,7 @@ listing:
 
 ## A.5 The identical-to-source invariant
 
-Everything between the `BEGIN GENERATED` / `END GENERATED` markers above is
-produced mechanically by `scripts/gen_grammar.sh`, which extracts every fenced
-grammar block (any block containing a `::=` production) from
-[§3](01-lexical.md) and [§4](02-grammar.md) verbatim, in source order. The
-`make spec-check` gate re-runs the generator and diffs its output against this
-region; any drift between a production here and its defining chapter fails the
-build. This appendix therefore cannot silently become a stale second source of
-truth — it is a checked projection of the chapters, not a parallel copy.
+Everything between the `BEGIN GENERATED` / `END GENERATED` markers is produced by
+`scripts/gen_grammar.sh`, which extracts every fenced block containing a `::=`
+production from [§3](01-lexical.md) and [§4](02-grammar.md) verbatim, in source
+order. `make spec-check` re-runs it and fails on any drift.

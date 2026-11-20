@@ -7,11 +7,6 @@ The procedural core of the language: procedures, variables, expressions,
 and control flow. One loop keyword, one procedure form — no `while`,
 no `do`/`until`, no ternary.
 
-Where two spellings could do the same job, Tycho keeps one. Some pages
-list several similar types (for example, the sequence types); those differ
-in memory layout, not style — picking the wrong one is a performance
-or lifetime bug, not a taste choice.
-
 ## Procedures
 
 ```tycho
@@ -26,13 +21,11 @@ A `fn` with no `-> type` returns nothing. Blocks are indentation-based (tabs or 
 don't mix the two within one line's indentation), every block header ends with `:`, and `#`
 starts a comment — like Python's layout.
 
-Parameters come in three kinds. A scalar is copied. A heap-bearing value
-(`string`, `bytes`, `[T]`, a map, or a struct holding one) is a **read-only
-borrow**: the descriptor is copied, the backing storage is shared, and mutation
-is a compile error. A fixed array `[N]T`, a `vector[N]T`, or a struct that
-inlines one is copied whole. An `inout` parameter is mutated in place: the
-callee writes back into the caller's variable, marked with `&` at the call
-site. The full shape table is in [functions](functions.md#parameter-passing-modes).
+A plain parameter is read-only: a scalar or fixed array is copied, a
+heap-bearing value (`string`, `bytes`, `[T]`, a map, or a struct holding one) is
+a read-only borrow. An `inout` parameter is mutated in place, marked with `&` at
+the call site. All three modes, `sink` included, are in
+[functions](functions.md#parameter-passing-modes).
 
 ```tycho
 fn incr(n: inout int):
@@ -44,15 +37,12 @@ fn main():
 ```
 
 This is copy-in/copy-out (equivalent to `x = incr(x)`), so it preserves value semantics: the
-`&` argument must name a mutable place — a variable, or a field of one (`&b.asks`), and the same variable cannot be passed to two `inout`
-parameters of one call (that would be overlapping mutable access). `inout` covers `int`, `bool`,
-value structs, and the heap aggregates (`[int]`, `[string]`, heap-bearing structs, maps) —
-including `push`/growth and element/field mutation through the borrow. `inout string` works too:
-the string stays immutable, but reassignment through the borrow (`s = s + "."`) reaches the
-caller, with the new bytes living as long as the caller's variable.
+`&` argument must name a mutable place — a variable, or a field of one (`&b.asks`) — and the
+same variable cannot be passed to two `inout` parameters of one call. `inout` covers scalars,
+structs, arrays and maps, including `push` and element mutation through the borrow. On an
+`inout string`, reassignment (`s = s + "."`) reaches the caller.
 
-A third convention, `sink`, marks a parameter the callee **owns and consumes** — owned, so it
-may mutate the buffer (a plain borrow is read-only); consuming, so the caller gives it up:
+`sink` marks a parameter the callee **owns and consumes**, so it may mutate the buffer:
 
 ```tycho
 fn scale2(xs: sink [int]) -> int:
@@ -68,12 +58,8 @@ fn main():
     scale2(a)                      # a is dead after this, so it is adopted too — still no copy
 ```
 
-This is the copy-avoiding convention: `sink` takes a value the
-caller no longer needs — a fresh literal, or a local on its last use —
-with **no copy**. It copies only when value semantics require it — if the variable is read
-again afterwards, used inside a loop, or captured by a closure. Reusing a value *after*
-handing it to a `sink` is a compile error, not a silent copy. A value returned or stored past the
-call must still be copied to live longer — that follows from how scopes own memory.
+A fresh literal or a local on its last use is adopted with **no copy**. Reusing a
+value after handing it to a `sink` is a compile error, not a silent copy.
 
 ## Declarations and assignment
 

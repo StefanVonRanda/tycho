@@ -13,7 +13,7 @@ A dependency-free statistical CPU-time profiler for tycho-compiled programs. It 
   function (`is_variant`, `count_str_occ`, the bounds-check helpers) is charged
   that overhead and *looks* like 25–33% of runtime — when at `-O2` it's ~0.3%.
   Chasing that ghost cost real effort. The measured figures
-  are here rather than elsewhere on purpose: `docs/perf.md` states the rule
+  are here rather than elsewhere on purpose: `docs/performance.md` states the rule
   but no longer carries the numbers, which were taken against a workload that can
   no longer be run.
 

@@ -7,10 +7,10 @@ is sound. Users don't need this page.
 
 Binding-based monomorphization, no AST cloning. At a call site or type
 use, bind `$` parameters by structural match, intern
-`(generic_def, [concrete args])` in a side table (same pattern as
-`opt_of` / `arr_of` / `mapc_of`), and emit one substituted concrete
-copy on first use. Mangled names carry the args
-(`first__int`, `Pair__int__string`). After substitution the body flows
+`(generic_def, [concrete args])` in a side table, and emit one substituted
+concrete copy on first use. Mangled names carry one `__<arg>` per type
+parameter (`first__int`, `Pair__int__string`;
+`compiler/emit/emit_generics.ty@_instname`). After substitution the body flows
 through resolve + codegen unchanged.
 
 ## Why it fits the memory model

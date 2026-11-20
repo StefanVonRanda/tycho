@@ -3,8 +3,8 @@
 The [README](../README.md#building) says which platforms are gated and names
 the three caveats you can hit in your first hour. This page is the rest: which
 lanes skip on which host, why each one skips, and which C compilers have been
-measured against the corpus. It is written for someone porting, packaging or
-debugging a red gate — not for someone deciding whether to try the language.
+measured against the corpus — for someone porting, packaging or debugging a red
+gate.
 
 Every skip named here prints its own reason at gate time. An unenumerated skip
 is a gate failure, not a quiet pass ([controls](controls.md#the-practice)).
@@ -67,7 +67,7 @@ suite under ASan/UBSan/LeakSanitizer, plus every gate lane.
 aarch64, run in a VM on the Apple Silicon box at native speed. No Graviton
 artifact is built yet.
 
-### The comma-decimal locale (FRICTION-111)
+### The comma-decimal locale
 
 `tests/float_lit_locale` and `float_str_locale` prove that float formatting does
 not move when the C locale does, which needs a locale whose decimal point is not
@@ -92,8 +92,8 @@ runs this repository's gate; this target is the Linux half of it.
 ### Optional corelib dev libraries
 
 The FFI-backed corelib packages need their dev libraries, or `make shim-warn`
-refuses — it compiles 9 shims, wants 10, and will not read an empty warning file
-as a pass:
+refuses: it requires at least 10 shims to compile, so an empty warning file
+cannot pass:
 
 ```sh
 sudo apt-get install zlib1g-dev libssl-dev libcurl4-openssl-dev \
@@ -132,8 +132,8 @@ a bug awaiting a fix; [SECURITY.md](../SECURITY.md) carries the measurement.
 
 ### The sanitizer hole, and what closed most of it
 
-The Windows-only code paths long had no memory-safety checking at all. Installing MSYS2's
-**clang64** toolchain closes most of that — 60 corpus fixtures under ASan+UBSan
+mingw ships no sanitizers. Installing MSYS2's **clang64** toolchain closes most
+of that hole — 60 corpus fixtures under ASan+UBSan
 and the 13-program concurrency suite under UBSan all come back clean — but ASan
 itself does not work on threaded programs with that toolchain, so the channel and
 allocator paths have UBSan coverage only.
@@ -143,9 +143,7 @@ fuzz campaign. The behavioural gaps that survive the port — non-ASCII filename
 `TZ` handling, `core:os` through `cmd.exe`, the debugger's Ctrl-C — are listed in
 [SECURITY.md](../SECURITY.md).
 
-**Windows arm64** is a mingw target, executed by `make platform-check`. A
-subnormal-literal defect there was a toolchain bug that lane found, and it is
-fixed.
+**Windows arm64** is a mingw target, executed by `make platform-check`.
 
 ## Release artifacts
 
@@ -154,5 +152,4 @@ cross-builds the Windows one). `make release-check` builds and smoke-tests the
 current-version tarball twice and requires byte-identical archives.
 
 See also: [SUPPORT.md](../SUPPORT.md) for which platforms carry a *promise* ·
-[controls](controls.md) for why every skip is enumerated ·
-[the friction log](internals/FRICTION.md) for FRICTION-91 and FRICTION-111.
+[controls](controls.md) for why every skip is enumerated.

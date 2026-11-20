@@ -19,22 +19,25 @@ Every function threads an arena hierarchy and frees per scope. The shape, from
 the emitted C:
 
 ```c
-int main(void) {
+int main(int argc, char **argv) {
     Arena _root = arena_new(0);   /* root arena */
     h_main(&_root);
     arena_free(&_root);           /* everything reachable frees here */
 }
-long h_sc(Arena *_parent, long h_a, long h_b) {
-    Arena _scope = arena_child(_parent);
-    { long _ret = (h_a + h_b); arena_free(&_scope); return _ret; }
+tycho_int h_greet_len(Arena *_parent, char *h_name) {
+    Arena _scope = arena_child(_parent); _scope.name = "greet_len";
+    char *h_msg = tycho_str_concat(&_scope, TYCHO_LIT("hello "), h_name);
+    { tycho_int _ret = tycho_str_len(h_msg); arena_free(&_scope); return _ret; }
 }
 ```
 
 The rules:
 
 1. `main`'s wrapper creates `_root`, calls into the program, and frees `_root`.
-2. Every function gains a leading `Arena *_parent` and opens
-   `Arena _scope = arena_child(_parent)`.
+2. Every function gains a leading `Arena *_parent`, and opens
+   `Arena _scope = arena_child(_parent)` when its body allocates something that
+   does not escape (a function that allocates nothing, or only its result, opens
+   none).
 3. Every heap allocation takes an arena argument and allocates into it.
 4. **Return slot:** a returned heap value is built (or copied) into `_parent`,
    which outlives `_scope`, so the value survives the callee's frame:
@@ -78,16 +81,6 @@ site*: `outer = e` targets `outer`'s home block, `push(outer, v)` targets
 caller. So the transpiler decides where each allocation lives by reading
 signatures and scopes — a local routing decision, not a dataflow trace.
 
-### Why arena migration is sound incrementally
-
-`arena_free` reclaims only memory that was `arena_alloc`'d into that arena; heap
-that is still `malloc`'d (for a type not yet placed on an arena) is untouched and
-leaks, exactly as a non-arena allocator would. So placing one type family
-on arenas while the rest stay on `malloc` is sound: no use-after-free, the placed
-type stops leaking, the rest leak as they did. The one irreducible, all-at-once
-piece is the threading spine — once any function takes `Arena *_parent`, every
-caller must pass one.
-
 ## Reclamation techniques
 
 Per-scope release alone isn't enough to match hand-written C or beat a GC.
@@ -96,7 +89,7 @@ reference counts.
 
 - **Transient placement.** A statement whose result is scalar or discarded builds
   its heap temporaries in a per-statement arena that is freed immediately. So a
-  discarded `print(... check(make(19)) ...)` no longer leaves its tree resident
+  discarded `print(... check(make(19)) ...)` does not leave its tree resident
   for the rest of the function — its arena storage becomes reusable at statement
   end, though pooled blocks may remain resident. Stores
   into longer-lived containers route to their own arena, so only true transients
@@ -142,9 +135,7 @@ reference counts.
 
 These techniques bound allocation growth in supported loop-carried reassignment
 and sliding-window patterns; they do not eliminate all rebuild copies or lower
-the block pool's high-water mark. Pointer-shaped, structurally-shared data is
-another cost: tries measured ~1.55× C in RAM after the compact indexed-dict map
-layout, down from ~3×. See [the thesis](thesis.md) and the
+the block pool's high-water mark. See [the thesis](thesis.md) and the
 [value-semantics limits note](internals/value-semantics-limits.md).
 
 ## Verification
@@ -180,45 +171,3 @@ ring reuse. Thread-local block reuse needs no shared pool lock; fresh allocation
 can still enter the platform allocator. Unlike ordinary read-only call borrows,
 thread-boundary copies isolate Tycho value storage; they are not a claim that
 all platform resources or runtime synchronization are race-free.
-
----
-
-## Appendix: what each mechanism buys, type by type
-
-For contributors. Because placing one type on arenas while others stay on
-`malloc` is sound (see *Why arena migration is sound incrementally*), you can
-reason about the code generator one type family at a time. This
-appendix records what each mechanism buys for each family. RSS figures are for
-the workload that exercises the named type. Soundness throughout is checked by
-the gates in [controls.md](controls.md) and [architecture.md](architecture.md).
-
-**Compound types.** Arrays (~31×), maps (~3.7×), and structs, tuples, and boxes
-(~1.67×) all use the same coupled pattern: allocators take `Arena*`, copies
-become recursive and arena-aware, and store sites force the value into the
-container's arena. Every heap type is then arena-managed at function scope.
-
-**Per-block arenas.** A child arena per `if`/loop block, freed per iteration, lets
-a loop-local container free per-iteration instead of at function return
-(loop-local array build 245 MB → 10 MB). Routing is lexical (the current block's
-env extent), not dataflow.
-
-**Element-level ownership.** Moving container *elements* into their container's
-arena: map keys; array string elements (~274×); nested-array elements (~77×);
-struct/tuple array elements (~140×); option/result array elements with scalar
-payload (~45×); and `inout` container home-arena threading (~582×) plus its
-extension to `inout` heap-struct fields. The hardest case — heap-payload
-option/result elements such as `[Option(str)]` — is handled by making options
-first-class deep-copied value types (245 → 11 MB at 4M iterations, flat).
-
-**Recursive enums and transient placement.** Enum nodes are arena value types
-with a recursive deep-copy at every escape point; transient placement buys the
-tree-workload win (binary-trees 2374 MB → 38 MB, tree-rewrite 825 MB → 9 MB);
-per-variable block depth (a stack of block-entry indices rather than a single
-marker) closes the array-pipeline gap (358 MB → 5 MB); and move-on-last-use
-mirrors the C compiler's deep-copy elision.
-
-**Per-statement transient reclaim.** Each expression statement's discarded value
-is wrapped in a per-statement arena, so a depth-19 stretch tree from a discarded
-`print(... check(make(19)) ...)` frees at statement end rather than at function
-return — binary-trees 25 → 13.3 MB, below Koka's reference-counted 14.8 MB, the
-last cross-language workload where a reference-counting rival led on memory.

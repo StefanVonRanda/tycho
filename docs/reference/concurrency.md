@@ -22,130 +22,11 @@ Keep shared C state per thread or serialize the calls, and assume nothing about
 the C side's thread-safety. The analysis behind this rule is in
 [`rfc/ffi-threading-design-review.md`](../rfc/ffi-threading-design-review.md).
 
-## `spawn` and `wait`
+The model removes data races, not deadlock: a `recv` with no live sender and no
+`close` parks forever. The compiler warns about the three cases it can prove
+([below](#what-the-compiler-warns-about)).
 
-Rule: `spawn f(args)` starts the call as a task and returns a `Task(T)` handle.
-The argument list is the capture list — explicit and by value.
-
-`spawn` (like `wait` and the other task words) is a reserved word, not a
-name: a function or variable cannot be called `spawn`. The full list is
-[appendix B](../spec/appendix-b-keywords.md#b1-reserved-words) (a few words
-there, such as `pass`, are contextual rather than reserved and stay usable
-as names).
-
-```tycho
-fn count(path: string) -> int:
-    return len(path)
-
-t1 := spawn count("a.txt")     # args deep-copied into the task's own arena
-t2 := spawn count("b.txt")     # runs in parallel
-_total := wait(t1) + t2.wait()  # blocks; result deep-copied back out
-```
-
-Tasks are **affine and structured**: a handle cannot be copied, reassigned,
-stored in a container, captured by a closure, or discarded; it is waited at
-most once (a second `wait` aborts), and any task still running when its
-variable's scope exits — block end, `break`/`continue`, early `return`,
-`or_return` — is joined there. A function can never return while its tasks run,
-and a task can never leak or detach.
-
-## `parallel for`
-
-Rule: `parallel for` runs a loop body as chunk tasks and joins them at the end
-of the statement. Only a reduction accumulator may be written from the body;
-any other write to an outer variable is a compile error:
-
-```tycho
-fn score(i: int) -> int:
-    return i % 7
-
-total := 0
-parallel for i in 0..<1000000:      # K = min(ncpu(), 64) chunk tasks (TYCHO_THREADS overrides)
-    total += score(i)               # reduction: chunk-local partials, folded at join
-```
-
-The stricter form names the width at the loop when the default is wrong for
-that loop: `parallel(4) for i in 0..<n:` runs exactly 4 chunk tasks. The
-literal must be `1..64` and is checked at compile time; a computed width aborts
-at run time rather than silently clamping. An explicit width beats
-`TYCHO_THREADS`, so it pins the one loop whose shape is known without changing
-how the rest of the program scales.
-
-A reduction accumulator (`+` or `*` on `int`/`float`) starts from the
-operator's identity per chunk and folds at the in-order join, so an integer
-result is identical for any thread count.
-
-## Channels
-
-Rule: a channel is the one shared object — a bounded queue. `send`
-deep-copies the payload in (blocking when full) and `recv` copies it out,
-returning `Option(T)` where `None` means **closed and drained**:
-
-```tycho
-fn consumer(ch: Channel(string)) -> int:
-    return 0
-
-i := 1
-
-ch := channel(string, 256)          # bounded; the creating scope frees it
-w := spawn consumer(ch)             # fn consumer(ch: Channel(string)) -> int
-ch.send("item-" + str(i))           # deep copy in (blocks when full)
-match recv(ch):                     # deep copy out
-    Some(s):
-        println(s)
-    None:                           # closed and drained
-        println("drained")
-close(ch)
-_n := wait(w)
-```
-
-Channel memory is bounded by capacity × payload, for every element type.
-Channels cannot be returned, stored, or captured; the creating scope frees the
-channel after joining its tasks, so the handle can never dangle. A
-`channel(T, cap)` call is legal only as a declaration's direct right-hand side.
-
-## `select`
-
-Rule: `select` waits on several channels at once — `recv` arms, plus an
-optional `default` (non-blocking) and `closed` (every listed channel closed and
-drained) arm:
-
-```tycho
-fn do_job(j: int):
-    println("job " + str(j))
-
-fn note(e: string):
-    println("event " + e)
-
-jobs := channel(int, 4)
-events := channel(string, 4)
-close(jobs)
-close(events)
-
-for true:
-    select:
-        recv(jobs, j):
-            do_job(j)
-        recv(events, e):
-            note(e)
-        closed:
-            break
-```
-
-Every value crossing a thread boundary is a deep copy — the same rule as an
-ordinary call.
-
-## Working with it
-
-The sections above are the whole model. What follows is the full rule set for
-each construct, the three cases the compiler warns about, and the deliberate
-limits. The model removes data races, not deadlock: a `recv` with no live
-sender and no `close` parks forever (see [Limits](#limits-deliberate)). The
-compiler warns about the three cases it can prove — see
-[What the compiler warns about](#what-the-compiler-warns-about) — but proving
-the absence of a live sender in general is not attempted.
-
-### spawn / wait — structured tasks
+## spawn / wait — structured tasks
 
 ```tycho
 fn count(path: string) -> int:
@@ -159,8 +40,10 @@ println(str(total))
 
 `spawn` takes a **direct call** to a named function — the argument list *is* the
 capture list, explicit and by value. The result is `Task(T)`, a type with no
-source syntax, so a handle can only live in a local. Tasks are **affine and
-structured**, meaning:
+source syntax, so a handle can only live in a local. `spawn`, `wait` and the
+other task words are reserved
+([appendix B](../spec/appendix-b-keywords.md#b1-reserved-words)). Tasks are
+**affine and structured**:
 
 - Copying or rebinding a handle, reassigning it, storing it in any container or
   closure, discarding a bare `spawn`, or spawning a builtin / extern / `void`
@@ -172,11 +55,11 @@ structured**, meaning:
 - A second `wait` on the same task aborts at runtime
   (`tycho: task already waited`) — never undefined behavior.
 
-### parallel for — fork-join data parallelism
+## parallel for — fork-join data parallelism
 
 ```tycho
 total := 0
-parallel for i in 0..<400000000:      # K = ncpu chunk tasks; TYCHO_THREADS overrides
+parallel for i in 0..<400000000:      # K = min(ncpu(), 64) chunk tasks; TYCHO_THREADS overrides
     total += (i * 31 + 7) % 1000003   # reduction: chunk-local partial, folded at the join
 ```
 
@@ -192,14 +75,13 @@ errors — there is nothing left to race on. All chunk tasks join inside the
 statement.
 
 **Naming the width.** `parallel(W) for …` fixes the chunk count for one loop:
-`parallel(4) for i in 0..<n:` runs exactly four. The literal is checked at
-compile time and must be `1..64`; a computed width aborts at run time rather
-than silently clamping. An explicit width **beats `TYCHO_THREADS`**: it pins the
-one loop whose shape is known (a short body where `ncpu()` chunks would cost
-more in copy-in than they save) without changing how the rest of the program
-scales. Otherwise the default stands.
+`parallel(4) for i in 0..<n:` runs exactly four. A literal must be `1..64`,
+checked at compile time; a computed width out of range aborts at run time
+rather than clamping. An explicit width **beats `TYCHO_THREADS`**, so it pins
+one loop (say, a short body where `ncpu()` chunks cost more in copy-in than they
+save) without changing how the rest of the program scales.
 
-#### Bounded fan-out over a channel
+### Bounded fan-out over a channel
 
 `parallel for x in ch:` drains a channel with `K = ncpu()` workers, each pulling
 items until the channel is closed **and** drained:
@@ -243,7 +125,7 @@ per-item result gets out of a loop whose only permitted outer write is a
 reduction. The capture is a scalar handle, so every chunk sends into the one
 queue; `send` blocks on a full channel, which is the loop's backpressure.
 
-### Channels — the one shared object
+## Channels — the one shared object
 
 ```tycho
 fn consumer(ch: Channel(string)) -> int:
@@ -275,7 +157,7 @@ cannot be returned, stored in a container/field/closure, or reassigned;
 `Channel(T)` is valid parameter syntax so workers can take one. Send-after-close
 and double-close abort the program.
 
-### select — multi-channel fan-in
+## select — multi-channel fan-in
 
 ```tycho
 fn do_job(j: int):
@@ -311,7 +193,7 @@ ready item, and a reduction inside an arm folds at the join like any other. An
 early exit still cannot cross a chunk boundary, so `return` in an arm is
 rejected just as it is anywhere else in a `parallel for` body.
 
-### Server shape
+## Server shape
 
 `select` waits on channels, not on socket readiness; socket I/O still belongs in
 a task. Because a task handle cannot be stored, a server usually pre-spawns a
@@ -333,18 +215,17 @@ Three rules keep that shape correct under load:
 Reuse each slot's buffers: root arenas live for the process, so a fresh
 per-connection ring on every accept grows RSS. The pool size is compile-time:
 task handles cannot be stored, so declare the maximum pool explicitly.
-`net.write` had no timeout before `net.set_write_timeout_ms` (0.9.1); with it,
-a connection-owning worker can bound the wait on a slow peer.
+`net.set_write_timeout_ms` lets a connection-owning worker bound the wait on a
+slow peer.
 
-### Measured
+## Measured
 
 `make bench-conc` runs the same
 reduction, pipeline, and pool workloads in Tycho, C, Go, and Rust with
-cross-checked checksums. The numbers live in
-[performance](../performance.md); the full table and its reading are in
+cross-checked checksums; the table and its reading are in
 [bench/conc/RESULTS.md](../../bench/conc/RESULTS.md).
 
-### What the compiler warns about
+## What the compiler warns about
 
 A channel handle can only reach code by being passed as an **argument** — it
 cannot be returned, stored in a struct/enum/container, captured by a closure, or
@@ -378,9 +259,7 @@ the analysis cannot follow (a call it can't resolve) silences the channel
 entirely. Missing a real deadlock is expected; warning about a working program
 is a bug.
 
-### Limits (deliberate)
-
-These limits are deliberate:
+## Limits (deliberate)
 
 - No `async`/`await` colouring, and no actors — per-task arenas plus channels
   already isolate state.
@@ -391,7 +270,7 @@ These limits are deliberate:
   returns early parks forever and nothing warns. A panic or abort in any task
   kills the whole process.
 
-### Verification
+## Verification
 
 `make conc` runs the concurrency fixtures with golden output under
 AddressSanitizer/LeakSanitizer and ThreadSanitizer.

@@ -6,13 +6,10 @@ structs, including heap-bearing and nested fields — behave under value semanti
 with implicit hierarchical arenas and **no pointer or reference type**, and why the
 memory model stays sound without a borrow checker or whole-program alias analysis.
 
-The question: *do implicit arenas still hold once the
-language has arrays and structs, given strict value semantics and no pointer
-type?* The answer is **yes**, subject to five invariants and three
-costs, both listed below. Two transpiler optimizations (return-slot move,
-in-place append) keep the costs from biting in practice; see
-[thesis.md](../thesis.md) §4. Arrays, structs, nested struct fields, structural
-equality, and `inout` all ship as described.
+Implicit arenas hold for arrays and structs under strict value semantics with
+no pointer type, subject to the five invariants and three costs below. Two
+transpiler optimizations (return-slot move, in-place append) keep the costs from
+biting in practice; see [thesis.md](../thesis.md) §4.
 
 ### 1. The model in one paragraph
 
@@ -56,8 +53,7 @@ struct Line:
     labels: [string]       # a field that is an array, etc.
 ```
 
-No `null`. "Maybe a value" needs an optional/sum type (see §7); that is a
-companion feature, not part of this spec, but the model assumes it exists.
+No `null`: "maybe a value" is `Option(T)`.
 
 ### 3. The five invariants that keep it sound
 
@@ -172,50 +168,19 @@ The last row is the key point: the dangling-pointer bug that forces every other
 region system to ship escape analysis *for correctness* isn't expressible in
 Tycho, so it cannot occur.
 
-### 7. Generics — monomorphized over the built-in container machinery
+### 7. Generics and companion features
 
-Tycho has **monomorphized generics**: a `$T` type parameter on a
-function or struct, inferred at the use site and stamped out to concrete code at
-compile time. They reuse the *same* per-concrete-type interning + emission the
-transpiler already runs for its built-in parametric types:
+`$T` generics are monomorphized before the escape decisions of §8 run, reusing
+the per-concrete-type interning and emission that already stamps out `[T]`,
+`Option(T)`, `Result(T, E)` and `[K: V]`. Nothing generic survives to analyze,
+so generics add a substitution pass, not a new lifetime question. Design:
+[design-generics.md](design-generics.md); surface:
+[generics](../reference/generics.md).
 
-- `[T]` — growable array, any element type T (incl. structs, strings).
-- `Option(T)` / `Result(T, E)` — optional / fallible, since there is no `null`
-  and no exceptions.
-- `[K: V]` — hash map; keys are `string`, `int`, a newtype over either, a fieldless enum, or any hashable composite (struct/tuple/array).
-
-```tycho
-fn first(xs: [$T]) -> Option(T):        # generic function
-    if len(xs) > 0:
-        return Some(xs[0])
-    return None
-
-struct Box($T):                          # generic struct
-    v: T
-```
-
-You can write `struct Box($T)` and `fn id(x: $T) -> T`. The monomorphization
-engine such generics need is the same one that stamps out `Option(int)` versus
-`Option(string)`. User `$T` definitions reuse it directly rather than adding a
-new subsystem, and stay memory-model-neutral (§9).
-The full design is in [generics](../reference/generics.md).
-
-The full set is available: generic functions, generic structs
-(construction + `Box(int)` type-position annotations), structured patterns
-(`[$T]` → `Option(T)`), `[$K: $V]` map patterns, `where` constraints
-(`numeric` / `comparable` / `has_str`), and explicit call-site type args
-(`empty$(int)` for the non-inferable case).
-
-Companion features that work alongside generics (none of these is generics):
-
-- **`inout` parameters** (exclusive mutable borrow) — efficient mutation
-  without copies or aliasing.
-- **`Option(T)` + exhaustive `match`** — no `null`.
-- **Slices** (`xs[a:b]`) — a non-storable view (zero-copy when passed
-  to a read-only param, deep-copied when stored), no borrow checker needed.
-- **`distinct` newtypes** (`type Meters = float`) — a distinct,
-  zero-cost type over `int`/`float` (same C rep, type-incompatible with the base
-  and other newtypes); arithmetic/ordering/`str` only between the same newtype.
+Features that keep the model usable without pointers: `inout` (exclusive
+mutable borrow), `Option(T)` with exhaustive `match`, non-storable slices
+`xs[a:b]`, and newtypes `type X = U` (distinct in the type system, erased in
+lowering; spec §5.4 lists the permitted `U`).
 
 ### 8. Allocation strategy: signature-directed escape
 
@@ -249,22 +214,3 @@ pointer-having language the same analysis is a correctness obligation with
 alias tracking — which is exactly why such languages reach for explicit
 tools instead. The no-pointer rule turns that hardest problem into a local
 optimization.
-
-### 9. Why generics don't weaken the model
-
-The arena model holds, and **adding generics does not change that**: each `$T`
-instantiation is monomorphized to concrete, value-semantic code *before* the
-signature-directed escape analysis (§8) runs, so it is ordinary concrete code
-with the same locally-decidable lifetimes — nothing generic survives to analyze.
-Correctness still rests entirely on **"no reference type + copy on cross-arena
-move."** What grows is a substitution pass feeding the *same* per-type
-emission the built-in containers already use — not a new generics engine, and
-not the memory model.
-
-That keeps every lifetime question locally decidable from signatures, which
-is exactly what lets the arenas stay invisible *and* lets the
-signature-directed escape strategy (§8) reclaim memory without copies. Arena
-allocation itself is well-proven; what Tycho is testing is whether removing pointers
-turns the visible memory tools and whole-program analyses such systems usually
-need into invisible, local ones — and generics, being monomorphized to concrete
-code first, ride along without re-introducing either.

@@ -1,7 +1,7 @@
 # Compiler-optimization benchmarks
 
-These fixtures measure the phases in
-[`ROADMAP.md`](../../ROADMAP.md#compiler-optimization-phases-widening-the-domain-2026-10-19).
+These fixtures measure the O1–O7 compiler-optimization phases (all done; record:
+`git show ba952872:ROADMAP.md`, "Compiler optimization phases").
 The rule is the same for every phase: **the same compiler, one control switch,
 byte-identical output, and peak RSS plus median wall time**.
 

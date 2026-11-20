@@ -4,7 +4,6 @@
 > entry file as one package. A file with an `import` is a package: give it
 > its own directory, or its declarations collide with whatever else is there.
 
-
 > **Memory:** packages don't change memory rules. All files build as one
 > program, so the same per-scope freeing applies everywhere.
 
@@ -23,21 +22,9 @@ fn main():
 
 `./tychoc pkg/main.ty` follows the imports and emits one binary. `import "core:strings"`
 resolves the corelib found next to the transpiler binary, or at `TYCHO_CORELIB` if set
-(see [the corelib catalog](../reference/corelib.md)). Privacy is by leading underscore: a top-level
+(see [the corelib catalog](corelib.md)). Privacy is by leading underscore: a top-level
 name beginning with `_` is package-private and cannot be reached through a `pkg.` qualifier
 from another package; every other name is visible to importers.
-
-A file with an `import` is a package, so give it its own directory.
-
-## How it works
-
-- **A package is a directory**, not a file. Every `.ty` file in the directory
-  belongs to the same package and adds to one shared namespace.
-- **Privacy is by leading underscore.** A top-level symbol whose name starts
-  with `_` is private to its own package: you can use it from any file *within*
-  the package, but a qualified `pkg._name` from another package is rejected. Every other top-level symbol is exported.
-- **There's no separate compilation.** The transpiler follows the import graph
-  and emits a single `.c`.
 
 ### Surface syntax
 
@@ -106,13 +93,9 @@ fn main():
 
 ### The `core:` collection
 
-The corelib is reached through a **collection** — a named root for
-imports that resolve outside the local directory tree. `import "core:strings"`
-pulls in the corelib package `strings`, which sits next to the transpiler binary by
-default (or at `TYCHO_CORELIB` if set) rather than relative to the importer. The
-corelib is documented in [corelib.md](corelib.md).
-
-Only the `core:` collection exists today. Vendoring needs no more — see below.
+The corelib is reached through a **collection** — a named root for imports that
+resolve outside the local directory tree. `core:` is the only collection; vendoring
+needs no other (below).
 
 ### Vendoring
 

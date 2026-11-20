@@ -24,10 +24,8 @@ A parameter is passed in one of three modes ([spec §15.2](../spec/11-functions.
   `sink` parameter the caller MUST NOT use it again; that is a compile error, not a silent
   copy. A fresh literal or a call's result is adopted with no copy.
 
-At a call site the cost is the size of the emitted value: `string`, `bytes`, `[T]` and map
-descriptors are a few words with shared backing storage, while `[N]T` and structs that inline
-one copy all N elements. `inout` and `sink` are the ways to avoid that copy. See
-[spec §15.2](../spec/11-functions.md#152-parameter-passing-modes) for the shape table.
+So a plain argument costs a few words for `string`, `bytes`, `[T]` or a map, but all N
+elements for a `[N]T` or a struct that inlines one; `inout` and `sink` avoid that copy.
 
 An `inout` parameter is forwarded to another `inout` parameter with `&` again at the nested
 call site:
@@ -107,10 +105,8 @@ fn main():
     print(str(apply(dbl, 21)))     # 42
 ```
 
-A function value is either a **reference** to a named function — it captures nothing, so it is
-just a code pointer that costs nothing extra and never expires — or a **closure** (below). This is what gives you
-`map`/`filter`/`reduce`-style helpers over concrete function arguments without generics. Two
-things cannot become values: builtins (`len`, `push`, …) and functions with `inout` parameters.
+A function value is either a **reference** to a named function — a plain code pointer — or a
+**closure** (below). Two things cannot become values: builtins (`len`, `push`, …) and functions with `inout` parameters.
 Everything else is first-class — storable in a struct field, array, map value, or tuple.
 
 ## Closures (lambdas)
@@ -162,8 +158,7 @@ print(str(make_adder(7)(3)))              # 10  (apply a returned closure inline
 ```
 
 When a container of closures outlives its scope, each closure's captured values travel with
-it. The common higher-order patterns (`map`/`filter`/`reduce`, predicates, comparators,
-factory functions, dispatch tables) are all covered.
+it.
 
 ## Methods (UFCS)
 
@@ -210,8 +205,7 @@ _f := n.to_float()       # == to_float(n)
 `recv.name(args)` on a built-in rewrites to `name(recv, args)` and is checked by the exact same
 argument rules as the plain call — a wrong receiver type is rejected, not silently coerced. The
 receiver-first built-ins include `split`, `find`, `len`, `push`, `pop`, `reserve`, `keys`, `str`,
-`substr`, `chr`, the `to_*` conversions, `is_null`, `sqrt`/`pow`/`floor`/`fabs`, and the `map_*`
-forms. Constructors (`Some`/`Ok`/`Err`/`None`) and built-ins taking no arguments (`args`, `now`, `ncpu`, …)
+`substr`, `chr`, the `to_*` conversions, `is_null` and `sqrt`/`pow`/`floor`/`fabs`. Constructors (`Some`/`Ok`/`Err`/`None`) and built-ins taking no arguments (`args`, `now`, `ncpu`, …)
 have no receiver and stay plain calls.
 
 One disambiguation rule: if the receiver's struct has a *fn-typed field* with the same name as

@@ -1,11 +1,12 @@
 # Strings v2: `{ptr,len}`, inline small strings, and views (phase 4.1)
 
-Status: design + probe, 2026-11-17. Verdicts at the end. The probe is
-`bench/strings_v2/probe.c`, driven by `bench/strings_v2/run.sh`.
+Status: design + probe for `plan-goose-transfers.md` phase 4. 4.3 has shipped;
+4.4 (carrying 4.2) is open. The probe is `bench/strings_v2/probe.c`, driven by
+`bench/strings_v2/run.sh`.
 
 ## What a string is today
 
-`tycho_str_alloc` (`runtime/tycho_rt.c`, ~line 1355) allocates `8 + n + 1`
+`runtime/tycho_rt.c@tycho_str_alloc` allocates `8 + n + 1`
 bytes from the arena: an 8-byte length word, the data, a NUL. The value is the
 `char *` to the data, so a string is 8 bytes wherever it is stored and is a
 valid C string at every boundary. A negative header marks an immortal literal
@@ -15,16 +16,15 @@ so the smallest string costs 16 bytes of arena plus its 8-byte value: a
 
 A view already exists. O4 (`TychoStrView {data, len}`, low pointer bit set,
 `tycho_str_is_view` / `tycho_str_data`) lets the emitter pass `s[a:b]` to a
-call argument without copying (`cs.slice_view`, `compiler/emit/emit.ty`
-~2947 and ~5924, control `TYCHOC_NO_SLICE_VIEW=1`). Every runtime string
+call argument without copying (`cs.slice_view`, in `compiler/emit/emit_call.ty`
+and `emit_expr.ty`; control `TYCHOC_NO_SLICE_VIEW=1`). Every runtime string
 function goes through `tycho_str_data` / `tycho_str_len`, so it accepts either
 form. A view can't be stored: every retention path calls `tycho_str_copy`.
-The "there is no zero-copy string view" sentence in
-`docs/reference/arrays-slices.md` (~295) and `docs/spec/12-aggregates.md`
-(~186) describes the semantics, which are still copy semantics. It does not
-describe the codegen.
+The spec's "there is no zero-copy string view" (`docs/spec/12-aggregates.md`,
+§16.6) describes the semantics, which are still copy semantics, not the
+codegen.
 
-What depends on `char *`:
+What depends on `char *` (counts as of the 4.1 probe; re-count before 4.4):
 
 | Where | What | Count |
 |---|---|---|
@@ -32,7 +32,7 @@ What depends on `char *`:
 | | `tycho_str_alloc` / `tycho_str_len` / `tycho_str_data` uses | 24 / 24 / 20 |
 | | `TychoArrStr` (`[string]` as `char **data`) | 29 |
 | | string-keyed maps hash and compare `char *` keys | one map family |
-| `compiler/emit/emit.ty` | the C spelling of `string` (`"char *"` at ~617, ~1531, ~3303, ~5259, ~5269, ~11878) | 6 |
+| `compiler/emit/*.ty` | the C spelling of `string` (`"char *"`) | 6 |
 | | `tycho_str_*` call sites | 101 (30 of them `tycho_str_from_c`) |
 | corelib FFI | `extern` declarations with a `string` parameter or result, across 35 `.ty` files | 137 |
 | corelib C shims | `char *` / `tycho_str` lines across 28 `*_shim.c` | 539 |
@@ -111,8 +111,7 @@ cancels the rest. A SKU costs 32 bytes in both layouts (24 + 8 against 16 +
 
 - **4.2 `{ptr,len}` alone: NO-GO.** RSS was 0.0% different on `orders` and
   the time was within noise on both workloads. It is the largest change in the
-  plan, so it ships only as the carrier for 4.4. Tick 4.2 with "folded into
-  4.4".
+  plan, so it ships only as the carrier for 4.4.
 - **4.3 zero-copy views: GO, on today's layout.** Call-argument slices
   are already views (O4, `TYCHOC_NO_SLICE_VIEW`). What remains is
   `for part in split(s, sep)` with read-only parts: lower it to a loop that
@@ -121,7 +120,7 @@ cancels the rest. A SKU costs 32 bytes in both layouts (24 + 8 against 16 +
   measured here is 213 to 167 ms (-22%; -24% against today) on the split
   loop. It needs no representation change. Control
   `TYCHOC_NO_STR_VIEW=1`.
-  *Shipped (phase 4.3):* `_split_view` in `compiler/emit/emit.ty` and
+  *Shipped:* `_split_view` in `compiler/emit/emit_loop.ty` and
   `tycho_str_split_next` in the runtime. Real compiler, darwin-arm64,
   `bench/peakrss.c` median of 5, an 8-field 52-byte line split 2M times,
   each part's `len` summed and compared: 34 ms against 108 ms with the
@@ -163,9 +162,8 @@ cancels the rest. A SKU costs 32 bytes in both layouts (24 + 8 against 16 +
 
 | Piece | Files | Size |
 |---|---|---|
-| 4.3 split views | `compiler/emit/emit.ty` (one `for ... in split(...)` lowering beside the O4 code), 1 runtime iterator helper, 2-3 fixtures, 2 doc sentences | ~150 lines, no ABI change, no bootstrap regeneration |
 | 4.4 (with 4.2) runtime | `runtime/tycho_rt.c`: every function that takes or returns a string, `TychoArrStr`, the string maps, intern, recycling | ~277 `char *` sites, ~800-1200 changed lines |
-| 4.4 emitter | `compiler/emit/emit.ty` | 6 type spellings, 101 `tycho_str_*` sites, literals, FFI lowering: ~300 lines |
+| 4.4 emitter | `compiler/emit/*.ty` | 6 type spellings, 101 `tycho_str_*` sites, literals, FFI lowering: ~300 lines |
 | 4.4 shims | 28 `corelib/*/*_shim.c` | 539 string lines to audit, most mechanical |
 | 4.4 bootstrap | `bootstrap/tycho_compiler.c` | two regenerations (dual ABI, then old ABI removed) |
 | 4.4 tests | FFI fixtures in `tests/` that call `tycho_str_*` from C | 2 files |

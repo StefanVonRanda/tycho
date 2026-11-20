@@ -29,8 +29,9 @@ no lock held, and a sequence store publishes. Per-cell arenas recycle on reuse;
 capacity rounds up to a power of two. Waiting is spin → `sched_yield` → 1ms
 timed park with a parked-waiter count gating the wake path, so the uncontended
 path does zero syscalls and the check-then-park race costs at most one extra
-retry. `select` cannot park on N condition variables, hence the ~1ms worst-case
-wake latency. The finalizer stack is LIFO, so tasks declared after a channel
+retry. `select` cannot park on N condition variables, so its wait ladder is
+spin → `sched_yield` → a 50µs sleep, which bounds its worst-case wake latency
+(`runtime/tycho_rt.c@tycho_select_pause`). The finalizer stack is LIFO, so tasks declared after a channel
 join before it frees.
 
 `parallel for x in ch:` desugars to a `parallel for` over `0..<ncpu()` whose

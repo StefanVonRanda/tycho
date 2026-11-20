@@ -3,9 +3,9 @@
 > **Memory:** builtins follow the same ownership rules as everything else.
 > A builtin that builds a value hands it to the caller.
 
-The built-in functions, by category. These are part of the language — always there, no
-import needed; the importable [corelib](../reference/corelib.md) layers more on top. Anything written
-as an operator or keyword (`m[k]`, `k in m`, `delete`, `for x in xs`) lives on its own topic page.
+The built-in functions, by category — always there, no import needed; the
+[corelib](corelib.md) layers more on top. Operators and keywords (`m[k]`, `k in m`,
+`delete`, `for x in xs`) live on their topic pages.
 
 ## Output and input
 
@@ -49,8 +49,9 @@ float written with `str` and read back with `parse_float` survives only if it wa
 `x == x` is false for exactly NaN, and `x - x == 0.0` is false for exactly NaN and the
 infinities, which is how to check before serialising.
 
-(A newtype's `to_int` / `to_float` / `to_str` / `to_bool` / `to_under` unwrappers are on the
-[Types](types.md#distinct-newtypes-type) page.)
+A newtype's `to_int` / `to_float` / `to_str` / `to_bool` / `to_under` unwrappers are on the
+[Types](types.md#distinct-newtypes-type) page; `zero$(T)` is on
+[Generics](generics.md#explicit-type-arguments-and-zerot).
 
 ## Strings
 
@@ -127,5 +128,4 @@ Supporting the [FFI boundary](ffi.md) and the sized numeric types; always availa
 | `eprintln(s)` | `string -> void` | Write `s` and a trailing newline to standard error. |
 | `is_null(p)` | `ptr -> bool`, `handle -> bool` | Test an opaque FFI `ptr`, or a typed handle, for null. On a handle: true when the opener failed, and true after `close(h)`. After a `close(h)` statement in the same block it is a compile error (it could only be `true`); after a `close` in a branch it cannot tell "closed" from "never opened". |
 | `to_ptr(n)` | `int -> ptr` | Make a sentinel `ptr` from an int (e.g. `(void*)-1`); Tycho never dereferences it. |
-| `to_i32(n)` | `int -> i32` | Explicitly narrow to the signed 32-bit integer type. |
-| `to_u32(x)` / `to_u64(x)` / `to_f32(x)` | numeric `-> u32`/`u64`/`f32` | Convert any numeric scalar to the sized type. |
+| `to_u8` `to_u16` `to_u32` `to_u64`, `to_i8` `to_i16` `to_i32` `to_i64`, `to_f32` | numeric `->` that type | Convert any numeric scalar to the sized type (`to_i32` is how a Tycho `int` meets a C `int`). |

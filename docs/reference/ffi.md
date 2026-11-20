@@ -11,8 +11,7 @@ and can optionally name the library to link.
 ```tycho
 extern fn rand() -> i32                              # libc: C `int rand(void)`
 extern "m" fn cos(x: float) -> float                 # links -lm
-extern fn sx_col_text(stmt: ptr, i: int) -> string   # C string in, Tycho string out
-extern fn crc32(data: bytes, len: u32) -> u32        # sized ints: real uint32_t at the C ABI
+extern "z" fn zlibVersion() -> string                # links -lz; C string out, arena-copied
 ```
 
 **The declared signature must match the C header.** Tycho `int` is 64 bits, so
@@ -26,7 +25,7 @@ width varies by platform. Prefer a C API whose header type is fixed everywhere.
 Rule: only plain data crosses. Anything with a Tycho-internal layout is
 rejected at compile time rather than corrupted at run time.
 
-- **Scalars** — `int`, `char`, `float`, `bool`.
+- **Scalars** — `int`, `float`, `bool`.
 - **Sized integers** — `u8`, `u16`, `i8`, `i16`, `i32`, `i64`, `u32`, and `u64`
   are distinct numeric types. In an `extern` signature they emit the matching
   fixed-width C type, so `extern fn f(x: u8) -> i16` matches
@@ -94,17 +93,33 @@ structs, and `[string]` parameters do cross, above.)
 
 The "race-free by construction" guarantee is over Tycho values and does **not**
 cross the FFI. A C function touching shared state is invisible to the compiler,
-so isolate such state per thread or serialize the calls. See
-[Concurrency](concurrency.md#the-safety-envelope).
+so two tasks calling it race exactly as two C threads would: isolate such state
+per thread or serialize the calls. Handles cannot be captured by a closure or
+`parallel for`, so a foreign resource cannot become shared by accident. See
+[Concurrency](concurrency.md#the-safety-envelope) and
+[`rfc/ffi-threading-design-review.md`](../rfc/ffi-threading-design-review.md).
 
 ## Linking
 
-Ergonomics live on the `tychoc` command line: `--link` (a raw linker flag),
-`--pkg` (pkg-config), and `--shim` (compile a companion `.c` alongside). For a
-complete worked binding over a real library, in-memory SQLite is at
-[`examples/sqlite/`](../../examples/sqlite) — note that it drives the C API
-through raw `ptr`, not through a `handle`. For a worked **handle** paired with
-`--shim`, see [`tools/tycho-du/`](../../tools/tycho-du);
+The flags, all on the `tychoc` command line (`tychoc --help` groups them the same way):
+
+| Flag | Does |
+| --- | --- |
+| `--link <lib>` | a bare `-l<lib>` for a library the source does not name |
+| `--pkg <name>` | add `pkg-config --cflags --libs <name>` |
+| `--shim <file.c>` | compile and link a companion C file |
+| `-L<dir>`, `-I<dir>` | library and include search paths |
+| `--cc <compiler>` | use another C compiler; may name a wrapper that adds `-fsanitize=address,undefined` |
+| `--print-shims` | print the `<pkg>_shim.c` files the program needs, transitively, and exit: what a hand-written `cc` line must pass |
+| `--print-deps` | print the pkg-config names it needs, transitively, and exit |
+
+A **shim** adapts a C API the FFI cannot express directly (a variadic, a union, a
+non-POD struct): write a small C wrapper, declare it as an `extern fn`, and pass
+the file with `--shim`.
+
+Worked bindings: [`examples/sqlite/`](../../examples/sqlite) drives libsqlite3
+through raw `ptr` and `inout` out-parameters, with no shim and `--pkg` for the
+link. [`tools/tycho-du/`](../../tools/tycho-du) pairs a **handle** with `--shim`;
 [`tools/tycho-fh/`](../../tools/tycho-fh) declares one over a hand-built static
 library.
 
@@ -112,23 +127,9 @@ library.
 
 ## Working with it
 
-Tycho code never manages memory by hand. The FFI is the deliberate escape hatch
-for calling existing C libraries (libm, libc, SQLite, …), kept narrow so the
-value-semantic model stays intact on the Tycho side: no foreign pointer ever
-leaks into Tycho's owned world.
-
-The FFI is an *unsafe* boundary: the `extern` keyword marks exactly where
-safety becomes the caller's job. A bad handle passed to C crashes inside C; C
-code with shared state races across tasks; a freed pointer handed back is a
-use-after-free; a `malloc`ed string return leaks. The rules below keep the
-Tycho side sound; what C does with what it is given is still on the caller.
-
 ### Quick start
 
-To call a C library you (1) declare each C function you need as an `extern fn`,
-(2) call it like any Tycho function, and (3) tell the transpiler which library to
-link. Calling `cbrt` from libm needs no link flags, because libm is always
-linked:
+Calling `cbrt` from libm needs no link flags, because libm is always linked:
 
 ```tycho
 extern fn cbrt(x: float) -> float
@@ -137,16 +138,8 @@ fn main():
     println(str(cbrt(27.0)))    # 3.0
 ```
 
-For a library that isn't linked by default, name it in the declaration. This
-declares `crc32` from zlib and links `-lz` automatically:
-
-```tycho
-extern "z" fn crc32(crc: int, buf: string, n: int) -> int
-```
-
-The rest of this page covers the declaration syntax, which types can cross the
-boundary, the lifetime and safety rules, how linking works, and the by-design
-limits.
+For a library that isn't linked by default, name it in the declaration —
+`extern "z" fn …` links `-lz` automatically.
 
 ### Surface syntax
 
@@ -157,8 +150,8 @@ optionally prefixed with the library to link:
 ```tycho
 extern fn rand() -> i32                                  # libc (already linked)
 extern fn hypot(x: float, y: float) -> float             # libm (already linked)
-extern "z" fn crc32(crc: int, buf: string, n: int) -> int    # links -lz
-extern "SDL2" fn SDL_Init(flags: int) -> int                 # links -lSDL2
+extern "z" fn zlibVersion() -> string                    # links -lz
+extern "SDL2" fn SDL_Init(flags: u32) -> i32                 # links -lSDL2
 extern fn sx_col_text(stmt: ptr, i: int) -> string       # C string in, Tycho string out
 ```
 
@@ -172,12 +165,12 @@ sqrt(x: float) -> float` does not compile: `sqrt` is a builtin, so it fails with
 
 ### Type mapping
 
-Scalars, `string`, `bytes`, and the opaque handle `ptr` cross the boundary:
+Scalars, `string`, `bytes`, and the opaque handle `ptr` cross the boundary (sized
+integers map to their `<stdint.h>` type):
 
 | Tycho type | C type      | direction | notes |
 |-----------|-------------|-----------|-------|
 | `int`     | `int64_t`   | in/out    | zero-cost |
-| `char`    | `int64_t`   | in/out    | zero-cost |
 | `float`   | `double`    | in/out    | zero-cost |
 | `bool`    | `int`       | in/out    | zero-cost |
 | `string`  | `char *`    | in: zero-cost; out: arena-copied | see below |
@@ -195,9 +188,8 @@ translation unit from the shim, so C never compares the two.
 `#include <stdint.h>` and write `int64_t` — no Tycho-specific typedef, guard, or
 header is required.
 
-**String passing.** A Tycho `string` is a NUL-terminated `char *`, so a C
-function taking `const char *` takes a Tycho `string` directly — no wrapper
-type, no conversion at the call site.
+**String passing.** A C function taking `const char *` takes a Tycho `string`
+directly; it is passed NUL-terminated, so C sees it only up to any interior NUL.
 
 **Bytes passing.** `bytes` is an immutable binary buffer that, unlike `string`,
 crosses the boundary length-carried — so it can hold interior `0x00` and needs no
@@ -290,7 +282,7 @@ data, marshal it through scalars, strings, and `ptr` handles, use a POD struct,
 or write a small C shim (see [Linking](#linking)).
 
 **C unions are not crossable, by design.** Keep the union in C and return a
-tagged POD struct: `examples/gfx` decodes `SDL_Event` into
+tagged POD struct: `core:gfx`'s shim decodes `SDL_Event` into
 `Event { kind, key, x, y, button }`, so no layout-dependent union reaches Tycho.
 A language-level union would need initialization, active-member and ownership
 rules; it is not an FFI shortcut.
@@ -302,19 +294,19 @@ and a destructor (a `sqlite3*`, a `FILE*`, a zlib stream), declare a **handle**
 type instead — the transpiler frees it automatically at the end of the scope
 that owns it, so it cannot leak or be used after close:
 
-<!-- fence-skip: extern block against a real libsqlite3, and no main; compiling it needs --link sqlite3 -->
+<!-- fence-skip: an excerpt with no main; its extern fns are a hypothetical shim (db_shim.c) this page does not ship -->
 ```tycho
 handle Db:                                   # Db's C type is void*; freed by its destructor
-    free: sqlite3_close                      # a C symbol (declared as an extern fn below)
+    free: db_close                           # a C symbol (declared as an extern fn below)
 
-extern "sqlite3" fn sqlite3_open(path: string) -> Db       # opener -> an owned Db
-extern "sqlite3" fn sqlite3_exec(db: Db, sql: string) -> int  # borrow: uses it, does not free
-extern "sqlite3" fn sqlite3_close(db: Db) -> int           # the destructor
+extern fn db_open(path: string) -> Db        # opener -> an owned Db (shim over sqlite3_open)
+extern fn db_exec(db: Db, sql: string) -> i32  # borrow: uses it, does not free
+extern fn db_close(db: Db) -> int            # the destructor
 
 fn run():
-    db := sqlite3_open("x.db")               # owned here
-    sqlite3_exec(db, "create table t(x)")    # borrow — db stays usable
-    # db is freed here, exactly once: the compiler emits sqlite3_close(db)
+    db := db_open("x.db")                    # owned here
+    db_exec(db, "create table t(x)")         # borrow — db stays usable
+    # db is freed here, exactly once: the compiler emits db_close(db)
 ```
 
 - **RAII.** The destructor `free:` runs at the owning variable's scope exit —
@@ -323,31 +315,24 @@ fn run():
   one owned by a scope around the loop. Freed exactly once.
 - **Borrow on pass.** Passing a handle to a fn/extern passes the `void*`; the
   callee does not free it. Only the owning scope does.
-- **Affine, fail-closed.** A handle is opaque (no deref) and cannot be copied,
-  stored in a container/struct, captured by a closure or `parallel for`,
-  reassigned, or returned out of its scope — the type checker rejects each so a
-  handle can never be aliased into a double-free or escape its destructor. Only
-  an `extern fn` opener may produce one.
+- **Affine, fail-closed.** The ownership rules in [The boundary](#the-boundary)
+  are each a compile error, so a handle can never be aliased into a double-free
+  or escape its destructor.
 
 ### Lifetime & safety
 
 The rule behind every item here: foreign memory never enters Tycho's owned
 world.
 
-- **`string` argument (Tycho → C):** the `char *` is passed through unchanged.
-- **`string` return (C → Tycho):** the C-owned bytes are **copied into the
-  caller's arena** at the call site, so Tycho never holds a pointer into memory
-  C controls. A `NULL` return becomes `""` rather than a crash. When the
-  returned string is consumed immediately (`len(f())`, `print(f())`), the copy
-  may be skipped with byte-identical output; anything that could retain it keeps
-  the copy.
+- **`string` return (C → Tycho):** copied into the caller's arena (see
+  [The boundary](#the-boundary)); a `NULL` return becomes `""`. When the result
+  is consumed immediately (`len(f())`, `print(f())`) the copy may be skipped with
+  byte-identical output.
 - **`ptr`:** an opaque `void *`. Tycho supports only passing it back to C,
   comparing it (`==`/`!=` against another `ptr` or the `null` literal), and
   `is_null(p)`. No dereference, no arithmetic — Tycho shuttles the handle and
   never touches what it points at. A `ptr` rides the scalar paths, so it can
   also be a local, a struct field, or an array element (copied by value).
-- **No variadics.** A `printf`-style function needs a fixed-arity C wrapper.
-- **No non-POD struct-by-value.**
 - **Callbacks into Tycho are limited to named functions with scalar/`ptr`/`void`
   shapes.** The compiler emits a C-ABI trampoline with its own per-call arena,
   so C may retain the pointer. A closure or a function variable is rejected:
@@ -361,83 +346,13 @@ freed. The fix in each case is on the C side of the boundary: valid handles,
 per-thread or serialized state, a buffer that outlives the call, and the
 `bytes` convention for allocated returns.
 
-### Threads
-
-The "race-free by construction" guarantee is over Tycho values and **stops at
-the FFI**: a C function touching shared state is invisible to the transpiler,
-so two tasks racing on it race exactly as they would in C. Isolate such state
-per thread or serialize the calls. The full analysis is in
-[`rfc/ffi-threading-design-review.md`](../rfc/ffi-threading-design-review.md), and
-the concurrency guarantee's scope is in
-[the concurrency reference](../reference/concurrency.md#the-safety-envelope).
-
-Handles are affine (see [Typed handles](#typed-handles-safe-by-default-resources)):
-they cannot be captured by a closure or `parallel for`, or otherwise cross a
-task boundary, so a foreign resource cannot become shared across threads by
-accident. Scalar arguments pass into spawned tasks by value as usual.
-
-### Linking
-
-The C reference transpiler (`tychoc`) links the program for the caller:
-
-A **shim** is the standard way to adapt a C API that the FFI cannot express
-directly — for example an out-parameter constructor like `sqlite3_open(path,
-&db)`. Write a small C wrapper that returns the handle instead, declare the
-wrapper as an `extern fn`, and pass the C file with `--shim`.
-
-The flags, all on the `tychoc` command line (`tychoc --help` groups them the same way):
-
-| Flag | Does |
-| --- | --- |
-| `--link <lib>` | a bare `-l<lib>` for a library the source does not name |
-| `--pkg <name>` | add `pkg-config --cflags --libs <name>` |
-| `--shim <file.c>` | compile and link a companion C file |
-| `-L<dir>`, `-I<dir>` | library and include search paths |
-| `--cc <compiler>` | use another C compiler; may name a wrapper that adds `-fsanitize=address,undefined` |
-| `--print-shims` | print the `<pkg>_shim.c` files the program needs, transitively, and exit: what a hand-written `cc` line must pass |
-| `--print-deps` | print the pkg-config names it needs, transitively, and exit |
-
-A C function that can return `NULL` for a string is declared `-> Option(string)`; see
-[nullable string return](#type-mapping).
-
-### Capabilities
-
-What the FFI handles today, in rough order of how much of C it unlocks:
-
-1. **Scalars + `string`** — `int`/`char`/`float`/`bool`/`string`/void. Covers
-   libm, most of libc, and any C library with a scalar/string ABI.
-2. **Opaque `ptr`** — `void *` plus the `null` literal and `is_null`. Covers
-   handle-based libraries (SQLite, SDL, curl).
-3. **Linking ergonomics (`tychoc`)** — `-L`/`-I`/`--link`/`--pkg`/`--shim` on the
-   `tychoc` command line.
-
-A worked scalar/string binding is in [`examples/sqlite/`](../../examples/sqlite/):
-opaque pointers, SQL string arguments, and `--shim` for the out-parameter API.
-The worked `handle` is [`tools/tycho-du/`](../../tools/tycho-du), built with
-`--shim`; [`tools/tycho-fh/`](../../tools/tycho-fh) builds one over a static
-library instead.
-
 ### Limitations (by design)
 
-These limits are deliberate:
-
-- **No arbitrary composite types across the boundary.** Maps, non-POD structs,
-  `Option`/`Result`, and tuples are rejected; they have no stable C ABI. Marshal
-  through scalars, strings, and `ptr`, or use a shim. Scalar arrays, arrays of
-  POD structs, and `[string]` parameters are the stated exceptions.
-- **No non-POD struct-by-value.** Pass an opaque `ptr` handle instead.
-- **No variadics.** Wrap variadic C functions (like `printf`) in a fixed-arity C
-  shim.
-- **No closure callbacks.** A named Tycho function can cross out as a C callback
-  (`fn(T, ...) -> R` with scalar/`ptr`/`void` shapes); a closure or function
-  variable cannot, because its captured environment has no C-side slot.
-- **No automatic binding generation.** Each C function used is declared by hand
-  as an `extern fn`.
-- **`ptr` is opaque.** No dereference and no pointer arithmetic on the Tycho side
-  — Tycho only shuttles handles back to C.
-
-These keep the boundary narrow on purpose: anything richer would either break
-value semantics on the Tycho side or lean on an unstable C ABI.
+- **No variadics.** Wrap a `printf`-style function in a fixed-arity C shim.
+- **No automatic binding generation.** Each C function is declared by hand.
+- Composites beyond the exceptions above, closure callbacks, and `ptr`
+  dereference are refused, as described above: anything richer would break
+  value semantics on the Tycho side or lean on an unstable C ABI.
 
 ---
 

@@ -16,9 +16,12 @@ alphabetical locator only.
 | `die` | termination | §29 / [§14.8](10-statements.md#148-die-exit-and-termination) |
 | `eprint` | I/O | §29 |
 | `eprintln` | I/O | §29 |
+| `exit` | termination | §29 / [§14.8](10-statements.md#148-die-exit-and-termination) |
 | `find` | string | §29 |
 | `floor`, `fabs` | math (libm) | §29 |
+| `from_bytes$` | type / layout | §29 / [§17.1b](12-aggregates.md#171b-the-bytes-bridge) |
 | `getenv` | process | §29 |
+| `hash` | map | §29 |
 | `input` | I/O | §29 |
 | `is_null` | FFI | §29 / [§24](14-ffi.md) |
 | `keys` | map | §29 / [§18](12-aggregates.md) |
@@ -31,12 +34,12 @@ alphabetical locator only.
 | `print`, `println` | I/O | §29 |
 | `read_all`, `read_file` | I/O / filesystem | §29 |
 | `recv`, `send`, `wait` | concurrency | §29 / [§21](13-concurrency.md)–[§23](13-concurrency.md) |
+| `size_of$` | type / layout | §29 / [§17.1b](12-aggregates.md#171b-the-bytes-bridge) |
 | `split`, `substr` | string | §29 |
 | `str` | conversion | §29 / §8.2 |
 | `to_bool`, `to_bytes`, `to_float`, `to_i8`, `to_i16`, `to_i32`, `to_i64`, `to_int`, `to_ptr`, `to_str`, `to_u8`, `to_u16`, `to_u32`, `to_u64`, `to_f32`, `to_under` | conversion | §29 / §8.2 |
 | `write_file` | filesystem | §29 |
 | `zero$` | type / generics | §29 / [§7.5](05-generics.md#75-zerot-and-namet-) |
 
-Map/element operators that are not function-named builtins — `m[k]`, `k in m`,
-`delete m[k]`, `m.get(k[, d])` — are defined in [§18](12-aggregates.md). `map_get`,
-`map_set`, `map_has`, `map_del` are **not** callable (a hard parse error).
+The map operators `m[k]`, `k in m`, `delete m[k]` and the `m.get(k[, d])` sugar
+are defined in [§18](12-aggregates.md).

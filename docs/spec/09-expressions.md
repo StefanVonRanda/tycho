@@ -32,7 +32,7 @@ like `u8`), so the value never escapes the type's range.
 documented exception to the same-type rule, `string + char` appends the char's
 single byte to the string and yields a `string` (`"ab" + 'c'` → `"abc"`). It is
 **one-directional**: `char + string` is a type error. For symmetric composition, convert
-explicitly with `str(c)`. An implementation MUST implement exactly this.
+explicitly with `str(c)`.
 
 **`bytes` concatenation.** `+` on two `bytes` concatenates them, and `bytes +
 char` appends the char's single byte — the same two forms `string` has, with the
@@ -52,11 +52,9 @@ rule applied per element — `a OP b` is legal **iff** `a[i] OP b[i]` is legal �
 `int` and every sized integer get `+ - * / %`, `float`, `f32` and a numeric
 newtype get `+ - * /`, and `char` gets `+ -`. `& | ^ << >>` are **not** included:
 they are not arithmetic, so an array operand still reaches the bitwise and shift
-rules below and is refused there, unchanged. Both array kinds participate and
-their two length-mismatch rules differ; the whole rule — the kinds, the
-mismatches, and literal adaptation of a broadcast scalar — is
+rules below and is refused there. The array kinds, their length-mismatch rules
+and literal adaptation of a broadcast scalar are
 [§16.8](12-aggregates.md#168-element-wise-arithmetic).
-
 
 **Comparison** (`== != < > <= >=`) and `in`. Both operands MUST share a type.
 `==`/`!=` apply to any type except `void` and are structural except for function
@@ -77,11 +75,9 @@ is Y` is a compile error, because its result is a `bool` and no `bool` holds a
 variant. It binds tighter than a comparison and looser than every arithmetic
 operator, so `a is X and b is Y` groups as `(a is X) and (b is Y)`.
 
-For a **nullary** variant, `v == V` remains legal and equivalent — `==` is
-structural over the whole value and a nullary variant carries nothing to differ
-in ([§5.5](03-types.md#55-equality-and-ordering)). The two spellings genuinely
-overlap there; `is` is the one that also works for a payload-carrying variant,
-where `V` is not a value and `v == V` is refused.
+For a **nullary** variant, `v == V` is legal and equivalent
+([§5.5](03-types.md#55-equality-and-ordering)); for a payload-carrying variant
+`V` is not a value and `v == V` is refused.
 
 For an `Option` the two names are `Some` and `None`; for a `Result`, `Ok` and
 `Err` ([§19.8](12-aggregates.md#198-is--the-variant-test)). They are never
@@ -102,14 +98,15 @@ the result takes the **left** operand's type. So `x << n` is well-typed for a
 `u32` `x` and an `int` `n`, and yields `u32`. `>>` is an **arithmetic**
 (sign-preserving) shift on signed `int` and a **logical** shift on `u32`/`u64`.
 
-
 Per the Go-style precedence (§4.5) `& << >>` bind at the
 multiplicative level and `| ^` at the additive level, so every bitwise operator
 binds tighter than a comparison: `a & b == c` is `(a & b) == c`. A shift **count**
-outside `0.. width−1` is **defined**: a count **≥ the
-operand's bit width** yields `0` (every bit is shifted out), and a **negative** count is a program error that **aborts** at runtime
-(`tycho: negative shift count`), like division by zero. A negative *constant*
-count is rejected at compile time.
+outside `0.. width−1` is **defined**: a count **≥ the operand's bit width**
+yields `0` (every bit is shifted out), and a **negative** count is a program
+error that **aborts** at runtime (`tycho: negative shift count`), like division
+by zero — even when the count is a literal, as in `x << -1`. Only inside a
+`const` declaration (`const C = 1 << -1`) is a negative count rejected at
+compile time.
 
 ## 13.3 Unary operators
 
@@ -121,19 +118,17 @@ and arithmetic/bitwise operator (§13.2, §4.5).
 
 ## 13.4 Evaluation order
 
-The following are normative (those marked *probed* were confirmed identical on
-the compiler):
+The following are normative:
 
 - **Short-circuit** `and`/`or` as in §13.2.
-- **`match` subject — evaluated exactly once** (*probed*), before any arm is
+- **`match` subject — evaluated exactly once**, before any arm is
   tested.
 - **`for x in xs` — the collection is evaluated exactly once**, before the loop.
 - **Compound assignment** — a **side-effecting call inside the place is evaluated
-  once** (*probed*); a pure index sub-expression may be evaluated twice.
-- **A side-effecting index in an assignment place is sequenced left-to-right**
-  (*probed*): in `a[f()] = g()` the index `f()` is evaluated **before** the RHS
-  `g()`, against the implementation.
-- **The whole place is evaluated before the RHS, left-to-right** (*probed*) — the
+  once**; a pure index sub-expression may be evaluated twice.
+- **A side-effecting index in an assignment place is sequenced left-to-right**:
+  in `a[f()] = g()` the index `f()` is evaluated **before** the RHS `g()`.
+- **The whole place is evaluated before the RHS, left-to-right** — the
   general rule of which the single-index case above is an instance. A place is
   rooted at a **variable** (§13.1); a call is never a place **receiver**, so
   `p().x = e` and `p()[i] = e` MUST be rejected and the receiver leg carries no
@@ -144,11 +139,9 @@ the compiler):
   `h()`, then `e()`. Compound assignment orders the same legs the same way.
 - **An f-string's interpolations are sequenced left-to-right**: in
   `f"{a()}{b()}{c()}"` the holes are evaluated in the order they are written and
-  printed. An f-string ([§3.9.5](01-lexical.md#395-f-string-interpolated-literals))
-  desugars to a `+` chain, but its holes are sequenced
-  where the bare `+` operands below are not — a hole is never short-circuited
-  against another hole, so the sequencing is cheap and sound, and the printed
-  order is left-to-right.
+  printed, although an f-string
+  ([§3.9.5](01-lexical.md#395-f-string-interpolated-literals)) desugars to a `+`
+  chain whose bare operands are not sequenced.
 - **Argument and operand evaluation order is *unspecified***. Tycho
   does not sequence the arguments of a call or the operands of a binary operator
   relative to one another; their order of side effects is inherited from the
@@ -171,14 +164,9 @@ fn main():
     println(join2(side("A"), side("B")))
 ```
 
-Both lines print `AB`, and each is free to print `call B` before `call A` or
-after it. Both orders are conforming; an implementation may run either first. No `output` fence is paired with the
-example above, deliberately: recording either order would assert what this
-section refuses to guarantee, and a golden over it would be the same mistake a
-program makes when it relies on the order. The value is stable only because
-neither operand's result depends on the other's side effect. A program that
-needs `A` to run first says so, and then the order is a property of the
-statements rather than of the backend:
+Both lines print `AB`, and each may print `call B` before or after `call A`;
+both orders conform (so the example has no `output` fence). A program that needs
+`A` to run first says so with bindings:
 
 ```tycho
     p := side("A")
@@ -186,15 +174,10 @@ statements rather than of the backend:
     println(p + q)
 ```
 
-The two sequenced exceptions above do not extend to this case. A place's index legs
-and an f-string's holes are sequences **no short-circuit can cut across**, so
-sequencing them costs one temporary each and cannot skip an evaluation the
-program expected to skip — whereas an argument may sit inside `f(x, cond and
-g())`, where lifting it would evaluate what the short-circuit exists to avoid.
-And each had an order that was already **visibly** contradicted: the place index
-was implementation-defined, and an f-string prints its holes left to
-right while firing them right to left, so its own output disagreed with its
-execution. A bare `+` chain shows the reader no order to contradict.
+The two sequenced exceptions are sequences **no short-circuit can cut across**,
+so ordering them costs one temporary each. An argument may sit inside `f(x, cond
+and g())`, where lifting it to order it would evaluate what the short-circuit
+exists to skip.
 
 ## 13.5 Expression-valued `if` and `match`
 

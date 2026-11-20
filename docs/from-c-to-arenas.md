@@ -140,7 +140,7 @@ Value semantics has real costs:
   loop grows one buffer in place, turning the textbook O(n²) string build into O(n)) — but
   the ones it can't prove away are real.
 - **Shared, pointer-shaped data costs more.** A tree or graph whose nodes point at each other
-  is stored *by value* here, with no sharing, so a trie costs ~1.55× C's memory and there's no
+  is stored *by value* here, with no sharing, so there's no
   way to build a doubly-linked list or an observer the pointer way. The idiom is a **flat node
   pool** — hold all nodes in one array and link them by integer index — which is both the
   value-semantics-friendly shape *and* the cache-friendly one data-oriented engines choose on
@@ -154,7 +154,7 @@ Value semantics has real costs:
 No garbage collector and its pauses. No manual `free` and its leaks and use-after-frees. No
 borrow checker and its annotations. Just lexical scope — the same blocks you already write —
 deciding when memory is freed, with the compiler doing the placement. The
-[thesis](thesis.md) has the measurements so far.
+[thesis](thesis.md) has the measurements.
 
 Next: the [language reference](reference/index.md) for what each feature does,
 and [quiet results](quiet-results.md) before the first real program.

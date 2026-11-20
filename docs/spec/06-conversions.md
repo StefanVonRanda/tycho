@@ -15,7 +15,7 @@ and never converts a value at run time. The permitted adaptations are:
 
 - an integer literal → `float` (e.g. `x: float = 3`, or `3` in `3 + y` where `y:
   float`);
-- an integer literal → `u32` or `u64`;
+- an integer literal → any fixed-width integer type (`u8` … `u64`, `i8` … `i64`);
 - an integer **or** float literal → `f32`;
 - otherwise the literal keeps its own type (`int` or `float`).
 

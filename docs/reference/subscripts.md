@@ -58,8 +58,7 @@ subscript <name>(<recv>: T, <params>...) -> inout U:
   parameters — it projects *into* an argument, so it cannot dangle. A place rooted in a
   fresh local is rejected.
 - **Each parameter used at most once** in the yielded place, so an argument is never
-  evaluated twice when substituted. (Using one argument twice, with the repeated part
-  hoisted, is a possible future extension.) The receiver counts: `yield &g.cells[r * g.w + c]`
+  evaluated twice when substituted. The receiver counts: `yield &g.cells[r * g.w + c]`
   reads two fields of `g` and is refused, so 2-D indexing into a *flat* array is not
   expressible this way. Store the rows nested and yield `&g.rows[r][c]`, which mentions
   the receiver once.
@@ -70,17 +69,13 @@ subscript <name>(<recv>: T, <params>...) -> inout U:
   instance (`subscript at(p: Pool(int), i: int) -> inout int`), or expose a generic
   **function** instead.
 - **Value semantics is unchanged.** A projection is a place into a value you already own or
-  borrow; the usual mutability rules apply (writing through a projection into a by-value
-  parameter mutates that parameter's private copy, exactly like `g.nodes[i].w = …` spelled
-  out). A projection is scoped and transient — it is never stored in a field and never sent
-  to another task. That is what keeps it compatible with value semantics.
+  borrow, and the usual mutability rules apply — exactly as if `g.nodes[i].w = …` were
+  spelled out. A projection is never stored in a field and never sent to another task.
 
 ## What it is not
 
-Subscripts do **not** let you store a graph by reference. They make *traversing* an
-index-pool structure ergonomic (`g.edge(i).w = …` instead of `g.nodes[i].w = …`, and reusable
-accessors over composite storage); they are convenience over the index-pool idiom, not a new
-storage shape.
+Subscripts do **not** let you store a graph by reference. They are convenience over the
+index-pool idiom (`g.edge(i).w = …` instead of `g.nodes[i].w = …`), not a new storage shape.
 
 ---
 

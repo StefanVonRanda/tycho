@@ -23,7 +23,9 @@ overflow-free with masks and `*`/`/`/`%` over non-negative values. But `/` and
 branches on those values however the source is written. Constant-time code
 needs guarantees no high-level language makes about its own arithmetic — the
 same reason Go ships `crypto/subtle`. Hence `core:crypto` binds OpenSSL rather
-than reimplementing. Pointer-shaped storage costs ~1.55× C in this model
+than reimplementing.
+
+Pointer-shaped storage costs ~1.55× C's memory in this model
 (fundamental; see [value-semantics-limits](value-semantics-limits.md));
 `core:pool` removes the index-plus-generation bookkeeping, not the cost.
 

@@ -121,8 +121,7 @@ first argument.
 `[T]`. `pop(a)` on an **empty** array MUST abort; it is not
 silently zero-returning. `reserve(a, n)` is a capacity hint only — it copies the
 existing elements into a buffer of capacity `≥ n` and is a no-op when
-`n ≤ cap`; it never changes `len` and never inserts elements
-.
+`n ≤ cap`; it never changes `len` and never inserts elements.
 
 An array **parameter** is a read-only borrow ([§11](07-memory-model.md#11-inout)):
 passed without a copy, but `push`, `pop`, `reserve`, or an index-write on it is a
@@ -196,11 +195,8 @@ only the static type of the result differs.
 
 ### 16.7 Element-type restriction
 
-`void` MUST be rejected as a bracket-array element type in every form. `bool` is
-rejected only in the **inline fixed-capacity** forms — `[N]T`, `[$N]T` and
-`bounded[N]T` — which have no bool codegen. A **dynamic** `[bool]` is legal and
-fully supported: literal, `push`, index-write, iteration, `str`, `==`, as a
-`struct` field, as a map value, and nested.
+`void` MUST be rejected as a bracket-array element type in every form; `bool`
+only in the inline fixed-capacity forms. A dynamic `[bool]` is fully supported.
 
 | element form | `void` | `bool` |
 |---|---|---|
@@ -283,8 +279,6 @@ the scalar's type MUST **equal** the element type, which makes `['a', 'b'] + 1` 
 compile error even though the scalar `'a' + 1` is legal (§13.2's byte-domain
 rule).
 
-Rationale: the broadcast form is never more permissive than the two-array form.
-
 **The result is a fresh array.** Value semantics (§9) holds: neither operand is
 aliased or mutated, mutating a source after `c := a * b` never changes `c`, and
 growing one never grows the other. Every element goes through the same emit a
@@ -320,26 +314,14 @@ struct Point:
     x: int
     y: int
 
-a := Point(1, 2)         # positional, in declaration order
-b := Point(y: 2, x: 1)   # named, any order; every field exactly once
-_c := a                   # deep copy; b.x, b.y independent of a
-println(str(b.x) + " " + str(b.y))
-```
-
-As a complete program:
-
-```tycho
-struct Point:
-    x: int
-    y: int
-
 fn main():
-    p := Point(3, 4)
-    println("(" + str(p.x) + ", " + str(p.y) + ")")
+    p := Point(3, 4)         # positional, in declaration order
+    q := Point(y: 4, x: 3)   # named, any order; every field exactly once
+    println("(" + str(p.x) + ", " + str(p.y) + ") " + str(p == q))
 ```
 
 ```output
-(3, 4)
+(3, 4) true
 ```
 
 ### 17.1a Packed layout
@@ -392,8 +374,7 @@ aligned. `size_of$(T)` reports that size ([§17.1b](#171b-the-bytes-bridge)). It
 `N` MUST be a literal power of two, and it MUST NOT exceed **8**. The ceiling is
 the arena's: §22's allocator rounds every allocation to 8 bytes and guarantees
 nothing above that, so an alignment above 8 is refused at the declaration rather
-than accepted and not delivered. Raising the arena's own rounding was measured
-before this rule was written and costs 20-30% more arena bytes on every program.
+than accepted and not delivered.
 
 `packed` and `align(N)` on the same declaration are a contradiction -- one
 removes padding and the other adds it -- and are refused. `align` on any
@@ -539,7 +520,7 @@ sized. This is a type-formation rule; it is stated normatively in
 
 A tuple `(T1, …, Tn)` is the anonymous product of
 [§5.3.3](03-types.md#533-tuples), with **2 to 8** elements (a 1-element or
-9-element tuple is a compile error,  (min) and  (max)). Tuples are first-class
+9-element tuple is a compile error). Tuples are first-class
 values, not merely a return convention:
 
 - **Construction.** A parenthesized list `(10, 20)`, or a bare `return a, b`,
@@ -558,7 +539,7 @@ tuple is deep-copied on bind like every value.
 ### 17.5 Destructuring
 
 A tuple-returning call (or any tuple value) MAY be destructured into several
-names. Two forms exist, distinguished by the binding operator:
+names or places:
 
 | Form | Meaning |
 |---|---|
@@ -629,10 +610,8 @@ A struct is never reached by this rule. `.x` on a struct is the field `x` and
 nothing else, and a struct declaring fields named `x`, `y` or `r` is unaffected
 in every position.
 
-The two spellings MAY be mixed within one swizzle: `v.(x, g)` is lanes 0 and 1.
-`.r.g.b.a` are aliases and not a second kind of component, and a swizzle is
-defined below as the tuple of its components written out — `v.(x, g)` IS
-`(v.x, v.g)`, each half of which is legal on its own.
+The two spellings MAY be mixed within one swizzle: `v.(x, g)` is lanes 0 and 1,
+`(v.x, v.g)`.
 
 ```tycho
 fn main():
@@ -663,14 +642,10 @@ written in order.
 
 The base is repeated once per component, so it MUST be a variable or a field of
 one; a base that could be evaluated twice, such as a call result, is rejected,
-and so is one that carries an index (`vs[i].(x, y)`). An indexed base is
-rejected even though the spelled-out `(vs[i].x, vs[i].y) = (vs[i].y, vs[i].x)`
-is accepted: two targets are the same place only when their indices are
-literals, so under a non-literal index the repeated-component rule below could
-not be enforced. A component MUST NOT be repeated on the LEFT, by the rule
-above. On the right a
-repeat is ordinary duplication and is permitted: `v.(x, x)` is the pair
-`(v.x, v.x)`.
+and so is one that carries an index (`vs[i].(x, y)`), because under a
+non-literal index the repeated-target rule above could not be enforced. A
+component MUST NOT be repeated on the left; on the right a repeat is ordinary
+duplication: `v.(x, x)` is the pair `(v.x, v.x)`.
 
 ```tycho
 struct V:
@@ -738,8 +713,7 @@ Writing to `m[k]`:
 - **overwrites** the value if `k` is present;
 - **inserts** the entry if `k` is absent, first initializing the slot to `V`'s
   zero (for a compound `V`, the zero-value is materialized before the write, so a
-  field- or element-write lands on a valid zero-initialized value)
- .
+  field- or element-write lands on a valid zero-initialized value).
 
 This makes the accumulator idioms one line each; the compiler proves the map is
 uniquely owned at the mutation and updates it in place, so a `+=` loop is O(n)
@@ -766,8 +740,7 @@ key it yields:
 - the **value type's zero** when `V` is scalar; and
 - a **deep copy of the zero value** when `V` is composite.
 
-Either way, an absent-key read leaves the map unchanged
-. When a non-zero default is wanted, use `m.get`
+Either way, an absent-key read leaves the map unchanged. When a non-zero default is wanted, use `m.get`
 (§18.5).
 
 ### 18.4 Membership, `delete`, `len`
@@ -779,7 +752,7 @@ Either way, an absent-key read leaves the map unchanged
 | `len(m)` | entry count → `int` |
 
 `delete m[k]` is a contextual-keyword statement that lowers to a functional
-map-delete rebinding the map ; it removes
+map-delete rebinding the map; it removes
 at most one entry and never aborts on a missing key.
 
 ### 18.5 `m.get`
@@ -801,13 +774,7 @@ the order in which each key was first inserted. It is the way to
 iterate a map; `k in m` only tests membership. For a newtype or fieldless-enum
 key type, `keys` returns the wrapped key values.
 
-```tycho
-counts := ["ada": 1, "alan": 2]
-for k in keys(counts):
-    println(k + " = " + str(counts[k]))
-```
-
-A complete program building a map, updating a value in place, and iterating it
+A program building a map, updating a value in place, and iterating it
 in insertion order ([§30.4](17-runtime.md#304-defined-string-and-map-behavior)):
 
 ```tycho
@@ -859,21 +826,20 @@ fn demo():
 ```
 
 The following rules are checked at compile time and MUST be enforced; each fails
-closed (the subscript is rejected, never silently mis-projected)
-:
+closed (the subscript is rejected, never silently mis-projected):
 
 - **Yields a place.** The body MUST be a single `yield &<place>`, where
   `<place>` is a field/index spine; a non-place operand is rejected.
 - **Type match.** The yielded place's type MUST equal the declared `-> inout U`;
-  a mismatch is rejected at the call site (dispatch ).
+  a mismatch is rejected at the call site.
 - **Rooted in a parameter.** The yielded place MUST be rooted in one of the
   subscript's parameters — it projects *into* an argument, so it cannot dangle. A
   place rooted in a fresh local is rejected.
 - **Each parameter used at most once** in the yielded place, so no argument is
   double-evaluated when substituted.
 - **Concrete receiver.** The receiver (first) parameter's type MUST NOT mention a
-  type parameter; `subscript at(p: Pool($T), …)` is rejected at the declaration
- , whether or not it is ever called.
+  type parameter; `subscript at(p: Pool($T), …)` is rejected at the declaration,
+  whether or not it is ever called.
 
 A subscript is a named place-macro on a concrete type, not a type-family
 operation: the receiver selects it by exact type. Declaring the subscript on a
@@ -916,13 +882,9 @@ The four builtin constructors `Ok`, `Err`, `Some` and `None` are covered by the
 same rule in **every** package, not just the one that declares them: they are
 recognised by their spelling wherever they appear, so a declaration of one of
 those names — `fn`, `const`, `struct`, `enum`, `type`, `handle`, or a variant —
-is unreachable everywhere and MUST be rejected with the same diagnostic. The
-§3.7 builtin-name rule reaches the same verdict for the same reason — the
-builtin wins, so the declaration is unreachable by its own name. What differs is
-reach: §3.7 governs the *unqualified* call spelling, while these four are
-recognised by spelling in every position, so the rejection here is
-unconditional. A `struct Ok` used to declare cleanly and fail only at its first use, with
-a diagnostic about the builtin `Result` and no mention of the struct.
+is unreachable everywhere and MUST be rejected with the same diagnostic. Unlike
+the §3.7 builtin-name rule, which governs only the unqualified call spelling,
+this rejection is unconditional.
 
 A **run-time binding** cannot collide with a variant at all, in any package: a
 local, parameter or pattern binding must start with a lowercase letter or `_`
@@ -1003,22 +965,6 @@ enum Status:
     Idle
     Done
 
-status := Active
-
-_label := match status:          # value match — each arm ends in a value expression
-    Active:  "on"
-    Idle:    "waiting"
-    Done:    "finished"
-```
-
-The same value `match` as a complete program, returned from a function:
-
-```tycho
-enum Status:
-    Active
-    Idle
-    Done
-
 fn label(s: Status) -> string:
     return match s:
         Active: "on"
@@ -1080,23 +1026,7 @@ On an **`Option`**, `v := opt or_return` binds `v` on `Some(v)` and returns
 The short-circuited payload (`Err`'s error, or `None`) is promoted into the
 caller's storage, so it outlives the return
 ([§10](07-memory-model.md#10-object-lifetimes-and-storage)). `or_return` MUST NOT
-appear inside a `parallel for` body — a chunk has no early exit
-.
-
-```tycho
-fn parse_digit(s: string) -> Result(int, string):
-    if len(s) == 1 and s >= "0" and s <= "9":
-        return Ok(to_int(to_float(s[0]) - to_float("0"[0])))
-    return Err("not a digit: " + s)
-
-fn add_two(a: string, b: string) -> Result(int, string):
-    x := parse_digit(a) or_return    # Ok → bind x; Err → return it from add_two
-    y := parse_digit(b) or_return
-    return Ok(x + y)
-```
-
-A complete program using `or_return` to thread `Result` and `match` to consume
-it:
+appear inside a `parallel for` body — a chunk has no early exit.
 
 ```tycho
 fn checked(n: int) -> Result(int, string):
@@ -1105,7 +1035,7 @@ fn checked(n: int) -> Result(int, string):
     return Ok(n)
 
 fn add(a: int, b: int) -> Result(int, string):
-    x := checked(a) or_return
+    x := checked(a) or_return    # Ok → bind x; Err → return it from add
     y := checked(b) or_return
     return Ok(x + y)
 
@@ -1139,7 +1069,7 @@ is that question as an expression.
 - It does not chain (`a is X is Y` is a compile error).
 
 Unlike `==`, it applies to a **payload-carrying** variant: `V` alone is not a
-value there, so `v == V` is refused, and before `is` the only test was a `match`.
+value there, so `v == V` is refused.
 For a payload-less variant `v == V` stays legal and means the same thing
 (§13.2).
 

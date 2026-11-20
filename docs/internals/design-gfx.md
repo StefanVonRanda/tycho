@@ -50,14 +50,15 @@ primitive. It takes a caller-owned `[int]` framebuffer, `[float]` depth buffer,
 `Target` dimensions and ARGB colours. It imports no SDL and exposes no handle or
 pointer.
 
-`core:gfx` gained only the two things the 3D callers needed: source framebuffer
-scaling in `draw_fb` and key-up events. `examples/gfx/3d` and
-`examples/gfx/orbit` use the shared rasterizer from first-person and orbit
-cameras respectively; that second caller is what justified extracting it.
+`core:gfx` carries only what the 3D callers needed: source framebuffer scaling
+in `draw_fb` and key-up events. `examples/gfx/3d` (first-person) and
+`examples/gfx/orbit` share the rasterizer; the second caller is what justified
+extracting it.
 
-Flat-shaded triangles are the current contract. Textures, meshes, lighting
-models and a GPU backend are not in `core:gfx3d`; adding them requires another
-real caller first.
+Flat-shaded triangles are the current contract. Textures, meshes and lighting
+models are not in `core:gfx3d`; adding them requires another real caller first.
+GPU rendering is a separate package, `core:gfxgpu` (an SDL_GPU device behind a
+`Gpu` handle; `core:gfx` still owns the window, input and audio).
 
 ## Threads
 

@@ -1,201 +1,86 @@
 # Runtime tuning: keeping the per-scope arena tax down
 
-Maintainer record for [docs/perf.md](../perf.md). That page states what to run
-and what the bounds mean; everything below is the tuning diary behind it — the
-mechanisms, the blind alleys, and the profiler notes — kept here so the user
-page stays short.
+Maintainer notes behind [docs/performance.md](../performance.md): the
+mechanisms that keep the arena model cheap, and the profiling lessons that
+decided them.
 
 ## The per-scope block churn problem
 
 `TYCHO_BLOCK_DEFAULT` is 64 KB, and a fresh arena is created per block scope,
-call, and loop iteration. A naive `arena_alloc`/`arena_free` does a
-`malloc`/`free` of a 64 KB block for *every* scope that allocates even a few
-bytes; on deeply-recursive code that is a flood of `malloc(64K)`/`free` pairs
-(plus page faults), and it dominates. Two runtime
-mechanisms keep that churn off the hot path:
+call, and loop iteration. A naive `arena_alloc`/`arena_free` would
+`malloc`/`free` a 64 KB block for *every* scope that allocates even a few
+bytes, and on deeply-recursive code that dominates. Two runtime mechanisms keep
+that churn off the hot path:
 
-- **Global block free-list (pool).** `arena_reset`/`arena_free` hand their
-  blocks to a process-global free-list instead of `free`ing; `arena_alloc`
-  takes from it first. Block churn is O(1) pointer ops with no `malloc`/`free`
-  and no page re-faulting. Peak live memory is unchanged (the pool holds at
-  most what a scope just released; reclaimed by the OS at exit).
+- **Block pool.** `arena_reset`/`arena_free` hand their blocks to a
+  thread-local free-list (`runtime/tycho_rt.c@g_block_pool`) instead of
+  `free`ing; `arena_alloc` takes from it first. Block churn is O(1) pointer ops
+  with no `malloc`/`free` and no page re-faulting. Peak live memory is
+  unchanged.
 - **Block-retaining `arena_reset`.** A loop's scratch arena keeps its head
-  block and just rewinds it (`off = 0`), releasing only overflow blocks. The
-  common one-block-per-iteration loop does zero pool traffic per iteration.
+  block and rewinds it (`off = 0`), releasing only overflow blocks. The common
+  one-block-per-iteration loop does zero pool traffic per iteration.
 
-The pool is the load-bearing one: it turns per-scope block churn into O(1)
-pointer traffic, and it is why `arena_child`/`arena_free` do not appear as a cost
-in any current profile. Retain-reset is neutral on code that allocates once per
-scope and pays off on loop-scratch-heavy code, which is what it was added for.
-Peak live memory is unchanged by either.
+The pool is the load-bearing one; it is why `arena_child`/`arena_free` do not
+appear as a cost in any current profile. What remains is the value-semantics
+deep copies, which the codegen below addresses.
 
-**What the pool does NOT fix.** With block churn off the hot path, what remained
-was the value-semantics deep copies the arena model performs and a
-leak-everything allocator skips — not arena bookkeeping. That is what the codegen
-work below addresses.
+## Codegen-level arena handling
 
-## Codegen-level arena handling (src/tychoc.c)
-
-Two codegen properties keep the arena model's overhead low.
-
-**Child arenas are elided for if/match blocks.** if/else/match-arm blocks would
-otherwise create a child arena (`_b%d = arena_child(scope)`) freed at block end.
-The enclosing `scope` always outlives the block, so block transients fall back
-to it with no early-free, and escaping values promote to `_parent` independent
-of any `_bN`. Eliding them removes the great majority of `arena_child` calls from
-a typical emission. Wall-clock and RSS are unchanged — the pool already makes
-those ops nearly free — but the emitted C is smaller, with fewer runtime ops per
-program, which isolates the real cost.
+**Child arenas are elided for if/match blocks.** The enclosing `scope` always
+outlives the block, so block transients fall back to it, and escaping values
+promote to `_parent` independent of any `_bN`. Wall-clock and RSS barely move
+(the pool already makes `arena_child` nearly free), but the emitted C is
+smaller.
 
 **Read-only heap struct params are borrowed, not deep-copied.** This is the real
-lever. A heap-bearing by-value struct param would otherwise be unconditionally
-deep-copied into the callee `_scope` on entry (for independence under mutation).
-Gating that copy on `block_mutates(body, param)` — copy only if the body mutates
-the param, else borrow the caller's value (the caller outlives the call;
-unmutated aliasing is unobservable; `return param` still deep-copies via the
-return path) — removes the dominant cost: the `Ctx` symbol table cloned on every
-call.
+lever. A heap-bearing by-value struct param is deep-copied into the callee
+`_scope` on entry only if the body mutates it (`block_mutates`); otherwise it
+borrows the caller's value (the caller outlives the call, unmutated aliasing is
+unobservable, and `return param` still deep-copies via the return path). On a
+compiler-shaped workload this removed a symbol-table clone per call and cut
+string-copy and allocation counts by two orders of magnitude, with peak memory
+flat. The same borrow-iff-not-mutated predicate applies to match-arm payloads.
 
-On a compiler-shaped workload this eliminated the symbol-table clone entirely and
-cut string-copy and allocation counts by two orders of magnitude, with peak
-memory flat. It is the single largest win in this file.
+## Profiling lessons
 
-**Net effect.** With the copy gated, the value-semantic implicit-arena model
-lands close to a leak-everything allocator on an allocation-heavy,
-deeply-recursive workload — while holding peak memory bounded where the
-leak-everything version grows without limit. That, plus the grow-in-place win
-in perf.md, is the case for the model.
+**Do not trust gprof self-times for functions with huge call counts; trust `-O2`
+wall-clock deltas.** gprof once blamed `is_variant` (the enum-variant scan) as a
+major bottleneck. Replacing it with an O(1) map removed it from the profile and
+changed `-O2` wall-clock by nothing: the `-pg` build's `mcount` overhead is
+charged to tiny, enormously-called functions. gprof *call counts* are not
+distorted, and they show the real `-O2` cost is memory traffic — many small
+`arena_alloc`s and `tycho_str_copy`s.
 
-The borrow-iff-not-mutated rule is the same predicate used on match-arm
-payloads.
+Where `perf` and valgrind are unavailable, use the statistical sampler in
+`tools/prof/` (`ITIMER_PROF`+`SIGPROF`, saved-frame-pointer caller attribution,
+no `mcount` artifact). It is what found two O(n²) bugs gprof hid: a lexer
+recomputing `len(src)` per token, and per-access `strlen` in string indexing
+(strings now carry their length, `runtime/tycho_rt.c@tycho_str_len`).
 
-## Where the remaining time goes
+## Push-loop fusion — register-resident array building
 
-Profiling put the arena memory model itself — `arena_child`, `arena_alloc`,
-`tycho_str_copy` — at a small share of run time. What dominates is algorithmic
-work in the compiler's own source, not the memory model.
+A loop that only pushes to a local array would otherwise pay, **per element**,
+for the descriptor (`data`/`len`/`cap`) round-tripping through memory: the C
+compiler must assume `&arr` aliases the arena pointer passed to `push`, so it
+cannot keep the cursor in registers. `reserve`, `restrict`, and a cheaper
+empty-arena `reset` all failed to move it; the cost is the descriptor traffic.
 
-**One caution, because it is easy to read a profile wrong.** gprof self-times
-once pointed at `is_variant` (the enum-variant scan) as a major bottleneck. It
-is not one. Two independent checks settled it: replacing all four variant
-lookups with an O(1) `{string:int}` map removed the `is_variant` line from a
-fresh gprof and changed `-O2` wall-clock by nothing at all; and the cause is a
-gprof `mcount` artifact — `is_variant` is a tiny branch-predicted loop called
-enormously often, and gprof's per-call instrumentation overhead, present only in
-the `-pg` build, is charged to it. The same artifact inflates every call-heavy
-tiny function in such a profile. **Do not trust gprof self-times for functions
-with huge call counts; trust `-O2` wall-clock deltas.** The variant-map change
-was reverted — no real win, and it would have added a map to source that had
-none.
+**Fusion** (`compiler/emit/emit_scope.ty@_fuse_open`): codegen caches
+`data`/`len`/`cap` in C locals across the loop (hot path `_fd[_fl++] = v`),
+calls the element type's `_grow` hook only on overflow, and writes the
+descriptor back at loop exit. `break` falls through to the flush; `continue`
+keeps the cursor in registers; `return` flushes first; nested loops pushing the
+same array reuse the outer cursor.
 
-The genuine `-O2` cost is **memory traffic**. gprof *call counts* are not
-distorted the way self-times are, and they show the shape: many small
-`arena_alloc`s and `tycho_str_copy`s, which is the volume of short-lived string
-allocation the string-building codegen does, plus value-semantic copies.
+**Sound by construction** — fuse ONLY when the array is read solely as a push
+target (`_creads_b == _pushn_b`), is a plain non-`inout`, non-bounded local not
+defined or shadowed in the body, and (for a `while`) the condition does not
+read it. Any miss falls back to standard codegen.
 
-### The real hotspots
-
-Because `perf` is blocked on the measurement machine (`perf_event_paranoid=3`,
-with a "no new privileges" flag that stops `sudo` even with a password) and
-valgrind is not installable, a dependency-free statistical CPU-time sampler
-is used instead (`tools/prof/`, using `ITIMER_PROF`+`SIGPROF`, with no `mcount`
-artifact). It surfaced a hotspot the gprof profile hid entirely: **`scan_token`
-recomputed `len(src)` — a full `strlen` of the whole source — once per token**,
-so lexing was O(tokens × len) = **O(n²)**. The fix is purely algorithmic and
-touches no bounds-checking: thread the already-known length (`lex` computes
-`n := len(src)` once) into `scan_token` instead of recomputing it, which takes
-lexing from O(n²) back to O(n).
-
-It also exposed a second O(n²), this one in `tychoc`'s own output: the emitted
-`strlen`-bounds-checked `tycho_str_get` was O(n) *per access*, so any compiled
-program indexing a large string in a loop paid O(n²).
-
-That is fixed with a length-carrying check.
-`tychoc`'s codegen gains a per-proc pass: a string variable that is indexed
-(`s[i]`) and never reassigned (`block_mutates`==0, so for a string its length is
-invariant) gets one hoisted `_slen_h_<v> = strlen(v)` sidecar at scope entry,
-and its index sites use a new `tycho_str_get_n(s, i, len)` — the **same bounds
-check, now O(1)** instead of re-`strlen`-ing per access. Full safety is kept
-(verified: out-of-bounds and negative indices still `exit(1)` with the bounds
-error), and `tests/str_index.ty` guards it with hand-verifiable output.
-
-### The "diffuse floor" turned out to be one thing: Ctx reconstruction
-
-After the two O(n²) fixes, the cost looked like diffuse `memcpy`/`malloc` from
-value-semantic copies — but that was a profiler blind spot, not the truth.
-Improving the sampler's caller attribution (a saved-RBP-chain walk, so libc
-leaves like `malloc` are blamed on the Tycho function that called them) cut the
-unattributed share dramatically and revealed the real floor: `with_owner` plus
-`enter_block` — that is, `Ctx` *reconstruction*. `with_owner` is called only to change the `owner` string, but
-the returned `Ctx` escapes, so value semantics deep-copied **every** field —
-including the large, parse-invariant `sigs`/`structs`/`enums` — on every
-owner/depth change. `tychoc` never had this because it threads `arena` as a plain
-parameter.
-
-
-The fix splits the immutable parse data into a `Decls` struct, built once and
-threaded read-only (`dc`), never reconstructed; `Ctx` keeps only the 7 mutable
-per-scope/per-fn fields, so `with_owner`/`enter_block` rebuild a tiny struct.
-`dc` is threaded through all 67 `ctx`-taking functions (which pushed
-`gen_match_optres` to 9 params, so `tychoc`'s fixed `Sig` param cap was raised
-8→16). `with_owner`/`enter_block` leave the profile entirely; what surfaces
-underneath is genuine codegen logic (`type_of`, `gen_expr`, `compute_movables`,
-`sig_ret`) — a smaller, more diffuse next layer.
-
-Two more from that layer, both output-invariant. The Decls split also made it
-safe to add O(1) lookup *maps* to the immutable `Decls` (built once, never
-reconstructed — the per-clone copy cost that doomed an earlier such attempt is
-gone). (1) `compute_movables` (the move-on-last-use pre-pass) was O(reads²) — it
-called `count_str_occ(reads, n)` for every read; a one-pass frequency map plus
-loopreads set makes it O(reads). (2) `sig_ret`'s per-call linear `dc.sigs` scan
-became an O(1) `dc.sigmap` lookup. What remains (`gen_expr`/`type_of` plus a large unattributed `memcpy`/`malloc` chunk)
-is the
-inherent string-building codegen: concatenated owned strings mean output bytes
-are copied once per nesting level — the value-semantic string-copy floor. No
-logic-level change moves it.
-
-### Push-loop fusion — register-resident array building
-
-The generated-code counterpart to the wins above. A loop that only pushes to a
-local scalar array paid, **per element**, for the array descriptor
-(`data`/`len`/`cap`) round-tripping through memory: the C compiler must assume
-`&arr` aliases the arena pointer also passed to `push`, so it cannot keep the
-cursor in registers. Profiling `iter_transform` (a 200M-element push loop)
-isolated it: `push` dominated the loop, and hand-hoisting the descriptor brought
-it back down to roughly the cost of the arithmetic alone. `reserve`, `restrict`,
-and a cheaper empty-arena `reset` all failed to move it — the cost is the
-descriptor traffic, not growth or the capacity branch.
-
-**Fusion:** when a loop's body uses a local scalar array (`[int]`/`[float]`)
-ONLY as `push(arr, …)`, codegen caches `data`/`len`/`cap` in C locals across the
-loop (hot path `_fd[_fl++] = v`), calls a grow hook (`tycho_arr_int/float_grow`)
-only on overflow, and writes the descriptor back at loop exit. `break` needs
-nothing (the flush sits after the loop, which `break` falls through to);
-`continue`'s cursor survives in registers; `return` flushes via the registry
-first; nested loops pushing the same array reuse the outer cursor.
-
-**Sound by construction** — fuse ONLY when `count_reads == pushcount` (used
-solely as a push target), the array is a plain non-inout scalar local not
-defined/shadowed in the body, and (for a `while`) the condition does not read
-it. Any miss falls back to the standard codegen, so a non-fused loop is never
-wrong. The registry is C globals (`g_fuse`).
-
-**Result:** a large multiple on push-dominated loops, closing most of the gap to
-hand-written C, with peak memory slightly down. It applies generally — every
-scalar push loop. `tests/push_fusion.ty` covers
-break/continue/return/nested/two-array/while/bail.
-
-**Every element type now fuses**: not just scalars, but
-`[string]`, structs, tuples, nested arrays, options/results, and enums — any
-array whose element family has a `_grow` hook (all of them). The grow hook is
-element-generic: regrow the *spine* (the element buffer), recycle the old spine;
-the heap each element points to was already deep-copied into the array's arena,
-so the shallow per-element spine copy keeps it valid. This is sound because a
-push only *appends* — no element is ever overwritten — and the fused store
-deep-copies the element into the array's owning arena exactly as the non-fused
-push does, preserving value semantics. The win is largest for scalars; for heap
-elements the per-element deep-copy dominates, so the descriptor-elision is a
-smaller fraction — a consistency/completeness close more than a hot-path
-multiplier, though it still cuts a call plus a descriptor write-back per push on
-the very common build-a-list loop. `tests/str_fuse.ty` and `tests/comp_fuse.ty`
-cover it. Every array element type fuses.
+Every element type fuses: the grow hook regrows the *spine* and recycles the old
+one, and the fused store deep-copies the element into the array's owning arena
+exactly as the non-fused push does. The win is a large multiple for scalars;
+for heap elements the per-element deep copy dominates, so it saves a call and a
+descriptor write-back per push. Covered by `tests/push_fusion.ty`,
+`tests/str_fuse.ty` and `tests/comp_fuse.ty`.

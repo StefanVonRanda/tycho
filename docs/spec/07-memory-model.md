@@ -21,15 +21,9 @@ independent value.
 The single, tightly-scoped exception is `inout` (§11): a call-scoped,
 copy-in/copy-out mutable *borrow* that is provably equivalent to `x = f(x)` and
 is not a storable reference. `inout` does not reintroduce aliasing; it is
-specified precisely so that it cannot.
-
-> The contract is copy-in/copy-out; the **codegen is in-place**. An `inout`
-> argument is passed as a pointer to the caller's variable plus the value's
-> owning arena (a hidden `_ina_` parameter), and the callee's allocating
-> mutations route into that arena — the caller's, where the value lives — so
-> no aggregate is ever copied in or out. The `x = f(x)` contract is what the
-> language promises; the pointer pass is how it is kept (measured in
-> `docs/internals/design-aggregate-ref.md`).
+specified precisely so that it cannot. (The reference implementation passes
+it in place, as a pointer plus the owning arena; the copy-in/copy-out contract
+is what is promised.)
 
 ### 9.2 Copy on assignment, argument, and return
 
@@ -51,12 +45,11 @@ copy is what guarantees a value outlives every place that holds it.
 
 ### 9.3 Structural equality mirrors the copy
 
-Equality (`==`) is the mirror image of the deep copy: it compares by content,
-recursing through the same structure ([§5.5](03-types.md#55-equality-and-ordering)).
-Therefore `a == b` holds exactly when `b` is an independent deep copy of `a`.
-Function values are the exception: a bare function is **not comparable** at all
-(§5.5), and a function embedded in a comparable aggregate compares by **identity**,
-not content — the one place the copy/equality symmetry does not apply.
+Equality (`==`) compares by content through the same structure the copy walks,
+so `a == b` holds exactly when `b` is an independent deep copy of `a`
+([§5.5](03-types.md#55-equality-and-ordering)). Function values are the one
+exception: not comparable bare, and compared by **identity** inside an
+aggregate.
 
 ### 9.4 Uniqueness
 
@@ -78,9 +71,6 @@ change only *when* and *whether* storage is allocated or freed. This
 transparency is guaranteed by the value-semantics asymmetry (§10.4): under value
 semantics a wrong storage decision can change only when memory is reclaimed,
 never whether a pointer dangles.
-
-A conforming implementation MUST hold to the same
-observable-equivalence standard: optimizations MUST NOT change any observed value, output, or accept/reject decision.
 
 ## 10. Object lifetimes and storage
 
@@ -202,12 +192,10 @@ with a variadic parameter.
 Two parameter types MUST NOT be declared `inout`, because copy-out through the
 borrow would defeat the affinity or the lifetime rule that governs the value:
 
-- **`Channel(T)`** ([§23.1](13-concurrency.md)). A channel parameter is already a
-  shared handle onto one queue: every by-value copy names the same queue, so an
-  `inout` borrow buys no additional sharing, while a copy-out could write a
-  *different* channel back into the caller's variable and so retarget a queue the
-  caller still owns. A plain (by-value) `Channel(T)` parameter is the supported —
-  and sufficient — way to pass a channel to a callee.
+- **`Channel(T)`** ([§23.1](13-concurrency.md)). Passing a channel plainly is
+  already a borrow of the caller's queue, so `inout` buys nothing, while a
+  copy-out could write a *different* channel back into the caller's variable and
+  retarget a queue the caller still owns. Pass it by value.
 - **A function value** (`fn(P…) -> R`, [§15.4](11-functions.md)). Copy-out could
   store a callee-local closure into the caller's variable, outliving the storage
   its captures were re-homed into ([§10.2](#102-the-escape-rule)) — a dangling

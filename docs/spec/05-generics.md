@@ -80,10 +80,9 @@ Constraints are enforced **at instantiation**, up front, yielding a clear
 signature error (`'f' instantiated with T = string, which does not satisfy
 numeric(T)`) rather than a deep error inside the substituted body.
 
-Two predicates that might be expected do **not** exist, by design: `ordered(T)`
-would duplicate `comparable` (which already gates `< > <= >=`), and no
-`equatable(T)` is needed because `==`/`!=` already works on any two values of
-the same type ([§5.5](03-types.md#55-equality-and-ordering)).
+There is no `ordered(T)` (`comparable` already gates `< > <= >=`) and no
+`equatable(T)` (`==`/`!=` works on any two values of the same type,
+[§5.5](03-types.md#55-equality-and-ordering)).
 
 ## 7.3 Generic structs and enums
 
@@ -102,9 +101,8 @@ argument against the type parameters on the *declaration* being applied, so
 to one type program-wide, inside any generic function that happens to spell its
 parameter `$T` as well. Any other spelling is refused:
 
-> `error: generic struct 'Item': a type argument may not partially mention a
-> type parameter; use the generic applied to its own parameters (a recursive
-> reference) or to concrete types`
+> `error: generic struct 'Item': its type arguments must be EITHER exactly its
+> own parameters, in order (a recursive reference), OR all concrete`
 
 `Item($A)` and `Item($U)` both hit this, so **a generic stage that CHANGES the
 parameter is inexpressible**: `fn relabel(it: Item($T), f: fn($T) -> $U) ->
@@ -114,14 +112,9 @@ out. Tuples are no way around it: a pattern that mentions a type parameter
 inside a tuple, `(int, $T)` or `Channel((int, $T))`, does not match a
 `(int, int)` or `Channel((int, int))` argument either.
 
-This is a restriction of the type *representation*, not a soundness rule. An
-applied aggregate type is one interned id naming either the template or a
-completed instance; there is no third form carrying pending arguments to be
-substituted when the enclosing function's bindings are known. `Item($T)` works
-because it takes the recursive-self-reference path, which keeps the template and
-lets `subst_type` finish the job — not because the parameter was in scope.
-Lifting it means adding that deferred-application type and teaching every
-consumer of an aggregate type about it; it is not planned.
+This is a restriction of the type representation (an applied aggregate names
+either the template or a completed instance, with no form for pending
+arguments), not a soundness rule. Lifting it is not planned.
 
 ## 7.4 Const generics (`[N]T`, `[$N]T`)
 
@@ -154,9 +147,6 @@ parameters `vp.pair$(int, string)(1, "a")`. Type arguments bind the declaration'
 type parameters in order and the count must match, whichever spelling is used.
 The value-argument list is optional after `$(…)`, which is what lets an empty
 call to a generic variadic name its element type (`vp.count$(int)()`, §15.3).
-The qualified spelling was a parse error until 2026-08-14 — the `$` was read as a
-field access — so no program in the tree used it; `tests/pkg/variadic_qual/` and
-its two reject siblings pin it now.
 
 ## 7.6 UFCS and generic method-style calls
 

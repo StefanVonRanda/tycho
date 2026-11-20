@@ -4,18 +4,15 @@
 > User enums whose variants carry only scalar payloads are stored inline;
 > recursive, generic and heap-bearing enums are boxed.
 
-A *sum type* is a value that is exactly one of several alternatives. Tycho has one
-general form, the user-defined `enum`, plus two built-in special cases for two common
-problems: `Option(T)` (a value that might be absent, without `null`) and `Result(T, E)`
-(failure, without exceptions). You take all three apart the same way — an exhaustive
-`match` — and all three are ordinary values, copied on assignment and compared
-structurally with `==`, like everything else in the language.
+A *sum type* is a value that is exactly one of several alternatives. Tycho has the
+user-defined `enum` plus two built-in ones: `Option(T)` (absence without `null`) and
+`Result(T, E)` (failure without exceptions). All three are taken apart with an exhaustive
+`match`, copied on assignment, and compared structurally with `==`.
 
 ## `enum` — user-defined sum types
 
-An `enum` declares a type whose value is exactly one of several named **variants**, each
-carrying a **payload** of zero or more values. It is a tagged union: each value carries a
-tag naming the variant it holds:
+An `enum` is a tagged union of named **variants**, each carrying a **payload** of zero or
+more values:
 
 ```tycho
 enum Shape:
@@ -37,9 +34,8 @@ You build a value by naming a variant — `Circle(2.0)`, or a bare `Unit` for a 
 one — and take it apart with `match` (below). Variant names are global: you write `Circle`,
 not `Shape.Circle`, and no two enums may share a variant name.
 
-An enum value is an ordinary value: copying one copies the whole payload, and `==`
-compares two values structurally. An enum may appear anywhere a type may — a struct field,
-an array element (`[Shape]`), a map value, a function parameter or return.
+An enum may appear anywhere a type may — a struct field, an array element, a map value, a
+parameter or return.
 
 ### Recursive enums are ASTs
 
@@ -152,7 +148,7 @@ Rules: each branch/arm is a **single expression** (its value); a value `if` **mu
 branches must have the **same type**, which becomes the type of the whole expression. This is
 shorthand for declaring a variable and assigning it in each arm.
 
-Not yet supported: multi-statement branches, a branch that `return`s
+Not supported: multi-statement branches, a branch that `return`s
 instead of yielding a value, and use as a nested sub-expression (e.g. `1 + if …`). Use the
 statement form for those.
 

@@ -1,17 +1,12 @@
 # Architecture & project status
 
-Where the project stands: how it's built, what each verification gate proves, what's
-shipped, and what's a decided non-goal.
-
-Tycho tests one claim: value semantics
-makes hierarchical arena allocation fully implicit, with no whole-program analysis. It
-transpiles to C and is MIT-licensed. For the argument itself see [thesis.md](thesis.md);
-for a full accounting of where the model wins and loses see
-[internals/value-semantics-limits.md](internals/value-semantics-limits.md).
+How the project is built, what each verification gate proves, what's shipped,
+and what's a decided non-goal. The argument for the model is in
+[thesis.md](thesis.md).
 
 ## The pieces
 
-**One compiler ships.** `compiler/` is 26,519 lines of Tycho across 13 files,
+**One compiler ships.** `compiler/` is 26,607 lines of Tycho across 25 files,
 built as `tychoc1` and installed as `tychoc`. Six packages: `lex`, `parse`,
 `ast`, `types`, `emit`, `driver`. The [spec](spec/) is normative; the compiler
 is the reference implementation in practice, and every suite here defaults to
@@ -19,18 +14,11 @@ it (`tests/run.sh:180@TYCHOC`).
 
 `bootstrap/tycho_compiler.c` is a generated cold-start artifact: the compiler
 source emitted as C by the last known-good compiler. It is not a second
-implementation and is not edited by hand. The historical C compiler,
-`src/tychoc.c`, has been deleted; its final source is at commit
-`c7d46528ac6efcf9dc93359d14d98bedcb7ddbad` in git history. Historical design
-and defect records still cite it, and `scripts/check_citations.py` resolves
-those citations against that revision. See
-[the archive note](internals/archived-c-compiler.md).
-
-### Which compiler is right
-
-The self-hosted compiler is the reference implementation; the spec is
-normative. The archived C compiler is not a second opinion and is never used to
-resolve a disagreement.
+implementation and is not edited by hand. The old C compiler, `src/tychoc.c`,
+is gone from the tree (last at commit `c7d46528`); older records that cite it
+resolve against that revision ([archive note](internals/archived-c-compiler.md)).
+It is never used to settle a disagreement: the spec is normative and the
+self-hosted compiler is the reference implementation.
 
 ### Bootstrapping
 
@@ -47,33 +35,25 @@ generation reaches the binary you run instead of hiding one generation back.
 `make bootstrap-check` proves the checked-in C builds and emits itself
 byte-for-byte.
 
-The fixpoint holds. Generating three further compilers from `compiler/main.ty`
-gives byte-identical C at every hop — gen2 == gen3 == gen4. The corelib is
-resolved relative to the running binary, so a generation built somewhere else
-must be run from the repo root or it cannot find `core:strings`.
+The fixpoint is gated: `make fixpoint-check` (`scripts/fixpoint_check.sh`,
+step `[1e/13]` of `make ci`) has `tychoc1` emit the compiler's C, builds that
+generation `-O0`, has *it* emit the compiler again, and requires the two C files
+byte-identical — `f(f(x)) == f(x)`. It compares C rather than binaries, so it
+is free of link-time noise. The corelib is resolved relative to the running
+binary, so a generation built elsewhere must run from the repo root.
 
-`TYCHOC1_CFLAGS` (`Makefile@TYCHOC1_CFLAGS`) links `-static-pie`, not `-static`:
-a plain static link leaves `.eh_frame` unsorted, so the first unwind runs
-`classify_object_over_fdes` over the whole table — 201,604 Ir on every compile
-regardless of input size.
-
-The fixpoint is gated rather than measured by hand: `make fixpoint-check`
-(`scripts/fixpoint_check.sh`) has `tychoc1` emit the compiler's C, builds that
-one generation `-O0` (it only has to run), has *it* emit the compiler again, and
-requires the two C files byte-identical — `f(f(x)) == f(x)`. It compares the
-emitted C rather than binaries, so it is free of link-time noise. It is
-`[1e/13]` in `make ci`.
+On Linux `TYCHOC1_CFLAGS` (`Makefile@TYCHOC1_CFLAGS`) links `-static-pie`, not
+`-static`: a plain static link leaves `.eh_frame` unsorted, so the first unwind
+scans the whole table — 201,604 Ir on every compile regardless of input size.
+Darwin has no static linking, so there the flags are LTO and `-fPIE` only.
 
 ## The verification surface
 
-**One class the lanes below do not cover**, stated so it is not mistaken for
-covered: ASan sees addresses, UBSan undefined behaviour, LSan leaks, TSan races
-— **none sees a read of memory that was never written**. That gap was probed
-with valgrind memcheck over the fixtures, corelib packages, examples, and all
-tools driven through their gates — clean — with the instrument proved able to
-fire in both directions. The method is recorded in
-[`internals/probe-uninit-arena-2026-09-11.md`](internals/probe-uninit-arena-2026-09-11.md)
-and the controls in [controls.md](controls.md).
+**One class the lanes below do not cover**: ASan sees addresses, UBSan
+undefined behaviour, LSan leaks, TSan races — **none sees a read of memory that
+was never written**. A valgrind memcheck pass over the fixtures, corelib,
+examples and tools came back clean, with the instrument proved able to fire
+(method: `git show ba952872:docs/internals/probe-uninit-arena-2026-09-11.md`).
 
 `make ci` runs the whole gate locally — there is no hosted CI, by policy. What each
 step proves:
@@ -91,7 +71,7 @@ step proves:
 | `make fuzz-reject` | malformed input: tychoc must fail closed — never crash, and anything it accepts must emit valid C. |
 | `make fuzz-leak` | LeakSanitizer: no arena / owner leaks. |
 | `make tools-check` | formatter idempotence + semantic preservation + LSP smoke. |
-| `bench-guard` | tree-alloc wall: Tycho must beat C (perf-regression gate). |
+| `make bench-guard` | tree-alloc wall: Tycho must run under 0.60× C's time (perf-regression gate). |
 | `make recursion` | deep input fails closed (no stack-overflow DoS). |
 | `make spec-check` | the spec's grammar matches the prose, its fixtures exist, and its examples produce the documented output. |
 
@@ -121,9 +101,9 @@ smoke, so a red `make ci` can't reach `main`: a green `make test` is *not* a gre
 
 These are settled — please don't propose them:
 
-- Traits / typeclasses (re-closed on new grounds — see below)
-- A package manager (re-affirmed 2026-08-15: vendoring, Odin-style —
-  [ROADMAP](../ROADMAP.md#what-production-ready-requires) §2)
+- Traits / typeclasses (see below)
+- A package manager (vendoring, Odin-style —
+  [ROADMAP](../ROADMAP.md#what-production-ready-requires))
 - A C-style ternary `?:` (the need is met by expression-valued `if`/`match` in tail position)
 - Hindley-Milner inference
 - Copy-on-write / reference counting
@@ -133,8 +113,7 @@ These are settled — please don't propose them:
 
 ### Traits / typeclasses — reopened 2026-09-11, re-closed the same day
 
-Traits were first closed as "complete for the thesis", then reopened when that
-premise was retired — and closed again on new grounds: the *dynamic* form
+The *dynamic* form
 (trait objects held in fields or heterogeneous containers) is impossible under
 value semantics ([thesis §5](thesis.md)), while the *static* form is largely
 already present via post-substitution generics, leaving only overloading as the
@@ -143,7 +122,7 @@ demand-gated gap ([ROADMAP](../ROADMAP.md#near-term)). The full argument is in
 
 ## Known limits
 
-Pointer-shaped, structurally-shared data (tries, graphs) costs ~1.55× C in RAM because
-children are stored by value, with no sharing. The recommended
-idiom (a flat index-pool) is documented but not presented as "the model."
-See [internals/value-semantics-limits.md](internals/value-semantics-limits.md).
+Pointer-shaped, structurally-shared data (graphs, DAGs) cannot share by
+reference; the idiom is a flat index-pool, which runs at C-class memory on the
+benchmarked trie and dijkstra rows. The full win/loss accounting is in
+[internals/value-semantics-limits.md](internals/value-semantics-limits.md).

@@ -40,19 +40,19 @@ line may still span several physical lines, by two implicit joins:
 
 1. **Bracket depth.** While any `(` or `[` is open, a physical line boundary
    produces no `NEWLINE` and the next line's leading whitespace is not
-   indentation. This has always been the case.
+   indentation.
 2. **A trailing operator.** A physical line whose last token cannot *end* an
-   expression — an arithmetic, comparison, bitwise, or logical operator, `,`,
-   `=`, or `:=` — joins the line that follows, provided that line is indented
+   expression — an arithmetic, comparison, bitwise, or logical operator, `is`,
+   `,`, `=`, or `:=` — joins the line that follows, provided that line is indented
    **strictly deeper** than the first physical line of the statement. The
    continuation's leading whitespace is not indentation.
 
-Only tokens that cannot end an expression qualify, so no program that was
-accepted before either join can change meaning. `:` is excluded: it opens a
+Only tokens that cannot end an expression qualify, so a join never changes the
+meaning of a line that is complete on its own. `:` is excluded: it opens a
 block and must end its line.
 
-**The deeper-indent condition is normative, and it is what preserves the
-diagnostic for a truncated line.** Given
+**The deeper-indent condition is normative**; it keeps the diagnostic for a
+truncated line on that line. Given
 
 ```text
 x := 1 +
@@ -128,8 +128,8 @@ An `IDENT` may hold any letter case in any position; the token shape does not
 depend on it. What the case decides is **which space the name may declare in**:
 
 - A name that starts with an **uppercase letter** `A`–`Z` belongs to the
-  **compile-time** space: types (§8), enum variants ([§19.1](12-aggregates.md#191-enum-declaration-and-variants)),
-  and `const` declarations (§14).
+  **compile-time** space: types (§5), enum variants ([§19.1](12-aggregates.md#191-enum-declaration-and-variants)),
+  and `const` declarations (§12.2).
 - A name bound at **run time** — a local, a parameter (including `inout`,
   `sink` and variadic parameters and lambda parameters), a destructuring
   target, a `for` loop variable, a match-arm payload binding, and a `select`
@@ -140,7 +140,7 @@ The rule is exclusion, not preference: because no run-time binding can be
 spelled the way a variant is spelled, a binding can never shadow a constructor,
 and a bare `Name` in a payload slot is unambiguously a **pattern** rather than a
 binding. `_` and a leading-underscore name stay legal in every binding position
-(`_` is the discard, §22.4). Procedure names are unaffected — they are neither
+(`_` is an ordinary name, not a discard — §17.5). Procedure names are unaffected — they are neither
 run-time bindings nor uppercase by convention — except for the four constructor
 names §3.7 already excludes. The identifier prefix `Ztycho_` is reserved in
 all name spaces for compiler-generated temporaries and is rejected by the lexer.
@@ -160,7 +160,7 @@ select  spawn   string  struct  true     type    u8      u16
 u32     u64
 ```
 
-Those 42 are the whole of `keyword()`; the same list is tabulated in
+Those 42 are the whole of the lexer's keyword set; the same list is tabulated in
 [Appendix B](appendix-b-keywords.md#b1-reserved-words). The words `int`, `bool`,
 `string`, `float`, `ptr`, `bytes`, `f32`, and the fixed-width integers `u8`,
 `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64` are the primitive **type
@@ -171,7 +171,7 @@ is `or` followed by `_return` or `_else`).
 `soa` is reserved too, but by the parser rather than the lexer: it lexes as an
 ordinary identifier and every expression position that sees it demands a `[`,
 so `soa := 5` is accepted and the next mention of the
-name dies with `expected '[' after soa`. A binding of that name is declarable and
+name is rejected (`expected '['`). A binding of that name is declarable and
 permanently unusable, which is why [Appendix B](appendix-b-keywords.md#b1-reserved-words)
 lists it with the reserved words and not with the contextual ones.
 
@@ -186,16 +186,20 @@ bars an uppercase spelling from every run-time binding position. They are
 
 - **Top-level leaders:** `package`, `import`, `extern`, `const`, `subscript`.
 - **Statement leaders:** `const` (local), `delete` — each significant only when
-  immediately followed by an identifier.
-- **Type / expression position:** `where`, `channel`, and the built-in generic
-  type names `Option`, `Result`, `Channel`. `where` and `channel` are genuinely
+  immediately followed by an identifier — and `pass`, significant only as a
+  whole statement (§14.1.1).
+- **Declaration attributes:** `packed` and `align`, only immediately before
+  `struct` (§17.1a).
+- **Type / expression position:** `where`, `channel`, `bounded` and `vector`
+  (only before `[`), `void` (only as a `Result`'s ok payload), and the built-in
+  generic type names `Option`, `Result`, `Channel`. The lowercase ones are
   unaffected as names; the three uppercase ones are not reserved either, but
   §3.5.1 bars every uppercase spelling from a run-time binding position, so
   `Option := 5` is refused exactly as `Foo := 5` is. `soa` is **not** in this
   list — see §3.6.
 - **Parameter modifier:** `sink`.
 - **Construct bodies:** `yield` (in a `subscript`), `free` (in a `handle`),
-  `range` (in the head of a `for … in`, **only to refuse it** since 2026-07-29).
+  `range` (in the head of a `for … in`, **only to refuse it**, §14.4).
 - **Value constructors treated as identifiers:** `None`, `Some`, `Ok`, `Err`,
   and the match wildcard `_`. Unlike the builtin functions below, these four
   are refused **everywhere**: a `fn` or `const` of one of those names is
@@ -226,11 +230,8 @@ bars an uppercase spelling from every run-time binding position. They are
     the unqualified spelling, written inside that package's own body, is taken
     by the builtin.
 
-  Some implementations currently warn rather than reject some of these
-  declarations in the main program; the rejection above is the normative rule.
-  A warning on a shadowing declaration is quality of implementation, not a
-  conformance requirement; **selection** of the builtin in an unqualified call
-  is the normative part.
+  The reference implementation currently warns rather than rejects such a
+  declaration in the main program; the rejection above is the normative rule.
 
 
 ## 3.8 Operators and punctuation
@@ -260,7 +261,7 @@ The byte `!` occurs **only** as part of `!=`; a bare `!` is a lexical error.
 Boolean negation is the keyword `not`, not `!`. The braces `{` and `}` are
 **not** tokens of the language; they are significant only inside an f-string
 literal (§3.9.5). The **only** range operator is `..<`; `..` alone is not a
-token, and the `range(…)` form it replaced is gone (§14.4). Operator precedence and associativity are
+token (§14.4). Operator precedence and associativity are
 defined with the expression grammar in [§4.5](02-grammar.md#45-operator-precedence-and-associativity).
 
 
@@ -328,7 +329,7 @@ Two disambiguation rules are normative:
 - **Malformed exponent.** An `e`/`E` not followed by an optional sign and at
   least one digit is not part of the number; the `e…` is lexed as a separate
   identifier. Thus `1e` and `1e+` do not form float literals (`1e` tokenizes as
-  `INT DOT?`… i.e. the `e` becomes a lone identifier). `1.e5` also does not form a
+  `INT(1) IDENT(e)`). `1.e5` also does not form a
   float, but for a different reason: the `.` is not followed by a digit, so no
   fractional part forms and it tokenizes as `INT(1) "." IDENT(e5)`.
 
@@ -351,13 +352,8 @@ literal, or one holding more than one byte is a lexical error.
 `'\x4'` is a lexical error rather than a short read. Together with `\0` it makes
 every one of the 256 byte values writable as a literal.
 
-**`\xNN` is a character-literal escape only** — a string literal still rejects it
-([§3.9.4](#394-string-literals)), and for a reason that is about representation
-rather than about hex. A character literal is decoded to its byte at lex time and
-never reaches a C string literal, whereas a string literal's text is carried as
-*escaped source* into codegen, where the adjacent-piece join is sound only while
-every escape is exactly two characters. `\0` has the same asymmetry, and for the
-same reason.
+**`\xNN` and `\0` are character-literal escapes only**; a string literal rejects
+both ([§3.9.4](#394-string-literals) gives the reason).
 
 
 ### 3.9.4 String literals
@@ -376,9 +372,8 @@ A string literal is delimited by double quotes and denotes a `string` value. One
 piece is single-line: an embedded newline is an error (`unterminated string
 literal`). The supported escapes are exactly `\n`, `\t`, `\r`, `\\`, and `\"` — a
 smaller set than C; any other `\`-escape is rejected. A raw control byte below
-`0x20` (except tab) is rejected and MUST be written with an escape. A single
-string-literal *piece* is limited to a fixed maximum length (`string too long`
-beyond it). Consequently a string *literal* cannot contain a `NUL` byte; a
+`0x20` (except tab) is rejected and MUST be written with an escape.
+Consequently a string *literal* cannot contain a `NUL` byte; a
 byte-safe `string`/`bytes` *value* containing interior `NUL`s is produced at run
 time (e.g. via `bytes`), not written as a literal.
 
@@ -398,14 +393,12 @@ Apart from a raw piece (below) there is no other multi-line string form, and
 there is no backslash line-continuation. An **f-string never joins**
 ([§3.9.5](#395-f-string-interpolated-literals)): it is
 already sugar for a `+` chain, so `f"a" "b"` and `"a" f"b"` are each a syntax
-error. Joining is defined on the literals'
-*escaped source text*, which is sound only because every escape is exactly two
-characters — the reason `\0` and `\xNN` are not in **this** escape set (a greedy
-C-style `\x` would absorb a hex digit across a join, so `"\x4" "1"` would mean one
-byte where the author wrote two, and a `\0` would truncate the interned literal,
-whose length comes from `strlen`). Both are legal in a *character* literal
-([§3.9.3](#393-character-literals)), which is decoded to a byte at lex time and so
-has no such exposure; the asymmetry is deliberate and normative.
+error. Joining is defined on the literals' *escaped source text*, which is sound
+only because every escape is exactly two characters — the reason `\0` and `\xNN`
+are not in **this** escape set (`"\x4" "1"` would join into one byte where the
+author wrote two). Both are legal in a *character* literal
+([§3.9.3](#393-character-literals)), which is decoded to a byte at lex time; the
+asymmetry is normative.
 
 **Raw pieces.** A piece delimited by backticks — `` `…` `` — is a *raw* string
 piece. **No escape is interpreted inside it:** a backslash is a backslash, so
@@ -425,15 +418,11 @@ joining: ``s := `a` "`" `b` `` is the three characters `` a`b ``. A raw
 piece that is never closed before end of file is rejected (`unterminated raw
 string literal`, reported at the *opening* line). Raw control bytes below `0x20`
 are rejected exactly as in a quoted piece, with tab **and newline** excepted.
-The same fixed per-piece length bound applies (`string too long`).
 
 A raw piece **is** a `StrPiece`, so it joins with adjacent pieces of either kind:
 `` `raw ` "and normal" `` and `` "normal and " `raw` `` are each one literal.
-This is sound under the escaped-source-text rule above because the scanner
-re-escapes a raw piece's bytes into the ordinary two-character escapes as it
-reads them; the token a raw piece produces is an ordinary string token carrying
-escaped text, and nothing downstream can tell which spelling produced it. A raw
-piece is never interpolated: there is no `` f`…` `` form, and `{` inside a raw
+The scanner re-escapes a raw piece's bytes into the ordinary two-character
+escapes, so the join rule above holds unchanged. A raw piece is never interpolated: there is no `` f`…` `` form, and `{` inside a raw
 piece is an ordinary byte.
 
 Concatenating two string literals with `+` also folds to one literal in a
@@ -452,8 +441,7 @@ expression, and nested string literals inside a hole are permitted.
 An f-string is **syntactic sugar**: at parse time `f"a{e}b"` becomes the
 concatenation `"a" + str(e) + "b"`. There is no distinct f-string AST node.
 Because the desugaring wraps each hole in `str(…)`, a hole expression MUST be of
-a type accepted by `str` (the numeric and string scalars); other hole types are
-rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
+a type accepted by `str`; other hole types are rejected with the same diagnostic `str` gives ([§29](16-builtins.md)).
 
 
 ### 3.9.6 Boolean and pointer literals
@@ -472,15 +460,14 @@ defined here in at least the following ways (all resolved in favor of this
 specification):
 
 1. it lists `while` as a keyword — there is no `while` in the language;
-2. it lists `char` and `void` as type keywords — neither is spellable as a type;
-3. it treats `import`, `package`, and `extern` as reserved keywords — they are
-   contextual identifiers (§3.7) — and omits the reserved word `handle`. Its
-   fourth entry, `soa`, is right: `soa` is reserved (§3.6);
+2. it lists `char` and `void` as type keywords — `char` is not spellable as a
+   type, and `void` is a contextual word valid only as a `Result`'s ok payload;
+3. it treats `import`, `package`, `extern`, `pass` and the other contextual
+   identifiers (§3.7) as keywords;
 4. its number pattern does not model exponents or the leading-dot form (§3.9.2);
 5. it lists `{`/`}` as punctuation and omits `...` — braces are not tokens and
    `...` is a real operator (§3.8);
-6. its builtin list is partial and includes the removed names `map_get`/
-   `map_set` (which the language rejects at parse time);
+6. its builtin list is partial;
 7. it models no `INDENT`/`DEDENT`/`NEWLINE` (§3.4), so it cannot represent block
    structure.
 

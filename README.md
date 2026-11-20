@@ -12,9 +12,7 @@ lexical scope, built around value semantics and data-oriented defaults.** It is
 built for **programs that allocate hard and cannot afford a GC pause** —
 parsers, interpreters, solvers, batch CLIs and long-running services — and its
 value semantics steer data into the flat, index-addressed layouts that
-data-oriented C reaches for on purpose. The scope is general-purpose systems
-work, not a single application niche. Every
-scope owns a memory arena, freed when the scope exits; with no reference type in
+data-oriented C reaches for on purpose. Every scope owns a memory arena, freed when the scope exits; with no reference type in
 the language, the compiler sees every value's lifetime from the syntax alone and
 inserts every allocation and free itself. No garbage collector, no manual
 `free`, no borrow checker. It transpiles to C and builds with `cc` and `make`.
@@ -42,11 +40,9 @@ fn main():
     # xs dies when main's scope does. No free() here, and none in the emitted C.
 ```
 
-That last comment is the whole language, and the compiler decides it from the
-shape of the code. `evens` returns `xs`, so there is nothing to free at its
-scope exit and the array is built in the caller's arena from the start.
-If you don't read C, skip the grey boxes — the sentences around them carry
-the point:
+That last comment is the whole language. `evens` returns `xs`, so there is
+nothing to free at its scope exit and the array is built in the caller's arena
+from the start (the grey boxes are the emitted C; the sentences carry the point):
 
 ```c
 TychoArrInt h_evens(Arena *_parent, tycho_int limit) {
@@ -63,13 +59,11 @@ tycho_int h_count_evens(Arena *_parent, tycho_int limit) {
     { tycho_int _ret = h_xs.len; arena_free(&_scope); return _ret; }
 ```
 
-No annotation chose that, and no runtime worked it out. The lifetime is visible
-in the syntax, so the compiler places every allocation and every free itself.
+No annotation chose that, and no runtime worked it out.
 
 ## Quick start
 
-**You need `make` and a C11 compiler — gcc, or clang 15 or newer.** That is the
-whole toolchain.
+**You need `make` and a C11 compiler — gcc, or clang 15 or newer.**
 
 ```
 $ git clone https://github.com/StefanVonRanda/tycho
@@ -80,31 +74,23 @@ what is your name: Ada
 hello Ada
 ```
 
-New here? The **[quickstart](docs/quickstart.md)** gets you running in ten
-minutes; the **[tutorial](docs/tutorial.md)** goes from this to a real program
-in about an hour, and **[from `malloc` to arenas](docs/from-c-to-arenas.md)**
-explains the memory model from C you already know. Full build details are under
-[Trying it](#trying-it). The syntax is Python/Nim-flavored and the semantics
-Go/Odin-like; the value-semantics core comes from
+clang 14 is excluded: it builds the compiler and then miscompiles what it
+emits ([toolchain matrix](docs/platforms.md#c-toolchains)). Full build details
+are under [Trying it](#trying-it). The syntax is Python/Nim-flavored and the
+semantics Go/Odin-like; the value-semantics core comes from
 **[Hylo](https://www.hylo-lang.org/)**.
-
-(clang 14 is the one exclusion, and it is measured: it builds the compiler and
-then miscompiles what it emits. Which compilers have been run against the whole
-corpus, and what each scored, is the
-[toolchain matrix](docs/platforms.md#c-toolchains).)
 
 ## What you give up
 
-No reference type, no stored borrows, no interface values — and
-[Thinking in Tycho](docs/idioms.md) is what to reach for instead: pools for
-graphs, channels for observers, closed enums for heterogeneity. Each idiom is
-also the faster spelling. What follows is the boundary itself, stated plainly
-so you meet it here rather than on page 40.
+No reference type, no stored borrows, no interface values.
+[Thinking in Tycho](docs/idioms.md) is what to reach for instead — pools for
+graphs, channels for observers, closed enums for heterogeneity — and each idiom
+is also the faster spelling. The boundary itself, stated plainly so you meet it
+here rather than on page 40:
 
-**There is no reference type.** That is what makes the demo above work, and
-it is the part that will cost you a weekend if you meet it on page 40 instead of
-here. A shared mutable graph, a doubly-linked list, an observer holding a
-pointer back at its subject — none of them can be written in Tycho at all. Not
+**There is no reference type.** That is what makes the demo above work. A
+shared mutable graph, a doubly-linked list, an observer holding a pointer back
+at its subject — none of them can be written in Tycho at all. Not
 "discouraged": inexpressible. If your mental model is C's, the first complex
 data structure you reach for will not compile, and the compiler will look broken
 when it is the model that changed.
@@ -120,20 +106,16 @@ works over many types — it just cannot hold two different ones at the same tim
 under one name.
 
 **The idiom that replaces them is a flat node pool.** Hold every node in one
-array; an edge is an integer index into it, not an address — the same layout a
-data-oriented C engine reaches for on purpose, which value semantics make the
-default rather than the optimization you remember to apply. The worked sample,
-with output, is in
-[the limits note](docs/internals/value-semantics-limits.md).
+array; an edge is an integer index into it, not an address — the layout a
+data-oriented C engine reaches for on purpose, made the default.
 
-**And it has a measured price.** Pointer-shaped data stored by value costs more
-RAM than C: a recursive trie **~1.55×**, a fixed-capacity LRU **~2.8×**; the
-flat-pool idiom brings the graph analog to **~1.3×**. Arenas also reclaim at
+**And it has a measured price.** Value storage costs more peak RAM than C on some rows: a sliding int window **~1.44×**, a
+fixed-capacity LRU **~1.22×**, JSON **~1.14×** ([bench/RESULTS.md](bench/RESULTS.md#relative-peak-rss-at-the-large-size));
+the trie and the graph, in the flat-pool idiom, land at or under C. Arenas also reclaim at
 scope exit, not incrementally, so a long-lived scope holds its transients until
-it returns. The full loss column, with the measurements and the workloads that
-want a different tool, is
-**[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)**;
-[from `malloc` to arenas](docs/from-c-to-arenas.md) is the same ground from C.
+it returns. The full loss column, a worked pool sample, and the workloads that
+want a different tool are in
+**[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)**.
 
 > **Status: 0.9.2 — pre-1.0. Expect breaking changes.** Until 1.0, the
 > language surface and the corelib API can change with a changelog entry
@@ -141,7 +123,7 @@ want a different tool, is
 > behavior. Performance numbers, emitted C shape, and arena sizes are
 > explicitly unstable, as are areas the spec or [SECURITY.md](SECURITY.md)
 > mark as sharp edges. See [SUPPORT.md](SUPPORT.md) for the version policy
-> and [ROADMAP.md](ROADMAP.md#what-production-ready-requires) for what 1.0
+> and [ROADMAP.md](ROADMAP.md#what-10-requires) for what 1.0
 > requires. Versioning is `tychoc --version` + [CHANGELOG.md](CHANGELOG.md).
 
 ## Key features
@@ -149,7 +131,6 @@ want a different tool, is
 - **No GC, no manual `free`.** A value can leave a scope in exactly two ways,
   both visible in the source — *down*, passed to a callee, or *up*, returned to
   the caller — so the compiler places every allocation from the syntax alone.
-  The payoff is automatic memory management from lexical scope, not a runtime.
 - **Value semantics.** `b := a` copies; there is no shared mutable storage, so
   data races are inexpressible inside Tycho (copy-in/copy-out concurrency, no
   annotations) — concurrent FFI calls can still race ([SECURITY.md](SECURITY.md)).
@@ -161,23 +142,18 @@ want a different tool, is
   only toolchain is `cc` and `make`.
 - **Concurrency, generics, closures, FFI.** `spawn`/`wait` tasks, bounded
   channels, `parallel for`, monomorphized generics, closures, UFCS, and a
-  C-interop boundary — all shipping.
+  C-interop boundary.
 - **Heavily tested.** Every example is built twice — native and sanitized — and
   checked against a committed golden; a fuzzer applies the same differential to
-  random programs under ASan/UBSan. Six full programs (below) run against it
-  with differential checks.
+  random programs under ASan/UBSan. Six full programs (below) run against
+  ground-truth differentials.
 
 ## Trying it
 
-`./tychoc f.ty` transpiles `f.ty` to C and compiles it to a native binary `f`,
-removing the intermediate `f.c` once `cc` succeeds (it is kept when `cc` fails,
-for debugging); `-o name` names the output, `--emit-c` stops at the C (writing
-it to stdout unless `-o` names a file) — that is how you keep the C. The
-production compiler is self-hosted; the bootstrap is one generated C file. The
-only optional extras are
-`pkg-config` plus a library for the FFI-backed corelib modules (like
-`core:http`) and a Go toolchain for the cross-language benchmarks — both skip
-cleanly when absent.
+`./tychoc f.ty` transpiles `f.ty` to C and compiles it to a native binary `f`
+(`./tychoc --help` lists every flag). The only optional extras are `pkg-config`
+plus a library for the FFI-backed corelib modules (like `core:http`) and a Go
+toolchain for the cross-language benchmarks — both skip cleanly when absent.
 
 **Core library.** `corelib/` is Tycho's core library, imported as
 `core:<name>`. The transpiler finds it beside its own binary, so there's no
@@ -197,9 +173,7 @@ fn main():
 Every corelib module has a runnable example under
 [`examples/corelib/`](examples/corelib); two larger programs compose several
 end-to-end — [`examples/fetch`](examples/fetch) (HTTP client) and
-[`examples/site`](examples/site) (static-site generator). `make check-fast` is
-the per-change gate; `make ci` is the release gate that builds and verifies the
-whole tree.
+[`examples/site`](examples/site) (static-site generator).
 
 ### Building
 
@@ -208,12 +182,12 @@ whole tree.
 | `make` | Build the `./tychoc` transpiler. |
 | `./tychoc f.ty` | Transpile to C, compile to native `f`; the intermediate `f.c` is removed on success, kept on a `cc` failure. |
 | `./tychoc f.ty --emit-c` / `-o name` | Stop at the C (to stdout; `-o name` writes `name.c`) / name the output. |
-| `make check-fast` | The per-change gate: worker-pool tests, parser/typechecker sweep, links, corelib, debugger, surface and doc counts, plus a 20-seed fuzz smoke (~5 min measured). |
-| `make test` | Run the authoritative suite in parallel (`TYCHO_THREADS=N` tunes the worker count). Use it for compiler, emitter or bootstrap changes. Every recipe runs in a memory-capped cgroup (`MEMCAP_MB`, default 8192 MiB; `make ci` caps each lane with `MEMCAP_LANE_MB`). Needs the sanitizer runtimes — see [CONTRIBUTING](CONTRIBUTING.md#what-the-gate-needs-beyond-that). |
+| `make check-fast` | The per-change gate: worker-pool tests, parser/typechecker sweep, links, corelib, debugger, surface and doc counts, plus a 20-seed fuzz smoke (~5 min). |
+| `make test` | The authoritative suite, in parallel. Use it for compiler, emitter or bootstrap changes. Needs the sanitizer runtimes — see [CONTRIBUTING](CONTRIBUTING.md#what-the-gate-needs-beyond-that). |
 | `make bench` | Run the performance guard (below). |
 | `make fuzz` | Differential + ASan/UBSan soundness fuzzer, 200 seeds (nightly depth). `make fuzz-quick` is the 20-seed change smoke. |
 | `make corelib` | Build + validate the corelib against its goldens. |
-| `make ci` | The release gate: exhaustive local sweep for nightly, pre-merge and release — not per change. Independent lanes run in parallel, each memory-capped; no cloud CI. |
+| `make ci` | The release gate: exhaustive local sweep for nightly, pre-merge and release — not per change. No cloud CI. |
 | `make ci-release` | The release depth: `make ci` with at least 1000 fuzz seeds (refuses less). |
 | `make release-check` | Build and smoke-test the current-version tarball twice; require byte-identical archives. |
 | `make clean` | Remove build artifacts. |
@@ -221,8 +195,8 @@ whole tree.
 `make test` builds every `examples/*.ty` and `tests/*.ty` twice — native `-O2`
 and `-fsanitize=address,undefined` — runs both on the same stdin, and asserts:
 exit 0, no sanitizer report, **byte-identical output** between the builds, and a
-match against the committed golden `tests/<name>.out`. Goldens are rewritten only by `make
-test-update`, never by a normal run. What each check proves is in
+match against the committed golden `tests/<name>.out`. Goldens are rewritten
+only by `make test-update`. What each check proves is in
 [Architecture](docs/architecture.md).
 
 `make bench` guards the *performance* claims the way `make test` guards
@@ -233,47 +207,32 @@ that platform, executed there, not cross-compiled and hoped for.
 
 | platform | status |
 | --- | --- |
-| **Linux x86-64** | gated — the development host, and the only one that scores leaks |
-| **Linux arm64** | gated since 2026-09-19 — Ubuntu 26.04 / aarch64 |
-| **macOS / Apple Silicon** | gated since 2026-09-19 — `xcode-select --install` is the whole setup |
+| **Linux x86-64** | gated — the supported platform ([SUPPORT.md](SUPPORT.md)), and the only one that scores leaks |
+| **Linux arm64** | gated — Ubuntu 26.04 / aarch64 |
+| **macOS / Apple Silicon** | gated — `xcode-select --install` is the whole setup; no LeakSanitizer |
 | **Windows x86-64** | gated natively under MSYS2 + mingw-w64; **WSL2** needs no setup and behaves exactly like Linux |
 | **Windows arm64** | executed by `make platform-check`; a mingw target |
 
-Three caveats are worth knowing before you build, and each is one line to fix or
-one consequence to accept:
-
-- **On a minimal Linux image, generate a comma-decimal locale first:**
-  `sudo locale-gen da_DK.UTF-8` (or `de_DE.UTF-8` / `fr_FR.UTF-8`). Two
-  float-formatting fixtures need a locale whose decimal point is not `.`, and a
-  stock container ships only `C`/`POSIX`/`en_US`.
-- **macOS scores no leaks.** Apple's AddressSanitizer ships no LeakSanitizer, so
-  the leak lanes do not run there. ASan, UBSan and TSan do; Linux is the only
-  host that scores leaks.
-- **A native Windows server winds down slower** — within its idle timeout rather
-  than within a millisecond, because MSYS2's `kill` terminates a native program
-  instead of signalling it. Nothing is lost or corrupted. Sanitizer coverage is
-  partial there too; [SECURITY.md](SECURITY.md) carries both measurements.
+**On a minimal Linux image, generate a comma-decimal locale first:**
+`sudo locale-gen da_DK.UTF-8` (or `de_DE.UTF-8` / `fr_FR.UTF-8`). Two
+float-formatting fixtures need a locale whose decimal point is not `.`, and a
+stock container ships only `C`/`POSIX`/`en_US`.
 
 The optional FFI-backed corelib packages need their dev libraries (`zlib1g-dev`,
 `libssl-dev`, `libcurl4-openssl-dev`, `libpng-dev`, `libsqlite3-dev`,
 `pkg-config`), without which `make shim-warn` refuses to run those checks
 instead of passing without testing anything.
 
-Which lanes skip on which host and why each one does, the C toolchains that have
-been measured against the whole corpus, and the per-platform friction entries are
-the inventory in **[docs/platforms.md](docs/platforms.md)**. MSVC is not a
-supported C target. Release tarballs are built per platform by
-`scripts/release.sh`.
+Which lanes skip on which host and why, the measured C toolchains, and the
+Windows differences are in **[docs/platforms.md](docs/platforms.md)**. MSVC is
+not a supported C target.
 
 ## Documentation
 
-New to Tycho? **Start with the [quickstart](docs/quickstart.md)** — ten minutes
-to a running program; the [tutorial](docs/tutorial.md) is the guided first hour
-that ends with a small real program and the one idea that makes the language
-tick. [`docs/`](docs/README.md) is the full index; the map:
+[`docs/`](docs/README.md) is the full index; the map:
 
 - **[Quickstart](docs/quickstart.md)** — clone, build, run, ten minutes.
-- **[Tutorial](docs/tutorial.md)** — learn the language by writing and running code.
+- **[Tutorial](docs/tutorial.md)** — the guided first hour, ending in a small real program.
 - **[From `malloc` to implicit arenas](docs/from-c-to-arenas.md)** — the memory
   model in five steps. The gentlest way in, with or without C.
 - **[Language reference](docs/reference/index.md)** — every construct, by topic.
@@ -290,7 +249,7 @@ tick. [`docs/`](docs/README.md) is the full index; the map:
 - **[Architecture & status](docs/architecture.md)** — how it's built, what each
   verification gate proves, what's shipped, and the decided non-goals.
 
-That is everything needed to *use* Tycho. What follows is the case that it works: why the memory model holds, the programs that prove it, the numbers, and the questions a skeptic asks first.
+That is everything needed to *use* Tycho. What follows is the case that it works.
 
 ## Why arenas and value semantics
 
@@ -309,11 +268,10 @@ argument, with the measurements and the places it costs, is
 
 ## The testing campaign
 
-The tools under [`tools/`](tools/) are not demos — they are full programs
-written against the language, each with a ground-truth differential that a bug
-cannot pass. The campaign ran all of them — all six written by the project's
-author — on the shipped compiler, and the language held: no compiler or runtime
-defect was filed by any of them.
+The tools under [`tools/`](tools/) are full programs written against the
+language, each with a ground-truth differential that a bug cannot pass. All six
+below were written by the project's author; none filed a compiler or runtime
+defect.
 
 | program | what it stresses | its ground-truth gate |
 | --- | --- | --- |
@@ -326,31 +284,29 @@ defect was filed by any of them.
 
 ### Rigor and limits, in one place
 
-Successes and gaps, together. Everything below is measured
-on this tree; nothing is aspirational.
+Successes and gaps, together. Everything below is measured on this tree.
 
 | What is proved | How | What is NOT covered, and where |
 | --- | --- | --- |
 | The model survives hard allocation patterns | a Scheme interpreter, a DPLL/CDCL SAT solver and a B+ tree store all run differentially against a ground truth a bug cannot pass — zero compiler or runtime defects filed | these are programs by this project's author; no outside program has stressed generics, `subscript` or `bounded[N]` yet ([ROADMAP §1](ROADMAP.md#1-someone-other-than-the-author-has-written-a-real-program)) |
 | Emitted code is free of UB the optimizer and sanitizer disagree on | every fixture built twice, native `-O2` and `-fsanitize=address,undefined`, **byte-identical output required** between them, plus a golden | **macOS ships no LeakSanitizer**, so the leak lane and two sanitizer legs do not run there; Linux is the only host that scores leaks |
-| The compiler fails closed on malformed input | a differential fuzzer over random programs, plus a reject corpus of 621 fixtures each pinning one refusal | |
+| The compiler fails closed on malformed input | a differential fuzzer over random programs, plus a reject corpus of over 650 fixtures each pinning one refusal | |
 | Five platforms execute, not just compile | `make platform-check` runs linux-x86_64, linux-arm64, macos-arm64, windows-x86_64 and windows-arm64 — 5 of 5 pass, 0 skipped, 0 uncovered | aarch64 Windows is a mingw target; a subnormal-literal defect there was a toolchain bug found by that lane and fixed |
-| Locale-dependent float formatting is correct | `tests/float_lit_locale` and `float_str_locale` | they need a comma-decimal locale, so a **minimal Linux image must generate one** before `make test` — the tests are precise enough to catch a C library variation most suites never look at |
+| Locale-dependent float formatting is correct | `tests/float_lit_locale` and `float_str_locale` | they need a comma-decimal locale, so a **minimal Linux image must generate one** before `make test` |
 | Concurrency is sound | copy-in/copy-out semantics make data races inexpressible inside Tycho; TSan runs | a concurrent FFI call can still race — the FFI boundary is unsafe by design and **has had no external audit** ([SECURITY.md](SECURITY.md)) |
 | Native Windows works | MSYS2 + mingw-w64, gated | MSYS2's `kill` terminates rather than signals, so a server's **wind-down is slower** there; nothing is lost or corrupted |
 
 ## Performance
 
-On the allocation-heavy tree workloads Tycho uses the least memory of the
-manual-memory group measured head-to-head — 40% of C's on binary-trees, half on
-tree-rewrite — with no GC and no reference counting, only lexical arenas and
-value semantics. The current managed-memory comparison includes OpenJDK 25
-(GC) and Swift 6.3.2 (ARC); Tycho is at least as fast as Java/Swift/Go on every service row they cover. The generated suite also compares expert C/Rust arena controls: against those, the earlier tree advantage over idiomatic manual allocation shrinks, so use the row-level generated table rather than the old single-tier tree headline. All six `dbquery` ports now run. On flat
-array pipelines it is C-class (2 MB / 20 ms against C's 2 MB / 19 ms in the
-current shipped-compiler run). A 220-line recursive JSON parser holds a flat
-10 MB across 5,000,000 documents in a loop, and at scale the model is tight:
-big workloads hold their live set within 0.1–1.3% of what they reserve from
-the OS at 99.8% block reuse. The generated three-size benchmark suite is
+On the allocation-heavy tree workloads Tycho uses the least peak memory of the
+five languages in [STATUS](STATUS.md#evidence-for-the-arena-model) — 40% of
+C's on binary-trees, half on tree-rewrite — with no GC and no reference
+counting. Across the generated suite, Tycho's service-category time aggregate
+is 0.71× C, 0.50× Go, 0.48× Java and 0.35× Swift; the rows where it is slower
+are named under the tables, and against expert C/Rust arena controls the tree
+advantage shrinks, so read the row-level table rather than a headline. Parsing
+5,000,000 JSON documents in a loop holds a flat ~10 MB, and big workloads hold
+their live set within 0.1–1.3% of what they reserve from the OS. The suite is
 **[bench/RESULTS.md](bench/RESULTS.md)**; the analysis and costs are in
 **[docs/performance.md](docs/performance.md)**.
 
@@ -362,26 +318,15 @@ analysis exists to prevent can't be written. Memory frees per scope; values that
 outlive their scope are copied up. `Option` removes null, `Result` removes
 exceptions, indexing is bounds-checked, and copy-in/copy-out concurrency removes
 data races inside Tycho (concurrent FFI calls can still race). Every test runs
-under ASan + UBSan, plus ThreadSanitizer; LeakSanitizer too **on Linux**, which
-is the only host that has it — Apple's ASan ships none, so macOS scores no
-leaks. See the rigor-and-limits table above.
-
-**"What does value semantics cost?"** No shared mutable references: you can't
-build a shared-mutable graph, doubly-linked list, or observer the pointer way —
-the idiom is a flat node pool (all nodes in one array, linked by integer index),
-which is also the cache-friendly layout data-oriented engines choose on purpose.
-Pointer-shaped data costs more measured — a recursive trie ~1.55× C's memory, a
-fixed-capacity LRU ~2.8×; the flat-pool idiom brings the graph analog to ~1.3×
-C. Arenas reclaim at scope exit, not incrementally. The full loss column is in
-[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md).
+under ASan + UBSan and ThreadSanitizer, plus LeakSanitizer on Linux. What value
+semantics costs is [what you give up](#what-you-give-up), above.
 
 **"Deep-copying every value must be slow."** "Copied on assignment" is the
 *semantic model*, not the generated code. The transpiler drops the copy wherever
 a value is provably un-aliased — returns build in the caller's arena,
 `acc = acc + x` grows in place, `b := a` becomes a move when `a` is dead. A copy
 happens only when a value genuinely escapes to two live owners — exactly when a
-GC or refcount would also work. See the performance
-tables.
+GC or refcount would also work.
 
 **"Where's the package manager?"** There isn't one, on purpose. A package is a
 directory of `.ty` files you import by path; the corelib lives under `core:`.

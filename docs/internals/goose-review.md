@@ -1,7 +1,7 @@
 # Goose review: what transfers to Tycho
 
-Status: research note, 2026-10-21. No language or runtime change is implied by
-this file.
+Status: research note. The transfers it recommends are being executed by
+[plan-goose-transfers.md](plan-goose-transfers.md).
 
 Sources: [aardappel/goose](https://github.com/aardappel/goose), read at
 `master` on 2026-10-21: its README, [language spec](https://github.com/aardappel/goose/blob/master/docs/goose_spec.md),
@@ -35,7 +35,7 @@ What transfers is narrower:
 2. **A function should be able to state a bounds contract once**, and the
    compiler should report whether any check survives.
 3. **A fixed-size sum value can be stored inline**; `Option`/`Result` already
-   are, and both compilers now store scalar-payload user enums that way.
+   are, and the compiler stores scalar-payload user enums that way.
 
 Everything else is either incompatible with the value model or belongs behind
 a concrete caller.
@@ -78,15 +78,10 @@ The fix is not "add references". It is a compiler destination:
 - Keep the current copy path for places, borrowed values, views, a value that
   can reach the receiver, and every case the analysis cannot prove.
 
-This should become a documented guarantee only after it is enforced for
-returns, `push`, array literals and control-flow branches. Until then it is a
-conservative optimization.
-
-Validation: a fixture that pushes fresh strings and fresh records into an
-outer array, compiled with a `TYCHOC_NO_FRESH_PUSH` control. Measure peak RSS
-and wall time (median of five), require byte-identical output, then run the
-sanitizer lanes and the compiler fixpoint. The existing O3 `push_move` path and
-`bench/opt/movebuild` are the precedent, not a replacement for this test.
+**Status: shipped as a conservative optimization** (control
+`TYCHOC_NO_FRESH_PUSH=1`; measurement in `bench/opt/RESULTS.md`, workload
+`bench/opt/pushfresh`). It becomes a documented guarantee only once it is
+enforced for returns, `push`, array literals and control-flow branches.
 
 ## 2. Bounds contracts and a check-free report
 
@@ -107,28 +102,22 @@ considering separately:
   duplicate condition and the branch predicts. No measured win; the prototype
   was reverted. A real check-free path needs index types that retain validation,
   not more branch facts.
-- **A reporting mode.** `tychoc --bce-report` (name unresolved) should print
-  every bounds check that survives in a function, with its source line. A
-  `checkfree` source annotation is the stronger version, but only add it when a
-  real kernel wants the guarantee.
+- **A reporting mode.** Shipped as `tychoc --bounds-report`: every index
+  site per function, kept or elided, with its line. A `checkfree` source
+  annotation is the stronger version; add it only when a real kernel wants the
+  guarantee.
 
 Full Goose index types do not map directly. Tycho arrays are values that can
 shrink; a `u32 in nodes` needs a stable, named, grow-only array. A later
 version could tie an index type to a `bounded[N]T` or a new grow-only array,
 but that is a separate design. Do not smuggle references in to get it.
 
-Validation: a graph or stencil kernel with a data-dependent index and an
-explicit length precondition. Build with the report and with
-`TYCHOC_NO_BOUNDS_ELISION=1`; compare checks, output, RSS and time. The gate is
-the report's accuracy, not a promised speedup.
-
 ## 3. Inline fixed-size enum payloads
 
 Goose's fixed-mode enum stores tag plus the largest payload inline; variable
-mode stores each value at its own size and gives up indexing. Tycho stores user-defined enums as pointers to one tagged cell, with the
-payload inline in that cell (`docs/internals/design-enums.md`). `Option` and
-`Result` are already inline value structs; user enums are the remaining boxed
-case.
+mode stores each value at its own size and gives up indexing. Tycho's boxed
+user enums are pointers to one tagged cell (`docs/internals/design-enums.md`);
+`Option` and `Result` are inline value structs.
 
 A 1,000,000-value probe compared a fixed three-variant user enum with the
 equivalent packed tag-plus-payload record (the lower bound for unboxing):
@@ -146,8 +135,8 @@ fixed-size and non-recursive would remove the per-value cell and pointer chase;
 recursive enums stay boxed. This is a layout optimization, not variable-size
 records and not variable-mode enums; the value model is unchanged.
 
-**Status: adopted by both compilers for scalar payloads.** A fixed user enum
-with scalar payloads is now a packed tag+union value; recursive, generic,
+**Status: adopted for scalar payloads.** A fixed user enum with scalar
+payloads is a packed tag+union value; recursive, generic,
 fieldless, package-mangled and heap-payload enums keep the pointer cell. The
 control `TYCHOC_NO_INLINE_ENUM=1` reproduces the old representation.
 
@@ -195,8 +184,8 @@ These are real Goose conveniences, but none is a reason to change the model:
   pointers, growth-preserving references.** These are the reference model the
   project deliberately does not have.
 - **`reusable` pools with stale-slot reuse.** `core:pool` already gives Tycho
-  index-plus-generation handles and rejects a stale handle. It is the safer
-  version of the same idiom; keep it conditional, as the benchmark says.
+  index-plus-generation handles and rejects a stale handle: the safer version
+  of the same idiom.
 - **Inline variable-size records and variable-mode enums.** Goose's largest
   memory wins, but they need an address-stable layout and sequential access,
   and the current Tycho data-layout measurements do not justify a new record
@@ -207,18 +196,14 @@ These are real Goose conveniences, but none is a reason to change the model:
 
 ## Recommendation
 
-1. Ship destination construction for fresh `push` values. It earned its keep:
-   ~35–43% less peak RSS and ~17–20% less wall time on the string case.
-2. Treat guard-derived bounds facts as a rejected experiment; a reporting mode
-   may still be useful, but no speed claim is made.
-3. Keep inline fixed-size *scalar-payload* enums in both compilers.
-4. Leave static function specialization and the small ergonomics demand-gated.
+1. Destination construction for fresh `push` values (shipped): ~35–43% less
+   peak RSS and ~17–20% less wall time on the string case.
+2. Guard-derived bounds facts are a rejected experiment; the report ships with
+   no speed claim.
+3. Inline fixed-size *scalar-payload* enums (shipped).
+4. Static function specialization and the small ergonomics stay demand-gated.
 
-## 2026-11 follow-up
-
-The owner asked for all five transfers on 2026-11-17. The work is tracked in
-[plan-goose-transfers.md](plan-goose-transfers.md). Two measurement records
-came out of it so far:
+Measurement records from the transfer plan:
 
 - [design-strings-v2.md](design-strings-v2.md): the string representation
   probe. `{ptr,len}` alone saves nothing; inline storage for strings of up to

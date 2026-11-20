@@ -2,19 +2,9 @@
 
 A Tycho **program** is the whole set of definitions reachable from a single
 entry point, gathered across one or more **packages** and compiled as one unit.
-This chapter defines the program's shape — its entry point, its compilation
-unit, its foreign `extern` declarations, and how it is linked into an
-executable ([§27](#27-program-structure)) — and then the package system that
-supplies its definitions: package identity, `import`, name resolution and
-visibility, import resolution, the multi-file merge, and per-package foreign
-dependencies ([§28](#28-packages-and-modules)).
-
-The type-level meaning of the declarations a program contains is given in
-[§5](03-types.md); their scoping within a package is [§12](08-declarations.md);
-the FFI contract an `extern` declaration participates in — which types may cross
-the C boundary, and how — is [§24](14-ffi.md). This chapter
-specifies only *program- and package-level* structure and does not restate
-those rules.
+This chapter covers program- and package-level structure only; declarations are
+typed in [§5](03-types.md), scoped in [§12](08-declarations.md), and the types an
+`extern` may carry across the C boundary are [§24](14-ffi.md).
 
 
 ## 27. Program structure
@@ -36,9 +26,8 @@ The error type MUST be `string`. An `Err` reaching the entry point is *printed*,
 and `has_str` admits no enum, so the message is the error itself. The ok payload
 MUST be `void`: a value there would make the exit status ambiguous.
 
-The message is written **bare**, with no implementation-supplied prefix — the
-same treatment `die(msg)` gives a user message ([§29](16-builtins.md)), because
-it is the program's error and not a runtime fault.
+The message is written **bare**, with no implementation-supplied prefix, as
+`die(msg)` writes a user message ([§29](16-builtins.md)).
 
 A minimal complete program is therefore:
 
@@ -98,8 +87,7 @@ extern [ "Lib" ] fn name(p: T, …) [ -> T ]
 The following rules are normative:
 
 - An `extern` declaration has **no body**: it ends at the newline after its
-  signature, so a following indented
-  block is a parse error.
+  signature, so a following indented block is a parse error.
 - Its `name` is the **literal C symbol** and is **not** package-mangled (§28.3),
   because a C symbol is global. Two `extern` declarations naming the
   same C symbol therefore refer to the same foreign function regardless of the
@@ -110,24 +98,19 @@ The following rules are normative:
 - The optional leading string literal names a **link library** (`extern "Lib"
   fn …`), which the implementation adds to the link line as `-lLib` (§27.4).
 
-The set of types an `extern` parameter or return may name — including the
-fixed-width integer types (`u8`, `u16`, `i8`, `i16`, `i32`, `i64`),
-`inout` out-parameters, and the `Option(string)` nullable return — is defined by
-the FFI chapter ([§24](14-ffi.md)), which is the single normative
-home for the crossable-type rules. This section governs only the *declaration
-form* and its role in program structure.
+The types an `extern` parameter or return may name are defined in
+[§24](14-ffi.md).
 
 ### 27.4 Linking and the C compiler invocation
 
 For a program that is not stopped early (e.g. `--emit-c`, `--symbols`), the
 reference implementation compiles the emitted C and links it into the output
-executable with a single C-compiler invocation.
-The invocation has the shape:
+executable with a single C-compiler invocation of the shape:
 
 ```text
-cc {-O3 | -O0 -g} -fwrapv [-march=native | -march=<level>] -pthread -o OUT gen.c \
-   <auto shims> -lm <-lLib per extern lib> \
-   <-L/-I/--link/--pkg passthrough> <pkg-config flags from deps>
+cc {-O3 [-flto] | -O0 -g} -fwrapv -ffp-contract=off -pthread \
+   [-march=native | -march=<level>] [$TYCHO_CFLAGS] -o OUT gen.c <auto shims> \
+   -lm <-lLib per extern lib> <-L/-I/--link/--pkg passthrough> <pkg-config flags from deps>
 ```
 
 with these normative properties:
@@ -136,8 +119,7 @@ with these normative properties:
   integer overflow **defined** as two's-complement wrapping rather than C
   undefined behavior, which is precisely Tycho's integer-overflow contract
   ([§5.2.1](03-types.md#521-int)): a conforming realization on C MUST compile
-  such that signed overflow wraps and never traps or miscompiles
- .
+  such that signed overflow wraps and never traps or miscompiles.
 - **`-lm` is always passed**, so bare libc math externs (e.g. `extern fn sqrt`)
   link with no `"m"` annotation.
 - **`-pthread` is always passed**, supporting the concurrency runtime
@@ -148,16 +130,14 @@ with these normative properties:
   NOT be assumed portable across machines.
 - **A raised ISA baseline is opt-in** via `--target <level>`, whose levels are the
   x86-64 microarchitecture levels `x86-64-v2`, `x86-64-v3` and `x86-64-v4`, plus
-  `baseline` for the default. `baseline` and the absence of the flag add NOTHING
-  to this line, so an unflagged build is byte-identical to one made before the
-  flag existed; any other level adds `-march=<level>` and the binary MUST NOT be
+  `baseline` for the default. `baseline` and the absence of the flag add nothing
+  to this line; any other level adds `-march=<level>` and the binary MUST NOT be
   assumed to run on a machine below it. An unknown level, and a level the C
-  compiler does not accept, are both hard errors .
+  compiler does not accept, are both hard errors.
 - The default C compiler is `cc`; `--cc <compiler>`
   overrides it.
 
-Three CLI options let a program splice additional flags onto this line for FFI
-:
+Three CLI options splice additional flags onto this line for FFI:
 
 - **`--link <lib>`** appends a raw `-l<lib>`.
 - **`--pkg <name>`** runs `pkg-config --cflags --libs <name>` and appends the
@@ -168,43 +148,31 @@ Three CLI options let a program splice additional flags onto this line for FFI
 A build that stops early at `--emit-c` and links the generated C itself needs the
 same auto-discovered shim set that §27.4's line would have received. **`--print-shims`**
 prints it: the *transitive* closure of companion `<pkg>_shim.c` sources (§28.6),
-one absolute path per line on stdout, then exits without code generation. The
-closure is not recomputed for the flag — it is the `g_shims` set that `merge_pkg`
-fills as it walks the import graph, so a shim reached only through an indirect
-import is listed on the same terms as a directly imported one. A program with no
-package prints nothing and exits 0; an empty closure is an answer, not an error.
+including shims reached only through an indirect import, one absolute path per
+line on stdout, then exits without code generation. A program with no package
+prints nothing and exits 0.
 
-**`--print-deps`** reads the same walk out the other way: the *transitive* closure
-of pkg-config package **names** declared by each package's `deps` file (§28.6),
-one per line on stdout, then exits without code generation. It answers a different
-question from `--print-shims`, for a caller that does not link the C itself — a
-harness that lets the reference compiler build, and only needs to know whether the
-link line *can* resolve on this host, so that a missing library is a skip rather
-than a failure. The names are recorded as the walk enters each package and
-**before** resolution is attempted, so they are printed whether or not pkg-config
-can resolve them here; the resolved `--cflags --libs` form that reaches the cc line
-is empty on exactly the host where the library is absent, which makes it
-indistinguishable from a package that declared no dependencies at all. Duplicates
-are collapsed. A program whose closure declares no `deps` prints nothing and exits
-0.
+**`--print-deps`** prints the *transitive* closure of pkg-config package
+**names** declared by each package's `deps` file (§28.6), one per line,
+duplicates collapsed, then exits without code generation. The names are printed
+whether or not pkg-config can resolve them on this host, so a harness can tell a
+missing library (a skip) from a package with no dependencies. A program whose
+closure declares no `deps` prints nothing and exits 0.
 
-`-L<dir>` and `-I<dir>` (attached or separated) also accumulate onto the line
-. Every library/package name that reaches the shell — from
+`-L<dir>` and `-I<dir>` (attached or separated) also accumulate onto the line.
+Every library/package name that reaches the shell — from
 `extern "Lib"`, `--link`, or `--pkg` — MUST be restricted to a conservative
 character set (`[A-Za-z0-9._+-]`) and rejected otherwise, so compiling an
 untrusted source cannot inject a shell command. The `extern "Lib"` libraries, the auto-discovered
 shims, and the `deps` flags are contributed automatically by the sources they
 belong to (§27.3, §28.6); the CLI options above are the manual escape hatch.
 
-The exact command line — flag spelling and order, the choice of `cc`, and the
-`--native`/`-g` couplings — belongs to the reference implementation and is outside
-the language proper ([§1.1](00-conventions.md#11-scope) excludes the CLI and the
-generated-C layout). The **normative** content of this section is narrow:
-`-fwrapv` two's-complement wrapping is the language's integer contract, and a
-program that names an external link library (via `extern "Lib"`, a `deps` entry,
-or `--link`/`--pkg`) depends on that library being present at link time. The
-precise realization is implementation-defined
-([Appendix F](appendix-f-impl-defined.md)).
+The exact command line belongs to the reference implementation, not the
+language ([§1.1](00-conventions.md#11-scope)); it is implementation-defined
+([Appendix F](appendix-f-impl-defined.md)). Normative here are only `-fwrapv`
+wrapping, the language's integer contract, and that a program naming a link
+library (via `extern "Lib"`, a `deps` entry, or `--link`/`--pkg`) needs that
+library at link time.
 
 ## 28. Packages and modules
 
@@ -214,14 +182,12 @@ A **package** is a *directory* of `.ty` files that all declare the same
 `package NAME` and share **one flat namespace**. Every top-level definition in
 any file of the directory — function, `struct`, `enum`, `handle`, newtype,
 `const`, and enum variant — belongs to that one namespace; the split into files
-is not semantically significant ([packages.md](../reference/packages.md) §"Surface
-syntax").
+is not semantically significant.
 
 A package's symbols are reached from another package by a **qualified name**
 `pkg.symbol`, where `pkg` is the importing binding (§28.2). The qualified form
 applies to types, functions, struct/enum constructors, and enum variants alike
-— `geom.Point`, `geom.add`, `geom.Red` ( handles a
-payload-less `pkg.Variant`).
+— `geom.Point`, `geom.add`, `geom.Red` (a payload-less variant included).
 
 Every non-entry package's `package NAME` MUST equal the final component of the
 import path that reached it — which, for a relative import, is its directory
@@ -231,9 +197,7 @@ name.
 
 ### 28.2 Import declarations
 
-An import is a top-level declaration in a package's file:
-
-The plain form binds the package under the final component of its path:
+An import is a top-level declaration. The plain form binds the package under the final component of its path:
 
 ```tycho
 package main
@@ -260,18 +224,15 @@ fn main():
 7
 ```
 
-The grammar is `"import" IDENT? STRING NEWLINE`. The plain form `import "PATH"` binds the package
-under the **final component** of `PATH` (`import "math/geom"` binds `geom`); the
-aliased form `import ALIAS "PATH"` binds the package under `ALIAS` instead
-.
+The grammar is `"import" IDENT? STRING NEWLINE`. A nested path binds its
+**final component** (`import "math/geom"` binds `geom`).
 
 `package` and `import` are **contextual**: they are special only as the leading
 identifier of a top-level item and remain ordinary identifiers elsewhere, so
 they are not reserved words. A bound package name,
 however, is effectively reserved within the file: because a bare `pkg.symbol`
 is disambiguated by treating `pkg` as an imported package first, a program
-SHOULD NOT shadow an imported binding with a local of the same name
-([packages.md](../reference/packages.md) §"Surface syntax"). **Import cycles are an
+SHOULD NOT shadow an imported binding with a local of the same name. **Import cycles are an
 error** (§28.5).
 
 ### 28.3 Name resolution and visibility
@@ -280,8 +241,7 @@ Within the single merged unit (§27.2), every definition carries a
 **per-package prefix**. The entry package uses the **empty** prefix, so its
 symbols keep their plain names; every imported package `P` uses the prefix
 `P__`, applied uniformly to every definition and every reference — including the
-generated type families for its arrays, tuples, maps, and helper functions
-([packages.md](../reference/packages.md) §"How it builds").
+generated type families for its arrays, tuples, maps, and helper functions.
 Two identically-named symbols in different packages are therefore distinct after
 mangling. `extern` C symbols are the sole exception and are never prefixed
 (§27.3).
@@ -289,9 +249,8 @@ mangling. `extern` C symbols are the sole exception and are never prefixed
 **Visibility is by a leading underscore.** A top-level symbol whose name begins
 with `_` is **private to its own package**: it is usable from any file *within*
 that package, but a qualified `pkg._name` from another package MUST be rejected
-with a diagnostic. Every other top-level
-symbol is exported and visible to importers. There is no visibility keyword;
-the underscore convention is the whole of the rule.
+with a diagnostic. Every other top-level symbol is exported. There is no
+visibility keyword.
 
 That includes **top-level `const`s**: `pkg.NAME` reads an exported constant and
 is **folded to its literal at the use site**, exactly as an unqualified const
@@ -311,8 +270,8 @@ An import `PATH` resolves to a package directory as follows:
 - **`core:` collection.** If `PATH` begins with `core:`, it resolves to
   `<corelib_root>/<rest>` and binds the name `<rest>`'s final component — e.g.
   `import "core:strings"` resolves to `<corelib_root>/strings` and binds
-  `strings`; `import "core:text/utf8"` resolves to `<corelib_root>/text/utf8`
-  and binds `utf8` .
+  `strings`; a nested `core:a/b` resolves to `<corelib_root>/a/b` and binds
+  `b`.
 - **Relative imports.** Any other `PATH` resolves relative to the **importing
   package's own directory**, independent of the current working
   directory or the entry file's location.
@@ -320,15 +279,14 @@ An import `PATH` resolves to a package directory as follows:
 The **corelib root** is determined in order: the environment variable `TYCHO_CORELIB` if set and
 non-empty; otherwise `<exe_dir>/corelib` (next to the compiler binary, so an
 in-tree build needs no configuration); otherwise `<exe_dir>/../share/tycho/corelib`
-(the installed layout); otherwise resolution fails with a diagnostic
-. `core:` is currently the only collection root
-([packages.md](../reference/packages.md) §"The `core:` collection").
+(the installed layout); otherwise resolution fails with a diagnostic. `core:`
+is the only collection root.
 
 ### 28.5 The multi-file merge
 
 Package mode assembles the program by a **post-order depth-first traversal** of
-the import graph, merging every reachable package's definitions into one AST
-. For each package directory the
+the import graph, merging every reachable package's definitions into one AST.
+For each package directory the
 implementation MUST:
 
 1. **Enter with cycle and depth checks.** If the directory is already on the
@@ -342,7 +300,7 @@ implementation MUST:
 3. **Load imports first (post-order).** Every import found in the package's file
    headers is resolved (§28.4) and merged **before** this package's own
    definitions, so a definition's dependencies are already registered when it is
-   parsed.
+   resolved.
 4. **Require the declared package name.** Every file in the directory MUST carry
    a `package` declaration, and it MUST equal the package name expected for this
    directory (§28.1); a missing declaration or a mismatch MUST be rejected.
@@ -358,16 +316,16 @@ A package MAY carry C-backed machinery that is built and linked automatically
 when the package is imported:
 
 - **Companion shim.** A co-located `<pkg>/<pkg>_shim.c` is auto-added to the
-  link line as a compiled companion source, so a
-  C-backed corelib package (e.g. `core:regex` over `<regex.h>`) is turnkey with
+  link line as a compiled companion source, so a C-backed corelib package (e.g. `core:regex` over `<regex.h>`) is turnkey with
   no manual `--shim`. One shim per package; it is deduplicated.
 - **`deps` file (pkg-config).** The package's sibling
   `<pkg>/deps` file is read: each line names a **pkg-config** package (blank
-  lines and lines beginning with `#` are ignored); for each name the
+  lines and lines beginning with `#` are ignored). Lines after a `_WIN32:` line
+  are raw linker flags for a Windows build (e.g. `-lws2_32`) and are skipped on
+  every other target. For each name the
   implementation runs `pkg-config --cflags --libs <name>` and splices the result
   onto the C compiler line (§27.4), so a shim that `#include`s a system header
-  builds against the right flags. A `deps` name
-  that pkg-config cannot resolve prints a diagnostic; the missing library
+  builds against the right flags. A `deps` name that pkg-config cannot resolve prints a diagnostic; the missing library
   then surfaces as a link error at the `cc` stage. A `deps` file is read
   **whether or not the package has a shim**: `core:sqlite` has none — it binds
   libsqlite3 through `extern "sqlite3"` — and its dependency is reported and
@@ -377,6 +335,6 @@ when the package is imported:
 ([§1.3](00-conventions.md#13-conformance)). They belong to the **extended
 tier**: a conforming implementation **MAY** omit them and still conform at the
 **core tier**, but a program that imports an absent extended package **MUST** be
-diagnosed rather than silently mis-linked. The reference test harness embodies
-this split — it probes the same `deps` and **skips** (rather than fails) a
-package's tests when the external library is unavailable (`corelib/run.sh`).
+diagnosed rather than silently mis-linked. The reference test harness skips
+(rather than fails) a package's tests when its external library is unavailable
+(`corelib/run.sh`).

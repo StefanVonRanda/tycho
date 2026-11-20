@@ -35,7 +35,7 @@ Service-row coverage is now explicit: `winagg`, `latency`, `invindex` (growth
 and count-fill, side-array and map-native), `window` (string and int), and
 `gcscan` have Tycho/C/Rust/Go/Java/Swift ports. `dbquery` also has all six
 ports in the generated suite. The service harnesses fail closed on output
-mismatches; see [docs/performance.md](../docs/performance.md#service-row-coverage).
+mismatches; see [RESULTS.md](RESULTS.md).
 
 ### Comparison controls
 

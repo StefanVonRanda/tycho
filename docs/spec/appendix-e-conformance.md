@@ -15,12 +15,10 @@ drawn from:
 
 - the existing golden fixtures under `tests/` (behavioral) and `tests/reject/`
   (must-fail);
-- the corelib fixtures under `corelib/test/`;
+- the corelib fixtures under `corelib/test/`; and
 - the fuzz corpora under `fuzz/` (random well-typed programs, whose optimized and
   sanitized builds must agree; malformed input, which must be refused without a
-  crash and without emitting invalid C);
-- new probe fixtures written to pin previously-untested corners (the resolved
-  items in `spec-plan.md §6a` each become a fixture).
+  crash and without emitting invalid C).
 
 ## E.2 The coverage matrix
 
@@ -207,14 +205,12 @@ drawn from:
 
 ### E.2.1 Clauses without a dedicated fixture (flagged)
 
-These are covered by construction or by design rather than a single fixture, and
-are flagged here so the gap is explicit rather than hidden:
-
 The `deps`-tier corelib clauses (§31–33, the `http`/`crypto`/`compress`/`image`/
 `tls` packages) map to `corelib/test/<pkg>` and are **extended-tier** only.
 
 ## E.3 The `make spec-check` gate
 
-`make spec-check` (`scripts/spec_check.sh`) asserts that every fixture cited in
-E.2 exists, and builds and runs every runnable example in the spec against its
-shown output.
+`make spec-check` (`scripts/spec_check.sh`) asserts that Appendix A's collected
+grammar matches the chapters, that every fixture cited in E.2 exists (and every
+sub-case name cited inside one), and builds and runs every runnable example in
+the spec against its shown output.

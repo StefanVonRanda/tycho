@@ -7,15 +7,13 @@ by the author, **not a formal third-party audit**. An external review is one of
 the conditions for 1.0 ([ROADMAP](ROADMAP.md#what-10-requires)). Please don't
 use it for anything where a compromise would matter.
 
-A structured pass over the FFI shims by a **non-author** reviewer was done on
-2026-08-14 and is written up in
-[docs/internals/ffi-review-2026-08-14.md](docs/internals/ffi-review-2026-08-14.md):
-the unbounded-copy and process-execution classes came back clean, and three real
-findings in `corelib/http` were fixed (an uncapped response body, a `size_t` wrap
-reachable on the supported 32-bit target, and redirects followed with no bound
-and no scheme pin). That is still **not** a third-party audit, and the write-up
-names what it did not cover — TLS, regex, the image decoders and compression
-bombs — so the next pass starts there.
+A structured pass over the FFI shims by a **non-author** reviewer
+(`git show ba952872:docs/internals/ffi-review-2026-08-14.md`) found the
+unbounded-copy and process-execution classes clean and three real defects in
+`corelib/http`, all fixed (an uncapped response body, a `size_t` wrap on the
+32-bit target, unbounded redirects with no scheme pin). It is still **not** a
+third-party audit, and it did not cover TLS, regex, the image decoders or
+compression bombs.
 
 `shim` below means the hand-written C behind a corelib `extern fn`; a *lane*
 is one step of `make ci`. See [STATUS](STATUS.md) for the full terms box.
@@ -44,25 +42,19 @@ A few sharp edges are inherent, by design:
   - `core:signal`'s Windows handler is `SetConsoleCtrlHandler`, and whether it
     wakes a blocked `accept` is Windows-version dependent — the flag is set
     either way, so a program that polls it is portable and one that relies on
-    the wake is not. Measured 2026-08-09 on Windows 11 26200. Sharper still: a
+    the wake is not. Sharper still: a
     thread parked in `recv` on an ACCEPTED connection is **not** released by the
     handler's `shutdown()` the way it is on Linux, so shutting down costs one
-    `SO_RCVTIMEO` per parked reader rather than milliseconds
-    (`server/run.sh`'s parked-reader case needs a 15s bound there against 3s on
-    Linux, with an 8s idle timeout). `closesocket()` would release it — the
-    listener already gets both — but a connection fd is churned by its worker,
-    and closing one hands the number back out while another thread may still be
-    blocked on it, which is the hazard `signal_shim.c`'s registry header rejects
-    with measurements. A server on Windows therefore winds down within its idle
-    timeout, not within a millisecond.
+    `SO_RCVTIMEO` per parked reader rather than milliseconds. (`closesocket()`
+    would release it, but closing a worker's fd hands the number back out while
+    another thread may still be blocked on it; `signal_shim.c`'s registry header
+    has the measurements.) A server on Windows therefore winds down within its
+    idle timeout, not within a millisecond.
   - `core:datetime`'s `local_offset` reads the SYSTEM zone through the CRT and
-    ignores the `TZ` environment variable, and it did not track DST across the
-    instants measured — on a box set to Pacific it answered `-28800` for both a
-    January and a July timestamp under three different `TZ` settings, where the
-    POSIX build tracked each one. Use `offset_at` with an explicit POSIX rule
-    when the answer has to be reproducible; that path parses the rule itself on
-    Windows and was checked against the POSIX build over 108 (zone, instant)
-    pairs, all identical.
+    ignores the `TZ` environment variable, and in measurement it did not track DST
+    (a Pacific box answered `-28800` in January and July alike). Use `offset_at` with an
+    explicit POSIX rule when the answer has to be reproducible; that path parses
+    the rule itself and matches the POSIX build.
   - **Non-ASCII filenames do not survive**: the emitted program uses the narrow
     (ANSI) CRT and directory APIs, so on the usual code page 1252 a path like
     `日本語.txt` is written to disk under a mojibake name and `read_dir` cannot
@@ -75,16 +67,16 @@ A few sharp edges are inherent, by design:
     and `tycho-debug` cannot interrupt a running inferior with Ctrl-C (`q` still
     quits). **WSL2 has none of these** — it is the Linux build.
 
-## 1.0 security review — 2026-08-05
+## Internal security review (2026-08-05)
 
-Scope (per the 1.0 promotion plan): the FFI shims' **string/bytes ownership**,
+Scope: the FFI shims' **string/bytes ownership**,
 the **shell-out paths in core:os**, and the **TLS wrapper**. The boundary rules
 they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
 
 ### The boundary rules (verified)
 
 1. A `-> string` / `-> Option(string)` return is **copied into the caller's
-   arena at the call site and NOT freed** (`tycho_str_from_c`, src/tychoc.c:9775).
+   arena at the call site and NOT freed** (`runtime/tycho_rt.c@tycho_str_from_c`).
    The shim contract: the returned pointer must stay valid only until the call
    returns — recycled buffers are safe, owned buffers must be freed by a paired
    call (`osx_run_free`, `http_free`) or they leak.
@@ -122,8 +114,7 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
   This is documented in the package header. The shim does no quoting and no
   escaping; the in-tree callers that interpolate paths quote them (e.g.
   tycho-debug's `shq`).
-- **`os.exec` / `os.exec_out` (added 2026-08-09) remove the class, on both
-  platforms.** They take a `[string]` argv and start no shell: `posix_spawnp`
+- **`os.exec` / `os.exec_out` remove the class, on both platforms.** They take a `[string]` argv and start no shell: `posix_spawnp`
   on POSIX, `CreateProcess` with no `cmd.exe` anywhere on Windows.
   - *POSIX* is asserted end to end in `corelib/test/os/main.ty`: the same
     hostile text yields `INJECTED` through `os.run` and the literal
@@ -134,11 +125,10 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
     the `CommandLineToArgvW` quoting rules (the CRT's own `_spawnvp` is not used
     — its joiner has historically mishandled trailing backslashes). The join is
     round-tripped through the real splitter in
-    `corelib/os/os_argv_quotecheck.c`, a `make shim-check` leg that builds and
-    RUNS on Windows and skips loudly elsewhere: 9 cases including embedded
-    quotes, trailing backslashes, an empty argument and
-    `; rm -rf / & echo x | y > z`, all splitting back to the input vector.
-    Measured on Windows 11 26200, mingw gcc 16.1.0.
+    `corelib/os/os_argv_quotecheck.c`, a `make shim-check` leg that runs on
+    Windows and skips loudly elsewhere: embedded quotes, trailing backslashes,
+    an empty argument and `; rm -rf / & echo x | y > z` all split back to the
+    input vector.
   - **Residual, callee-side and not fixable here:** a program that parses its
     own command line by rules other than `CommandLineToArgvW`'s — `cmd.exe`
     itself, a `.bat`/`.cmd` file, a hand-rolled splitter — can still read the
@@ -168,17 +158,15 @@ they rely on are `docs/spec/14-ffi.md` §24.1 and the codegen they lower to.
   `extern` signature can corrupt memory.
 - **Shell-out is injection-prone by design** — the caller owns quoting.
 - **Non-cryptographic hashes** and the **NUL caveat** (sharp edges above).
-- This review covered the shims the 1.0 plan named; it is not a formal
-  third-party audit, and the fuzzer + sanitizer lanes in `make ci` keep running
-  over both the compiler and the programs it emits.
+- This review covered the shims named in its scope; it is not a third-party
+  audit.
 
 ## For a reviewer
 
 [docs/internals/audit-brief.md](docs/internals/audit-brief.md) is the packet to
-start from: threat model, the entry points where untrusted bytes reach
-hand-written C, what each lane already holds and the scope of each claim,
-how to run any of it, and where we would start. It is written for someone who has
-not read this repository.
+start from — threat model, the entry points where untrusted bytes reach
+hand-written C, what each lane holds, and how to run it — written for someone
+who has not read this repository.
 
 ## Reporting a vulnerability
 
@@ -187,13 +175,9 @@ runtime** (a miscompile that breaks the language's value-semantics/arena
 guarantees, an arena/UAF bug, and so on), here is how to get it to the
 maintainer without publishing it first.
 
-**There is no private reporting channel configured on this repository.** GitHub's
-private vulnerability reporting is **off**, so the "Report a vulnerability" button
-does not exist under the Security tab — an earlier version of this file told you
-to use it, which was wrong (checked against the repository's own settings,
-2026-08-15).
-
-So, for something genuinely sensitive:
+**There is no private reporting channel configured on this repository** —
+GitHub's private vulnerability reporting is off. For something genuinely
+sensitive:
 
 1. Open an ordinary issue containing **only** that you have a security report and
    asking for a private channel — no details, no reproducer, no affected version.
@@ -205,8 +189,5 @@ Then include a minimal `.ty` (or input) that reproduces it, plus your platform.
 Expect a best-effort reply, not an SLA — this is one person's project.
 
 **If the finding is not sensitive** — a crash, a miscompile, a wrong answer with
-no security consequence — skip all of that and file it publicly. Most findings
-are this, and treating them as embargoed helps nobody.
-
-Routine miscompiles and crashes that aren't security-sensitive are fine to file
-as ordinary [bug reports](.github/ISSUE_TEMPLATE/bug_report.md).
+no security consequence — file it publicly as an ordinary
+[bug report](.github/ISSUE_TEMPLATE/bug_report.md).

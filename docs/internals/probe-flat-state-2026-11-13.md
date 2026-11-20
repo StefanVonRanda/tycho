@@ -65,15 +65,10 @@ two layouts, same corpus, same checksum.
 
 ## What fought back
 
-- **No packed-array ↔ bytes form.** `to_bytes` takes a string, `[int]`, or one
-  packed struct; `from_bytes$` takes one packed struct. `to_bytes([TrackRec])`
-  is rejected with "takes a string, `[int]` or a packed struct", and
-  `from_bytes$([TrackRec])` with "only a packed struct can be read from bytes".
-  So save visits every record and stages every byte through `core:buffer`'s
-  `[int]` (8 bytes per output byte). This is the largest avoidable cost in the
-  probe and the one internal change with a measured target.
-- **Per-record tax is real but small.** A throwaway probe (`/tmp/opencode/encodecost`)
-  measured 500k × 16-byte records: pack 3.4–3.6 ms (6–7 ns/record), unpack
+- **No packed-array ↔ bytes form** (since fixed: `to_bytes([T])` /
+  `from_bytes$([T])`). Save staged every byte through `core:buffer`'s `[int]`
+  (8 bytes per output byte), the largest avoidable cost in the probe.
+- **Per-record tax is real but small.** 500k × 16-byte records: pack 3.4–3.6 ms (6–7 ns/record), unpack
   1.3–1.5 ms (2–3 ns/record); one `io.read_bytes` of the same 8 MB was
   1.3–2.3 ms. The bridge's value is not the per-call dispatch; it is deleting
   the staging copy and enabling one bulk write.
@@ -89,7 +84,7 @@ two layouts, same corpus, same checksum.
 
 The compiler's AST is the nested layout this probe measures. `Expr` and `Stmt`
 are enums whose recursive variants carry `[Expr]` / `[Stmt]` payloads
-(`compiler/ast/ast.ty`), and `ast.kids` (line 272) flattens them for walkers.
+(`compiler/ast/ast.ty`), and `compiler/ast/ast.ty@kids` flattens them for walkers.
 Consequences visible in one front-end run
 (`TYCHO_ARENA_STATS=full ./tychoc1 compiler/main.ty --emit-c`):
 
@@ -97,12 +92,13 @@ Consequences visible in one front-end run
   allocations**, 6.05 M arenas created.
 - **121.5 ms in arena teardown = 10.6% of front-end wall** — the PWP teardown
   claim, inverted: the nested AST pays per-node teardown.
-- `emit___flat_int_add` is the top bumper: **332.7 MiB / 11,543,428
-  allocations**. It starts `parts := [eb]` on every binop, walks the `+` spine,
-  then bails when `len(parts) < 128` — most calls allocate and discard.
-- `_stmt_es` (line 2165) builds a fresh `conds` array for every `if`, and
-  `_stmt_bs` (line 2190) builds a fresh `out` array (and arrays of body arrays)
-  on every statement; `ast.kids` has 16 call sites in `emit.ty`.
+- `emit___flat_int_add` was the top bumper: **332.7 MiB / 11,543,428
+  allocations**, from a `parts` array built on every binop and mostly discarded
+  (since fixed; see below).
+- `compiler/emit/emit_scope.ty@_stmt_es` builds a fresh `conds` array for every
+  `if`, and `compiler/emit/emit_scope.ty@_stmt_bs` a fresh `out` array (and
+  arrays of body arrays) on every statement; `ast.kids` has 16 call sites
+  across `compiler/emit/`.
 - The full self-build (front-end through `cc` and link) took 8.9 s on this
   host; front-end allocation is not the top-level wall, but it is the part
   Tycho owns end to end.
@@ -124,29 +120,19 @@ both complete with identical result lines
 Peak-RSS spread across the sessions run here: flat build 68.6–69.4 MiB,
 nested build 120.6–121.7 MiB; load 16.1–17.0 / 18.7–19.1 MiB. Absolute phase times moved up
 to ~2.5× between sessions on this host's `powersave` governor; the ratios above
-held. Projections are labeled as projections; no compiler or corelib change was
-made for this record (the follow-up bridge is a separate change; see the status
-note below).
+held.
 
-## Follow-ups, in order of payoff
+## Follow-ups
 
-1. **Bulk packed-array bridge** (`to_bytes([T])` / `from_bytes$([T])` for
-   packed `T`): one copy, little-endian, length checked. Removes the `[int]`
-   staging buffer and the per-record loop from flat-state save/load. Needs a
-   spec decision because it is language surface.
-2. **Reusable walker scratch** in `emit.ty` (`_flat_int_add.parts`,
-   `_stmt_bs.out`, `_stmt_es.conds`): internal only, likely the cheapest
-   allocation win, no surface change.
-3. **Flat AST**: the real PWP analogue, but a multi-pass refactor and not a
+Done: the bulk packed-array bridge (`to_bytes([T])`, `from_bytes$([T])`,
+`push([int], bytes)`) and walker scratch for `_flat_int_add` (14.1 M
+allocations / 551.7 MiB bumped, down from 25.6 M / 884.4 MiB). The table above
+is the pre-bridge run; [`bench/flat-state/RESULTS.md`](../../bench/flat-state/RESULTS.md)
+carries the post-bridge numbers.
+
+Open, in order of payoff:
+
+1. **Reusable walker scratch** for `_stmt_bs.out` and `_stmt_es.conds`:
+   internal only, no surface change.
+2. **Flat AST**: the real PWP analogue, but a multi-pass refactor and not a
    1.0 candidate.
-
-**Status, end of 2026-11-13:** follow-up 1 landed (`to_bytes([T])`,
-`from_bytes$([T])`, `push([int], bytes)`), and follow-up 2 landed for
-`_flat_int_add` (14.1 M allocations / 551.7 MiB bumped, down from 25.6 M /
-884.4 MiB); `_stmt_bs.out` and `_stmt_es.conds` remain. The table above is the
-pre-bridge run; [`bench/flat-state/RESULTS.md`](../../bench/flat-state/RESULTS.md)
-carries the post-bridge numbers (40.9 vs 112.7 MiB build, 3.31 vs 4.43 MB
-wire). Follow-up 3 is unchanged.
-
-This record alone changes none of `surface.lock`, `ROADMAP.md`, the compiler,
-corelib or the spec; the bridge is a separate change with its own fixtures.

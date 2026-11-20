@@ -5,8 +5,10 @@ Tycho's value semantics and implicit arenas. Not line-for-line, not
 API-for-API. Odin's `vendor/` tree is a separate ecosystem and out of scope.
 
 Reference: Odin `dev-2026-11a` (`core` is 40 packages, 1,433 files, ~609k
-lines). The current Tycho corelib is 89 packages, ~26.5k lines, 1306 locked
-public functions.
+lines). The Tycho corelib is 89 packages, ~26.5k lines, about 1,300 locked
+public functions (`surface.lock`).
+
+Every row is **covered** or an explicit **non-goal**; there are no open partials.
 
 Status values:
 
@@ -68,8 +70,9 @@ Status values:
 - No raw syscall surface. Platform depth arrives through shims with a
   documented portable API.
 - No runtime type metadata solely to support `reflect`.
-- No package added without golden tests, reference docs and a `surface.lock`
-  record.
+- No package added without `corelib/test/<pkg>` goldens,
+  `docs/reference/corelib.md` entries and a deliberate `surface.lock` update.
+  Byte-decoding codecs are also fuzzed by `make fuzz-newcomers` under ASan+UBSan.
 
 ## Platform targets
 
@@ -82,44 +85,13 @@ branches in `os`, `net`, `log`, `sync`, `thread` and `time`.
 | Linux x86-64 | supported | full `make ci`, release archive |
 | Windows x86-64 | supported | mingw build + Wine smoke, release archive |
 | macOS arm64 | supported | darwin-arm64 `make ci`, release archive |
-| Android | **supported** | NDK r28c cross-compile + qemu-user runtime: `make android-check` is green for 84 corelib tests on x86_64 and aarch64 at API 34. The host emulator 37.2.12 segfaults on this Fedora kernel, so runtime evidence is qemu-user with bionic, not the emulator. JNI/asset-manager/APK bindings are not part of corelib parity |
-| iOS | **supported** | Xcode 27.2 iOS Simulator: `make ios-check` is green for 81 corelib tests; the same emitted C also builds for the arm64 device SDK (platform 2). No signed physical-device run. `core/sys/darwin` raw bindings are not part of corelib parity |
+| Android | **supported** | NDK cross-compile + qemu-user (bionic) runtime: `make android-check` runs the corelib tests on x86_64 and aarch64 at API 34. Runtime evidence is qemu-user, not the emulator |
+| iOS | **supported** | iOS Simulator: `make ios-check` runs the corelib tests; the same emitted C also builds for the arm64 device SDK. No signed physical-device run |
 
 `supported` in this table means the corelib target gate is green. For Android
 and iOS that is not an end-user platform claim: no APK, Xcode project, JNI or
 asset-manager binding, or signed-device run ships.
 
-Android and iOS are separate target gates: `make android-check` on Linux with the
-NDK/qemu-user, `make ios-check` on macOS with Xcode and a simulator runtime.
-`os.platform()` and the `is_android`/`is_ios` predicates are exercised by both.
-
-## Residual partials
-
-None. Every row above is either **covered** or an explicit **non-goal**.
-
-## Sequence
-
-1. **Parity matrix** — done; this page is the record.
-2. **Foundations** — done: `core:container` and `core:sync` with atomics.
-3. **Platform** — done: environment, cwd, identities, cache/config/data dirs,
-   `io.walk`, `path.relative`, Unix sockets, interface enumeration.
-4. **Data and text** — done: Base32, varint, endian, PEM, INI, UTF-16, edit,
-   XML, CBOR, ASN.1, scanner, `fmt`, `bufio`, `diff`, entity decoding, full
-   Unicode case mapping/folding, UAX #15 normalization, UAX #29
-   grapheme/word segmentation, Qt `.qm` catalogs, locale data and native Lua
-   `%b`/`%f`/non-greedy patterns.
-5. **Crypto** — done: SHA-3/SHAKE, BLAKE2, HMAC-SHA512, HKDF, AES-GCM/CTR/CBC,
-   RSA, ECDSA, Ed25519, X25519, ML-DSA, ML-KEM, Argon2id and X.509.
-6. **Formats and media** — done: TGA, Netpbm PPM/PGM/PBM, LZ4, baseline JPEG
-   encode/decode and BNG joined PNG/BMP/QOI/HXA.
-7. **Runtime and diagnostics** — done: `debug`, `prof` spans plus deterministic
-   sampling and Spall trace output, `terminal` including cursor queries,
-   `dynlib` including C function-pointer invocation and named C-to-Tycho
-   callbacks, `nbio.poll` plus epoll/kqueue/IOCP completion loops, `thread`
-   raw task threads and TLS;
-   raw SIMD intrinsics stay a non-goal because `vector[N]T` is the language
-   surface.
-8. **Continuous gates** — every package lands with `corelib/test/<pkg>`,
-   `docs/reference/corelib.md` entries, and a deliberate `surface.lock`
-   update. `make check-fast` per change; full CI at milestones. The new
-   byte-decoding codecs are fuzzed by `make fuzz-newcomers` under ASan+UBSan.
+`make android-check` runs on Linux with the NDK and qemu-user; `make ios-check`
+on macOS with Xcode and a simulator runtime. `os.platform()` and the
+`is_android`/`is_ios` predicates are exercised by both.

@@ -25,8 +25,9 @@ TopDecl   ::= PackageDecl | ImportDecl | ExternFn | ConstDecl
 
 The leader disambiguates: `package`, `import`, `const`, `subscript` (contextual
 identifiers, §3.7), `extern` (contextual, when not immediately followed by `(`),
-and the keywords `struct`, `enum`, `handle`, `type` each select their
-declaration; anything else begins a function.
+and the keywords `struct` (optionally preceded by the contextual `packed` or
+`align(N)`, §17.1a), `enum`, `handle`, `type` each select their declaration;
+anything else begins a function.
 
 ```ebnf
 PackageDecl ::= "package" IDENT NEWLINE
@@ -38,7 +39,7 @@ ConstDecl   ::= "const" IDENT "=" ConstExpr NEWLINE
 the `STR` is the path (a `core:` prefix selects the corelib root). `ConstExpr`
 is an expression that folds to a single literal at compile time (integer
 arithmetic, bitwise, unary, and backward references to earlier top-level
-constants); its rules are given in §8 and §13. Package resolution,
+constants); its rules are given in §12.2. Package resolution,
 visibility, and merging are specified in §28.
 
 
@@ -78,7 +79,7 @@ constraints are allowed.
 ### 4.1.2 Structs, enums, newtypes, handles
 
 ```ebnf
-Struct     ::= "packed"? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
+Struct     ::= ( "packed" | "align" "(" INT ")" )? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
 FieldDecl  ::= IDENT ":" Type NEWLINE
 Enum       ::= "enum" IDENT TypeParams? ":" NEWLINE INDENT VariantDecl+ DEDENT
 VariantDecl::= IDENT ( "(" Type ( "," Type )* ")" )? NEWLINE
@@ -106,7 +107,7 @@ Subscript  ::= "subscript" IDENT "(" ParamList? ")" "->" "inout" Type ":" NEWLIN
 
 An `ExternFn` is bodyless and binds to a C symbol; its optional `STR` names a
 link library. Its parameter and return types are restricted to the
-FFI-crossable set — the scalars (`int`, `char`, `float`, `bool`), `string`,
+FFI-crossable set — the scalars (`int`, `float`, `bool`), `string`,
 `bytes`, `ptr`, `[int]`/`[float]`, typed handles, the first-class fixed-width
 numerics `u8`…`u64` / `i8`…`i64` / `f32`, plus `inout` **scalar** out-parameters (not
 `string`) and an `Option(string)` return ([§24](14-ffi.md)).
@@ -140,7 +141,7 @@ ArrayOrMap::= "$" IDENT "]" Type                              /* [$N]T  size-par
 TypeArgs  ::= "(" Type ( "," Type )* ")"
 QualName  ::= IDENT ( "." IDENT )?                            /* Name or pkg.Name */
 PrimType  ::= "int" | "float" | "bool" | "string" | "ptr" | "bytes"
-            | "u32" | "u64" | "f32"
+            | "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" | "f32"
 ```
 
 Notes (constrained further in §5–§7):
@@ -275,9 +276,8 @@ ValueCtrl   ::= If | Match              /* value form: block branches ending in 
   of the assignment grammar. **All three clauses are required** — this grammar
   has no empty-statement production to put in one — and `for:` is the only
   degenerate form. A `continue` runs the post clause (§14.4).
-- There is **no counting form**. `for i in range(a[, b[, step]])` and the
-  contextual name `range` were removed on 2026-07-29 (§14.4); a `for` head that
-  names `range` is refused with its replacements. `..<` appears in exactly one
+- There is **no sequential counting form**: a `for` head that names `range` is
+  refused with its replacements (§14.4). `..<` appears in exactly one
   production, `ParallelFor` — a sequential `for i in 0..<N:` is refused (§22).
 - `parallel for` applies only to the `0..<N` counting form or the foreach form,
   and its foreach source must be a bare name, not an expression (§22).
@@ -362,8 +362,7 @@ operation is a call `(...)`. A `Subscript` (§4.1.3) parameter is likewise plain
 `IDENT ":" Type` (no passing modes).
 
 - The array/map literal forms (`[e, …]`, `[k: v, …]`, empty typed `[]T` /
-  `[]K:V`) and the pending bare `[]`/`None` grounding are detailed in §16/§18
- .
+  `[]K:V`) and the pending bare `[]`/`None` grounding are detailed in §16/§18.
 - A lambda's body is a single expression. A closure captures by deep copy at
   creation (§13).
 - `IDENT $ ( Type … )` supplies explicit type arguments to a generic call (e.g.
@@ -382,7 +381,7 @@ prefix levels are right-associative.
 
 | Precedence | Operators | Kind | Assoc |
 |---|---|---|---|
-| 1 (tightest) | `[]` index/slice · `.` field/tuple-index · `` call · `or_return` · `or_else` · `...` | postfix | left |
+| 1 (tightest) | `[]` index/slice · `.` field/tuple-index · `()` call · `or_return` · `or_else` · `...` | postfix | left |
 | 2 | `-` `&` `~` | unary prefix | right |
 | 3 | `*` `/` `%` `<<` `>>` `&` | binary | left |
 | 4 | `+` `-` `\|` `^` | binary | left |
@@ -399,7 +398,7 @@ Consequently `a & b == c` parses as `(a & b) == c`. The unary `&` (address-of /
 `inout` argument) and binary `&` (bitwise-AND) share a spelling but occupy
 different precedence levels (2 and 3). `is` is **non-associative**: its right
 operand is a variant name rather than an expression, so `a is X is Y` does not
-parse (§19.8). `and`/`or` short-circuit (§13). Evaluation order within a precedence level, and the order of
-argument and place sub-expression evaluation, is specified in §13 —
-the grammar fixes only associativity, not side-effect order.
+parse (§19.8). `and`/`or` short-circuit (§13). The grammar fixes only
+associativity; the order of side effects among operands, arguments and place
+sub-expressions is set out in [§13.4](09-expressions.md#134-evaluation-order).
 

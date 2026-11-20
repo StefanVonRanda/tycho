@@ -4,7 +4,7 @@
 WHY THIS EXISTS. `scripts/check_links.sh` fails a link that points nowhere and
 says nothing about a document nobody points at. sat orphaned
 for days and was found by a human reading the index, not by a gate
-(`docs/internals/FRICTION.md`, open-list item 13). A dead link is loud; an
+(FRICTION open-list item 13, `git show ba952872:docs/internals/FRICTION.md`). A dead link is loud; an
 invisible document is silent, and silence is the failure mode worth gating.
 
 WHAT "REACHABLE" MEANS HERE, and why not something broader:

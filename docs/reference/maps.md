@@ -47,8 +47,7 @@ counts := ["ada": 1]
 counts["ada"] = counts.get("ada", 0) + 1   # equivalent to counts["ada"] += 1
 ```
 
-That accumulator looks like it rebuilds the map every step — `counts.get` then a store — but
-the compiler updates it in place. The loop stays **O(n) total**, the same trick as string append.
+The compiler updates that accumulator in place, so a counting loop stays **O(n)**.
 
 ## Iterating
 
@@ -85,7 +84,7 @@ Beyond `string` and `int`, a key may be any of:
 
 Composite keys work in the literal form too (`[Point(1, 2): 10]`). Any key whose leaves are
 all hashable works; a key carrying a non-hashable leaf (a function value, a handle) is
-rejected. A map is not yet usable as a key.
+rejected. A map cannot be a key.
 
 ---
 

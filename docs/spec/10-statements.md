@@ -40,8 +40,7 @@ fn drain(r: Result(int, string)) -> int:
 `pass` is **contextual, not reserved** ([Appendix B](appendix-b-keywords.md)):
 it is a statement only in statement position, so `pass := 0` and `pass = pass +
 1` remain ordinary code and a variable named `pass` keeps working. It is not an
-expression and MUST NOT appear where a value is expected. A hand-written empty
-function called for its emptiness is not the idiom and is not needed.
+expression and MUST NOT appear where a value is expected.
 
 ## 14.2 `if` / `elif` / `else`
 
@@ -61,7 +60,7 @@ single nested `if`. A value-producing `if` (in tail position) is defined in
 match E: <arm>+
 ```
 
-`match` evaluates its subject `E` **exactly once** (*probed*) and runs the arm
+`match` evaluates its subject `E` **exactly once** and runs the arm
 whose pattern matches. A pattern is a variant name (optionally binding its
 payload into 0–8 names local to the arm), a qualified `pkg.Variant`, or the
 wildcard `_`. A `match` MUST be **exhaustive**: every variant of the subject's
@@ -97,6 +96,24 @@ refined arms naming the same variant are likewise rejected. A side is exhaustive
 when it has an unrefined arm, when its refined arms name every variant of the
 payload's enum, or when a `_` arm is present.
 
+```tycho
+import "core:httpd"
+
+fn serve(req: httpd.Request):
+    println("served")
+
+fn refuse(code: int):
+    println("refused " + str(code))
+
+fd := 0
+
+match httpd.read_request(fd):
+    Ok(req): serve(req)
+    Err(httpd.TooLarge): refuse(431)
+    Err(httpd.Timeout): refuse(408)
+    Err(e): refuse(500)
+```
+
 ### 14.3.2 Scalar subjects
 
 A `match` whose subject is an `int`, `char`, or `bool` takes **scalar arms**: a
@@ -115,29 +132,8 @@ exhaustive when both `true` and `false` are covered; `_` is optional there.
 
 Duplicate or **overlapping** arms are an error: `1..9` plus `5` is a duplicate,
 because an earlier arm would be dead. `match` on `string`, `bytes`, or `float`
-is refused — nothing in the tree dispatches on them; `if`/`elif` is the form.
-
-The statement and value forms are those of §14.3. Codegen: a match with 4+ arms
-emits a C `switch` (a jump table at `-O3` when the values are dense); fewer arms
-emit a chain.
-
-```tycho
-import "core:httpd"
-
-fn serve(req: httpd.Request):
-    println("served")
-
-fn refuse(code: int):
-    println("refused " + str(code))
-
-fd := 0
-
-match httpd.read_request(fd):
-    Ok(req): serve(req)
-    Err(httpd.TooLarge): refuse(431)
-    Err(httpd.Timeout): refuse(408)
-    Err(e): refuse(500)
-```
+is refused; `if`/`elif` is the form. The statement and value forms are those
+of §14.3.
 
 ## 14.4 Loops
 
@@ -165,20 +161,15 @@ clause**: it jumps *to* `post`, not past it, so a loop that advances only in
 element) or a `string` (binding each byte as an `int`). The **collection is
 evaluated exactly once** before the loop.
 
-There is **no counting form**, and `range` is not a name the language knows.
-`for i in range(a, b, step):` was removed on 2026-07-29; a `for` head that names
-`range` is refused with both replacements spelled out. Count sequentially with
+There is **no counting form**, and `range` is not a name the language knows: a
+`for` head that names `range` is refused with both replacements spelled out. Count sequentially with
 the three-clause form; count in parallel with `parallel for i in 0..<N:`
 ([§22](13-concurrency.md#22-parallel-for)), which is the only context where
 `0..<N` is legal — a sequential `for i in 0..<N:` is refused.
 
-**There is no zero-step check.** A three-clause `post` is arbitrary code, so no
-equivalent check exists: `for i := 0; i < n; i += 0:` is an infinite loop and
-the implementation **does not diagnose it**, at compile time or at run time.
-`0..<N` steps by `1` implicitly and so has no zero-step case at all.
-
-Rationale: a single loop form states its own direction and amount in the source.
-
+**There is no zero-step check.** A three-clause `post` is arbitrary code:
+`for i := 0; i < n; i += 0:` is an infinite loop and is **not diagnosed**, at
+compile time or at run time. `0..<N` always steps by `1`.
 
 ## 14.5 `return`
 

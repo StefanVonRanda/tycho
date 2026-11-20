@@ -20,7 +20,7 @@ language and its core library (the *corelib*). It defines:
 It does **not** specify: the compiler's command-line interface, its diagnostic
 message text, the layout of generated C, or the performance of any construct
 (performance characteristics are described informatively in
-[docs/thesis.md](../thesis.md) and [docs/perf.md](../perf.md)).
+[docs/thesis.md](../thesis.md)).
 
 Tycho is defined **abstractly**: scalar widths and behavior are fixed
 independently of any compilation target (§5). The reference
@@ -31,7 +31,7 @@ implementation is permitted to vary is collected in
 
 ### 1.2 The reference implementation
 
-**`tychoc`** — the transpiler in  — is the **reference
+**`tychoc`** — the transpiler in `compiler/` — is the **reference
 implementation** of this specification. Where an example, a fixture, or a
 diagnostic is cited below, it is `tychoc`'s.
 
@@ -65,14 +65,13 @@ Conformance is defined at two tiers:
   omit the extended tier and still conform at the core tier; a program that
   imports an absent extended package MUST be diagnosed, not silently mis-linked.
 
-The reference test harness already embodies this split: `deps`-gated package
-tests skip (rather than fail) when the external library is absent.
+The reference test harness follows this split: `deps`-gated package tests skip
+(rather than fail) when the external library is absent.
 
 An implementation MUST NOT accept a program this specification requires to be
 rejected. **Failing closed** — rejecting a doubtful program rather than
 compiling it to undefined behavior — is a normative principle of this language
-([§30](17-runtime.md)), inherited from the reference
-implementation's design.
+([§30](17-runtime.md)).
 
 Conformance is a claim about **this specification**, not about agreement with any
 particular compiler. It is *checked* against the reference implementation and the
@@ -102,23 +101,17 @@ Two further terms are used, always explicitly and collected in
 ### 1.5 Versioning
 
 This specification defines **Tycho 0.5** and is maintained against the current
-release (0.9.0); where the two differ, `CHANGELOG.md` records the change. It was
-ratified on 2026-07-13 under the
-name *Tycho 1.0* and renamed on 2026-08-09 when the project was demoted to 0.5;
-no technical content changed with the rename.
+release; `CHANGELOG.md` records every change to observable behavior.
 
-**0.5 is NOT a frozen version.** The freeze was the substance of the 1.0 claim,
-and it is withdrawn with it: until 1.0, a change to observable behavior is issued
-as a changelog entry against a named version rather than as an erratum, and there
-is no deprecation window. The document remains normative — the implementation is
-gated against it, so a divergence is a bug in one of the two, not a licence to
-ignore the spec.
+**0.5 is not frozen.** Until 1.0 a change to observable behavior is issued as a
+changelog entry against a named version, with no deprecation window. The
+document remains normative: the implementation is gated against it, so a
+divergence is a bug in one of the two.
 
-From 1.0 onward the original scheme applies: the version is frozen, subsequent
-releases are named by year (e.g. `Tycho 2027`), a release names the language
-version it specifies, a conforming implementation states which version it
-implements, and corrections that change observable behavior are issued as errata
-against a named version, never silently.
+From 1.0 the version is frozen, a release names the language version it
+specifies, a conforming implementation states which version it implements, and
+corrections that change observable behavior are issued as errata against a
+named version.
 
 ## 2. Notation
 

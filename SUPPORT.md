@@ -22,22 +22,19 @@ its doc comment, a compiler warning at every call site naming the replacement, a
 without having warned in a released version first.
 
 **That is the promise from 1.0 onward.** While Tycho is 0.x a breaking change may
-ship with a changelog entry and no deprecation period at all — 0.7.0 did — so the
-paragraph above describes the mechanism you will see used, not a window you can
-yet rely on.
+ship with a changelog entry and no deprecation period at all, as 0.7.0 did.
 
 ## Platforms
 
 **Linux x86_64 is the supported platform. Everything else is best-effort.**
 
-That is a statement about what is promised, not about what works — several of the
-others are well exercised:
+That is a statement about what is promised, not about what works:
 
 | platform | what backs it |
 |---|---|
 | **Linux x86_64** — supported | the full fixture suite under ASan/UBSan/LeakSanitizer, plus every gate lane; `make status` prints the current fixture count |
-| macOS arm64 — best-effort | gated since 2026-09-19: `make ci` green on `darwin-arm64`, carrying 12 enumerated skips; no LeakSanitizer on the platform |
-| Linux arm64 — best-effort | gated since 2026-09-19: `make test` green on Ubuntu 26.04 / aarch64 |
+| macOS arm64 — best-effort | `make ci` green on `darwin-arm64`, carrying 12 enumerated skips; no LeakSanitizer on the platform |
+| Linux arm64 — best-effort | `make test` green on Ubuntu 26.04 / aarch64 |
 | Windows x86_64 — best-effort | `make ci` green natively under MSYS2 + mingw-w64 on one box, carrying 49 enumerated skips; plus six wine lanes including a trap-mode UBSan sweep |
 | macOS x86_64 — best-effort | cross-compiled; **never executed on the platform** |
 | Windows arm64 — best-effort | executed by `make platform-check`; a mingw target |
@@ -45,10 +42,9 @@ others are well exercised:
 Which lanes skip on which host, and why each one does, is in
 [docs/platforms.md](docs/platforms.md).
 
-This is one person's project, which is the real reason the supported list has one
-row on it: Linux x86_64 is the machine the work happens on. Artifacts that have
-never run on their platform say so in an `UNTESTED-PLATFORM.txt` inside the
-tarball. Bug reports from any platform are
+This is one person's project, which is why the supported list has one row.
+Artifacts that have never run on their platform say so in an
+`UNTESTED-PLATFORM.txt` inside the tarball. Bug reports from any platform are
 welcome; only Linux x86_64 carries a promise.
 
 ## Old versions

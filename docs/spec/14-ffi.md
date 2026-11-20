@@ -16,13 +16,13 @@ is emitted unmangled and it receives no arena argument.
 ### 24.1 Crossable types
 
 Only these may appear in an `extern` signature; a **map, an array outside the
-list below, or a non-POD struct** is rejected at the boundary. A plain
-scalar-field struct is allowed by value, by return and as an `inout`
-out-parameter; a dynamic array of one is allowed as a parameter (§24.1.1).
+list below, or a non-POD struct** is rejected at the boundary.
 **C unions are not crossable**: keep the union in C and expose a tagged POD
 struct (the `examples/gfx` `Event` decodes `SDL_Event` this way).
 
-- **Scalars** `int`, `char`, `float`, `bool`.
+- **Scalars** `int`, `float`, `bool`. `char` has no type keyword
+  ([§5.2.4](03-types.md#524-char)), so it cannot be written in a signature; pass
+  `to_int(c)`.
 - **Sized integers.** The whole fixed-width integer family — `u8`/`u16`/`u32`/
   `u64` and `i8`/`i16`/`i32`/`i64` — and `f32` ([§5.2](03-types.md#52-scalar-types))
   are first-class types that cross as themselves: an `extern` parameter or return
@@ -36,7 +36,7 @@ struct (the `examples/gfx` `Event` decodes `SDL_Event` this way).
   `-> Option(string)`. A `string` holding an interior `NUL` does **not** survive
   the round trip in either direction — see "Interior `NUL`s" below.
 - **`bytes`** — crosses as a `(pointer, length)` pair, preserving interior `NUL`s;
-  a `bytes`/array returned from C is copied into an arena and the C buffer freed.
+  the C buffer of a `bytes`/array return is freed after the copy.
 - **`[int]` and `[float]`** — a **scalar** array crosses as a `(const T*, int64_t)`
   pair (like `bytes`), in either direction. A dynamic `[POD struct]` parameter
   crosses the same way, borrowed for the call; an array of any other element
@@ -75,13 +75,13 @@ struct (the `examples/gfx` `Event` decodes `SDL_Event` this way).
   It crosses by value, as a return, and as an `inout` pointer; a dynamic array of
   one (`[T]`) crosses as `(const T*, int64_t)` in the parameter direction,
   borrowed for the call. Use fixed-width fields (`i32`, `u8`, `f32`) to match the
-  C header; Tycho `int` is 64-bit and `float` is C `double`.
+  C header; Tycho `int` is 64-bit and `float` is C `double`. As an `inout` it
+  crosses as `S_Name *`.
 - **typed `handle`s** — §25.
 - **`inout` out-parameters** — a numeric scalar, `ptr`, or a **plain
   scalar-field struct** (no `packed`/`align`, no string/array/map fields); a
   `string`, `bytes`, handle, map, array, or non-POD struct `inout` is
-  **rejected** (no trivial out-param ABI). A struct crosses as `S_Name *`; use
-  fixed-width fields (`i32`, `u8`, `f32`) to match the C header.
+  **rejected** (no trivial out-param ABI).
 
 Every value returned from C that carries storage (`string`, `bytes`, an array) is
 **deep-copied into the caller's storage at the call site**; a program never holds
@@ -104,8 +104,7 @@ after the fact. It applies in every `char*` direction:
   length, not `len(s)`;
 - **each element of a `[string]` parameter** — the length counts pointers, so no
   element length is available to the callee at all;
-- a **`string` return from C** — the arena copy is `strlen`-bounded
- , so a C buffer holding `"h\0i"` becomes
+- a **`string` return from C** — the arena copy is `strlen`-bounded, so a C buffer holding `"h\0i"` becomes
   a Tycho `string` of length 1.
 
 Given `s := "a" + chr(0) + "c"`, `len(s)` is `3` while a callee declared
@@ -113,9 +112,9 @@ Given `s := "a" + chr(0) + "c"`, `len(s)` is `3` while a callee declared
 memory and still reachable by index through the borrowed pointer; what is lost is
 the *length*, which is the only thing telling the callee they are there.
 
-**This follows from the borrow.**
-
-Rationale: passing `(ptr, len)` per element would copy, and scanning for `NUL` before every call would turn an O(1) borrow into an O(total bytes) one.
+This follows from the borrow: passing `(ptr, len)` per element would copy, and
+scanning for `NUL` before every call would turn an O(1) borrow into an O(total
+bytes) one.
 
 **Use `bytes` for any payload that may hold a `NUL`.** `bytes` crosses as a
 `(pointer, length)` pair in both directions and preserves interior `NUL`s exactly
@@ -132,8 +131,7 @@ from `to_str` over a constructed `bytes`, or from C.
 not enforced" is a statement about the ABI, not about a library whose answer is a
 yes/no about untrusted bytes: such a caller must cross as `bytes`, or refuse the
 input by name. `core:regex` does the first — the subject crosses as
-`(pointer, length)` and `REG_STARTEND` bounds the match by it
-`. `core:io`, `core:net` and `core:os` do the
+`(pointer, length)` and `REG_STARTEND` bounds the match by it. `core:io`, `core:net` and `core:os` do the
 second, since a path, a host and a command line have no length-bearing syscall to
 cross by: each checks the argument before anything is attempted
 and refuses — `Err(BadPath)` / `Err(BadAddr)` where
@@ -144,8 +142,7 @@ The sized-integer conversions truncate or extend by the C cast. `to_uN` / `to_iN
 back with `to_int` **sign-extends** the signed types (`i8`/`i16`/`i32`/`i64`) and
 **zero-extends** the unsigned (`u8`/`u16`/`u32`/`u64`): e.g. `to_i32(-1)` → `-1`,
 `to_i32(2^32)` → `0`, `to_u8(-1)` → `255`, `to_u8(256)` → `0`, `to_i8(200)` →
-`-56`. An `extern` parameter of a sized type requires an argument of that exact
-type (a bare `int` is a type error).
+`-56`.
 
 ### 24.1.1 Returning a payload **and** a classification
 
@@ -170,9 +167,9 @@ written order**, an `inout` becoming a `T*` (§24.1); a `bytes` or array *return
 is a `void` function with **two trailing** out-params
 (`unsigned char **out, int64_t *outlen`) appended after all of them. So the
 classification pointer sits **ahead** of the payload out-params even though it is
-written last, and the C definition must match that order exactly
-(`int64_t` comes from `<stdint.h>`; shims do not include the compiler's internal
-typedef):
+written last, and the C definition must match that order exactly. Tycho `int`
+is `int64_t`; the emitted C spells it `tycho_int`, and a corelib shim gets the
+same typedef from `#include "../tycho.h"`:
 
 ```c
 void netx_read(int64_t fd, int64_t max, int64_t *status,
@@ -182,8 +179,8 @@ void netx_read(int64_t fd, int64_t max, int64_t *status,
 Emitted prototype, for a `bytes` return and for a `string` parameter respectively:
 
 ```c
-extern void netx_read(int64_t , int64_t , int64_t *, unsigned char **, int64_t *);
-extern void iox_read_file(char *, int64_t *, unsigned char **, int64_t *);
+extern void netx_read(tycho_int , tycho_int , tycho_int *, unsigned char **, tycho_int *);
+extern void iox_read_file(char *, tycho_int *, unsigned char **, tycho_int *);
 ```
 
 Rules that follow from §24.1 and are not optional:
@@ -202,44 +199,31 @@ Rules that follow from §24.1 and are not optional:
   `Err(Timeout)` / `Err(Failed)`; `io.read_bytes` does the same over
   `iox_read_file`'s codes.
 
-**The mirror arrangement, and why there are exactly two.** The shape above puts
-the payload in the return and the classification in the `inout`. That assignment
-is **forced, not preferred** — and the constraint that forces it only exists for
-one kind of payload:
+**The mirror arrangement.** Which slot each half takes is settled by what can
+cross as an `inout`:
 
-- **A `bytes` or array payload cannot be an `inout` at all.** The crossable
-  `inout` set is a numeric scalar, `ptr`, or a plain scalar-field struct (the
-  rule above), and the compiler rejects the rest by name — its diagnostic spells
-  out "string/bytes/handle/map/array have no trivial out-param ABI". So a `bytes`
-  payload has only the return available, and the classification takes the
-  `inout` because nothing else is left. That is §24.1.1's case.
-- **A scalar payload can occupy either slot**, so nothing above decides it and a
-  second constraint does: the two halves must not share one integer's code space.
-  An epoch second, a file size or a byte count can take *any* value, including
-  every value the status codes use, so returning both as one integer is the
-  `-1`-means-error conflation this section exists to avoid. The classification
-  therefore keeps the return — where its code space is its own — and the payload
-  takes the `inout`:
+- **A `bytes` or array payload cannot be an `inout`** (the compiler's diagnostic
+  says "string/bytes/handle/map/array have no trivial out-param ABI"), so it takes
+  the return and the classification takes the `inout` — the shape above.
+- **A scalar payload** could take either slot, but it must not share one
+  integer's code space with the status (an epoch second or a byte count can take
+  any value the codes use). So the classification keeps the return and the
+  payload takes the `inout`:
 
 ```tycho
 # corelib/io/io.ty: the same 0..3 codes, with `mtime` as the payload
 extern fn iox_stat_mtime(path: string, mtime: inout int) -> int
 ```
 
-The C ABI for the mirror is the ordinary one, because a scalar return needs no
-out-params: written parameters in written order, the `inout` lowering to a `T*`,
-the classification as the C function's own return value. No reordering surprise —
-that only arises when a `bytes` return appends its two out-params.
+Its C ABI is the ordinary one — written order, the `inout` as a `T*`, the
+classification as the C return; the reordering only arises when a `bytes` return
+appends its two out-params:
 
 ```c
 int64_t iox_stat_mtime(const char *path, int64_t *mtime);
 ```
 
-So the two arrangements are one rule seen from both sides: **the classification
-and the payload never share a slot, and which slot each takes is settled by what
-can cross as an `inout` — never by taste.** Every other rule above (numeric
-classification, set it first on every path, the payload valid on failure paths,
-the Tycho wrapper being what builds the `Result`) applies unchanged to both.
+Every other rule above applies to both arrangements.
 
 **When NOT to use it.** If the classification and the failure share one integer
 and there is no separate payload, return the code directly and skip the out-param:
@@ -272,10 +256,8 @@ A handle is typically produced by an `extern` "opener" (the only kind of functio
 permitted to *return* a handle) and released without explicit calls.
 
 - **A handle name is a type name, and the collision rule is symmetric.** A
-  handle shares the one type namespace with structs, enums and newtypes — it is
-  written in type position and mangled to a C typedef like them — so a duplicate
-  would otherwise reach `cc` as two declarations of one name, with no Tycho-level
-  diagnostic. The rule therefore runs in **both** directions: a `handle Name`
+  handle shares the one type namespace with structs, enums and newtypes, so a
+  `handle Name`
   MUST NOT repeat a struct, enum, newtype or handle name declared earlier in the
   file, and a `struct`, `enum` or `type` declaration MUST NOT repeat a **handle**
   name declared earlier in the file. Either order is a compile error, reported at
@@ -284,10 +266,9 @@ permitted to *return* a handle) and released without explicit calls.
   `handle_then_enum.ty`, `handle_then_newtype.ty` (the handle-first order).
 - **Neither borrow mode applies.** A `handle` parameter MUST NOT be `sink` or
   `inout`. It has one owner and a scope-bound destructor, so there is nothing to
-  consume and nothing to copy back; passing it plainly is already the borrow
-  above. Both were accepted and silently IGNORED until 2026-08-14 — a `sink`
-  callee borrowed exactly like a default parameter — which is why they are now
-  refused at the declaration. The same rule covers `Task(T)` and `Channel(T)`.
+  consume and nothing to copy back; passing it plainly is already the borrow.
+  Both are refused at the declaration. The same rule covers `Task(T)` and
+  `Channel(T)`.
 - **Scope-exit free.** The owning variable's destructor runs at every exit from
   the **owning** scope — block end, early `return`, `break`, `continue`,
   `or_return`. A `break` or `continue` leaves only the scopes inside its loop, so

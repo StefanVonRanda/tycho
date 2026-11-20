@@ -54,12 +54,9 @@ Measured (`bench/trie`, a prefix tree, each node owning an `int -> child` map):
 |---|--:|--:|--:|
 | peak RSS | 58.7 MB | 37.8 MB | 33.8 MB |
 
-~1.55× C — down from ~3.2× (119 MB) once the map moved to a **compact indexed-dict**
-layout: an `int32` index table pointing at dense value entries sized to the live child
-count (a 1-child node no longer carries three empty inline-struct slots), and no per-slot
-insertion-order list. That roughly halved the trie and, at ~59 ms, brought its wall below
-Go's (~66 ms). The residual gap below is value-vs-pointer storage and is structural — see
-`bench/trie/RESULTS.md`.
+~1.55× C, wall ~59 ms against Go's ~66 ms. The map is a **compact indexed-dict**: an
+`int32` index table pointing at dense value entries sized to the live child count. The
+residual gap is value-vs-pointer storage and is structural — see `bench/trie/RESULTS.md`.
 
 **Idiom — a flat node pool with integer-index children.** Keep all nodes in one array and
 make children indices into it, so an "edge" is an 8-byte `int`, sharing is just two indices
@@ -116,30 +113,20 @@ shared pointers.
 
 Measured on `bench/dijkstra`, which runs single-source shortest paths on a
 300k-node graph stored as an **adjacency list of indices** (`[[Edge]]`), and tycho lands at
-**~1.3× C memory / ~1.2× wall, ≈ Go** — *competitive*. Expressed the value-semantic way
-(indices, not pointers), the graph is value-shaped — the edge arrays are flat in every
-language — so the residual gap is just a 24-byte array descriptor per node, not the
-pointer-vs-struct blowup. The index idiom still edges out the by-value recursive form
-(~1.3× vs the trie's ~1.55× C), but since the compact map layout roughly halved the
-recursive trie the memory delta is now modest — the idiom's decisive payoff is expressing
-*sharing* (DAGs, cycles) that by-value storage cannot represent at all.
+**~1.3× C memory / ~1.2× wall, ≈ Go**. The edge arrays are flat in every language, so the
+residual gap is a 24-byte array descriptor per node. The idiom's decisive payoff is
+expressing *sharing* (DAGs, cycles) that by-value storage cannot represent at all.
 
 `bench/lru` is a second index-pool case: a fixed-capacity LRU cache as a `[Node]` pool
 (`prev`/`next` are `int` indices) plus an `[int: int]` map, the tail slot recycled on
-eviction — the pointer-linked list a textbook LRU uses, expressed value-shaped. It lands at
-**~2.8× C memory, ~2× C wall, and now ahead of Go on both** (32.6 MB / 303 ms vs Go's
-21.4 MB / 336 ms), after the map costs it surfaced were fixed: an O(1) churn-bounded delete
-(deletes were once O(map size) via a flat order vector, and delete-churn once held ~19× C
-until rehash-to-purge was bounded), and most recently the **compact indexed-dict** layout,
-which dropped it from ~40 MB by deleting the per-slot insertion-order list entirely. The
-residual ~2.8× is the index table's open-addressing load-factor slack, the same header-cost
-family as the trie, not a pointer blowup. See `bench/lru/RESULTS.md`.
+eviction. It lands at **~2.8× C memory, ~2× C wall, ahead of Go on both** (32.6 MB / 303 ms
+vs Go's 21.4 MB / 336 ms). The residual ~2.8× is the index table's open-addressing
+load-factor slack, not a pointer blowup. See `bench/lru/RESULTS.md`.
 
-Measured on the same 150k-word workload, the by-value recursive version is now **~59 MB**
-(the compact indexed-dict layout roughly halved it). The flat-pool trie stays below that by
-pooling the nodes and holding an 8-byte index per edge instead of an inline child struct; it
-still does *not* reach C's 38 MB, because each node keeps an `[int: int]` child map whose
-header + backing arrays dominate. The most compact tries drop the per-node map entirely for
+The flat-pool trie stays below the by-value version's ~59 MB by holding an 8-byte index per
+edge instead of an inline child struct; it does *not* reach C's 38 MB, because each node
+keeps an `[int: int]` child map whose header + backing arrays dominate. The most compact
+tries drop the per-node map entirely for
 **first-child / next-sibling links** (each node is a handful of `int`s: child index, sibling
 index, key, flag), which gets within a small factor of C at the cost of linked-list child
 traversal instead of a map lookup. The progression is the point: each step toward C's
@@ -151,8 +138,8 @@ An arena releases its ownership at **scope exit**, not necessarily its memory to
 the OS — and eligible dead buffers can be reused incrementally. At supported
 reassignment sites the compiler checks that a buffer is dead and uniquely owned,
 then hands it back to
-the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted by the compiler at
-`src/tychoc.c:2027@arena_recycle`); the next same-or-smaller allocation in that arena reuses it instead
+the arena via `arena_recycle` (`runtime/tycho_rt.c@arena_recycle`, emitted from
+`compiler/emit/emit_stmt.ty@arena_recycle` and `compiler/emit/emit_support.ty@_recycle_defs`); the next same-or-smaller allocation in that arena reuses it instead
 of bumping — the reuse analysis Perceus derives from runtime refcounts, derived here from
 static value semantics. Supported churn patterns can reuse buffers rather than
 retain every intermediate; this is not a general bound for all transient churn.
@@ -176,17 +163,14 @@ If a transient is built and consumed in the same scope as long-lived results, sp
 
 #### Rebuilding a long-lived value on every operation
 
-Recycling is broader than the paragraph above suggests, and it is worth knowing
-exactly how far it reaches before concluding that a workload is doomed. There are
-several supported paths:
+Recycling reaches three paths:
 
 - **Loop-carried reassignment of a named array local** — `a = f(a)` inside a loop
-  (`src/tychoc.c:14338@do_recycle`). Narrow by design: it requires a *named
-  variable* (not an element or field store), a type for which `is_array` holds
-  (`src/tychoc.c:1282@is_array` — note a `string` is **not** an array here), a
-  loop, a non-`inout` non-accumulator target, and at least two reads in the
-  function (the soundness condition — a read-once variable may have been moved
-  out from under it).
+  (`compiler/emit/emit_stmt.ty@_creads_b`). Narrow by design: it requires a *named
+  variable* (not an element or field store), an array type (`compiler/emit/emit.ty@_is_arr`
+  — a `string` is **not** an array here), a loop, a non-`inout` non-accumulator target,
+  and at least two reads in the function (the soundness condition — a read-once
+  variable may have been moved out from under it).
 - **Heap-bearing array-element overwrite** — `xs[i] = v` copies the new element
   into the array's owner before recursively recycling the evicted value. This
   covers strings and nested arrays, maps, structs, enums, tuples, options/results,
@@ -222,8 +206,7 @@ hole and rebuilds the string once per *focus change* rather than per keystroke �
 flattens the curve completely. **Peak RSS is identical between the two backends**
 (95.7 MB), which is the measurement that says the retained memory was never the
 line churn: it is the undo journal, one entry per keystroke, which is the feature
-working as intended. Two costs that rose together turned out to be one cost and
-one coincidence, and only building the fix separated them.
+working as intended.
 
 **Idiom — mutate, don't rebuild, whenever a value is edited many times.** Hold
 hot mutable text as `[int]` rather than `string` and convert at
@@ -235,8 +218,8 @@ will — but "am I copying the whole value to change a small part of it".
 ### 3. Maps / arrays of a large value type, many small instances
 
 A composite map with a big value type over-allocates its backing array (empty slots cost
-value-size each). This was tuned (initial capacity 8→4) and is bounded by load factor, but
-the slot waste is still value-size × spare slots.
+value-size each). It is bounded by load factor, but the slot waste is still value-size ×
+spare slots.
 
 **Idioms:** `reserve(m, n)` / `reserve(a, n)` when you know the size up front (one
 right-sized allocation, no rehash garbage); prefer a small value type in hot maps (store an
@@ -291,13 +274,9 @@ Is the trie/graph cost fundamental to value semantics, or just this implementati
 The most mature mutable-value-semantics language (Hylo) hits the same wall and answers
 it with the same indices-into-a-pool idiom, so it is fundamental, not a Tycho shortfall.
 
-And it can't be sidestepped by quietly adding back references: a spike on stored
-references ([limited-references spike](../rfc/limited-references-spike.md)) settled this as a decision. A reference that
-*stores* a graph edge is incompatible with the two invariants that make Tycho what it is — the
-deep-copy thread boundary (a stored pointer can't survive a call's copy-in) and the no-escape
-arena model — so adding it would dismantle the value-semantics guarantees, not extend them. The
-index-pool isn't the fallback after references didn't make it; within this model it *is* the way
-to store a graph, and the copy-cost side of the same question is what [`sink`](../reference/basics.md)
-answers for call arguments. The only reference-shaped feature that fits — user-defined
-projections, a generalization of the shipped `&m[k]` — is an ergonomic convenience over the
-index idiom, not a different way to store the data.
+Stored references are ruled out ([limited-references spike](../rfc/limited-references-spike.md)):
+a reference that *stores* a graph edge breaks the deep-copy thread boundary and the no-escape
+arena model. Within this model the index pool *is* the way to store a graph; the copy-cost
+side of the same question is what [`sink`](../reference/basics.md) answers for call arguments.
+User-defined projections (a generalization of `&m[k]`) would be an ergonomic convenience over
+the index idiom, not a different way to store the data.

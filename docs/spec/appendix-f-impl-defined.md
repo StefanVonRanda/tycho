@@ -11,7 +11,7 @@ program MUST NOT depend on anything in the "unspecified" list.
 
 | # | Behavior | Reference | Status |
 |---|---|---|---|
-| 1 | **Argument / operand evaluation order** within one expression (order of side effects among a call's arguments or a binary operator's operands). *Exceptions:* a side-effecting **index in an assignment place** (`a[f()] = g()`) and the **holes of an f-string** (`f"{a()}{b()}"`) are sequenced **left-to-right** — specified, not in this list. | [§13.4](09-expressions.md#134-evaluation-order) | probed; arguments/operands inherited from the target, not sequenced by Tycho |
+| 1 | **Argument / operand evaluation order** within one expression (order of side effects among a call's arguments or a binary operator's operands). *Exceptions:* a side-effecting **index in an assignment place** (`a[f()] = g()`) and the **holes of an f-string** (`f"{a()}{b()}"`) are sequenced **left-to-right** — specified, not in this list. | [§13.4](09-expressions.md#134-evaluation-order) | inherited from the target C compiler |
 | 2 | **Floating-point reduction reassociation** in `parallel for`: the result MAY differ across thread counts. (Integer reductions are deterministic and are **not** in this list.) | [§22](13-concurrency.md#22-parallel-for) | defined boundary |
 | 3 | **Using a typed handle after a `close(h)` nested in a branch or loop** — passes null to C; a logic bug, not memory corruption. A use after a `close(h)` statement in the same block is compile-rejected. | [§25](14-ffi.md#25-typed-handles) | defined boundary |
 | 4 | **Behavior on the far side of the FFI boundary** — C-side global/`static` races and misuse. | [§26](14-ffi.md#26-ffi-and-concurrency) | outside all guarantees |
@@ -36,18 +36,10 @@ affects the value semantics of a program.
 
 ## F.3 Explicitly *not* implementation-defined
 
-For the avoidance of doubt, the following are **fixed by this specification** and
-an implementation MUST NOT vary them, even where its backend's native types
-differ:
-
-The required 64-bit `int` width is normative for *every* conforming
-implementation; it is **not** implementation-defined. The reference compiler
-(`tychoc`) realizes `int` as a **fixed-width 64-bit** C type — `typedef int64_t
-tycho_int;` in the emitted prelude, which is the single width authority for
-`int`, the `int`-carried `char` representation, array/slice length headers, map
-keys and the FFI crossing signatures — and emits `long long`-suffixed integer
-literals so that constant arithmetic is evaluated at 64-bit rank. `int64_t` does
-not vary with the C data model, so the lowering is 64-bit on **LP64**,
-**LLP64** and **ILP32** alike, and a build in which it is not is rejected
-outright by the always-on `_Static_assert(sizeof(tycho_int)==8, "tycho int must
-be 64 bits");` carried in the same prelude.
+The 64-bit `int` width is fixed by this specification for every conforming
+implementation, whatever the backend's native types. The reference compiler
+realizes it as `typedef int64_t tycho_int;` in the emitted prelude — the single
+width authority for `int`, `char`, length headers, map keys and FFI signatures —
+with `long long`-suffixed literals, so it is 64-bit on LP64, LLP64 and ILP32
+alike, and a prelude `_Static_assert(sizeof(tycho_int)==8, …)` rejects any
+build where it is not.
