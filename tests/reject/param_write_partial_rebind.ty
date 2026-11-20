@@ -1,0 +1,14 @@
+# A whole rebind `xs = ...` makes a read-only parameter the callee's own value,
+# but only on the paths that run it (docs/spec/11-functions.md §15.2). Here the
+# rebind sits in one `if` arm, so after the `if` `xs` may still be the CALLER's
+# storage and the write is refused (compiler/types/tcheck.ty@_shut_mark).
+# expect: cannot mutate parameter 'xs' (it is borrowed read-only; copy it with `y := xs` first)
+fn f(xs: [int], fresh: bool):
+    if fresh:
+        xs = [0, 0, 0]
+    xs[0] = 5
+
+fn main():
+    a := [1, 2, 3]
+    f(a, false)
+    println(str(a[0]))

@@ -457,6 +457,7 @@ tests/reject/param_write_index.ty	SEMANTIC	8022	cannot mutate parameter 'xs' (it
 tests/reject/param_write_inout_field.ty	SEMANTIC	8183	cannot pass borrowed parameter 'g' as inout (it is read-only; copy it first)
 tests/reject/param_write_map.ty	SEMANTIC	8022	cannot mutate parameter 'm' (it is borrowed read-only; copy it with `y := m` first)
 tests/reject/param_write_nested.ty	SEMANTIC	8022	cannot mutate parameter 'g' (it is borrowed read-only; copy it with `y := g` first)
+tests/reject/param_write_partial_rebind.ty	SEMANTIC	8022	cannot mutate parameter 'xs' (it is borrowed read-only; copy it with `y := xs` first)
 tests/reject/param_write_push_field.ty	SEMANTIC	8022	cannot mutate parameter 'g' (it is borrowed read-only; copy it with `y := g` first)
 tests/reject/param_write_subscript.ty	SEMANTIC	8022	cannot mutate parameter 'g' (it is borrowed read-only; copy it with `y := g` first)
 tests/reject/params_17.ty	TYPE	10400	too many parameters (max 16)

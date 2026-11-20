@@ -1,0 +1,27 @@
+# After a whole rebind on every path, a read-only parameter is the callee's own
+# value (docs/spec/11-functions.md §15.2): the emitter copies on the assignment,
+# so writes after it are legal and the caller's value is unaffected.
+struct Record:
+    payload: [int]
+    tick: int
+
+fn bump(r: Record) -> Record:
+    r = Record(r.payload, r.tick + 1)
+    r.payload[0] = 77
+    if r.tick > 0:
+        r.payload[1] += 1          # nested below the rebind: still the callee's
+    return r
+
+fn swap_in(xs: [int], ys: [int]) -> int:
+    xs = ys
+    xs[0] = 9
+    return xs[0]
+
+fn main():
+    input := Record([11, 20], 0)
+    output := bump(input)
+    println(f"{input.payload[0]} {input.payload[1]} {input.tick}")
+    println(f"{output.payload[0]} {output.payload[1]} {output.tick}")
+    a := [1, 2]
+    b := [3, 4]
+    println(str(swap_in(a, b)) + " " + str(a[0]) + " " + str(b[0]))

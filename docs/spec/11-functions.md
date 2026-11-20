@@ -30,7 +30,10 @@ A parameter is passed in one of three modes:
   `pop`, `reserve`, or passing such a place as `inout` — is a compile error. A
   write that touches only the callee's own copy (a scalar field of a by-value
   struct, an element of an inline `[N]T`, reassigning a heap field, rebinding
-  the parameter) is permitted. A fixed
+  the parameter) is permitted. A whole rebind `p = e` makes `p` the callee's
+  own copy, so every write above is permitted after it in the same block; a
+  rebind on only some paths (an `if` or `match` arm, a loop body) permits none
+  after that block. A fixed
   array `[N]T`, a `vector[N]T`, or a struct that inlines one has no heap
   descriptor to share: the whole value is copied. The caller's value is
   unchanged either way. A value produced or returned by the callee is copied

@@ -244,6 +244,8 @@ struct C:
                                        # same type in five signatures is ONE decision
     shut: [int]                        # var indices a `close(h)` statement closed, for
     nshut: int                         # the rest of its block (src/tychoc.c@shut_mark)
+    rebd: [int]                        # ... and, by the same marks, the read-only params
+    nrebd: int                         # a whole `p = e` rebound: p is the callee's own now
     vmath: [string: bool]              # core:math's min/max/clamp, lane-wise at a vector
     orelse: bool                       # this expression is an `or_else` handler: its
                                        # Some/Ok/Err mismatch is worded as a RETURN
@@ -3287,8 +3289,20 @@ fn _const_int(cs: inout C, name: string) -> [int]:
 # src/tychoc.c@shut_mark -- `close(h)` as a statement of a block closes `h` for
 # the rest of that block: every later mention is on a path through the close.
 # A close nested in an `if`, loop or arm reaches no further than that block.
+# A whole rebind `p = e` of a read-only parameter is marked the same way: the
+# emitter copies on that assignment, so from there to the end of the block `p`
+# is the callee's own value and _ro_root lets writes through it (§15.2). A
+# rebind on only some paths ends with its block, so it frees nothing after it.
 fn _shut_mark(cs: inout C, s: ast.Stmt):
     match s:
+        ast.Assign(l, n, rhs):
+            if _ro_root(&cs, n):
+                i := _vfind(&cs, n)
+                if cs.nrebd < len(cs.rebd):
+                    cs.rebd[cs.nrebd] = i
+                else:
+                    push(cs.rebd, i)
+                cs.nrebd += 1
         ast.ExprStmt(l, k):
             if len(k) != 1:
                 return
@@ -3313,6 +3327,7 @@ fn _shut_mark(cs: inout C, s: ast.Stmt):
 fn _tblock(cs: inout C, body: [ast.Stmt]):
     m := _vmark(&cs)
     sm := cs.nshut
+    rm := cs.nrebd
     pm := cs.npend
     _ix9 := 0
     for s in body:
@@ -3333,6 +3348,7 @@ fn _tblock(cs: inout C, body: [ast.Stmt]):
                 " : [T] = [] / Option(T) = None)")
     cs.npend = pm
     cs.nshut = sm
+    cs.nrebd = rm
     _vrestore(&cs, m)
 
 fn _tail_add(cs: inout C, line: int, t: string):
@@ -3394,11 +3410,13 @@ fn _value_type(cs: inout C, body: [ast.Stmt], want: string) -> string:
     # program src/tychoc.c accepts.
     m := _vmark(&cs)
     sm := cs.nshut
+    rm := cs.nrebd
     for i := 0; i < len(body) - 1; i += 1:
         _tstmt(&cs, body[i])
         _shut_mark(&cs, body[i])
     t := _tail_type(&cs, body[len(body) - 1], want)
     cs.nshut = sm
+    cs.nrebd = rm
     _vrestore(&cs, m)
     return t
 
@@ -3604,7 +3622,7 @@ fn _ro_param(cs: inout C, n: string) -> bool:
         if cs.sg[si].pnames[i] == n and cs.sg[si].pflags[i] == "inout":
             return false        # an inout container IS the caller's, by pointer
     t := _vtype(&cs, n)
-    return _is_arr(t) or _head(t) == "map" or _head(t) == "soa"
+    return (_is_arr(t) or _head(t) == "map" or _head(t) == "soa") and _ro_root(&cs, n)
 
 # A parameter that is neither `inout` nor `sink`, of any type.
 fn _ro_root(cs: inout C, n: string) -> bool:
@@ -3616,6 +3634,10 @@ fn _ro_root(cs: inout C, n: string) -> bool:
     for i := 0; i < len(cs.sg[si].pnames); i += 1:
         if cs.sg[si].pnames[i] == n and cs.sg[si].pflags[i] == "inout":
             return false
+    vi := _vfind(&cs, n)
+    for k := 0; k < cs.nrebd; k += 1:
+        if cs.rebd[k] == vi:
+            return false        # rebound whole on every path to here
     return true
 
 # A [T], map or soa: a descriptor whose backing storage a copy SHARES. An inline
@@ -4307,7 +4329,7 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []string: bool, false, 0, []string: [string])
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string])
     cs.symon = syms
     cs.vtgt = tgt
     for f in p.files:
