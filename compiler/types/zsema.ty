@@ -1075,6 +1075,13 @@ fn _alias_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int)
                 cs.line = line
                 _cerr(&cs, "variable '" + r + "' passed to two inout parameters of '" + name + "' (overlapping mutable access)")
                 return
+        # ... and a `&` NESTED in another argument, as in `add(&t.xs, grow(&t))`:
+        # the outer place is resolved before `grow` may reallocate under it.
+        for j := 0; j < len(args); j += 1:
+            if j != i and _place_indexed(args[i]) and not (args[j] is ast.Addr) and _addr_in(args[j], r):
+                cs.line = line
+                _cerr(&cs, "variable '" + r + "' is passed to an inout parameter of '" + name + "' while another argument passes '&" + r + "' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)")
+                return
         # Scoped to a BARE by-value variable: `a[i]` and `a.f` are distinct
         # extracted values and are left alone (src/tychoc.c:8205).
         for j := 0; j < len(args); j += 1:
@@ -1108,6 +1115,42 @@ fn _place_root(e: ast.Expr) -> string:
         ast.Index(l, k): return _place_root(k[0])
         _: return ""
     return ""
+
+# Does the place `e` step through an INDEX? `t.rows[0].xs` resolves to a
+# pointer into `t.rows`' buffer, which an inout callee may reallocate; a
+# field-only path like `cs.marks` resolves inside the variable itself, which
+# does not move, so it is not checked.
+fn _place_indexed(e: ast.Expr) -> bool:
+    match e:
+        ast.Addr(l, k): return _place_indexed(k[0])
+        ast.Field(l, k, f): return _place_indexed(k[0])
+        ast.Index(l, k): return true
+        _: return false
+    return false
+
+# Does `e` pass a place rooted at `r` to an inout parameter anywhere inside it?
+# `push(t.rows[0].xs, grow(&t))` resolves its place before `grow` may
+# reallocate `t.rows`, so a nested `&t` is a second mutable access to `t`.
+fn _addr_in(e: ast.Expr, r: string) -> bool:
+    if (e is ast.Addr) and _place_root(e) == r:
+        return true
+    for c in ast.kids(e):
+        if _addr_in(c, r):
+            return true
+    return false
+
+# §11.2 for a builtin that mutates its FIRST argument in place.
+fn _mut_builtin_alias(cs: inout C, n: string, args: [ast.Expr], line: int):
+    if not (n == "push" or n == "reserve") or len(args) < 2:
+        return
+    r := _place_root(args[0])
+    if len(r) == 0 or not _place_indexed(args[0]):
+        return
+    for j := 1; j < len(args); j += 1:
+        if _addr_in(args[j], r):
+            cs.line = line
+            _cerr(&cs, "'" + n + "' mutates '" + r + "' in place while another argument passes '&" + r + "' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)")
+            return
 
 # ------------------------------------------------- generic AGGREGATE instances
 #

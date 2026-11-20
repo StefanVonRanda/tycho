@@ -1,0 +1,16 @@
+# expect: 'push' mutates 't' in place while another argument passes '&t' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)
+# The method spelling of the same push, §11.2: the receiver is the place
+# and resolves into t.rows' buffer before grow(&t) may reallocate it.
+struct Row:
+    xs: [int]
+struct T:
+    rows: [Row]
+fn grow(t: inout T) -> int:
+    for i := 0; i < 64; i += 1:
+        push(t.rows, Row([]int))
+    return 7
+fn main():
+    t := T([]Row)
+    push(t.rows, Row([]int))
+    t.rows[0].xs.push(grow(&t))
+    println(str(len(t.rows[0].xs)))

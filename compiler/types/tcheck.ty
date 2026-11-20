@@ -1459,6 +1459,13 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 match k[0]:
                     ast.Field(fl, fk, fnm):
                         if len(fk) > 0:
+                            # `t.rows[0].xs.push(v)` is the builtin on that place.
+                            if fnm == "push" or fnm == "reserve":
+                                ma := []ast.Expr
+                                push(ma, fk[0])
+                                for ai := 1; ai < len(k); ai += 1:
+                                    push(ma, k[ai])
+                                _mut_builtin_alias(&cs, fnm, ma, l)
                             pkgrecv := false
                             match fk[0]:
                                 ast.Name(fl2, qn): pkgrecv = _is_pkg(&cs, qn)
@@ -2722,6 +2729,7 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         push(ats, _ex2(&cs, args[i], w1))
     cs.in_arg = keep
     cs.line = l
+    _mut_builtin_alias(&cs, n, args, l)
     if len(pendn) > 0:
         gt := "arr(" + ats[1] + ")"
         if n == "map_set":

@@ -1,0 +1,17 @@
+# expect: 'push' mutates 't' in place while another argument passes '&t' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)
+# docs/spec/07-memory-model.md §11.2: push's place `t.rows[0].xs` is resolved
+# to a pointer into t.rows' buffer before grow(&t) reallocates it, so the push
+# landed in the old storage and was silently lost.
+struct Row:
+    xs: [int]
+struct T:
+    rows: [Row]
+fn grow(t: inout T) -> int:
+    for i := 0; i < 64; i += 1:
+        push(t.rows, Row([]int))
+    return 7
+fn main():
+    t := T([]Row)
+    push(t.rows, Row([]int))
+    push(t.rows[0].xs, grow(&t))
+    println(str(len(t.rows[0].xs)))

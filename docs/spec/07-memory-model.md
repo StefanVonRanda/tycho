@@ -165,6 +165,13 @@ variable. The check is by **root variable**, conservatively (may-overlap): both
 the same `a`, even when the elements or fields provably do not overlap. Such
 overlap is rejected at compile time (*"overlapping mutable
 access"*); it would make the copy-out order observable and reintroduce aliasing.
+The same holds for a place that steps through an index — the first argument of
+`push` or `reserve`, or an `inout` argument such as `&t.rows[0].xs` — when
+another argument of that call contains an `&` rooted at the same variable,
+however deeply nested (`push(t.rows[0].xs, grow(&t))`): the place is resolved
+before the nested callee may reallocate the storage it points into. An
+assignment is not affected, because its right-hand side is evaluated before
+the place is written.
 
 ### 11.3 Heap `inout`
 

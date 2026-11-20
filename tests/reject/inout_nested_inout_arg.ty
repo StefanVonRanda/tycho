@@ -1,0 +1,18 @@
+# expect: variable 't' is passed to an inout parameter of 'add' while another argument passes '&t' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)
+# docs/spec/07-memory-model.md §11.2: `&t.rows[0].xs` is resolved into t.rows'
+# buffer before the nested grow(&t) reallocates it, so add's push was lost.
+struct Row:
+    xs: [int]
+struct T:
+    rows: [Row]
+fn grow(t: inout T) -> int:
+    for i := 0; i < 64; i += 1:
+        push(t.rows, Row([]int))
+    return 7
+fn add(xs: inout [int], v: int):
+    push(xs, v)
+fn main():
+    t := T([]Row)
+    push(t.rows, Row([]int))
+    add(&t.rows[0].xs, grow(&t))
+    println(str(len(t.rows[0].xs)))
