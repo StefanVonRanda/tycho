@@ -3,7 +3,6 @@ package main
 import "core:hex"
 import "core:os"
 import "core:terminal"
-import "core:time"
 
 fn size_none(o: Option((int, int))) -> bool:
     match o:
@@ -37,7 +36,6 @@ fn cursor_str(o: Option(terminal.CursorPos)) -> string:
         None: return "none"
 
 fn serve_cursor(fd: int) -> int:
-    h := terminal.raw_enter(fd)
     buf := []int
     for len(buf) < 4:
         match terminal.read_byte(fd):
@@ -47,7 +45,6 @@ fn serve_cursor(fd: int) -> int:
         match os.write_fd(fd, to_bytes([27, 91, 53, 59, 55, 82])):
             Ok(_): pass
             Err(_): pass
-    terminal.raw_leave(h)
     return len(buf)
 
 extern fn termx_pty_open() -> ptr
@@ -102,8 +99,11 @@ fn main():
     else:
         m := termx_pty_master(ph)
         sl := termx_pty_slave(ph)
+        # Raw mode goes on BEFORE the server exists: raw_enter flushes pending
+        # input (TCSAFLUSH), so entering it inside the server raced the query
+        # and a slow thread start ate it (cursor_server=0).
+        h := terminal.raw_enter(sl)
         t := spawn serve_cursor(sl)
-        time.sleep_ms(20)
         match terminal.cursor_query(m, m, 1000):
             Ok(p):
                 println("cursor_query=" + str(p.row) + ":" + str(p.col))
@@ -111,4 +111,5 @@ fn main():
                 println("cursor_query=err")
         n := wait(t)
         println("cursor_server=" + str(n))
+        terminal.raw_leave(h)
         termx_pty_close(ph)
