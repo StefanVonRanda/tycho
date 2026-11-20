@@ -25,7 +25,12 @@ A parameter is passed in one of three modes:
 - **Default (read-only).** A scalar is copied. A heap-bearing value — a
   `string`, `bytes`, a dynamic array `[T]`, a map, or a struct containing one —
   is passed as a **read-only descriptor**: the descriptor is copied, the backing
-  storage is shared, and mutating the parameter is a compile error. A fixed
+  storage is shared, and any write that reaches that shared storage — an index,
+  field or subscript assignment through a `[T]`, map or soa, `delete`, `push`,
+  `pop`, `reserve`, or passing such a place as `inout` — is a compile error. A
+  write that touches only the callee's own copy (a scalar field of a by-value
+  struct, an element of an inline `[N]T`, reassigning a heap field, rebinding
+  the parameter) is permitted. A fixed
   array `[N]T`, a `vector[N]T`, or a struct that inlines one has no heap
   descriptor to share: the whole value is copied. The caller's value is
   unchanged either way. A value produced or returned by the callee is copied

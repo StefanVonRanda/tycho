@@ -207,8 +207,12 @@ applied to it ([§7.5](05-generics.md)).
 The concurrency model — tasks, channels, and their ordering guarantees — is
 [§20](13-concurrency.md); this section catalogs only the builtins
 and their static rules. `Task(T)` and `Channel(T)` are affine, non-storable
-handle types with no type syntax ([§5.3.9](03-types.md#539-typed-handles)); the
-builtins below are their only consumers.
+handle types ([§5.3.9](03-types.md#539-typed-handles)); the builtins below are
+their only consumers. `Task(T)` has no type syntax: a task exists only as the
+local a `spawn` initializes. `Channel(T)` MAY be written as the type of a
+parameter or a local annotation (`fn prod(ch: Channel(int))`,
+`ch: Channel(int) = channel(int, 4)`); it is refused as a return type, a struct
+field, or a value stored in any container or aggregate.
 
 | Builtin | Signature | Kind | Semantics |
 |---|---|---|---|

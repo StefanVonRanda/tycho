@@ -363,7 +363,8 @@ declared C free function that runs at scope exit. A handle value cannot be
 copied, stored in any aggregate, captured by a closure or `parallel for`, or
 returned from a Tycho function (§25). The concurrency handle types
 `Task(T)` and `Channel(T)` are similarly affine and non-storable
-([§20](13-concurrency.md)).
+([§20](13-concurrency.md)); only `Channel(T)` has type syntax, and only for a
+parameter or a local annotation ([§29.9](16-builtins.md#299-concurrency)).
 
 ### 5.3.10 `bounded[N]T`
 
