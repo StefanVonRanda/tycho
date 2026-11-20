@@ -581,22 +581,29 @@ fn _branchy_b(b: [ast.Stmt]) -> bool:
 # would not unroll the loop by itself. Clang warns `loop not unrolled` where it
 # cannot honour the count; the Makefile silences that for tychoc1.
 fn _unroll_hint(cs: inout C, ind: string, b: [ast.Stmt]) -> string:
-    # The capacity-proof loop is eligible, and so is a loop with no further
-    # loop or branch in its body. Two shapes are not:
+    # gcc: every eligible loop (the capacity-proof loop, or one with no nested
+    # loop). clang additionally skips two shapes:
     # - a lone push: clang vectorizes or interleaves that store stream itself,
     #   and the hint stacks a second 4x on top of it (16x, with spills);
     # - a body with a branch: unrolling copies the branches and buys no ILP.
+    # The two compilers need different rules: dropping the gcc hint on those
+    # shapes made conc/mandelbrot 1.85x slower on gcc 16.
     # ponytail: syntactic stand-ins for clang's cost model; a lone push of a
     # large expression loses a hint that would pay.
-    if _lone_push_b(b):
-        return ""
-    if len(cs.pcap) == 0 and (_nested_loop_b(b) or _branchy_b(b)):
-        return ""
-    return ind + "    #if defined(__clang__)\n" +
-        ind + "    #pragma clang loop unroll_count(4)\n" +
-        ind + "    #elif defined(__GNUC__)\n" +
-        ind + "    #pragma GCC unroll 4\n" +
-        ind + "    #endif\n"
+    nopc := len(cs.pcap) == 0
+    gcc := not (nopc and _nested_loop_b(b))
+    clang := gcc and not _lone_push_b(b) and not (nopc and _branchy_b(b))
+    if clang:
+        return ind + "    #if defined(__clang__)\n" +
+            ind + "    #pragma clang loop unroll_count(4)\n" +
+            ind + "    #elif defined(__GNUC__)\n" +
+            ind + "    #pragma GCC unroll 4\n" +
+            ind + "    #endif\n"
+    if gcc:
+        return ind + "    #if defined(__GNUC__) && !defined(__clang__)\n" +
+            ind + "    #pragma GCC unroll 4\n" +
+            ind + "    #endif\n"
+    return ""
 
 # Emits the cursor declarations for every fusible array in `b`; returns the code
 # and how many were opened, which _fuse_close pops.
