@@ -545,16 +545,52 @@ fn _pcap(cs: inout C, name: string) -> bool:
             return true
     return false
 
+# The body is one `push` plus, at most, a trailing counter step.
+fn _lone_push_b(b: [ast.Stmt]) -> bool:
+    n := len(b)
+    if n == 2:
+        match b[1]:
+            ast.Assign(l, nm, r): n = 1
+            _: return false
+    if n != 1:
+        return false
+    match b[0]:
+        ast.ExprStmt(l, es):
+            if len(es) == 1:
+                match es[0]:
+                    ast.Call(l2, q, nm, ts, args): return len(q) == 0 and nm == "push"
+                    _: pass
+        _: pass
+    return false
+
+fn _branchy_b(b: [ast.Stmt]) -> bool:
+    for st in b:
+        match st:
+            ast.IfS(l, arms, e): return true
+            ast.MatchS(l, c, arms): return true
+            ast.SelectS(l, arms): return true
+            ast.Decl(l, n, t, r, v):
+                if len(v) > 0:
+                    return true
+            _: pass
+    return false
+
 # GCC does not unroll the fused push loop from the capacity proof even after
-# the checked path is removed, hence `GCC unroll`. Clang keeps its own hint: on
-# Apple clang (2026-11-20, 11 interleaved runs, medians) dropping it costs
-# prongB/arr_pipeline +21%, prongB/dispatch +16%, prongB/iter_transform +13%,
-# though it wins latency -38% and gcscan -21%. Clang warns `loop not unrolled`
-# where it cannot honour the count; the Makefile silences that for tychoc1.
+# the checked path is removed, hence `GCC unroll`. On clang the pragma also
+# turns off the vectorizer's own interleaving, so it only pays where clang
+# would not unroll the loop by itself. Clang warns `loop not unrolled` where it
+# cannot honour the count; the Makefile silences that for tychoc1.
 fn _unroll_hint(cs: inout C, ind: string, b: [ast.Stmt]) -> string:
-    # The capacity-proof loop is always eligible. A reduction loop nested in
-    # the same body (no further loop) is the other hot shape worth unrolling.
-    if len(cs.pcap) == 0 and _nested_loop_b(b):
+    # The capacity-proof loop is eligible, and so is a loop with no further
+    # loop or branch in its body. Two shapes are not:
+    # - a lone push: clang vectorizes or interleaves that store stream itself,
+    #   and the hint stacks a second 4x on top of it (16x, with spills);
+    # - a body with a branch: unrolling copies the branches and buys no ILP.
+    # ponytail: syntactic stand-ins for clang's cost model; a lone push of a
+    # large expression loses a hint that would pay.
+    if _lone_push_b(b):
+        return ""
+    if len(cs.pcap) == 0 and (_nested_loop_b(b) or _branchy_b(b)):
         return ""
     return ind + "    #if defined(__clang__)\n" +
         ind + "    #pragma clang loop unroll_count(4)\n" +
