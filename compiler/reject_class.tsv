@@ -307,6 +307,7 @@ tests/reject/inout_fn_value.ty	TYPE	10088	inout parameter 'h': a function value 
 tests/reject/inout_fnvalue.ty	TYPE	10088	inout parameter 'h': a function value can't be inout (a callee could write a closure back into the caller and it would dangle)
 tests/reject/inout_nested_inout_arg.ty	SEMANTIC	0	variable 't' is passed to an inout parameter of 'add' while another argument passes '&t' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)
 tests/reject/inout_push_method_place.ty	SEMANTIC	0	'push' mutates 't' in place while another argument passes '&t' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)
+tests/reject/inout_push_nested_pop.ty	SEMANTIC	0	'push' mutates 't' in place while another argument passes 't' to 'pop' (overlapping mutable access -- evaluate that argument into a local first)
 tests/reject/inout_push_place.ty	SEMANTIC	0	'push' mutates 't' in place while another argument passes '&t' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)
 tests/reject/inout_reserve_place.ty	SEMANTIC	0	'reserve' mutates 't' in place while another argument passes '&t' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)
 tests/reject/int_bin_bad_digit.ty	SYNTAX	682	a binary literal needs digits 0 or 1 after `0b`

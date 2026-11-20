@@ -169,7 +169,9 @@ The same holds for a place that steps through an index — the first argument of
 `push` or `reserve`, or an `inout` argument such as `&t.rows[0].xs` — when
 another argument of that call contains an `&` rooted at the same variable,
 however deeply nested (`push(t.rows[0].xs, grow(&t))`): the place is resolved
-before the nested callee may reallocate the storage it points into. An
+before the nested callee may reallocate the storage it points into. A nested
+mutating builtin — `push`, `pop`, `reserve` or `delete` — on a place rooted at
+the same variable counts the same way (`push(t.rows[0].xs, pop(t.rows).n)`). An
 assignment is not affected, because its right-hand side is evaluated before
 the place is written.
 

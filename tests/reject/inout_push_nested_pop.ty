@@ -1,0 +1,14 @@
+# expect: 'push' mutates 't' in place while another argument passes 't' to 'pop' (overlapping mutable access -- evaluate that argument into a local first)
+# docs/spec/07-memory-model.md §11.2: a mutating builtin nested in another
+# argument is a second mutable access to the place's root, like a nested `&t`.
+# Here pop removes the very row the push then writes into.
+struct Row:
+    xs: [int]
+    n: int
+struct T:
+    rows: [Row]
+fn main():
+    t := T([]Row)
+    push(t.rows, Row([]int, 5))
+    push(t.rows[0].xs, pop(t.rows).n)
+    println(str(len(t.rows)))
