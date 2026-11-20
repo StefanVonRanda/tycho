@@ -195,7 +195,8 @@ fn _shq(s: string) -> string:
 
 # The pkg-config flags every loaded package asks for, in one list. A package
 # with no `deps` file contributes nothing; a pkg-config that fails is skipped
-# rather than fatal, exactly as a missing optional dependency is elsewhere.
+# rather than fatal (a warning names the deps line), exactly as a missing
+# optional dependency is elsewhere.
 # Each package's raw output is kept as one string (not split on spaces) so
 # that flags containing spaces in paths survive.  The caller builds a shell
 # command string from the result, matching src/tychoc.c's approach.
@@ -209,8 +210,9 @@ fn _pkgflags(p: types.Program) -> [string]:
         match io.read_text(f.dir + "/deps"):
             Ok(txt):
                 win := false
-                for ln in split(txt, "\n"):
-                    t := strings.trim(ln)
+                dl := split(txt, "\n")
+                for di := 0; di < len(dl); di += 1:
+                    t := strings.trim(dl[di])
                     # Everything after `_WIN32:` is RAW linker flags for the
                     # Windows build (-lws2_32, -lpcre2-posix). They are not
                     # pkg-config names, and a non-Windows compiler skips the
@@ -226,6 +228,10 @@ fn _pkgflags(p: types.Program) -> [string]:
                     seen[t] = true
                     r := os.run("pkg-config --cflags --libs " + cc_safe(t, "deps pkg-config"))
                     if r.code != 0:
+                        # §28.6: say so here; the library's absence still
+                        # surfaces as a link error at the cc stage.
+                        eprint(f.dir + "/deps:" + str(di + 1) + ": warning: pkg-config cannot resolve '" +
+                            t + "'; the C compile will not get its flags\n")
                         continue
                     trimmed := strings.trim(r.out)
                     if len(trimmed) > 0:

@@ -269,6 +269,7 @@ test: tychoc
 	@sh tests/emitter_memory_scale.sh
 	@sh tests/packed_inout_ffi.sh
 	@sh tests/package_diagnostic_name.sh
+	@sh tests/deps_unresolved.sh
 	@sh tests/cli_flags.sh
 	@sh tests/package_builtin_shadow.sh
 	@sh tests/proc_signature_scale.sh
