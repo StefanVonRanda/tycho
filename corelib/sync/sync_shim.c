@@ -21,9 +21,6 @@
 #else
 #include <pthread.h>
 #include <errno.h>
-#ifdef __APPLE__
-#include <TargetConditionals.h>
-#endif
 #endif
 
 typedef struct { _Atomic uint64_t v; } SyncAtomicInt;
@@ -751,8 +748,8 @@ tycho_int syncx_recursive_mutex_unlock(void *vp) {
 
 typedef struct { pthread_mutex_t m; } SyncRecursiveMutex;
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-/* iOS does not ship pthread_barrier_t. A mutex/condvar generation barrier has
+#if defined(__APPLE__)
+/* Darwin (macOS and iOS alike) does not ship pthread_barrier_t. A mutex/condvar generation barrier has
  * the same contract: every caller blocks until the last arrival releases the
  * generation, and exactly one caller returns 1. */
 typedef struct {
