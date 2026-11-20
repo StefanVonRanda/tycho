@@ -60,4 +60,4 @@ pipe_write=true
 pipe_read=true
 pipe_bad_read=true
 pipe_bad_write=true
-platform=linux
+platform_matches_host=true

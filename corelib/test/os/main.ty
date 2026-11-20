@@ -311,15 +311,16 @@ fn main():
     println("pipe_bad_read=" + str(bad_value(os.read_fd(-1, 8))))
     println("pipe_bad_write=" + str(bad_int(os.write_fd(-1, to_bytes("x")))))
 
-    if os.platform() == os.Linux:
-        println("platform=linux")
-    elif os.platform() == os.Windows:
-        println("platform=windows")
-    elif os.platform() == os.MacOS:
-        println("platform=macos")
-    elif os.platform() == os.Android:
-        println("platform=android")
-    elif os.platform() == os.IOS:
-        println("platform=ios")
+    # platform() is checked against the HOST rather than a golden constant, so
+    # one golden serves Linux and macOS: on POSIX `uname -s` names the kernel,
+    # and a native Windows build (no /bin/sh) must report Windows.
+    want := os.Other
+    if posix:
+        u := strings.trim(os.exec_out(["/bin/sh", "-c", "uname -s"]).out)
+        if u == "Linux":
+            want = os.Linux
+        elif u == "Darwin":
+            want = os.MacOS
     else:
-        println("platform=other")
+        want = os.Windows
+    println("platform_matches_host=" + str(os.platform() == want and want != os.Other))
