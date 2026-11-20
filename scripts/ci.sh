@@ -528,6 +528,9 @@ if [ "$LANE" = rest ]; then
 step "[10/13] bench-guard  (tree-alloc wall: tycho must beat C -- perf regression gate)"
 sh bench/guard.sh
 
+step "[10a/13] make bench-ab  (interleaved A/B vs BASE, default HEAD~1 or HEAD if dirty: no bench >5% slower beyond its own noise)"
+make -s bench-ab
+
 step "[11/13] make recursion  (deep input fails closed -- no stack-overflow DoS)"
 make -s recursion
 

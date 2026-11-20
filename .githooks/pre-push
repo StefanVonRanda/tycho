@@ -150,6 +150,17 @@ if printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" { found = 1 } END { 
     # packed-struct traps emitted with no oracle entry, across 9 clean pushes.
     gate "make rtparity (emitted runtime surface vs the oracle)" rtparity
     gate "make fuzz-quick (20-seed soundness smoke)"     fuzz-quick
+    # ~45s (+~35s once per new base, cached), so only when codegen or the runtime moved.
+    BASE_SHA="$(printf '%s\n' "$REFS" | awk '$3 != "refs/heads/gh-pages" && $2 !~ /^0+$/ { print $4; exit }')"
+    if [ -n "$BASE_SHA" ] && printf '%s' "$BASE_SHA" | grep -q '^0*$'; then
+        printf 'pre-push: bench-ab ... skipped (new branch: no remote sha to compare against)\n'
+    elif [ -n "$BASE_SHA" ] && ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+        printf 'pre-push: bench-ab ... skipped (remote sha %s is not in this clone; fetch first)\n' "$BASE_SHA"
+    elif [ -n "$BASE_SHA" ] && ! git diff --quiet "$BASE_SHA" "$PUSH_SHA" -- compiler/emit runtime; then
+        gate "make bench-ab (codegen perf, A/B vs the remote sha)" bench-ab BASE="$BASE_SHA"
+    elif [ -n "$BASE_SHA" ]; then
+        printf 'pre-push: bench-ab ... skipped (no compiler/emit/ or runtime/ change)\n'
+    fi
 fi
 
 rm -f "$LOG"
