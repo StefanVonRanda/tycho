@@ -5,6 +5,9 @@
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 600        /* posix_openpt / ptsname */
 #endif
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE         /* _XOPEN_SOURCE hides cfmakeraw on Darwin */
+#endif
 #endif
 #include <stdlib.h>
 #include <stdint.h>
