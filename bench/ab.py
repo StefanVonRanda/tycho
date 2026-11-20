@@ -2,7 +2,7 @@
 # make bench-ab: interleaved A/B of ./tychoc1 against a BASE compiler on this machine.
 # BASE=<rev> (default HEAD if the tree is dirty, else HEAD~1), built once in a git
 # worktree and cached as build/ab/<sha>/. NEW_TYCHOC=/BASE_TYCHOC= compare two
-# prebuilt compilers. RUNS= pairs (default 5, min 3). FAIL: median NEW/BASE > 1.05 AND
+# prebuilt compilers. RUNS= pairs (default 7, min 3). FAIL: median NEW/BASE > 1.05 AND
 # 2nd-fastest NEW / 2nd-slowest BASE > 1.05 too: the slowdown beats the noise even
 # with one outlier allowed on each side.
 import os, shutil, statistics, subprocess as sp, sys, tempfile, time
@@ -14,7 +14,7 @@ BENCHES = ["prongB/arr_pipeline", "prongB/iter_transform", "prongB/dispatch",
            "window/window_int", "dijkstra/dijkstra", "winagg/winagg_count",
            "invindex/invindex_exact", "conc/mandelbrot", "lru/lru", "gcscan/gcscan",
            "latency/latency", "interp/interp", "conc/parreduce"]
-RUNS = int(os.environ.get("RUNS", "5"))
+RUNS = int(os.environ.get("RUNS", "7"))
 git = lambda *a: sp.run(["git", "-C", str(ROOT), *a], check=True,
                         capture_output=True, text=True).stdout.strip()
 
