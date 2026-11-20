@@ -1078,7 +1078,7 @@ fn _alias_check(cs: inout C, name: string, s: FSig, args: [ast.Expr], line: int)
         # ... and a `&` NESTED in another argument, as in `add(&t.xs, grow(&t))`:
         # the outer place is resolved before `grow` may reallocate under it.
         for j := 0; j < len(args); j += 1:
-            if j != i and _place_indexed(args[i]) and not (args[j] is ast.Addr) and _addr_in(args[j], r):
+            if j != i and place_indexed(args[i]) and not (args[j] is ast.Addr) and _addr_in(args[j], r):
                 cs.line = line
                 _cerr(&cs, "variable '" + r + "' is passed to an inout parameter of '" + name + "' while another argument passes '&" + r + "' to an inout parameter (overlapping mutable access -- evaluate that argument into a local first)")
                 return
@@ -1120,10 +1120,10 @@ fn _place_root(e: ast.Expr) -> string:
 # pointer into `t.rows`' buffer, which an inout callee may reallocate; a
 # field-only path like `cs.marks` resolves inside the variable itself, which
 # does not move, so it is not checked.
-fn _place_indexed(e: ast.Expr) -> bool:
+fn place_indexed(e: ast.Expr) -> bool:
     match e:
-        ast.Addr(l, k): return _place_indexed(k[0])
-        ast.Field(l, k, f): return _place_indexed(k[0])
+        ast.Addr(l, k): return place_indexed(k[0])
+        ast.Field(l, k, f): return place_indexed(k[0])
         ast.Index(l, k): return true
         _: return false
     return false
@@ -1144,7 +1144,7 @@ fn _mut_builtin_alias(cs: inout C, n: string, args: [ast.Expr], line: int):
     if not (n == "push" or n == "reserve") or len(args) < 2:
         return
     r := _place_root(args[0])
-    if len(r) == 0 or not _place_indexed(args[0]):
+    if len(r) == 0 or not place_indexed(args[0]):
         return
     for j := 1; j < len(args); j += 1:
         if _addr_in(args[j], r):

@@ -1,0 +1,46 @@
+# docs/spec/07-memory-model.md §11.2: a place that steps through an index
+# (`t.rows[0].xs`) resolves to a pointer into t.rows' buffer, and C evaluates
+# call arguments in no fixed order. The emitter evaluates every non-trivial
+# sibling argument into a temporary BEFORE taking that address, so the address
+# is computed on the final storage. (A sibling that mutates the SAME root is
+# refused by the checker; this pins that the hoisted C is right for push,
+# reserve and an inout argument, over int, string, struct and Option elements,
+# with siblings that pop another container or read this one.)
+struct Row:
+    xs: [int]
+    ss: [string]
+    ps: [Row2]
+    os: [Option(int)]
+    n: int
+struct Row2:
+    a: int
+struct T:
+    rows: [Row]
+
+fn add(xs: inout [int], v: int):
+    push(xs, v)
+
+fn mk(n: int) -> Row:
+    return Row([]int, []string, []Row2, []Option(int), n)
+
+fn nothing() -> Option(int):
+    return None
+
+fn name(n: int) -> string:
+    return "s" + str(n)
+
+fn main():
+    t := T([]Row)
+    u := T([]Row)
+    for i := 0; i < 6; i += 1:
+        push(u.rows, mk(i * 10))
+    push(t.rows, mk(0))
+    push(t.rows[0].xs, pop(u.rows).n)
+    add(&t.rows[0].xs, pop(u.rows).n)
+    reserve(t.rows[0].xs, pop(u.rows).n)
+    push(t.rows[0].ss, name(pop(u.rows).n))
+    push(t.rows[0].ps, Row2(pop(u.rows).n))
+    push(t.rows[0].os, nothing())
+    push(t.rows[0].xs, len(t.rows[0].xs) + len(t.rows))
+    r := t.rows[0]
+    println(str(len(u.rows)) + " " + str(r.xs[0]) + " " + str(r.xs[1]) + " " + str(r.xs[2]) + " " + r.ss[0] + " " + str(r.ps[0].a) + " " + str(len(r.os)))

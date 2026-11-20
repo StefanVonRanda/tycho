@@ -424,6 +424,11 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
         packed_pre := ""
         packed_post := ""
         packed_any := false
+        # the first inout place that steps through an index, for _hoist_arg
+        ixp := -1
+        for i := 0; i < np and ixp < 0; i += 1:
+            if cs.fds[fi].pinout[i] and types.place_indexed(args[i]):
+                ixp = i
         for i := 0; i < np; i += 1:
             pt := cs.fds[fi].ptypes[i]
             if cs.fds[fi].pvar and i == np - 1:
@@ -486,6 +491,9 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
                 ac = "tycho_str_cstr(" + cs.arena + ", " + ac + ")"
             if pt == "float" and at == "int":
                 ac = "(double)(" + ac + ")"
+            if ixp >= 0:
+                ac = _hoist_arg(&cs, args[ixp], args[i], ac, &packed_pre)
+                packed_any = packed_any or len(packed_pre) > 0
             # An extern's `bytes` PARAMETER crosses as two C arguments -- the
             # data pointer and its length -- exactly as a `bytes` RETURN crosses
             # as two out-parameters. Passing it as one `char *` put the NEXT
@@ -945,6 +953,25 @@ fn _target(cs: inout C, e: ast.Expr) -> (string, string):
         return _lvalue(&cs, e)
     return _ex(&cs, e)
 
+# §11.2 at run time. A place that steps through an index resolves to a pointer
+# into its container's buffer, and C evaluates call arguments in no fixed
+# order, so `push(t.rows[0].xs, f())` could take that address before f() grows
+# or pops `t.rows`. A sibling argument that is not a literal or a plain local
+# is evaluated into a temporary first: `pre` gathers the declarations, which
+# the caller places ahead of the call.
+fn _hoist_arg(cs: inout C, place: ast.Expr, e: ast.Expr, c: string, pre: inout string) -> string:
+    if not types.place_indexed(place) or _simple_ex(e):
+        return c
+    h := _fresh(&cs, "_ha")
+    pre = pre + "__typeof__(" + c + ") " + h + " = " + c + "; "
+    return h
+
+# A call whose sibling arguments _hoist_arg moved ahead of it.
+fn _with_pre(pre: string, c: string) -> string:
+    if len(pre) == 0:
+        return c
+    return "({ " + pre + c + "; })"
+
 fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
     if n == "str" and len(args) == 1:
         c, t := _ex(&cs, args[0])
@@ -1010,14 +1037,16 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             vc, vt = _ex(&cs, args[1])
             cs.arena = sav3
         cs.want = swp
+        hp := ""
+        vc = _hoist_arg(&cs, args[0], args[1], vc, &hp)
         if strings.starts_with(rt, "?A"):
             pi := strings.parse_int_prefix(rt[2:])
             rt = "[" + vt + "]"
             cs.ptv[pi] = rt
             _vset(&cs, _rootname(args[0]), rt)
         if _is_soa(rt):
-            return (_spfx(&cs, rt) + "_push(" + _ownerof(&cs, args[0]) + ", &(" + rc +
-                "), " + vc + ")", "void")
+            return (_with_pre(hp, _spfx(&cs, rt) + "_push(" + _ownerof(&cs, args[0]) + ", &(" + rc +
+                "), " + vc + ")"), "void")
         if not _is_arr(rt):
             _bad("push() on a non-array")
         cap9 := _cap_of_target(&cs, args[0])
@@ -1030,9 +1059,9 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             # a bare `vc` used twice would re-run a to_bytes(packed) statement
             # expression (and its allocation).
             pb := _fresh(&cs, "_pb")
-            return ("(__extension__ ({ char *" + pb + " = " + vc + "; " +
+            return (_with_pre(hp, "(__extension__ ({ char *" + pb + " = " + vc + "; " +
                 _u(&cs, "tycho_arr_int_append_bytes") + "(" + ow + ", &(" + rc + "), " + pb +
-                ", tycho_str_len(" + pb + ")); }))", "void")
+                ", tycho_str_len(" + pb + ")); }))"), "void")
         mv := _canmove_push(&cs, args[0], args[1], et)
         # A CONSTRUCTED value needs the copy as much as a place does: its
         # interior strings/arrays were allocated in the caller's temporary
@@ -1093,16 +1122,16 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             apt9 := _ctyz(&cs, rt) + " *"
             mb9 := _vcname(&cs, _rootname(args[0]))
             cond9 := "(" + mb9 + ").len < 8192 && _mapv->len == 0"
-            return ("({ " + apt9 + "_mapv = &(" + rc + "); if (" + cond9 + ") " +
+            return (_with_pre(hp, "({ " + apt9 + "_mapv = &(" + rc + "); if (" + cond9 + ") " +
                 _arrf(&cs, et, "_reserve") + "(" + ow + ", _mapv, 768); " +
-                pfn + "(" + ow + ", _mapv, " + vc + "); })", "void")
+                pfn + "(" + ow + ", _mapv, " + vc + "); })"), "void")
         if cap9 > 0:
             # the capacity trap: a bounded array refuses the push that would
             # exceed its declared N (src/tychoc.c's per-capacity push helper)
             pc9 = "({ if ((" + rc + ").len >= " + str(cap9) + "LL) { " +
                 "fprintf(stderr, \"tycho: push to a full bounded[" + str(cap9) + "]\\n\"); TYCHO_EXIT(); } " +
                 pc9 + "; })"
-        return (pc9, "void")
+        return (_with_pre(hp, pc9), "void")
     if n == "pop" and len(args) == 1:
         rc, rt := _target(&cs, args[0])
         if _is_soa(rt):
@@ -1120,12 +1149,14 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
     if n == "reserve" and len(args) == 2:
         rc, rt := _target(&cs, args[0])
         vc, vt := _ex(&cs, args[1])
+        hp := ""
+        vc = _hoist_arg(&cs, args[0], args[1], vc, &hp)
         ow2 := _ownerof(&cs, args[0])
         if _is_map(rt):
-            return (_mpfx(&cs, rt) + "_reserve(" + ow2 + ", &(" + rc + "), " + vc + ")", "void")
+            return (_with_pre(hp, _mpfx(&cs, rt) + "_reserve(" + ow2 + ", &(" + rc + "), " + vc + ")"), "void")
         if not _is_arr(rt):
             _bad("reserve() on a non-array")
-        return (_arrf(&cs, _elem(rt), "_reserve") + "(" + ow2 + ", &(" + rc + "), " + vc + ")", "void")
+        return (_with_pre(hp, _arrf(&cs, _elem(rt), "_reserve") + "(" + ow2 + ", &(" + rc + "), " + vc + ")"), "void")
     if n == "chr" and len(args) == 1:
         c, t := _ex(&cs, args[0])
         return ("tycho_chr(" + cs.arena + ", " + c + ")", "string")
