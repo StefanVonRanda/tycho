@@ -1,5 +1,6 @@
 package main
 import "core:xz"
+import "core:strings"
 
 fn main():
     original := to_bytes("hello xz\n")
@@ -36,3 +37,22 @@ fn main():
         Err(xz.Corrupt): println("bad=Corrupt")
         Err(xz.Truncated): println("bad=Truncated")
         Err(_): println("bad=Other")
+
+    # a PREFIX of a valid stream is Truncated on every liblzma release --
+    # cut inside the blocks, and cut inside the 12-byte stream header.
+    for cut in [40, 4]:
+        match xz.decompress(fixed[0:cut]):
+            Ok(_): println("cut" + str(cut) + "=Ok")
+            Err(xz.Truncated): println("cut" + str(cut) + "=Truncated")
+            Err(xz.Corrupt): println("cut" + str(cut) + "=Corrupt")
+            Err(_): println("cut" + str(cut) + "=Other")
+
+    # output far past the initial buffer guess (4x input) grows the buffer.
+    big := strings.repeat("a", 200000)
+    match xz.compress(to_bytes(big)):
+        Ok(c):
+            match xz.decompress(c):
+                Ok(d): println("big=" + str(to_str(d) == big))
+                Err(_): println("big=err")
+        Err(_):
+            println("big=compress-err")

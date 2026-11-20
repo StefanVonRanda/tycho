@@ -3,4 +3,7 @@ roundtrip=true
 empty=true
 fixed=[hello xz
 ]
-bad=Truncated
+bad=Corrupt
+cut40=Truncated
+cut4=Truncated
+big=true

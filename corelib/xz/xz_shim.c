@@ -43,59 +43,62 @@ void xzx_compress(const unsigned char *data, tycho_int len,
     *status = XZ_OK;
 }
 
+/* Classification is ours, not liblzma's: lzma_stream_buffer_decode reports a
+ * truncated stream as LZMA_BUF_ERROR on some liblzma releases and as
+ * LZMA_DATA_ERROR on others (5.8 does the latter), so the same input came back
+ * Truncated on one host and Corrupt on another. The streaming decoder under
+ * LZMA_FINISH is stable: input that ends early is LZMA_BUF_ERROR with all input
+ * consumed. Input too short for the 12-byte header can only be told apart by
+ * its magic prefix -- a mismatch is Corrupt, a match is Truncated. */
 void xzx_decompress(const unsigned char *data, tycho_int len,
                     tycho_int *status, unsigned char **out, tycho_int *outlen) {
+    static const unsigned char magic[6] = {0xFD, '7', 'z', 'X', 'Z', 0x00};
     *out = NULL;
     *outlen = 0;
     *status = XZ_FAILED;
     if (len < 0) return;
     size_t in_len = (size_t)len;
+    if (in_len && memcmp(data, magic, in_len < 6 ? in_len : 6) != 0) {
+        *status = XZ_CORRUPT;
+        return;
+    }
     size_t limit = XZ_MAX_OUT;
     size_t cap = in_len && in_len <= ((size_t)-1 - 64) / 4 ? in_len * 4 + 64 : limit;
     if (cap < 1024) cap = 1024;
     if (cap > limit) cap = limit;
+    unsigned char *buf = (unsigned char *)malloc(cap);
+    if (!buf) return;
+    lzma_stream s = LZMA_STREAM_INIT;
+    if (lzma_stream_decoder(&s, UINT64_MAX, 0) != LZMA_OK) { free(buf); return; }
+    s.next_in = data;
+    s.avail_in = in_len;
+    s.next_out = buf;
+    s.avail_out = cap;
+    tycho_int st = XZ_FAILED;
     for (;;) {
-        unsigned char *buf = (unsigned char *)malloc(cap);
-        if (!buf) return;
-        uint64_t memlimit = UINT64_MAX;
-        size_t in_pos = 0;
-        size_t out_pos = 0;
-        lzma_ret r = lzma_stream_buffer_decode(&memlimit, 0, NULL,
-                                               data, &in_pos, in_len,
-                                               buf, &out_pos, cap);
-        if (r == LZMA_OK) {
-            *out = buf;
-            *outlen = (tycho_int)out_pos;
-            *status = XZ_OK;
-            return;
+        lzma_ret r = lzma_code(&s, LZMA_FINISH);
+        if (r == LZMA_STREAM_END) { st = XZ_OK; break; }
+        if ((r == LZMA_OK || r == LZMA_BUF_ERROR) && s.avail_out == 0) {
+            if (cap >= limit) { st = XZ_TOOBIG; break; }
+            size_t next = cap > limit / 2 ? limit : cap * 2;
+            unsigned char *nb = (unsigned char *)realloc(buf, next);
+            if (!nb) { st = XZ_FAILED; break; }
+            buf = nb;
+            s.next_out = buf + cap;
+            s.avail_out = next - cap;
+            cap = next;
+            continue;
         }
-        free(buf);
-        if (r == LZMA_FORMAT_ERROR || r == LZMA_DATA_ERROR || r == LZMA_OPTIONS_ERROR) {
-            *status = XZ_CORRUPT;
-            return;
-        }
-        if (r == LZMA_MEM_ERROR || r == LZMA_MEMLIMIT_ERROR) {
-            *status = XZ_FAILED;
-            return;
-        }
-        if (r == LZMA_BUF_ERROR) {
-            if (out_pos >= cap) {
-                if (cap >= limit) {
-                    *status = XZ_TOOBIG;
-                    return;
-                }
-                size_t next = cap > limit / 2 ? limit : cap * 2;
-                if (next <= cap) {
-                    *status = XZ_TOOBIG;
-                    return;
-                }
-                cap = next;
-                continue;
-            }
-            *status = XZ_TRUNCATED;
-            return;
-        }
-        *status = XZ_FAILED;
-        return;
+        if (r == LZMA_OK) continue;
+        if (r == LZMA_BUF_ERROR) st = XZ_TRUNCATED;
+        else if (r == LZMA_FORMAT_ERROR || r == LZMA_DATA_ERROR || r == LZMA_OPTIONS_ERROR) st = XZ_CORRUPT;
+        else st = XZ_FAILED;
+        break;
     }
+    size_t produced = cap - s.avail_out;
+    lzma_end(&s);
+    if (st != XZ_OK) { free(buf); *status = st; return; }
+    *out = buf;
+    *outlen = (tycho_int)produced;
+    *status = XZ_OK;
 }
