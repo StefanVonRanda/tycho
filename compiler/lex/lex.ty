@@ -698,6 +698,13 @@ fn _at_eol(src: string, p: int, n: int) -> bool:
         return true
     return src[p] == 13 and (p + 1 >= n or src[p + 1] == 10)
 
+# Spec §3.1: a file holding a NUL byte anywhere is rejected. Code and string
+# literals already refuse one; a comment skipped to end of line did not.
+fn _comment_nul(file: string, src: string, cs: int, ce: int, line: int, osrc: string, oline: int):
+    for i := cs; i < ce; i += 1:
+        if src[i] == 0:
+            _die_in(file, src, line, "raw NUL byte in comment (a source file must not contain a NUL byte)", osrc, oline)
+
 fn tokenize_named(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote]):
     return tokenize_named_in(src, keep_trivia, file, "", 0)
 
@@ -752,6 +759,7 @@ fn tokenize_named_in(src: string, keep_trivia: bool, file: string, osrc: string,
             cs := p
             for p < n and src[p] != 10:
                 p += 1
+            _comment_nul(file, src, cs, p, line, osrc, oline)
             if p > cs:
                 dn := dnote_of(src, cs, p)
                 if len(dn) > 0:
@@ -962,6 +970,7 @@ fn tokenize_named_in(src: string, keep_trivia: bool, file: string, osrc: string,
             cs := p
             for p < n and src[p] != 10:
                 p += 1
+            _comment_nul(file, src, cs, p, line, osrc, oline)
             if keep_trivia:
                 push(toks, _tk(keep_trivia, K_COMMENT, src[cs:p], line, cs - ls + 1, src[cs:p]))
         # A comment tail is not a token, so it must not defeat the trailing-

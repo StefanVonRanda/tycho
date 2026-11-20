@@ -1,0 +1,2 @@
+tests/diag/comment_nul.ty:3: error: raw NUL byte in comment (a source file must not contain a NUL byte)
+     3 |     x := 1   # trailing 
