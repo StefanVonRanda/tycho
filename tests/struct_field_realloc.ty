@@ -1,0 +1,112 @@
+# Resolving a struct field can instantiate a generic struct, which pushes onto
+# the emitter's struct table and may move it. The field type used to be pushed
+# into the OLD storage, so the struct silently lost that field and its
+# constructor was refused ("struct K.. takes 1 field(s)"); bench/flat-state
+# hit it. Three instances per struct, nested, cross a growth boundary of it.
+
+struct Box($T):
+    v: T
+
+struct Tag0:
+    v: int
+
+struct K0:
+    b: Box(Tag0)
+    c: Box(Box(Box(Tag0)))
+    a: int
+
+struct Tag1:
+    v: int
+
+struct K1:
+    b: Box(Tag1)
+    c: Box(Box(Box(Tag1)))
+    a: int
+
+struct Tag2:
+    v: int
+
+struct K2:
+    b: Box(Tag2)
+    c: Box(Box(Box(Tag2)))
+    a: int
+
+struct Tag3:
+    v: int
+
+struct K3:
+    b: Box(Tag3)
+    c: Box(Box(Box(Tag3)))
+    a: int
+
+struct Tag4:
+    v: int
+
+struct K4:
+    b: Box(Tag4)
+    c: Box(Box(Box(Tag4)))
+    a: int
+
+struct Tag5:
+    v: int
+
+struct K5:
+    b: Box(Tag5)
+    c: Box(Box(Box(Tag5)))
+    a: int
+
+struct Tag6:
+    v: int
+
+struct K6:
+    b: Box(Tag6)
+    c: Box(Box(Box(Tag6)))
+    a: int
+
+struct Tag7:
+    v: int
+
+struct K7:
+    b: Box(Tag7)
+    c: Box(Box(Box(Tag7)))
+    a: int
+
+struct Tag8:
+    v: int
+
+struct K8:
+    b: Box(Tag8)
+    c: Box(Box(Box(Tag8)))
+    a: int
+
+struct Tag9:
+    v: int
+
+struct K9:
+    b: Box(Tag9)
+    c: Box(Box(Box(Tag9)))
+    a: int
+
+fn main():
+    s := 0
+    k0 := K0(Box(Tag0(0)), Box(Box(Box(Tag0(1)))), 1)
+    s += k0.b.v.v + k0.c.v.v.v.v + k0.a
+    k1 := K1(Box(Tag1(1)), Box(Box(Box(Tag1(1)))), 1)
+    s += k1.b.v.v + k1.c.v.v.v.v + k1.a
+    k2 := K2(Box(Tag2(2)), Box(Box(Box(Tag2(1)))), 1)
+    s += k2.b.v.v + k2.c.v.v.v.v + k2.a
+    k3 := K3(Box(Tag3(3)), Box(Box(Box(Tag3(1)))), 1)
+    s += k3.b.v.v + k3.c.v.v.v.v + k3.a
+    k4 := K4(Box(Tag4(4)), Box(Box(Box(Tag4(1)))), 1)
+    s += k4.b.v.v + k4.c.v.v.v.v + k4.a
+    k5 := K5(Box(Tag5(5)), Box(Box(Box(Tag5(1)))), 1)
+    s += k5.b.v.v + k5.c.v.v.v.v + k5.a
+    k6 := K6(Box(Tag6(6)), Box(Box(Box(Tag6(1)))), 1)
+    s += k6.b.v.v + k6.c.v.v.v.v + k6.a
+    k7 := K7(Box(Tag7(7)), Box(Box(Box(Tag7(1)))), 1)
+    s += k7.b.v.v + k7.c.v.v.v.v + k7.a
+    k8 := K8(Box(Tag8(8)), Box(Box(Box(Tag8(1)))), 1)
+    s += k8.b.v.v + k8.c.v.v.v.v + k8.a
+    k9 := K9(Box(Tag9(9)), Box(Box(Box(Tag9(1)))), 1)
+    s += k9.b.v.v + k9.c.v.v.v.v + k9.a
+    println(str(s))

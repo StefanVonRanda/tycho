@@ -404,9 +404,11 @@ fn _inst_struct(cs: inout C, n: string, targs: [string]) -> string:
     save := cs.cf
     cs.cf = cs.gsf[gi]
     for f in cs.gs[gi].fields:
+        ft := _ty(&cs, f.ty)               # may instantiate, moving cs.sds -- see _collect2
+        fc := _capof(&cs, f.ty)
         push(cs.sds[si].fnames, f.name)
-        push(cs.sds[si].ftypes, _ty(&cs, f.ty))
-        push(cs.sds[si].fcaps, _capof(&cs, f.ty))
+        push(cs.sds[si].ftypes, ft)
+        push(cs.sds[si].fcaps, fc)
     cs.cf = save
     _unbind(&cs, m)
     return "S~" + mang

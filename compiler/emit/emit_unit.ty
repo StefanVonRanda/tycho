@@ -64,9 +64,13 @@ fn _collect2(cs: inout C, u: ast.Unit):
             continue
         si := _sidx(&cs, u.structs[i].name)
         for f in u.structs[i].fields:
+            # _ty may instantiate a generic struct, which pushes onto cs.sds
+            # and can move it -- so resolve first, then index cs.sds[si].
+            ft := _ty(&cs, f.ty)
+            fc := _capof(&cs, f.ty)
             push(cs.sds[si].fnames, f.name)
-            push(cs.sds[si].ftypes, _ty(&cs, f.ty))
-            push(cs.sds[si].fcaps, _capof(&cs, f.ty))
+            push(cs.sds[si].ftypes, ft)
+            push(cs.sds[si].fcaps, fc)
     for i := 0; i < len(u.enums); i += 1:
         if len(u.enums[i].typarams) > 0:
             continue
