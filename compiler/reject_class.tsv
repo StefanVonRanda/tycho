@@ -446,6 +446,15 @@ tests/reject/parallel_for_assign_unknown.ty	NAME	8922	assignment to unknown vari
 tests/reject/parallel_for_not_zero.ty	SYNTAX	4615	`parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound
 tests/reject/parallel_not_for.ty	SYNTAX	4504	expected 'for' after 'parallel'
 tests/reject/param_shadow.ty	NAME	9965	'x' is already declared in this scope
+tests/reject/param_write_compound.ty	SEMANTIC	8022	cannot mutate parameter 'xs' (it is borrowed read-only; copy it with `y := xs` first)
+tests/reject/param_write_delete.ty	SEMANTIC	8022	cannot mutate parameter 'm' (it is borrowed read-only; copy it with `y := m` first)
+tests/reject/param_write_field.ty	SEMANTIC	8022	cannot mutate parameter 'g' (it is borrowed read-only; copy it with `y := g` first)
+tests/reject/param_write_index.ty	SEMANTIC	8022	cannot mutate parameter 'xs' (it is borrowed read-only; copy it with `y := xs` first)
+tests/reject/param_write_inout_field.ty	SEMANTIC	8183	cannot pass borrowed parameter 'g' as inout (it is read-only; copy it first)
+tests/reject/param_write_map.ty	SEMANTIC	8022	cannot mutate parameter 'm' (it is borrowed read-only; copy it with `y := m` first)
+tests/reject/param_write_nested.ty	SEMANTIC	8022	cannot mutate parameter 'g' (it is borrowed read-only; copy it with `y := g` first)
+tests/reject/param_write_push_field.ty	SEMANTIC	8022	cannot mutate parameter 'g' (it is borrowed read-only; copy it with `y := g` first)
+tests/reject/param_write_subscript.ty	SEMANTIC	8022	cannot mutate parameter 'g' (it is borrowed read-only; copy it with `y := g` first)
 tests/reject/params_17.ty	TYPE	10400	too many parameters (max 16)
 tests/reject/parfor_acc_limit.ty	SEMANTIC	8934	parallel for supports at most 4 reduction accumulators
 tests/reject/parfor_acc_op_mixed.ty	SEMANTIC	8939	accumulator 't' must use one reduction op consistently

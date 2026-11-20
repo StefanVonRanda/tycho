@@ -166,6 +166,8 @@ struct C:
     tbind: [string: string]            # $T -> the type it is BOUND to at this
                                        # instantiation; empty outside one
     subs: [string: bool]               # declared `subscript` names -- the only callable place
+    subro: [string: int]               # ... the param its place is rooted in, *2, +1 if it crosses shared storage
+    subrt: [string: string]            # ... and the type it yields
     vars: [VBind]
     nvars: int
     errs: [string]
@@ -2319,6 +2321,10 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
                     ri := _root_name(ast.kids(args[i])[0])
                     if _ro_param(&cs, ri):
                         _cerr(&cs, "cannot pass borrowed parameter '" + ri + "' as inout (it is read-only; copy it first)")
+                    else:
+                        rw := _ro_write(&cs, ast.kids(args[i])[0], true)
+                        if len(rw) > 0:
+                            _cerr(&cs, "cannot pass borrowed parameter '" + rw + "' as inout (it is read-only; copy it first)")
             elif args[i] is ast.Addr:
                 _cerr(&cs, "argument " + str(i + 1) + " of '" + name + "' is not inout; remove the '&'")
             # is_null asks whether an opener FAILED, so it takes a handle as well
@@ -2825,6 +2831,10 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         if _ro_param(&cs, rn):
             _cerr(&cs, "cannot mutate parameter '" + rn + "' (it is borrowed read-only; copy it with `y := " + rn + "` first)")
             return "void"
+        rw := _ro_write(&cs, args[0], true)
+        if len(rw) > 0:
+            _ro_write_err(&cs, rw)
+            return "void"
         el := _elem_of(&cs, b0)
         _nest_aff_e(&cs, ats[1])
         # push([int], bytes): append each byte as an element, in order. Bulk
@@ -2853,6 +2863,10 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         if _ro_param(&cs, rp):
             _cerr(&cs, "cannot mutate parameter '" + rp + "' (it is borrowed read-only; copy it with `y := " + rp + "` first)")
             return "?"
+        rw := _ro_write(&cs, args[0], true)
+        if len(rw) > 0:
+            _ro_write_err(&cs, rw)
+            return "?"
         return _elem_of(&cs, b0)
     if n == "reserve":
         if not _arity(&cs, n, args, 2, "reserve(arr, n) takes two arguments"):
@@ -2872,6 +2886,10 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         rr := _root_name(args[0])
         if _ro_param(&cs, rr):
             _cerr(&cs, "cannot mutate parameter '" + rr + "' (it is borrowed read-only)")
+            return "void"
+        rw := _ro_write(&cs, args[0], true)
+        if len(rw) > 0:
+            _ro_write_err(&cs, rw)
             return "void"
         if known(ats[1]) and not compat("int", ats[1]):
             _cerr(&cs, "reserve's capacity must be int")
@@ -3580,6 +3598,75 @@ fn _ro_param(cs: inout C, n: string) -> bool:
     t := _vtype(&cs, n)
     return _is_arr(t) or _head(t) == "map" or _head(t) == "soa"
 
+# A parameter that is neither `inout` nor `sink`, of any type.
+fn _ro_root(cs: inout C, n: string) -> bool:
+    if len(n) == 0 or not (n in cs.parms) or (n in cs.sinkp):
+        return false
+    si := _sigidx(&cs, cs.symfnm)
+    if si < 0:
+        return false
+    for i := 0; i < len(cs.sg[si].pnames); i += 1:
+        if cs.sg[si].pnames[i] == n and cs.sg[si].pflags[i] == "inout":
+            return false
+    return true
+
+# A [T], map or soa: a descriptor whose backing storage a copy SHARES. An inline
+# [N]T / vector / bounded is copied whole, so it is not one.
+fn _shared_store(cs: inout C, t: string) -> bool:
+    h := _head(_base(&cs, t))
+    return h == "arr" or h == "map" or h == "soa"
+
+# (root name, type, crosses shared storage) for a place spine. Pure lookups, not
+# `_ex`: the spine was already checked, and a second `_ex` would count its
+# census notes twice. A type this cannot compute is "?", which fails open.
+fn _ro_spine(cs: inout C, e: ast.Expr) -> (string, string, bool):
+    match e:
+        ast.Name(l, n): return (n, _vtype(&cs, n), false)
+        ast.Field(l, k, f):
+            r, t, c := _ro_spine(&cs, k[0])
+            return (r, _field_ty(&cs, t, f), c or _shared_store(&cs, t))
+        ast.Index(l, k):
+            r, t, c := _ro_spine(&cs, k[0])
+            b := _base(&cs, t)
+            et := _elem_of(&cs, b)
+            if _head(b) == "map":
+                et = _targs(b)[1]
+            return (r, et, c or _shared_store(&cs, t))
+        ast.Call(l, q, n, ts, a):
+            # a subscript is inlined at the call: follow the argument its
+            # yielded place is rooted in, through the steps that place takes
+            if n in cs.subro:
+                full := []ast.Expr
+                if len(q) > 0 and not _is_pkg(&cs, q):
+                    push(full, ast.Name(l, q))
+                for x in a:
+                    push(full, x)
+                code := cs.subro[n]
+                if code / 2 < len(full):
+                    r, t, c := _ro_spine(&cs, full[code / 2])
+                    return (r, cs.subrt[n], c or code % 2 == 1)
+            return ("", "?", false)
+        _: return ("", "?", false)
+    return ("", "?", false)
+
+# §15.2: a heap-bearing parameter is a read-only descriptor over the CALLER's
+# storage, so a write whose spine crosses a [T], map or soa rooted in a
+# parameter that is neither `inout` nor `sink` would change the caller's value.
+# Returns that parameter, or "". `whole` also counts the target itself -- push,
+# pop, reserve and an `&` argument mutate the container they name, where
+# `xs[0] = v` writes into the one beneath. A field-only spine on a by-value
+# struct writes the callee's own copy and is left alone.
+fn _ro_write(cs: inout C, e: ast.Expr, whole: bool) -> string:
+    r, t, c := _ro_spine(&cs, e)
+    if not _ro_root(&cs, r):
+        return ""
+    if c or (whole and _shared_store(&cs, t)):
+        return r
+    return ""
+
+fn _ro_write_err(cs: inout C, r: string):
+    _cerr(&cs, "cannot mutate parameter '" + r + "' (it is borrowed read-only; copy it with `y := " + r + "` first)")
+
 fn _is_zerolit(e: ast.Expr) -> bool:
     match e:
         ast.IntLit(l, v): return v == 0
@@ -3770,6 +3857,10 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                         _cerr(&cs, "can only index-assign an array or map variable or field")
                 _: pass
             pt := _place_ty(&cs, k[0])
+            rw := _ro_write(&cs, k[0], false)
+            if len(rw) > 0:
+                cs.line = l
+                _ro_write_err(&cs, rw)
             _map_compound(&cs, l, k[0], k[1], pt)   # src/tychoc.c:9846
             vt := _ex2(&cs, k[1], pt)
             cs.line = l
@@ -3808,7 +3899,12 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             if cs.loopd == 0:
                 cs.line = l
                 _cerr(&cs, "'continue' outside a loop")
-        ast.DeleteS(l, k): _exs(&cs, k)
+        ast.DeleteS(l, k):
+            _exs(&cs, k)
+            rw := _ro_write(&cs, k[0], false)
+            if len(rw) > 0:
+                cs.line = l
+                _ro_write_err(&cs, rw)
         ast.IfS(l, arms, e):
             for arm in arms:
                 t := _ex(&cs, arm.cond[0])
@@ -4041,6 +4137,16 @@ fn _fill_decls(cs: inout C, p: Program):
                 cs.in_arg = true       # the yielded place is written `&expr`
                 pt2 := _place_ty(&cs, sb.place)
                 cs.in_arg = kia
+                sp := sb.place
+                if sp is ast.Addr:
+                    sp = ast.kids(sp)[0]
+                sr, st, sc := _ro_spine(&cs, sp)
+                for pi := 0; pi < len(sb.params); pi += 1:
+                    if sb.params[pi].name == sr:
+                        cs.subro[sb.name] = pi * 2
+                        if sc:
+                            cs.subro[sb.name] = pi * 2 + 1
+                cs.subrt[sb.name] = rt2
                 _vrestore(&cs, mk2)
                 cs.line = sb.line
                 if known(rt2) and known(pt2) and not compat(rt2, pt2):
@@ -4193,7 +4299,7 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []string: bool, false, 0, []string: [string])
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []string: bool, false, 0, []string: [string])
     cs.symon = syms
     cs.vtgt = tgt
     for f in p.files:

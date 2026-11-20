@@ -1,0 +1,12 @@
+# A heap-bearing parameter is a read-only descriptor over the CALLER's storage
+# (docs/spec/11-functions.md §15.2), so a write that crosses its [T], map or
+# soa would change the caller's value. tychoc1 ACCEPTED this and the caller saw
+# the write, until compiler/types/tcheck.ty@_ro_write covered every place form.
+# expect: cannot mutate parameter 'm' (it is borrowed read-only; copy it with `y := m` first)
+fn f(m: [string: int]):
+    delete m["a"]
+
+fn main():
+    m := ["a": 1, "b": 2]
+    f(m)
+    println(str(len(m)))
