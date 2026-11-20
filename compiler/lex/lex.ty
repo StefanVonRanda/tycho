@@ -398,7 +398,7 @@ fn continues_line(kind: int, tag: int) -> bool:
         return false
     if tag == OP_PLUS or tag == OP_MINUS or tag == OP_STAR or tag == OP_SLASH or tag == OP_PCT:
         return true
-    if tag == OP_PIPE or tag == OP_CARET or tag == OP_SHL or tag == OP_SHR:
+    if tag == OP_AMP or tag == OP_PIPE or tag == OP_CARET or tag == OP_SHL or tag == OP_SHR:
         return true
     if tag == OP_EQ or tag == OP_EQEQ or tag == OP_NE:
         return true

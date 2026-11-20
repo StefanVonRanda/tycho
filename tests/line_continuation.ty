@@ -32,6 +32,14 @@ fn main():
         x * 2
     println(str(y))
 
+    # every binary bitwise operator continues, `&` included: as a prefix
+    # (address-of, `f(&x)`) it needs an operand too, so a trailing `&` is
+    # never a complete line in either reading
+    m := 12 &
+        10 |
+        1
+    println(str(m))
+
     # a line that ends on a VALUE still terminates: these are two statements,
     # not one continued expression
     a := 5
