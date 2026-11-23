@@ -274,6 +274,27 @@ FALLBACK = [
     # V2b array-capable wordings, post-freeze: no frozen C site states them.
     ("to_bytes(x) takes a string, [int], a packed struct", "SEMANTIC"),
     ("only a packed struct or an array of one can be read from bytes", "SEMANTIC"),
+    # Rewordings and new rules from the self-hosted compiler after the archive
+    # freeze: no frozen C site states them, so the message is all there is. Each
+    # reject-corpus class below is the one compiler/reject_class.tsv already
+    # records for that fixture -- rows 6479f4ce and 608a9c6a committed with line
+    # 0 were classified by these entries locally but never landed, and
+    # 2fc0b7e2 reworded neg_unsigned/swizzle_lane_range after its recording, so
+    # site matching misses messages the table already answers. The tests/diag
+    # files have no reject-corpus row; they are SYNTAX because the lexer or
+    # parser refuses them (--parse rc=1, --resolve rc=1, --typecheck rc=1).
+    ("'select' is a reserved keyword", "SYNTAX"),          # parser: the name is reserved
+    ("raw NUL byte in comment", "SYNTAX"),                 # lexer
+    ("there is no inline `a if c else b`", "SYNTAX"),      # parser: no such expression form
+    ("a lambda body is a single expression on the same line", "SYNTAX"),  # parser
+    ("a lambda body is a single expression and is its own result", "SYNTAX"),  # parser
+    ("`range()` was removed", "SYNTAX"),                   # parser: the call form is gone
+    ("must be int/char/float/bool/string/ptr/bytes", "SEMANTIC"),  # extern ABI, needs types
+    ("while another argument passes", "SEMANTIC"),         # alias vs in-place mutation, needs types
+    ("unary `-` needs an int, a float, a signed sized int", "SEMANTIC"),  # operand type
+    ("names lane", "SEMANTIC"),                            # swizzle lane bounds, needs the vector type
+    ("to_float(n) takes an int, a bool", "TYPE"),          # conversion operand type
+    ("to_int(x) takes a float", "TYPE"),                   # conversion operand type
 ]
 
 
