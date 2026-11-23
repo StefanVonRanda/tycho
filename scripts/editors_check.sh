@@ -67,9 +67,10 @@ fi
 
 # The known-bad set is DERIVED from editors/zed/syntax-coverage.tsv, which
 # carries a reason for every SYNTAX-class reject fixture -- both the ones this
-# grammar refuses and the ones it accepts. One list, one source of truth.
+# grammar refuses and the ones it accepts -- plus any other tracked .ty file
+# the grammar cannot parse (CORPUS-REJECTED). One list, one source of truth.
 COV=editors/zed/syntax-coverage.tsv
-grep -v '^#' "$COV" | awk -F'\t' '$2=="REJECTED"{print $1}' | sort > "$TMP/want"
+grep -v '^#' "$COV" | awk -F'\t' '$2=="REJECTED"||$2=="CORPUS-REJECTED"{print $1}' | sort > "$TMP/want"
 
 # npx joins arguments into one shell command: a large corpus can hit E2BIG
 # before tree-sitter starts. Batch it, and require a complete parse count in
@@ -122,7 +123,7 @@ fi
 # cannot join the accepted majority unclassified.
 awk -F'\t' '$2=="SYNTAX"{print $1}' compiler/reject_class.tsv | sort > "$TMP/syn"
 nsyn=$(wc -l < "$TMP/syn" | tr -d ' ')
-grep -v '^#' "$COV" | awk -F'\t' '{print $1}' | sort > "$TMP/cov.paths"
+grep -v '^#' "$COV" | awk -F'\t' '$2!="CORPUS-REJECTED"{print $1}' | sort > "$TMP/cov.paths"
 echo ">>> editors: SYNTAX-reject classification ($nsyn fixtures)"
 if ! diff "$TMP/syn" "$TMP/cov.paths" > "$TMP/cov.diff" 2>&1; then
     echo "    COVERAGE TABLE OUT OF STEP with compiler/reject_class.tsv"
@@ -137,7 +138,11 @@ while IFS="$(printf '\t')" read -r path verdict reason; do
         echo "    NO REASON GIVEN: $path"; nbad=$((nbad+1)); continue
     fi
     if grep -qxF "$path" "$TMP/got"; then measured=REJECTED; else measured=ACCEPTED; fi
-    if [ "$measured" != "$verdict" ]; then
+    case "$verdict" in
+        CORPUS-REJECTED) want=REJECTED ;;
+        *)               want=$verdict ;;
+    esac
+    if [ "$measured" != "$want" ]; then
         echo "    VERDICT MOVED: $path recorded $verdict, grammar now $measured"
         nbad=$((nbad+1))
     fi
@@ -145,8 +150,10 @@ done < "$COV"
 if [ "$nbad" -ne 0 ]; then
     fail=1
 else
-    nrej=$(wc -l < "$TMP/want" | tr -d ' ')
+    nrej=$(grep -v '^#' "$COV" | awk -F'\t' '$2=="REJECTED"' | wc -l | tr -d ' ')
+    ncorp=$(grep -v '^#' "$COV" | awk -F'\t' '$2=="CORPUS-REJECTED"' | wc -l | tr -d ' ')
     echo "    $nsyn classified, each with a reason: $nrej refused by the grammar, $((nsyn - nrej)) accepted (grammar.js has no external scanner and does no name resolution)"
+    [ "$ncorp" -eq 0 ] || echo "    $ncorp other tracked corpus file(s) the grammar cannot parse (CORPUS-REJECTED)"
 fi
 
 # ------------------------------------------- keyword coverage, BOTH integrations

@@ -6,10 +6,15 @@
 # parsing, reddens the lane by name.  A SYNTAX fixture missing from this table
 # also reddens, so a new one cannot join the accepted blob unclassified.
 #
+# CORPUS-REJECTED marks a tracked .ty file outside the SYNTAX set that the
+# grammar still cannot parse (the NUL-byte diagnostic fixture); it joins the
+# corpus's known-bad set, not the classified SYNTAX fixtures.
+#
 # ACCEPTED is not a defect report.  grammar.js is a highlighting grammar: it has
 # no external scanner, so it is whitespace-insensitive, and it does no name
 # resolution, no arity counting and no value-range checking.  Each row says
 # which of those the fixture needs.
+tests/diag/comment_nul.ty	CORPUS-REJECTED	the fixture carries a raw NUL byte inside a comment; tree-sitter reports a parse error, and tychoc rejects it with the lex diagnostic in tests/diag/comment_nul.err
 tests/reject/align_and_packed.ty	ACCEPTED	the packed/align contradiction is a rule of parse_struct; the flat grammar reads both attribute words as tokens and has no notion of them excluding each other
 tests/reject/align_no_count.ty	ACCEPTED	the malformed attribute is refused by parse_struct; the flat grammar reads `align` and the empty parens as an ordinary call
 tests/reject/align_not_pow2.ty	ACCEPTED	the power-of-two rule reads the INT literal's value, which a token-level grammar does not evaluate
@@ -35,7 +40,6 @@ tests/reject/const_shift_negative.ty	ACCEPTED	same as const_div_overflow, reache
 tests/reject/delete_from_call.ty	ACCEPTED	`delete f()["a"]` parses; "the map must be a place" is a rule on the KIND of the receiver
 tests/reject/delete_not_an_index.ty	ACCEPTED	`delete m` parses as a delete of an expression; requiring an index is tychoc's
 tests/reject/destructure_too_many.ty	ACCEPTED	a ceiling (8 destructuring targets); the grammar repeats without counting
-tests/reject/dotlt_sequential.ty	ACCEPTED	`0..<N` is grammatical everywhere; restricting it to a `parallel for` head is a context rule
 tests/reject/dup_field.ty	ACCEPTED	two fields named `x` parse; duplicate detection needs a symbol table
 tests/reject/enum_typaram_max.ty	ACCEPTED	a ceiling (16 type parameters); the grammar repeats without counting
 tests/reject/enum_typaram_not_dollar.ty	ACCEPTED	the grammar takes any type in the parameter list; only `$Name` is legal
