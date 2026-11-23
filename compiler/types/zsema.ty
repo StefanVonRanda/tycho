@@ -853,9 +853,9 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
             _cerr(&cs, "a function cannot return a channel -- create it in the owning scope and pass it down")
             return "?"
         if not vl:
-            _inst_body(&cs, cs.sg[si], b, l, spelt)
+            _inst_body(&cs, cs.sg[si], b, l, spelt, ats)
         return r
-    _inst_body(&cs, cs.sg[si], b, l, spelt)
+    _inst_body(&cs, cs.sg[si], b, l, spelt, ats)
     return "void"
 
 # The template's BODY, checked once per distinct instantiation. Until this ran,
@@ -863,7 +863,7 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
 # is never resolved as written, only its instances are (src/tychoc.c resolves
 # the substituted body at each call). The error names the TEMPLATE's file and
 # line, and a note names the call -- the only line the user can change.
-fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string):
+fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string, ats: [string]):
     if len(s.body) == 0:
         return
     key := s.name
@@ -919,6 +919,12 @@ fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string):
                     if tn9 in b:
                         pt9 = b[tn9]
                 _: pass
+            # Still ungrounded means a DEEPER pattern (`[$T]`), which the encoder
+            # leaves `?`. The call's own argument type is already substituted and
+            # exact, so take it: without this the body's `xs` was `?` and a nested
+            # generic call in the body instantiated at `?` (sort's asc/desc).
+            if not known(pt9) and i < len(ats) and known(ats[i]):
+                pt9 = ats[i]
         if i < len(s.pflags) and s.pflags[i] == "var":
             pt9 = "arr(" + pt9 + ")"   # a variadic parameter IS the array
         _vpush(&cs, s.pnames[i], pt9, false)

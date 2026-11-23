@@ -874,7 +874,13 @@ fn small_array_push(a: inout SmallArray($T), v: $T) -> bool:
 fn small_array_pop(a: inout SmallArray($T)) -> Option($T):
     if len(a.data) == 0:
         return None
-    return Some(pop(a.data))
+    v := a.data[len(a.data) - 1]
+    # A bounded cannot be popped or sliced, so rebuild it one shorter.
+    b: bounded[16]$T = []
+    for i := 0; i < len(a.data) - 1; i += 1:
+        push(b, a.data[i])
+    a.data = b
+    return Some(v)
 
 fn small_array_get(a: SmallArray($T), i: int) -> Option($T):
     if i < 0 or i >= len(a.data):
@@ -888,7 +894,7 @@ fn small_array_set(a: inout SmallArray($T), i: int, v: $T) -> bool:
     return true
 
 fn small_array_clear(a: inout SmallArray($T)):
-    a.data = a.data[0:0]
+    a.data = []
 
 # ---- xar: freelist-backed sparse array ----
 struct Xar($T):
