@@ -675,13 +675,13 @@ the corpus exercises.
 
 ### 127. A probe measured its own transcription error and filed it as a layout defect — **CLOSED 2026-09-22: refuted by measurement**
 
-> Pinned-by: grep -q '__attribute__((packed))' compiler/emit/emit.ty
+> Pinned-by: grep -q '__attribute__((packed))' compiler/emit/*.ty
 > Pinned-by: make test
 
 ### 128. The residue: fourteen findings from 2026-09-21 that nothing has acted on — **FIXED 2026-09-24**
 
 > Pinned-by: grep -q 'The strip also guarantees one class of false finding' docs/internals/probe-procedure.md
-> Pinned-by: grep -q 'Write down which one you used' docs/internals/probe-procedure.md
+> Pinned-by: grep -q 'Write down which model ran' docs/internals/probe-procedure.md
 
 ### 129. Every user's build drew two `-Wunused-value` warnings out of `core:strings` — **FIXED 2026-09-24**
 
