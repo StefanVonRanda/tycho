@@ -7,15 +7,18 @@
 
 # Tycho
 
-**A general-purpose systems language with automatic memory management from
-lexical scope, built around value semantics and data-oriented defaults.** It is
-built for **programs that allocate hard and cannot afford a GC pause** —
-parsers, interpreters, solvers, batch CLIs and long-running services — and its
-value semantics steer data into the flat, index-addressed layouts that
-data-oriented C reaches for on purpose. Every scope owns a memory arena, freed when the scope exits; with no reference type in
-the language, the compiler sees every value's lifetime from the syntax alone and
-inserts every allocation and free itself. No garbage collector, no manual
-`free`, no borrow checker. It transpiles to C and builds with `cc` and `make`.
+**A general-purpose systems language where you write as if memory were managed
+and it runs like hand-placed arenas.** It is memory-safe by construction outside
+FFI: there is no reference type, so a dangling pointer cannot be written. Every
+scope owns a memory arena, freed when the scope exits, and the compiler sees
+every value's lifetime from the syntax alone and inserts every allocation and
+free itself. No garbage collector, no manual `free`, no borrow checker.
+
+The syntax is terse, and the idioms that replace references — pools, flat
+arrays, closed enums — are the flat, index-addressed layouts that data-oriented
+C reaches for on purpose, so the natural way to write Tycho is also the fast
+one. That holds from parsers, interpreters and CLIs to long-running services
+and 3D games. It transpiles to C and builds with `cc` and `make`.
 
 **Not for you if** you need shared-mutable graphs, interface values, or 1.0
 stability — see [what you give up](#what-you-give-up) below and the version
@@ -82,39 +85,42 @@ semantics Go/Odin-like; the value-semantics core comes from
 
 ## What you give up
 
-No reference type, no stored borrows, no interface values.
-[Thinking in Tycho](docs/idioms.md) is what to reach for instead — pools for
-graphs, channels for observers, closed enums for heterogeneity — and each idiom
-is also the faster spelling. The boundary itself, stated plainly so you meet it
-here rather than on page 40:
+Writing as if memory were managed, and getting arena performance for it, has a
+price. Here it is up front rather than on page 40.
 
-**There is no reference type.** That is what makes the demo above work. A
-shared mutable graph, a doubly-linked list, an observer holding a pointer back
-at its subject — none of them can be written in Tycho at all. Not
-"discouraged": inexpressible. If your mental model is C's, the first complex
-data structure you reach for will not compile, and the compiler will look broken
-when it is the model that changed.
+**No reference type.** That is what makes the demo above work, and it is also
+why a shared mutable graph, a doubly-linked list, a scene graph whose children
+point back at their parent, or an observer holding a pointer to its subject
+cannot be written at all. They are not discouraged; there is no way to write
+them. If your mental model is C's, the first complex data structure you reach
+for will not compile, and the compiler will look broken when it is the model
+that changed.
 
-**There is also no interface value.** A trait object is a pointer to someone
-else's value plus a vtable, and the pointer is exactly the aliasing this model
-forbids — so a Go or Java `interface` held in a struct field, and a
-heterogeneous list of implementors, can never exist here. That is a boundary of
-the model, not a feature still to come
-([architecture](docs/architecture.md#decided-non-goals)). Generics cover the
-static half: a generic body type-checks after substitution, so one function
-works over many types — it just cannot hold two different ones at the same time
-under one name.
+**No interface values.** A trait object is a pointer to someone else's value
+plus a vtable, and that pointer is exactly the aliasing the model forbids. A
+Go or Java `interface` in a struct field, or a heterogeneous list of
+implementors, cannot exist here. That is a boundary of the model, not a feature
+still to come ([architecture](docs/architecture.md#decided-non-goals)).
+Generics cover the static half: one function works over many types, but it
+cannot hold two different ones under one name at the same time.
 
-**The idiom that replaces them is a flat node pool.** Hold every node in one
-array; an edge is an integer index into it, not an address — the layout a
-data-oriented C engine reaches for on purpose, made the default.
+**What you write instead** is in [Thinking in Tycho](docs/idioms.md): a flat
+pool for graphs (every node in one array, each edge an integer index into it),
+channels for observers, closed enums for heterogeneity. Each idiom is also the
+faster spelling, the layout a data-oriented C engine reaches for on purpose,
+made the default.
 
-**And it has a measured price.** Value storage costs more peak RAM than C on some rows: a sliding int window **~1.44×**, a
-fixed-capacity LRU **~1.22×**, JSON **~1.14×** ([bench/RESULTS.md](bench/RESULTS.md#relative-peak-rss-at-the-large-size));
-the trie and the graph, in the flat-pool idiom, land at or under C. Arenas also reclaim at
-scope exit, not incrementally, so a long-lived scope holds its transients until
-it returns. The full loss column, a worked pool sample, and the workloads that
-want a different tool are in
+**Memory safety stops at FFI.** `extern fn` calls into C, and C can do anything
+([SECURITY.md](SECURITY.md)). That includes the hand-written C behind corelib
+packages such as `gfx`, `sqlite`, `tls` and `http`.
+
+**It costs some RAM.** Value storage uses more peak memory than C on some rows:
+a sliding int window **~1.44×**, a fixed-capacity LRU **~1.22×**, JSON
+**~1.14×** ([bench/RESULTS.md](bench/RESULTS.md#relative-peak-rss-at-the-large-size)).
+The trie and the graph, written as flat pools, land at or under C. Arenas also
+reclaim at scope exit, not incrementally, so a long-lived scope holds its
+transient values until it returns. The full list of losses, a worked pool
+sample, and the workloads that want a different tool are in
 **[docs/internals/value-semantics-limits.md](docs/internals/value-semantics-limits.md)**.
 
 > **Status: 0.9.2 — pre-1.0. Expect breaking changes.** Until 1.0, the
