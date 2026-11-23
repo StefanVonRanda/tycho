@@ -271,6 +271,12 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cs.concat_scratch = oldconcat
             cs.projection = path5
             cs.arena = sav5
+            if len(want) > 0 and _is_vec(want) and not _is_vec(t):
+                # `z: vector[4]f32 = 0.0` -- a scalar fills every lane: a zero
+                # vector plus the scalar, which GCC/Clang broadcast (FRICTION 224).
+                sv := _fresh(&cs, "_fill")
+                c = "({ " + _ctyz(&cs, want) + sv + "; " + sv + ".v = (__typeof__(" + sv + ".v)){0} + (" +
+                    _cty(&cs, _velem(&cs, want)) + ")(" + c + "); " + sv + "; })"
             if len(want) > 0:
                 t = want
             if uset and _heap(&cs, t):

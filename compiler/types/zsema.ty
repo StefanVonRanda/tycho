@@ -138,6 +138,10 @@ fn _bnd_elem(cs: inout C, el: string):
 fn _vec_count(cs: inout C, sz: string) -> string:
     if len(sz) == 0:
         return "?"
+    if sz[0] == 36:                    # `$N`: bound per instance (FRICTION 219)
+        if sz[1:] in cs.tbind:
+            return cs.tbind[sz[1:]]
+        return "?"
     if sz[0] >= 48 and sz[0] <= 57:
         return _dec(sz)                # already refused by the parser if bad
     if cs.skip:
@@ -158,7 +162,9 @@ fn _vec_count(cs: inout C, sz: string) -> string:
     return "?"
 
 fn _vec_elem(cs: inout C, el: string):
-    if el != "int" and el != "float" and el != "f32":
+    # "?" is a `$T` lane in a generic template; each instance is checked with
+    # its real lane type (FRICTION 219).
+    if known(el) and el != "int" and el != "float" and el != "f32":
         _cperr(&cs, "a vector element must be int, float or f32 -- " + el + " is not")
 
 # The widest vector register each --target level HOLDS, in BYTES: SSE2 and
@@ -477,7 +483,15 @@ fn _unify(cs: inout C, pat: ast.Ty, at: string, b: inout [string: string]) -> bo
         ast.TVec(sz, k):
             if _head(ab) != "vec":
                 return false
-            return _unify(&cs, k[0], _targs(ab)[1], &b)
+            gv := _targs(ab)
+            if len(sz) > 0 and sz[0] == 36:
+                nmv := sz[1:]
+                if nmv in b:
+                    if b[nmv] != gv[0]:
+                        return false
+                else:
+                    b[nmv] = gv[0]
+            return _unify(&cs, k[0], gv[1], &b)
         ast.TMap(k):
             if _head(ab) != "map":
                 return false
@@ -639,7 +653,10 @@ fn _pat_params(t: ast.Ty, tps: [string], acc: [string]) -> [string]:
         ast.TArr(k): return _pat_params(k[0], tps, out)
         ast.TSoa(k): return _pat_params(k[0], tps, out)
         ast.TBnd(sz, k): return _pat_params(k[0], tps, out)
-        ast.TVec(sz, k): return _pat_params(k[0], tps, out)
+        ast.TVec(sz, k):
+            if len(sz) > 1 and sz[0] == 36:    # `vector[$N]`: a parameter fixes N
+                push(out, sz[1:])
+            return _pat_params(k[0], tps, out)
         ast.TFix(sz, k): return _pat_params(k[0], tps, out)
         ast.TMap(k):
             for a in k:

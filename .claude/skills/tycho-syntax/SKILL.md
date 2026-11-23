@@ -97,6 +97,35 @@ fn main():
 The limit is the overloading row above: `show` can have only one definition, so
 this works at one type per name, not several.
 
+**Vector maths is built in — do not write a `Vec3` struct and `v_add` helpers.**
+`vector[N]T` (N a power of two, T `int`/`float`/`f32`) and fixed arrays `[N]T`
+take `+ - * /` and unary `-` element-wise, with a scalar on either side (a
+`float` or `f32` scalar variable adapts to float lanes). `.x .y .z .w` name
+lanes, and a 2- or 4-letter swizzle (`v.yzxw`) reads lanes as a vector. A 3D
+vector is `vector[4]f32` with w unused. `f32` widens to `float` on its own in
+arithmetic, comparisons and `float` arguments. Generics take
+`vector[$N]$T`. `core:linalg` has `vec3f`, `dot`, `length`, `cross`,
+`normalize`, `lerp`:
+
+```tycho
+package main
+import "core:linalg"
+
+fn main():
+    a := linalg.vec3f(3.0, 0.0, 4.0)
+    k := 2.0
+    b := -a * k + linalg.vec3f(1.0, 1.0, 1.0)
+    z: vector[4]f32 = 0.0                          # a scalar fills every lane
+    println(str(linalg.length(a)) + " " + str(b.x) + " " + str(a.zyxw.x) + " " + str(z.w))   # 5.0 -5.0 4.0 0.0
+```
+
+| You will write | Tycho requires | The compiler says |
+|---|---|---|
+| `a.(1, 2, 0, 3) * b.(...)` | `a.yzxw * b.zxyw` — the `.( )` form is a TUPLE (it is also the struct form) | `arithmetic requires two ints or two floats (got (f32, f32, f32, f32), ...)` |
+| `type Vec3 = vector[4]f32` | use the vector type itself — a newtype drops the operators | `arithmetic requires two ints or two floats (got Vec3, float)` |
+| `[v.x, k]` with no annotation, f32 lane and float `k` | annotate: `xs: [float] = [v.x, k]` — inference takes element 0's type | `array elements must all have the same type` |
+| `v * n` with `n: int` on a float vector | `v * to_float(n)` — an int VARIABLE never widens, as in `1.0 * n` | `requires the scalar to have the array's element type` |
+
 ## The traps that COMPILE
 
 The table above is the cheap half — the compiler catches all of it. These do
@@ -207,8 +236,7 @@ carries the fix, so read it before guessing:
 | You will write | Tycho requires | The compiler says |
 |---|---|---|
 | `while cond:` | `for cond:` | `Tycho has no `while` — use `for cond:` for a conditional loop` |
-| `for i in range(n):` | `for i := 0; i < n; i += 1:` | ``range()` was removed` |
-| `for i in 0..<n:` (sequential) | the three-clause form | ``0..<N` counts only in a `parallel for`` |
+| `for i in range(n):` | `for i in 0..<n:` | ``range()` was removed` |
 | a named `fn` inside a `fn` | declare it at top level | `a named function cannot be declared inside another` |
 | `1 + 2.5` | convert one side | `arithmetic requires two ints or two floats (got int, float)` |
 | `match s:` with string arms | `if`/`elif` on strings | ``match` does not take a string arm — int, char, bool, a range and a const name do` |

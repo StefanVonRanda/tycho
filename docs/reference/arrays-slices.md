@@ -225,9 +225,19 @@ fn main():
   or `f32`. The count is part of the type, and `vector[4]f32` is a different type from
   `[4]f32`: the two cannot be mixed in one expression.
 - Arithmetic is element-wise with the same operators as `[N]T`, including a scalar on
-  either side. Integer `/` and `%` keep the divide-by-zero check and so run lane by lane.
-- **Swizzling:** `v.(i, j)` names several lanes at once and assigns them simultaneously.
-  A vector of up to four lanes also has `.x .y .z .w`, or `.r .g .b .a`.
+  either side and unary `-v`. A literal scalar adapts to the lane type, and so does a
+  `float` or `f32` scalar VARIABLE when the lanes are `float` or `f32` (`v * k`); an
+  `int` variable does not, exactly as `1.0 * n` does not. Integer `/` and `%` keep the
+  divide-by-zero check and so run lane by lane.
+- **A scalar fills a declared vector:** `z: vector[4]f32 = 0.0` sets every lane. In a
+  literal against a declared vector or `f32`/`float` array, `float` and `f32` variables
+  adapt to the element type: `v: vector[4]f32 = [x, y, z, 0.0]`.
+- **Swizzling:** `v.yzxw` (2 or 4 letters, all from `xyzw` or all from `rgba`) reads
+  lanes as a vector of the same lane type, so `a.yzxw * b.zxyw - a.zxyw * b.yzxw` is a
+  cross product. `v.(i, j)` names several lanes at once as a tuple and assigns them
+  simultaneously. A vector of up to four lanes also has `.x .y .z .w`, or `.r .g .b .a`.
+- **Generic over width and lane:** a parameter `v: vector[$N]$T` binds both, and the
+  function is instantiated per width (`len(v)` is N inside the body).
 - A vector wider than the machine's register still works, split across registers, and the
   compiler warns (`vector[4]float` is 32 bytes against a 16-byte baseline register).
   `vector[4]f32` fits one.

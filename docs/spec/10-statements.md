@@ -161,11 +161,13 @@ clause**: it jumps *to* `post`, not past it, so a loop that advances only in
 element) or a `string` (binding each byte as an `int`). The **collection is
 evaluated exactly once** before the loop.
 
-There is **no counting form**, and `range` is not a name the language knows: a
-`for` head that names `range` is refused with both replacements spelled out. Count sequentially with
-the three-clause form; count in parallel with `parallel for i in 0..<N:`
-([§22](13-concurrency.md#22-parallel-for)), which is the only context where
-`0..<N` is legal — a sequential `for i in 0..<N:` is refused.
+**Counting form** — `for i in a..<b:` counts `i` from `a` up to, not including,
+`b`, by 1. It is defined as `for i := a; i < b; i += 1:` and behaves exactly
+like it: `b` is evaluated before every pass, `continue` advances `i`, and an
+`a >= b` runs zero times. `range` is not a name the language knows: a `for`
+head that names `range` is refused with both replacements spelled out. Count in
+parallel with `parallel for i in 0..<N:` ([§22](13-concurrency.md#22-parallel-for)),
+which must start at a literal `0`.
 
 **There is no zero-step check.** A three-clause `post` is arbitrary code:
 `for i := 0; i < n; i += 0:` is an infinite loop and is **not diagnosed**, at

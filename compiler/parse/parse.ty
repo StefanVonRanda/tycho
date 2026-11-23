@@ -283,6 +283,13 @@ fn _ty_d(toks: [lex.Tok], i0: int, depth: int) -> (ast.Ty, int):
         vt := toks[ti]
         i = _op(toks, i + 1, lex.OP_LBRACK)
         n := _at(toks, i)
+        # `vector[$N]T` in a generic parameter: the count is bound by the
+        # argument and is part of the instance (FRICTION 219).
+        if _isop(toks, i, lex.OP_DOLLAR) and _kis(toks, i + 1, lex.K_IDENT):
+            pn := _x(toks, i + 1)
+            i = _op(toks, i + 2, lex.OP_RBRACK)
+            elp, jp := _ty_d(toks, i, depth + 1)
+            return (ast.TVec("$" + pn, [elp]), jp)
         if n.k != lex.K_INT and n.k != lex.K_IDENT:
             _die(toks, n, "vector needs a count: vector[N]T")
         # src/tychoc.c@vec_of raises the power-of-two rule in parse_type, so the
@@ -1768,9 +1775,26 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
     if _kis(toks, i, lex.K_IDENT) and _iskw(toks, i + 1, lex.KW_IN):
         v := _x(toks, i)
         i += 2
+        if _dotlt_ahead(toks, i) and not par:
+            # `for i in a..<b:` is exactly `for i := a; i < b; i += 1:` -- lowered
+            # here, so the checker, emitter and `continue` see the three-clause
+            # loop they already handle. Like that loop, `b` is read each pass
+            # (FRICTION 225: the count was spelled out by hand everywhere).
+            ln := toks[ti].line
+            lo := ast.NullLit(0)
+            j0 := _expr_into(toks, i, &lo)
+            j0 = _op(toks, j0, lex.OP_DOTDOTLT)
+            hi0 := ast.NullLit(0)
+            j1 := _expr_into(toks, j0, &hi0)
+            i = _blockcolon(toks, j1)
+            i = _expect(toks, i, lex.K_NEWLINE, "")
+            b0, k0 := block(toks, i)
+            init0 := ast.Decl(ln, v, []ast.Ty, [lo], []ast.Stmt)
+            cond0 := ast.Binop(ln, "<", [ast.Name(ln, v), hi0])
+            post0 := ast.Assign(ln, v, [ast.Binop(ln, "+", [ast.Name(ln, v), ast.IntLit(ln, 1)])])
+            out = ast.For3(ln, [init0, post0], [cond0], b0)
+            return k0
         if _dotlt_ahead(toks, i):
-            if not par:
-                _die(toks, _at(toks, i0 - 1), "`0..<N` counts only in a `parallel for` -- write `for " + v + " := 0; " + v + " < N; " + v + " += 1:` for a sequential count")
             if not (_kis(toks, i, lex.K_INT) and _at(toks, i).ival == 0 and _isop(toks, i + 1, lex.OP_DOTDOTLT)):
                 _die(toks, _at(toks, i0 - 1), "`parallel for` counts from zero: write `0..<N` -- a literal `0`, then `..<`, then the exclusive upper bound")
             hi := ast.NullLit(0)
@@ -1781,7 +1805,7 @@ fn _forstmt_into(toks: [lex.Tok], i0: int, par: bool, out: inout ast.Stmt) -> in
             out = ast.ForRange(toks[ti].line, v, [ast.IntLit(toks[ti].line, 0), hi], b)
             return k
         if _isid(toks, i, "range") and _isop(toks, i + 1, lex.OP_LPAREN):
-            _die(toks, _at(toks, i0 - 1), "`range()` was removed: write `for " + v + " := 0; " + v + " < N; " + v + " += 1:` to count, or `parallel for " + v + " in 0..<N:` to count in parallel")
+            _die(toks, _at(toks, i0 - 1), "`range()` was removed: write `for " + v + " in 0..<N:` to count, or `parallel for " + v + " in 0..<N:` to count in parallel")
         coll := ast.NullLit(0)
         j := _expr_into(toks, i, &coll)
         # src/tychoc.c:4690 -- an array and a channel source are both scalar
@@ -2116,7 +2140,12 @@ fn _collect_typarams_ty(t: ast.Ty, acc: [string]) -> [string]:
         ast.TSoa(k): return _collect_typarams_ty(k[0], out)
         ast.TFix(s, k): return _collect_typarams_ty(k[0], out)
         ast.TBnd(s, k): return _collect_typarams_ty(k[0], out)
-        ast.TVec(s, k): return _collect_typarams_ty(k[0], out)
+        ast.TVec(s, k):
+            # A vector's `$N` keys the instance like a type does: vector[2]
+            # and vector[4] are different C types (FRICTION 219).
+            if len(s) > 1 and s[0] == 36:
+                push(out, s[1:])
+            return _collect_typarams_ty(k[0], out)
         ast.TMap(ks):
             for a in ks:
                 out = _collect_typarams_ty(a, out)

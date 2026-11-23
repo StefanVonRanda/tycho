@@ -457,7 +457,16 @@ generic accepts one.
 Lanes MAY be swizzled: `v.(0, 1) = v.(1, 0)` names two of them at once and
 assigns simultaneously ([§17.5](12-aggregates.md#175-destructuring)). A vector of
 four lanes or fewer also names them `.x.y.z.w`, or `.r.g.b.a` for the same
-four, wherever a field access is accepted.
+four, wherever a field access is accepted. A **named swizzle** of 2 or 4 lane
+letters, all from `xyzw` or all from `rgba` (`v.yzxw`), is a read whose value
+is a vector of that many lanes and the same lane type; a letter past the
+vector's width is a compile error.
+
+A declared vector MAY be initialised from a scalar of its lane type (or a
+`float`/`f32` one for float lanes), which fills every lane: `z: vector[4]f32 =
+0.0`. A generic parameter MAY be written `vector[$N]T`: `$N` is bound from the
+argument's lane count and, unlike `[$N]T`, keys the instantiation, since each
+width is a distinct machine type.
 
 ```tycho
 fn main():

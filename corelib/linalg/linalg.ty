@@ -21,87 +21,157 @@ struct Vec4:
 struct Mat4:
     m: [16]float
 
+# Vectors. The vector API works on `vector[N]T` directly, generic over the
+# width and the lane type, so `+ - *` and a scalar on either side are the
+# language's own element-wise operators, one SIMD instruction each, and
+# `.x .y .z .w` (or a swizzle like `.yzxw`) name the lanes. A 3D vector is a
+# vector[4]f32 with w = 0: a vector width is a power of two, and four f32 lanes
+# fill one 16-byte register. The Vec2/Vec3/Vec4 structs and their per-width
+# functions below are deprecated in favour of this.
+
+fn vec2f(x: float, y: float) -> vector[2]f32:
+    return [to_f32(x), to_f32(y)]
+
+fn vec3f(x: float, y: float, z: float) -> vector[4]f32:   # w = 0
+    return [to_f32(x), to_f32(y), to_f32(z), to_f32(0.0)]
+
+fn vec4f(x: float, y: float, z: float, w: float) -> vector[4]f32:
+    return [to_f32(x), to_f32(y), to_f32(z), to_f32(w)]
+
+fn dot(a: vector[$N]$T, b: vector[$N]$T) -> $T:          # sum of lane products
+    p := a * b
+    s := p[0]
+    for i in 1..<len(p):
+        s += p[i]
+    return s
+
+fn length(v: vector[$N]$T) -> float:
+    return sqrt(to_float(dot(v, v)))
+
+fn cross(a: vector[4]$T, b: vector[4]$T) -> vector[4]$T:   # x/y/z lanes; w comes out 0
+    return a.yzxw * b.zxyw - a.zxyw * b.yzxw
+
+fn normalize(v: vector[$N]$T) -> vector[$N]$T:          # float or f32 lanes; zero stays zero
+    s := to_float(dot(v, v))
+    if s <= 0.0:
+        return v
+    return v * (1.0 / sqrt(s))
+
+fn lerp(a: vector[$N]$T, b: vector[$N]$T, t: float) -> vector[$N]$T:   # float or f32 lanes
+    return a + (b - a) * t
+
+fn transform(m: Mat4, v: vector[4]f32) -> vector[4]f32:   # m * v
+    out := v - v
+    for r := 0; r < 4; r += 1:
+        out[r] = to_f32(m.m[r] * to_float(v.x) + m.m[4 + r] * to_float(v.y) + m.m[8 + r] * to_float(v.z) + m.m[12 + r] * to_float(v.w))
+    return out
+
+# deprecated: use vec2f(x, y), a vector[2]f32 -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn vec2(x: float, y: float) -> Vec2:
     return Vec2(x, y)
 
+# deprecated: use vec3f(x, y, z), a vector[4]f32 -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn vec3(x: float, y: float, z: float) -> Vec3:
     return Vec3(x, y, z)
 
+# deprecated: use vec4f(x, y, z, w), a vector[4]f32 -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn vec4(x: float, y: float, z: float, w: float) -> Vec4:
     return Vec4(x, y, z, w)
 
+# deprecated: use a + b on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn add2(a: Vec2, b: Vec2) -> Vec2:
     return Vec2(a.x + b.x, a.y + b.y)
 
+# deprecated: use a + b on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn add3(a: Vec3, b: Vec3) -> Vec3:
     return Vec3(a.x + b.x, a.y + b.y, a.z + b.z)
 
+# deprecated: use a + b on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn add4(a: Vec4, b: Vec4) -> Vec4:
     return Vec4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w)
 
+# deprecated: use a - b on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn sub2(a: Vec2, b: Vec2) -> Vec2:
     return Vec2(a.x - b.x, a.y - b.y)
 
+# deprecated: use a - b on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn sub3(a: Vec3, b: Vec3) -> Vec3:
     return Vec3(a.x - b.x, a.y - b.y, a.z - b.z)
 
+# deprecated: use a - b on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn sub4(a: Vec4, b: Vec4) -> Vec4:
     return Vec4(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w)
 
+# deprecated: use v * k on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn scale2(v: Vec2, s: float) -> Vec2:
     return Vec2(v.x * s, v.y * s)
 
+# deprecated: use v * k on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn scale3(v: Vec3, s: float) -> Vec3:
     return Vec3(v.x * s, v.y * s, v.z * s)
 
+# deprecated: use v * k on vectors -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn scale4(v: Vec4, s: float) -> Vec4:
     return Vec4(v.x * s, v.y * s, v.z * s, v.w * s)
 
+# deprecated: use dot(a, b) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn dot2(a: Vec2, b: Vec2) -> float:
     return a.x * b.x + a.y * b.y
 
+# deprecated: use dot(a, b) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn dot3(a: Vec3, b: Vec3) -> float:
     return a.x * b.x + a.y * b.y + a.z * b.z
 
+# deprecated: use dot(a, b) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn dot4(a: Vec4, b: Vec4) -> float:
     return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
 
+# deprecated: use length(v) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn length2(v: Vec2) -> float:
     return sqrt(dot2(v, v))
 
+# deprecated: use length(v) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn length3(v: Vec3) -> float:
     return sqrt(dot3(v, v))
 
+# deprecated: use length(v) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn length4(v: Vec4) -> float:
     return sqrt(dot4(v, v))
 
+# deprecated: use normalize(v) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn normalize2(v: Vec2) -> Vec2:
     n := length2(v)
     if n == 0.0:
         return Vec2(0.0, 0.0)
     return scale2(v, 1.0 / n)
 
+# deprecated: use normalize(v) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn normalize3(v: Vec3) -> Vec3:
     n := length3(v)
     if n == 0.0:
         return Vec3(0.0, 0.0, 0.0)
     return scale3(v, 1.0 / n)
 
+# deprecated: use normalize(v) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn normalize4(v: Vec4) -> Vec4:
     n := length4(v)
     if n == 0.0:
         return Vec4(0.0, 0.0, 0.0, 0.0)
     return scale4(v, 1.0 / n)
 
+# deprecated: use lerp(a, b, t) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn lerp2(a: Vec2, b: Vec2, t: float) -> Vec2:
     return Vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
 
+# deprecated: use lerp(a, b, t) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn lerp3(a: Vec3, b: Vec3, t: float) -> Vec3:
     return Vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t)
 
+# deprecated: use lerp(a, b, t) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn lerp4(a: Vec4, b: Vec4, t: float) -> Vec4:
     return Vec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t)
 
+# deprecated: use cross(a, b) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn cross3(a: Vec3, b: Vec3) -> Vec3:
     return Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
 
@@ -132,6 +202,7 @@ fn mat4_mul(a: Mat4, b: Mat4) -> Mat4:
         c += 1
     return out
 
+# deprecated: use transform(m, v) -- the vector form gets element-wise operators and SIMD. Removed in 1.0.
 fn mat4_transform(m: Mat4, v: Vec4) -> Vec4:
     return Vec4(
         m.m[0] * v.x + m.m[4] * v.y + m.m[8] * v.z + m.m[12] * v.w,

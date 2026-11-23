@@ -35,6 +35,11 @@ written in `u32`). They behave like `int`/`float` but at a defined width:
   `to_float` (each takes any numeric scalar). A bare **int literal adapts** to a sized operand
   and a numeric literal to `f32`, so `h ^ 16777619` and `x & 255` need no cast on the
   constant; a non-literal `int` does (`state[i]` → `to_u32(state[i])`).
+- **One exception: `f32` widens to `float`.** It is lossless, so an `f32` value mixes
+  with a `float` in arithmetic and comparisons (the result is `float`), initialises a
+  declared `float`, and passes to a `float` parameter — but never through `inout`, and
+  an `[f32]` is still not a `[float]`. `float` → `f32` rounds and stays explicit:
+  `to_f32(x)`. Unary `-` works on `f32` and the signed sized ints.
 - Arrays (`[u32]`, `[f32]`, …), struct fields, `str(...)`, and f-strings all work.
 - They also cross [FFI](ffi.md) as their real C type (`u32` ↔ `uint32_t`, etc.).
 

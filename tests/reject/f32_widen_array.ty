@@ -1,0 +1,10 @@
+# expect: argument type mismatch: argument 1 of 'first' is [f32], expected [float]
+# The f32 -> float widening is for scalars (FRICTION 223); an array of f32 is not
+# an array of float.
+fn first(xs: [float]) -> float:
+    return xs[0]
+
+fn main():
+    a := []f32
+    push(a, to_f32(1.0))
+    println(str(first(a)))

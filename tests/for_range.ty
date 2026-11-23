@@ -1,0 +1,16 @@
+# `for i in a..<b:` is `for i := a; i < b; i += 1:` (FRICTION 225): any start,
+# an exclusive end, `continue` still advances, an empty range runs zero times.
+fn main():
+    xs := [10, 20, 30, 40]
+    s := 0
+    for i in 0..<len(xs):
+        if i == 1:
+            continue
+        s += xs[i]
+    t := 0
+    for k in 2..<5:
+        t += k
+    e := 0
+    for k in 3..<3:
+        e += 1
+    println(str(s) + " " + str(t) + " " + str(e))   # 80 9 0

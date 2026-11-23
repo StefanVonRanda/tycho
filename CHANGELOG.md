@@ -9,6 +9,17 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`for i in a..<b:` counts sequentially.** It is `for i := a; i < b; i += 1:`
+  (so `b` is re-read every pass); `range()` stays removed.
+- **Vector maths reads like shader code.** Unary `-` on vectors, `f32` and the
+  signed sized ints; a named swizzle `v.yzxw` (2 or 4 letters) reads lanes as a
+  vector; a `float`/`f32` scalar variable scales a `float`/`f32` vector or array
+  (`v * k`), and adapts inside a declared literal (`[x, y, z, 0.0]`); a scalar
+  fills a declared vector (`z: vector[4]f32 = 0.0`); generics take
+  `vector[$N]$T`, instantiated per width.
+- **`f32` widens to `float`** in arithmetic, comparisons, a declared `float` and a
+  by-value `float` parameter. It is lossless; `float` -> `f32` stays explicit, and
+  `inout` and arrays never widen.
 - **An `extern fn` parameter may be an array of a sized scalar.** `[f32]`
   crosses as `const float *`, `[u32]` as `const uint32_t *` (likewise the other
   `u`/`i` widths), with the length after it and no conversion (spec §24.1).
@@ -35,6 +46,14 @@ builtins and corelib signatures.
   resize and the new kind 8 a drawable (pixel) size change; and the new
   `Event.sym` field holds the raw SDL keycode, so W and Up, or Q and Esc, can be
   told apart while `key` keeps folding them.
+- `core:linalg` works on the built-in vectors: `vec2f`/`vec3f`/`vec4f`, and
+  `dot`, `length`, `cross`, `normalize`, `lerp` generic over `vector[$N]$T`, plus
+  `transform(m, v)`. The `Vec2`/`Vec3`/`Vec4` structs and their per-width
+  functions are deprecated (removed in 1.0); calls now warn and name the
+  replacement.
+- `to_float` accepts a `float` inside a generic body, so a numeric generic can
+  convert `$T` whether it is an int, f32 or float. Outside a generic the no-op
+  conversion is still refused.
 - `core:gfx` windows are resizable, and the new event kind 9 reports the mouse
   wheel in whole steps (`y > 0` is scrolled away from the user, whatever the
   system's natural-scrolling setting).

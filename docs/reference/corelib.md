@@ -205,12 +205,17 @@ expression-bodied; pass a named function where you need a multi-line body.
   `value2(x, y, seed)`, `value3(x, y, z, seed)` in `[-1, 1]`, gradient
   `perlin2(x, y, seed)`, and `fbm2`/`fbm3` with octaves, lacunarity, gain and
   seed.
-- **`linalg`** — float vectors and 4×4 matrices. `Vec2`/`Vec3`/`Vec4` with
-  `vec2`/`vec3`/`vec4`, `add2`/`add3`/`add4`, `sub2`/`sub3`/`sub4`,
-  `scale2`/`scale3`/`scale4`, `dot2`/`dot3`/`dot4`, `length2`/`length3`/`length4`,
-  `normalize2`/`normalize3`/`normalize4`, `lerp2`/`lerp3`/`lerp4`, `cross3`.
+- **`linalg`** — vectors and 4×4 matrices. Vectors are the language's
+  `vector[N]f32` (a 3D vector is `vector[4]f32` with w = 0), so `+ - *` and a
+  scalar on either side are built in: `vec2f`/`vec3f`/`vec4f`, and generic over
+  any width `dot`, `length` (any lane type, result in `float`), `cross`,
+  `normalize`, `lerp`, plus `transform(m, v)`. Deprecated, removed in 1.0: the
+  `Vec2`/`Vec3`/`Vec4` structs with `vec2`/`vec3`/`vec4`, `add2`/`add3`/`add4`,
+  `sub2`/`sub3`/`sub4`, `scale2`/`scale3`/`scale4`, `dot2`/`dot3`/`dot4`,
+  `length2`/`length3`/`length4`, `normalize2`/`normalize3`/`normalize4`,
+  `lerp2`/`lerp3`/`lerp4` and `cross3`.
   `Mat4` is column-major (`m[column * 4 + row]`): `mat4_identity`, `mat4_mul`,
-  `mat4_transform`, `mat4_translate`, `mat4_scale`, `mat4_rotate_x`, `mat4_rotate_y`, `mat4_rotate_z`,
+  `mat4_transform` (deprecated), `mat4_translate`, `mat4_scale`, `mat4_rotate_x`, `mat4_rotate_y`, `mat4_rotate_z`,
   `mat4_transpose`, `mat4_perspective` (OpenGL depth range) and `mat4_look_at`.
 - **`bits`** — fixed-width bit operations: `rotl32`/`rotr32`/`rotl64`/`rotr64`
   (negative counts rotate the other way), `popcount32`/`popcount64`,

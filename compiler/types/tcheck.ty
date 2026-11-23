@@ -53,6 +53,16 @@ fn _targs(q: string) -> [string]:
 fn known(t: string) -> bool:
     return find(t, "?") < 0
 
+# A scalar that may fill a vector's lanes: f32/float into float lanes; into int
+# lanes, an int of the lane type or an int literal.
+fn _vfill_ok(cs: inout C, want: string, t: string, rhs: [ast.Expr]) -> bool:
+    lane := _targs(want)[1]
+    if (lane == "f32" or lane == "float") and (t == "f32" or t == "float"):
+        return true
+    if t == lane:
+        return true
+    return t == "int" and len(rhs) == 1 and _is_intlit(rhs[0]) and _is_int(lane)
+
 fn compat(a: string, b: string) -> bool:
     if a == "?" or b == "?" or a == b:
         return true
@@ -590,6 +600,20 @@ fn _lane_index(f: string) -> int:
     if f == "w" or f == "a":
         return 3
     return -1
+
+# A swizzle name: 2 or 4 lane letters, all from `xyzw` or all from `rgba`.
+fn _swz_name(f: string) -> bool:
+    if len(f) != 2 and len(f) != 4:
+        return false
+    xyzw := true
+    rgba := true
+    for i := 0; i < len(f); i += 1:
+        c := f[i:i + 1]
+        if not (c == "x" or c == "y" or c == "z" or c == "w"):
+            xyzw = false
+        if not (c == "r" or c == "g" or c == "b" or c == "a"):
+            rgba = false
+    return xyzw or rgba
 
 fn _fixsize(cs: inout C, sz: string) -> string:
     if len(sz) == 0:
@@ -1333,6 +1357,20 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             # answers the element type here instead and emit.ty lowers it. THE
             # STRUCT ALWAYS WINS: a struct is not fix/bnd/vec, so a field named
             # `x` never reaches this arm.
+            # `v.yzxw` -- a NAMED swizzle on a vector reads several lanes as a
+            # vector of the same lane type (2 or 4 letters: vector widths are
+            # powers of two), so `a.yzxw * b.zxyw - a.zxyw * b.yzxw` is a cross
+            # product. `v.(1, 2)` stays a tuple: it is also the struct form
+            # (FRICTION 220).
+            if _swz_name(f) and not callee_ok and _head(_base(&cs, rt)) == "vec":
+                sb := _base(&cs, rt)
+                sn := _capn(_targs(sb)[0])
+                for si := 0; si < len(f); si += 1:
+                    if sn >= 0 and _lane_index(f[si:si + 1]) >= sn:
+                        cs.line = l
+                        _cerr(&cs, "'." + f + "' names lane " + str(_lane_index(f[si:si + 1])) + ", and this vector has only " + str(sn) + " lanes")
+                        return "?"
+                return "vec(" + str(len(f)) + "," + _targs(sb)[1] + ")"
             lane := _lane_index(f)
             if lane >= 0 and not callee_ok:
                 lb := _base(&cs, rt)
@@ -1535,9 +1573,13 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                 if known(t) and not _is_int(t):
                     _cerr(&cs, "unary `~` needs an integer")
             elif o == "-":
+                # Also f32, the signed sized ints, and a vector (lane-wise):
+                # `-v` was refused, so vector code wrote `v - v - v` or a zero
+                # vector minus v (FRICTION 221). Unsigned stays refused.
                 ub := _base(&cs, t)
-                if known(ub) and ub != "int" and ub != "float":
-                    _cerr(&cs, "unary `-` needs an int or a float")
+                signed := ub == "int" or ub == "float" or ub == "f32" or ub == "i8" or ub == "i16" or ub == "i32" or ub == "i64"
+                if known(ub) and not signed and _head(ub) != "vec":
+                    _cerr(&cs, "unary `-` needs an int, a float, a signed sized int or f32, or a vector")
             return t
         ast.IsVar(l, k, q, v):
             st := _base(&cs, _ex(&cs, k[0]))
@@ -1605,6 +1647,12 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                     cs.line = l
                     _cerr(&cs, "cannot infer the array's element type from None — put a Some(...) first")
                     return "?"
+                elif (ew == "f32" or ew == "float") and (t == "f32" or t == "float"):
+                    # A float or f32 VARIABLE adapts to the annotated float
+                    # element type, as a literal always did: `[x, y, z, 0.0]`
+                    # for a vector[4]f32 needs no to_f32 per lane (FRICTION 224).
+                    if et == "?":
+                        et = ew
                 elif known(ew) and known(t) and not compat(t, ew) and not _has_tp(wb):
                     cs.line = l
                     kind9 := " array"
@@ -2109,6 +2157,11 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
             return "bool"
         return "?"                     # an unknown operand poisons the RESULT too:
                                        # `f * 2` at an unknown `f` is not an int
+    # An f32 against a float compares as float: the same lossless widening as
+    # arithmetic (FRICTION 223).
+    if (lt == "f32" and rt == "float") or (lt == "float" and rt == "f32"):
+        lt = "float"
+        rt = "float"
     if op == "==" or op == "!=":
         if lt != rt:
             _cerr(&cs, "cannot compare " + _show(&cs, lt) + " with " + _show(&cs, rt))
@@ -2182,6 +2235,13 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
             st = "f32"
         elif et == "float" and st == "int" and _is_intlit(sc):
             st = "float"
+        elif (et == "f32" or et == "float") and (st == "float" or st == "f32"):
+            # A float or f32 scalar VARIABLE adapts to float/f32 lanes: `v * k`
+            # for an f32 vector and a float k converts k once, to the lane type,
+            # instead of `v * to_f32(k)` at every use (FRICTION 222). An int
+            # variable still does not, exactly as the scalar `1.0 * n` does not
+            # (tests/diag/array_bcast_widen.ty locks that pairing).
+            st = et
         if st != et:
             _cerr(&cs, "element-wise `" + op + "` requires the scalar to have the array's element type (got " + _show(&cs, lt) + " and " + _show(&cs, rt) + ") -- a literal adapts, but a variable never widens")
         elif not _elem_arith_ok(op, et):
@@ -2201,6 +2261,11 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
             (lt == "char" or lt == "int") and (rt == "char" or rt == "int"):
         return "char"
     if lt == "float" and rt == "float":
+        return "float"
+    # f32 widens to float: lossless, so it needs no to_float(x) -- a lane of an
+    # f32 vector in float maths was the noisiest conversion in vector code
+    # (FRICTION 223). float -> f32 stays explicit: that one rounds.
+    if (lt == "float" and rt == "f32") or (lt == "f32" and rt == "float"):
         return "float"
     ln := _base(&cs, lt)
     if lt == rt and _tdecl(&cs, lt) >= 0 and cs.tds[_tdecl(&cs, lt)].kind == "newtype" and
@@ -2340,6 +2405,10 @@ fn _check_args(cs: inout C, name: string, si: int, args: [ast.Expr], line: int):
             # as a ptr -- and nothing else, or the exception would swallow int.
             ok9 := compat(at, want)
             if not ok9 and name == "is_null" and want == "ptr" and _aff_kind(&cs, at) == "handle":
+                ok9 = true
+            # An f32 VALUE widens into a float parameter (FRICTION 223). Never
+            # through `&`: an inout float would write a double into an f32.
+            if not ok9 and want == "float" and at == "f32" and not (args[i] is ast.Addr):
                 ok9 = true
             if not ok9:
                 if cs.sg[si].builtin and want == "string" and _strable(&cs, at):
@@ -2761,7 +2830,12 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
     if n == "to_float":
         if not _arity(&cs, n, args, 1, "to_float(n) takes one argument"):
             return "float"
-        if known(a0) and not (_is_int(a0) or a0 == "f32" or (_tdecl(&cs, a0) >= 0 and b0 == "float")):
+        # to_float of a float is refused as a no-op in ordinary code, but in a
+        # generic body `$T` may be float in one instance and f32 or int in
+        # another, and the conversion is what makes that body generic at all
+        # (FRICTION 217).
+        already := a0 == "float" and cs.instdepth > 0
+        if known(a0) and not (already or _is_int(a0) or a0 == "f32" or (_tdecl(&cs, a0) >= 0 and b0 == "float")):
             _cerr(&cs, "to_float(n) takes an int, a sized int, f32, or a float newtype")
         return "float"
     if n == "to_int":
@@ -3809,7 +3883,11 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             cs.line = l
             if len(rhs) == 1:
                 _aff_bind_check(&cs, t, rhs[0])
-            if not compat(want, t):
+            # `x: float = v.x` with an f32 value widens (FRICTION 223), and a
+            # scalar fills every lane of a declared vector, `z: vector[4]f32 =
+            # 0.0` (FRICTION 224) -- float/f32 into float lanes, int into int lanes.
+            fills := _head(want) == "vec" and _vfill_ok(&cs, want, t, rhs)
+            if not compat(want, t) and not (want == "float" and t == "f32") and not fills:
                 _cerr(&cs, "declared type " + _show(&cs, want) + " but value is " + _show(&cs, t))
             if len(ty) == 0 and len(rhs) == 1:
                 _bare_result(&cs, t, rhs[0])

@@ -1,4 +1,0 @@
-# expect: `0..<N` counts only in a `parallel for`
-fn main():
-    for i in 0..<3:
-        print(str(i))

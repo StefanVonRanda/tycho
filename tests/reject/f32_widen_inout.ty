@@ -1,0 +1,10 @@
+# expect: argument type mismatch: argument 1 of 'bump' is f32, expected float
+# f32 widens to float as a VALUE (FRICTION 223), never through inout: the callee
+# would write a double into an f32.
+fn bump(x: inout float):
+    x += 1.0
+
+fn main():
+    f := to_f32(1.0)
+    bump(&f)
+    println(str(f))

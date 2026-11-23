@@ -273,8 +273,10 @@ and the operands are never reordered: `2 - [5, 1]` is `[-3, 1]`, `[5, 1] - 2` is
 `[3, -1]`. The scalar is evaluated once, not once per element. **Literal
 adaptation** applies to the scalar against the **element** type, with the
 value-directional restriction of [§8.1](06-conversions.md): a *literal* adapts
-(`[1.0, 2.0] * 2` is `[2.0, 4.0]`), a *variable* never widens (with `n := 2`,
-`[1.0, 2.0] * n` is a compile error exactly as `1.0 * n` is). After adaptation
+(`[1.0, 2.0] * 2` is `[2.0, 4.0]`), an `int` *variable* never widens (with `n := 2`,
+`[1.0, 2.0] * n` is a compile error exactly as `1.0 * n` is). A `float` or `f32`
+scalar variable against `float` or `f32` elements DOES adapt: it is converted
+once to the element type, so `v * k` scales an `f32` vector by a `float` `k`. After adaptation
 the scalar's type MUST **equal** the element type, which makes `['a', 'b'] + 1` a
 compile error even though the scalar `'a' + 1` is legal (§13.2's byte-domain
 rule).

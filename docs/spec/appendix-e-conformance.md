@@ -127,7 +127,7 @@ drawn from:
 | Clause | Requirement (abbrev.) | Fixture(s) |
 |---|---|---|
 | §14.4 | the four loop shapes: condition, infinite, three-clause (ascending and descending), foreach | `tests/foreach`, `tests/while_loop`, `tests/for3`, `tests/for_bare`, `tests/range_negative_step` |
-| §14.4 | all three clauses required; `range()` removed; `0..<N` refused outside `parallel for` | `reject/for3_empty_clause`, `tests/diag/range_removed`, `reject/dotlt_sequential`, `tests/diag/dotlt_sequential` — diagnostic text is pinned byte-for-byte by the `tests/diag/` fixtures |
+| §14.4 | all three clauses required; `range()` removed; `for i in a..<b:` counts sequentially | `reject/for3_empty_clause`, `tests/diag/range_removed`, `tests/for_range` — diagnostic text is pinned byte-for-byte by the `tests/diag/` fixtures |
 | §14.4 | `break` / `continue`; `continue` runs the three-clause post clause | `tests/break_continue`, `tests/loop_return`, `tests/for3` |
 | §19.4 | `match` statement; exhaustive; wildcard-last | `tests/enums`, `tests/matchwild`, `reject/match_non_exhaustive`, `reject/match_dup_arm`, `reject/match_wildcard_not_last` |
 | §14.3.1 | nested patterns on an `Ok`/`Err`/`Some` payload; unqualified variant; refined-before-unrefined ordering; exhaustive by refined coverage | `tests/nested_pattern`, `corelib/test/result` (`why`, `io_why`) |

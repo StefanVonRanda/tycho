@@ -88,7 +88,7 @@ Subscript  ::= "subscript" IDENT "(" ParamList? ")" "->" "inout" Type ":" NEWLIN
 Type      ::= "$" IDENT                                        /* type parameter */
             | "soa" "[" Type "]"                               /* struct-of-arrays */
             | "bounded" "[" ( INT | IDENT ) "]" Type            /* bounded[N]T / bounded[C]T, C an int const */
-            | "vector" "[" ( INT | IDENT ) "]" Type             /* vector[N]T, N a power of two 2..64 */
+            | "vector" "[" ( INT | IDENT | "$" IDENT ) "]" Type  /* vector[N]T, N a power of two 2..64; $N in a generic parameter */
             | "fn" "(" ( Type ( "," Type )* )? ")" ( "->" Type )?
             | "(" Type ( "," Type )+ ")"                       /* tuple, 2..8 elements */
             | "[" ArrayOrMap
@@ -143,6 +143,7 @@ SubPattern  ::= VariantName ( "(" IDENT ( "," IDENT )* ")" )?
 ScalarPattern ::= ScalarElem ( ".." ScalarElem )? ( "|" ScalarElem ( ".." ScalarElem )? )*
 ScalarElem  ::= "-"? ( INT | CHAR | TRUE | FALSE ) | IDENT    /* IDENT: an int constant */
 For         ::= "for" ForInit ";" Expr ";" ForPost ":" NEWLINE Block  /* three-clause; all three REQUIRED */
+              | "for" IDENT "in" Expr "..<" Expr ":" NEWLINE Block    /* counting: for i := a; i < b; i += 1 */
               | "for" IDENT "in" Expr ":" NEWLINE Block               /* foreach */
               | "for" Expr ":" NEWLINE Block                          /* condition */
               | "for" ":" NEWLINE Block                               /* infinite */

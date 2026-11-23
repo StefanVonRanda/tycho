@@ -506,6 +506,12 @@ fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
             return
         ast.TVec(nn3, es):
             if _is_vec(a):
+                # `vector[$N]T`: N is in tps (the parser lists it there) and binds
+                # to the argument's lane count, so it keys the instance.
+                if len(nn3) > 1 and nn3[0] == 36:
+                    for i := 0; i < len(tps); i += 1:
+                        if tps[i] == nn3[1:] and len(bs[i]) == 0:
+                            bs[i] = str(_vn(&cs, a))
                 _unify(&cs, es[0], _velem(&cs, a), tps, &bs)
             return
         ast.TFix(nn2, es):

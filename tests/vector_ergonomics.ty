@@ -1,0 +1,66 @@
+# The vector/numeric ergonomics added together (FRICTION 221-227). Each block
+# names its entry; the output is the golden.
+
+fn neg():                                   # 221: unary minus on vectors, f32, signed sized ints
+    v: vector[4]f32 = [1.0, -2.0, 3.0, 0.0]
+    d: vector[2]float = [1.0, 2.0]
+    f := to_f32(1.5)
+    i := to_i32(7)
+    println("neg " + str(-v) + " " + str(-d) + " " + str(-f) + " " + str(-i))
+
+fn scalar_adapts():                         # 222: a float/f32 scalar variable adapts to float lanes
+    v: vector[4]f32 = [1.0, 2.0, 3.0, 0.0]
+    k := 0.5
+    a: [3]f32 = [to_f32(2.0), to_f32(4.0), to_f32(6.0)]
+    d: [3]float = [1.0, 2.0, 3.0]
+    h := to_f32(2.0)
+    println("adapt " + str(v * k) + " " + str(k * v) + " " + str(v / k) + " " + str(a * k) + " " + str(d * h))
+
+fn half(x: float) -> float:
+    return x / 2.0
+
+fn widen():                                 # 223: f32 widens to float as a value
+    v: vector[4]f32 = [1.5, 2.0, 3.0, 0.0]
+    d := 2.0
+    e: float = v.z
+    println("widen " + str(v.x * d) + " " + str(d - v.y) + " " + str(v.x < d) + " " + str(e) + " " + str(half(v.x)) + " " + str(sqrt(v.z)))
+
+fn fill():                                  # 224: variables adapt in literals; a scalar fills a vector
+    x := 1.5
+    y := to_f32(2.0)
+    v: vector[4]f32 = [x, y, 3.0, 0.0]
+    z: vector[4]f32 = 0.0
+    k := 0.25
+    q: vector[2]float = k
+    n: vector[4]int = 7
+    a: [3]f32 = [x, x, y]
+    println("fill " + str(v) + " " + str(z) + " " + str(q) + " " + str(n) + " " + str(a))
+
+fn swizzle():                               # 220: a named swizzle reads lanes as a vector
+    a: vector[4]f32 = [1.0, 0.0, 0.0, 0.0]
+    b: vector[4]f32 = [0.0, 1.0, 0.0, 0.0]
+    v: vector[4]f32 = [1.0, 2.0, 3.0, 4.0]
+    println("swizzle " + str(a.yzxw * b.zxyw - a.zxyw * b.yzxw) + " " + str(v.wzyx) + " " + str(v.xy) + " " + str(v.rgba))
+
+fn vsum(v: vector[$N]$T) -> $T:            # 219: generic over width and lane type
+    s := v[0]
+    for i in 1..<len(v):
+        s += v[i]
+    return s
+
+fn vscale(v: vector[$N]$T, k: $T) -> vector[$N]$T:
+    return v * k
+
+fn generic():
+    a: vector[4]f32 = [1.0, 2.0, 3.0, 4.0]
+    b: vector[2]float = [3.0, 4.0]
+    c: vector[2]int = [1, 2]
+    println("generic " + str(vsum(a)) + " " + str(vsum(b)) + " " + str(vsum(c)) + " " + str(vscale(b, 2.0)))
+
+fn main():
+    generic()
+    swizzle()
+    fill()
+    neg()
+    scalar_adapts()
+    widen()

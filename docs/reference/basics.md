@@ -127,7 +127,9 @@ for cond:                   # condition form: repeat while cond is true
     cond = false
 for:                        # infinite form: until a break or a return
     break
-for i := 0; i < n; i += 1:  # three-clause form: i goes 0 .. n-1
+for i in 0..<n:              # counting form: i goes 0 .. n-1
+    println(str(i))
+for i := 0; i < n; i += 2:  # three-clause form, for any other step
     println(str(i))
 for i := a; i > b; i -= s:  # counting down — the direction is in the condition
     println(str(i))
@@ -167,8 +169,9 @@ fn drain(r: Result(int, string)) -> int:
 named `pass` still works. It is not an expression — it produces no value and cannot be assigned
 ([spec §14.1.1](../spec/10-statements.md#1411-pass)).
 
-There is no counting form and no `range`: to count, say the
-direction in the condition (`i > b` with `i -= s`) instead of in the sign of a step. Note the
+There is no `range`: `for i in a..<b:` counts up by 1 (it is the three-clause
+`for i := a; i < b; i += 1:`, so `b` is re-read every pass); for any other step
+or direction, say it in the condition (`i > b` with `i -= s`). Note the
 trade: a post clause is arbitrary code, so `for i := 0; i < n;
 i += 0:` is an infinite loop that nothing diagnoses. To count in parallel, use
 `parallel for i in 0..<N:`, which steps by 1 and has no zero-step case.

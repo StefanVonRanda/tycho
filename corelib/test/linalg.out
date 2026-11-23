@@ -10,3 +10,11 @@ mulid=true
 transpose=true
 persp=true
 look=true
+vcross=true
+vlen=true vdot=true
+vnorm=true
+vnormzero=true
+vlerp=true
+v2=true
+vdotf=true vlenf=true
+vtransform=true

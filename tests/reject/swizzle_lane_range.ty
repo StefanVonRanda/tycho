@@ -1,0 +1,4 @@
+# expect: '.xz' names lane 2, and this vector has only 2 lanes
+fn main():
+    v: vector[2]f32 = [1.0, 2.0]
+    println(str(v.xz))

@@ -1060,3 +1060,45 @@ the corpus exercises.
 ### 216. `core:gfx` had no mouse-wheel event, so scroll-to-zoom could not be written — **FIXED 2026-11-23**
 
 > Pinned-by: sh tests/gfx_events.sh
+
+### 217. `to_float` refused a `float` argument even inside a generic body, where `$T` is float in one instance and not in another — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "already := a0 == \"float\" and cs.instdepth > 0" compiler/types/tcheck.ty
+> Pinned-by: grep -q "^vdotf=true vlenf=true$" corelib/test/linalg.out
+
+### 218. `core:linalg` modelled vectors as structs with per-width functions, steering programs away from the built-in `vector[N]T` — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^vcross=true$" corelib/test/linalg.out
+
+### 219. A generic could not take `vector[$N]$T`, so vector code could not be written once for every width and lane type — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^fn dot(a: vector\[\$N\]\$T, b: vector\[\$N\]\$T) -> \$T:" corelib/linalg/linalg.ty
+> Pinned-by: grep -q "^vdotf=true vlenf=true$" corelib/test/linalg.out
+
+### 220. A swizzle read was only a tuple, so a vector cross product had to be written lane by lane — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^swizzle \[0.0, 0.0, 1.0, 0.0\]" tests/vector_ergonomics.out
+> Pinned-by: test -f tests/reject/swizzle_lane_range.ty
+
+### 221. Unary `-` was refused on vectors, `f32` and the signed sized ints — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^neg \[-1.0, 2.0, -3.0, -0.0\]" tests/vector_ergonomics.out
+> Pinned-by: test -f tests/reject/neg_unsigned.ty
+
+### 222. A `float` scalar variable could not scale an `f32` vector without `to_f32` at every use — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^adapt \[0.5, 1.0, 1.5, 0.0\]" tests/vector_ergonomics.out
+
+### 223. `f32` never widened to `float`, so every lane read into `float` maths needed `to_float` — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^widen 3.0 0.0 true 3.0 0.75" tests/vector_ergonomics.out
+> Pinned-by: test -f tests/reject/f32_widen_inout.ty
+> Pinned-by: test -f tests/reject/f32_widen_array.ty
+
+### 224. A vector could not be filled from a scalar or built from `float` variables without a conversion per lane — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^fill \[1.5, 2.0, 3.0, 0.0\] \[0.0, 0.0, 0.0, 0.0\]" tests/vector_ergonomics.out
+
+### 225. There was no sequential counting loop: every count was `for i := 0; i < n; i += 1:` — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^80 9 0$" tests/for_range.out

@@ -1,0 +1,4 @@
+# expect: unary `-` needs an int, a float, a signed sized int or f32, or a vector
+fn main():
+    u := to_u32(3)
+    println(str(-u))

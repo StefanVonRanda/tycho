@@ -396,6 +396,11 @@ fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
             c, t := _ex(&cs, k[0])
             if op == "not":
                 return ("(!" + c + ")", "bool")
+            if op == "-" and _is_vec(t):
+                # A vector is a struct around a GCC/Clang vector field, so negate
+                # the field: one lane-wise instruction (FRICTION 221).
+                nv := _fresh(&cs, "_neg")
+                return ("({ " + _cty(&cs, t) + " " + nv + " = " + c + "; " + nv + ".v = -" + nv + ".v; " + nv + "; })", t)
             if op == "-" or op == "~":
                 if _is_sized(t):
                     return ("((" + _cty(&cs, t) + ")(" + op + c + "))", t)

@@ -580,6 +580,16 @@ fn _lane_index(f: string) -> int:
     return -1
 
 fn _lane_read(cs: inout C, rc: string, rt: string, f: string) -> (string, string, bool):
+    if _is_vec(rt) and (len(f) == 2 or len(f) == 4) and _lane_index(f[0:1]) >= 0:
+        # `v.yzxw` (FRICTION 220): the base once, then lane by lane -- cc turns
+        # the constant lane pattern into one shuffle.
+        nt := _vec_of(&cs, len(f), _velem(&cs, rt))
+        sb := _fresh(&cs, "_swb")
+        sr := _fresh(&cs, "_swr")
+        out := "({ " + _ctyz(&cs, rt) + sb + " = (" + rc + "); " + _ctyz(&cs, nt) + sr + "; "
+        for i := 0; i < len(f); i += 1:
+            out = out + sr + ".v[" + str(i) + "] = " + sb + ".v[" + str(_lane_index(f[i:i + 1])) + "]; "
+        return (out + sr + "; })", nt, true)
     k := _lane_index(f)
     if k < 0:
         return ("", "", false)
@@ -984,7 +994,13 @@ fn _ty(cs: inout C, t: ast.Ty) -> string:
             # rule; otherwise the emitter silently made vector[N] into V0.
             count := strings.parse_int_prefix(n)
             key := _pfx(&cs) + n
-            if key in cs.constv:
+            if len(n) > 1 and n[0] == 36:
+                # `vector[$N]T`: the instance bound N to a lane count (FRICTION 219).
+                bv := _tpget(&cs, n[1:])
+                if len(bv) == 0:
+                    _bad("unbound vector count '" + n + "'")
+                count = strings.parse_int_prefix(bv)
+            elif key in cs.constv:
                 count = cs.constv[key]
             elif n in cs.constv:
                 count = cs.constv[n]
