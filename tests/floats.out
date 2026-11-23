@@ -7,3 +7,4 @@ cmp-ok
 mag2=25.0
 avg=2.5
 trunc=3
+bool=1.0 0

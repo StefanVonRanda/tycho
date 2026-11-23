@@ -24,3 +24,5 @@ fn main():
     println("mag2=" + str(mag2(v)))               # 25.0
     println("avg=" + str(avg([1, 2, 3, 4])))      # 2.5
     println("trunc=" + str(to_int(3.9)))          # 3
+    on := true
+    println("bool=" + str(to_float(on)) + " " + str(to_int(not on)))   # 1.0 0

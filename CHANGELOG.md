@@ -9,6 +9,8 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`to_float(b)` and `to_int(b)` take a `bool`** (`1.0`/`0.0`, `1`/`0`), so a
+  flag becomes a number in one expression instead of a three-line `if`.
 - **`for i in a..<b:` counts sequentially.** It is `for i := a; i < b; i += 1:`
   (so `b` is re-read every pass); `range()` stays removed.
 - **Vector maths reads like shader code.** Unary `-` on vectors, `f32` and the

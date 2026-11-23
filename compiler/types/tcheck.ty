@@ -2835,17 +2835,19 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         # another, and the conversion is what makes that body generic at all
         # (FRICTION 217).
         already := a0 == "float" and cs.instdepth > 0
-        if known(a0) and not (already or _is_int(a0) or a0 == "f32" or (_tdecl(&cs, a0) >= 0 and b0 == "float")):
-            _cerr(&cs, "to_float(n) takes an int, a sized int, f32, or a float newtype")
+        # A bool is 0.0 or 1.0: a flag handed to a shader or a C array, which
+        # otherwise took `f := 0.0` / `if b:` / `f = 1.0` per flag (FRICTION 226).
+        if known(a0) and not (already or _is_int(a0) or a0 == "f32" or a0 == "bool" or (_tdecl(&cs, a0) >= 0 and b0 == "float")):
+            _cerr(&cs, "to_float(n) takes an int, a bool, a sized int, f32, or a float newtype")
         return "float"
     if n == "to_int":
         if not _arity(&cs, n, args, 1, "to_int(x) takes one argument"):
             return "int"
         if a0 == "int":
             _cerr(&cs, "to_int(x): x is already an int -- indexing a string (s[i]) yields the byte value as an int; use chr(x) for its one-character string")
-        elif known(a0) and not (a0 == "float" or _is_int(a0) or a0 == "f32" or a0 == "char" or
+        elif known(a0) and not (a0 == "float" or _is_int(a0) or a0 == "f32" or a0 == "char" or a0 == "bool" or
                 (_tdecl(&cs, a0) >= 0 and _is_int(b0))):
-            _cerr(&cs, "to_int(x) takes a float (truncates toward zero), a sized int, f32, a char, or an int newtype")
+            _cerr(&cs, "to_int(x) takes a float (truncates toward zero), a bool (0 or 1), a sized int, f32, a char, or an int newtype")
         return "int"
     if len(_sized_conv(n)) > 0:
         if not _arity(&cs, n, args, 1, n + "(x) takes one argument"):

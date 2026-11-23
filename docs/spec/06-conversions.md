@@ -33,8 +33,8 @@ consulted (so a newtype over the listed base is accepted).
 | Builtin | Accepts | Yields | Notes |
 |---|---|---|---|
 | `str(x)` | `int`, any sized int, `f32`, `bool`, `float`, `string`, `char` (through `base_of`) | `string` | polymorphic; identity on `string`; a `char` → its one-byte glyph |
-| `to_int(x)` | `float`, any sized int, `f32`, `char`, or an `int`-newtype | `int` | truncates toward zero for `float`; a `NaN`/out-of-range `float` **aborts** (§8.5) |
-| `to_float(n)` | `int`, any sized int, `f32`, or a `float`-newtype | `float` | |
+| `to_int(x)` | `float`, `bool`, any sized int, `f32`, `char`, or an `int`-newtype | `int` | truncates toward zero for `float`; a `NaN`/out-of-range `float` **aborts** (§8.5); `bool` is `0` or `1` |
+| `to_float(n)` | `int`, `bool`, any sized int, `f32`, or a `float`-newtype | `float` | `bool` is `0.0` or `1.0` |
 | `to_u8` … `to_i64`, `to_f32` | any numeric scalar: `int`, `char`, `float`, or any sized int/float (through `base_of`) | the named fixed-width type | narrowing / reinterpretation; **total** (defined for every input). `to_i32` recovers a 32-bit C `int` return over FFI |
 | `to_str(x)` | `bytes`, or a `string`-newtype | `string` | zero-cost reinterpret (same buffer) |
 | `to_bytes(x)` | `string`, `bytes` (through `base_of`), `[int]`, or a packed struct | `bytes` | `string`/`bytes`: same buffer, distinct type (zero-cost reinterpret). `[int]`: each element truncated `& 0xFF` into a fresh buffer — builds a binary `bytes` (interior `0x00` allowed). Packed struct: exactly `size_of$(T)` bytes, little-endian |

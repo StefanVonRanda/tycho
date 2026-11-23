@@ -1102,3 +1102,7 @@ the corpus exercises.
 ### 225. There was no sequential counting loop: every count was `for i := 0; i < n; i += 1:` — **FIXED 2026-11-23**
 
 > Pinned-by: grep -q "^80 9 0$" tests/for_range.out
+
+### 226. A bool could not become a number, so every flag handed to a shader took three lines — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^bool=1.0 0$" tests/floats.out

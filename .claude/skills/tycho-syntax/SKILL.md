@@ -172,6 +172,12 @@ bounds must be checked.
 
 ## Finding a corelib answer
 
+**Check the package list before you hand-roll a helper, call corelib "missing",
+or reach for Python.** `ls corelib` lists 80+ packages. A session with a Tycho
+renderer wrote its image diffs and contact sheets in Python and a 26-branch
+flag parser by hand, then called image I/O a gap, while `core:raster`
+(BMP/QOI/TGA/PPM), `core:image` (PNG/JPEG) and `core:cli` sat there.
+
 Per-function semantics are not fully written down (`docs/spec/18-library.md`
 says so). The order that works:
 
