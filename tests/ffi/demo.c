@@ -144,3 +144,20 @@ const char *ffi_spick(const char *const *v, int64_t n, int64_t i) {
  * callee's strlen sees the prefix only, and a C buffer holding one comes back strlen-bounded. */
 int64_t ffi_clen(const char *s) { return (int64_t)strlen(s); }
 const char *ffi_nulstr(void) { static const char b[4] = {'h', 0, 'i', 0}; return b; }
+
+/* FRICTION 213: arrays of sized scalars cross as (const T *, len), stored flat. */
+double ffi_f32_arr_sum(const float *v, int64_t n) {
+    double s = 0;
+    for (int64_t i = 0; i < n; i++) s += v[i];
+    return s;
+}
+
+int64_t ffi_u32_arr_last(const uint32_t *v, int64_t n) {
+    return n > 0 ? (int64_t)v[n - 1] : -1;
+}
+
+int64_t ffi_u8_arr_sum(const uint8_t *v, int64_t n) {
+    int64_t s = 0;
+    for (int64_t i = 0; i < n; i++) s += v[i];
+    return s;
+}

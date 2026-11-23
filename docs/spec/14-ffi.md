@@ -39,7 +39,10 @@ struct (the `examples/gfx` `Event` decodes `SDL_Event` this way).
   the C buffer of a `bytes`/array return is freed after the copy.
 - **`[int]` and `[float]`** — a **scalar** array crosses as a `(const T*, int64_t)`
   pair (like `bytes`), in either direction. A dynamic `[POD struct]` parameter
-  crosses the same way, borrowed for the call; an array of any other element
+  crosses the same way, borrowed for the call, and so does a parameter that is an
+  array of a sized scalar (`[f32]`, `[u8]` … `[u64]`, `[i8]` … `[i64]`), which is
+  stored flat as its C type: `[f32]` arrives as `const float *`, `[u32]` as
+  `const uint32_t *`, with no conversion. An array of any other element
   type, and any map or non-POD struct, is rejected (no flat, self-describing C
   ABI).
 - **`[string]` — parameter direction only.** It crosses as a

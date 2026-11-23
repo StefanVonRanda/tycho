@@ -1,0 +1,5 @@
+# FRICTION 208: a call spelled with a keyword said only "expected an
+# expression". `fn select` itself is refused, but a call in a file parsed
+# before the definition's file reaches the parser first.
+fn main():
+    println(str(select(1)))

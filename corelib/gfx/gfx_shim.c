@@ -145,7 +145,9 @@ void *gfx_open(int64_t w, int64_t h, const char *title) {
     }
     g->w = (int)w;
     g->h = (int)h;
-    g->window = SDL_CreateWindow(title, g->w, g->h, 0);
+    /* Resizable: every gfx program already handles kind 5/8 resize events,
+       but the window could not be resized to produce one (FRICTION 215). */
+    g->window = SDL_CreateWindow(title, g->w, g->h, SDL_WINDOW_RESIZABLE);
     if (!g->window) {
         fprintf(stderr, "gfx: SDL_CreateWindow: %s\n", SDL_GetError());
         free(g);
@@ -251,10 +253,15 @@ int64_t gfx_present(void *handle) {
 }
 
 typedef struct {
-    int32_t kind;       /* 0 none, 1 quit, 2 key down, 3 mouse move, 4 mouse button, 5 resize, 6 key up */
+    int32_t kind;       /* 0 none, 1 quit, 2 key down, 3 mouse move, 4 mouse button down,
+                           5 resize (logical size), 6 key up, 7 mouse button up,
+                           8 drawable size change (pixels), 9 mouse wheel */
     int32_t key;        /* 1..4 direction, 27 quit, otherwise the SDL keycode */
-    int32_t x, y;       /* mouse coordinates for kinds 3/4 */
-    int32_t button;     /* SDL mouse button for kind 4 */
+    int32_t x, y;       /* mouse coordinates for kinds 3/4/7; the new size for 5/8;
+                           for 9, whole wheel steps (y > 0: scrolled away from the user) */
+    int32_t button;     /* SDL mouse button for kinds 4/7 */
+    int32_t sym;        /* kinds 2/6: the raw SDL keycode, before `key` folds WASD,
+                           arrows and Q/Esc together */
 } Event;
 
 static int32_t event_key(SDL_Keycode k) {
@@ -268,15 +275,17 @@ static int32_t event_key(SDL_Keycode k) {
 
 Event gfx_poll_event(void *handle) {
     (void)handle;
-    Event out = {0, 0, 0, 0, 0};
+    Event out = {0, 0, 0, 0, 0, 0};
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_EVENT_QUIT) {
             out.kind = 1;
             return out;
         }
+        /* Two kinds, not one: on a HiDPI display the logical and the pixel
+           size differ, and folding both into one kind made x/y mean either. */
         if (e.type == SDL_EVENT_WINDOW_RESIZED || e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
-            out.kind = 5;
+            out.kind = e.type == SDL_EVENT_WINDOW_RESIZED ? 5 : 8;
             out.x = (int32_t)e.window.data1;
             out.y = (int32_t)e.window.data2;
             return out;
@@ -284,11 +293,13 @@ Event gfx_poll_event(void *handle) {
         if (e.type == SDL_EVENT_KEY_DOWN) {
             out.kind = 2;
             out.key = event_key(e.key.key);
+            out.sym = (int32_t)e.key.key;
             return out;
         }
         if (e.type == SDL_EVENT_KEY_UP) {
             out.kind = 6;
             out.key = event_key(e.key.key);
+            out.sym = (int32_t)e.key.key;
             return out;
         }
         if (e.type == SDL_EVENT_MOUSE_MOTION) {
@@ -297,8 +308,21 @@ Event gfx_poll_event(void *handle) {
             out.y = (int32_t)e.motion.y;
             return out;
         }
+        if (e.type == SDL_EVENT_MOUSE_WHEEL) {
+#if SDL_VERSION_ATLEAST(3, 2, 12)
+            int32_t dx = e.wheel.integer_x, dy = e.wheel.integer_y;
+#else
+            int32_t dx = (int32_t)SDL_roundf(e.wheel.x), dy = (int32_t)SDL_roundf(e.wheel.y);
+#endif
+            if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) { dx = -dx; dy = -dy; }
+            if (dx == 0 && dy == 0) continue;  /* a trackpad fraction, not yet a step */
+            out.kind = 9;
+            out.x = dx;
+            out.y = dy;
+            return out;
+        }
         if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-            out.kind = 4;
+            out.kind = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? 4 : 7;
             out.x = (int32_t)e.button.x;
             out.y = (int32_t)e.button.y;
             out.button = (int32_t)e.button.button;

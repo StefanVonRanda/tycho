@@ -1,0 +1,7 @@
+# FRICTION 209: `return` in a lambda body, the habit from named functions,
+# said only "expected an expression".
+fn apply(f: fn(int) -> int, x: int) -> int:
+    return f(x)
+
+fn main():
+    println(str(apply(fn(a: int) -> int: return a + 1, 2)))

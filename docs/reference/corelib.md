@@ -215,7 +215,10 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`bits`** — fixed-width bit operations: `rotl32`/`rotr32`/`rotl64`/`rotr64`
   (negative counts rotate the other way), `popcount32`/`popcount64`,
   `clz32`/`clz64` and `ctz32`/`ctz64` (return 32/64 for zero),
-  `bswap16`/`bswap32`/`bswap64`, and `reverse32`/`reverse64`.
+  `bswap16`/`bswap32`/`bswap64`, `reverse32`/`reverse64`, and IEEE-754 bit
+  patterns for binary formats: `f32_bits`/`f32_from_bits` (`f32` ↔ `u32`) and
+  `f64_bits`/`f64_from_bits` (`float` ↔ `u64`), exact both ways including NaN
+  payloads.
 - **`ease`** — standard easing curves over `t` in `[0, 1]`: `linear`, quad,
   cubic and quart in/out/in-out (`in_quad`, `out_quad`, `in_out_quad`,
   `in_cubic`, `out_cubic`, `in_out_cubic`, `in_quart`, `out_quart`,

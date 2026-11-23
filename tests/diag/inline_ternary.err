@@ -1,0 +1,3 @@
+tests/diag/inline_ternary.ty:5: error: there is no inline `a if c else b` -- write a value `if` as the whole right-hand side: `x := if c:`, then each branch's value on its own indented line, with an `else`
+     5 |     x := 1 if a > 2 else 0
+       |            ^

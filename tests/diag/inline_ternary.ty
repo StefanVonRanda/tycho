@@ -1,0 +1,6 @@
+# FRICTION 210: Python's `a if c else b` said "expected newline, found kw
+# 'if'" and never mentioned the value `if` that does the job.
+fn main():
+    a := 3
+    x := 1 if a > 2 else 0
+    println(str(x))

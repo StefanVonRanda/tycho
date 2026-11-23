@@ -1,0 +1,3 @@
+tests/diag/lambda_block_body.ty:3: error: a lambda body is a single expression on the same line as `:` -- for a block of statements, declare a named function at the top level
+     3 |     f := fn(a: int) -> int:
+       |                            ^

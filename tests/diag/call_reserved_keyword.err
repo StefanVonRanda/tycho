@@ -1,0 +1,3 @@
+tests/diag/call_reserved_keyword.ty:5: error: 'select' is a reserved keyword and cannot be called -- no procedure can be named 'select'; rename it
+     5 |     println(str(select(1)))
+       |                 ^

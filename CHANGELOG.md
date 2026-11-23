@@ -9,6 +9,9 @@ builtins and corelib signatures.
 
 ### Language
 
+- **An `extern fn` parameter may be an array of a sized scalar.** `[f32]`
+  crosses as `const float *`, `[u32]` as `const uint32_t *` (likewise the other
+  `u`/`i` widths), with the length after it and no conversion (spec §24.1).
 - **`[packed T]` crosses the bytes bridge as one array.** `to_bytes(xs)` writes
   every record in order, little-endian; `from_bytes$([T])(b)` reads the array
   back and refuses a length that is not a whole number of records.
@@ -24,11 +27,43 @@ builtins and corelib signatures.
   `get_typed`/`set_typed`/`remove_typed` refuse an id from a pool of another
   element type at compile time. The `Handle` API is unchanged.
 
+- `core:bits` gains `f32_bits` / `f32_from_bits` and `f64_bits` /
+  `f64_from_bits`: exact IEEE-754 bit patterns for binary formats.
+  `core:cbor` now uses them instead of a private shim.
+- `core:gfx` events tell apart what they used to fold together: kind 4 is a
+  mouse button press and the new kind 7 its release; kind 5 is a logical
+  resize and the new kind 8 a drawable (pixel) size change; and the new
+  `Event.sym` field holds the raw SDL keycode, so W and Up, or Q and Esc, can be
+  told apart while `key` keeps folding them.
+- `core:gfx` windows are resizable, and the new event kind 9 reports the mouse
+  wheel in whole steps (`y > 0` is scrolled away from the user, whatever the
+  system's natural-scrolling setting).
+
+### Breaking
+
+- **`core:gfx.Event` has a sixth field, `sym`.** A positional
+  `gfx.Event(kind, key, x, y, button)` needs a sixth argument.
+- **`core:gfx` mouse and resize kinds split.** Kind 4 no longer fires on a
+  button release (that is kind 7), and kind 5 no longer fires on a pixel-size
+  change (that is kind 8). A program that re-reads the window size on resize
+  should check `ev.kind == 5 or ev.kind == 8`, as the gfx examples now do.
+
+### Compiler
+
+- Clearer diagnostics for four habits from other languages: calling a keyword
+  (`select(x)`), `return` in a lambda body, a lambda body on its own line, and
+  Python's inline `a if c else b` (which names the value `if` instead).
+
 ### Performance
 
 - A fresh `to_bytes` result is no longer copied on return for a `[int]` or
   packed argument, and `core:buffer.write` / `write_bytes` append a whole
   `bytes` at once (flat-state save/load roughly 2x faster).
+- Every `core:sort` sort and `arrays.sort` is now a stable O(n log n) merge;
+  all but `sort_by` were insertion sorts. The order of the results is
+  unchanged. Sorting 300k keys went from 21 s to well under a second.
+- `arrays.fill(n, v)` allocates once: a 40M-element fill peaked at 1.3 GiB and
+  now peaks at the 305 MiB it returns.
 
 ## [0.9.2] — 2026-11-12
 

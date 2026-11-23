@@ -1,5 +1,7 @@
 package cbor
 
+import "core:bits"
+
 struct Pair:
     key: Value
     value: Value
@@ -26,11 +28,6 @@ enum CborErr:
     Trailing
 
 const MAX_DEPTH = 128
-
-extern fn cbx_f64_bits(v: float) -> u64
-extern fn cbx_f64_from_bits(u: u64) -> float
-extern fn cbx_f32_bits(v: float) -> u32
-extern fn cbx_f32_from_bits(u: u32) -> float
 
 fn _head(out: inout [int], major: int, n: u64):
     m := major * 32
@@ -97,10 +94,10 @@ fn _enc(v: Value, out: inout [int]):
             push(out, 247)
         Float(f):
             push(out, 251)                 # f64, big-endian
-            bits := cbx_f64_bits(f)
+            pat := bits.f64_bits(f)
             i := 56
             for i >= 0:
-                push(out, to_int((bits >> i) & 255))
+                push(out, to_int((pat >> i) & 255))
                 i -= 8
 
 fn encode(v: Value) -> bytes:
@@ -287,10 +284,10 @@ fn _read_value(s: string, pos: inout int, depth: int) -> Result(Value, CborErr):
             return Ok(Float(_half(u) or_return))
         if ai == 26:
             u := _read_u(s, &pos, 4) or_return
-            return Ok(Float(cbx_f32_from_bits(to_u32(u))))
+            return Ok(Float(to_float(bits.f32_from_bits(to_u32(u)))))
         if ai == 27:
             u := _read_u(s, &pos, 8) or_return
-            return Ok(Float(cbx_f64_from_bits(u)))
+            return Ok(Float(bits.f64_from_bits(u)))
         if ai == 24:
             simple := _read_u(s, &pos, 1) or_return
             if simple == 20:

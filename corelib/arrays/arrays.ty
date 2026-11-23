@@ -91,7 +91,11 @@ fn concat(a: [$T], b: [$T]) -> [$T]:          # a followed by b (new array)
     return out
 
 fn fill(n: int, v: $T) -> [$T]:               # n copies of v; n <= 0 -> []
-    out := []
+    out := []$T
+    # The size is known: one allocation, not a doubling series whose last step
+    # held old and new buffers at once -- 1 GiB peak for a 317 MB fill (FRICTION 214).
+    if n > 0:
+        reserve(out, n)
     i := 0
     for i < n:
         push(out, v)
@@ -117,19 +121,36 @@ fn is_sorted(xs: [$T]) -> bool where comparable(T):    # ascending, non-strict
         i = i + 1
     return true
 
+# Ascending, stable, O(n log n) bottom-up merge (FRICTION 207: was insertion
+# sort). Only strict `<` is used, so a tie keeps the earlier element first.
 fn sort(xs: [$T]) -> [$T] where comparable(T):         # ascending; new array (input unchanged)
-    out := xs
-    n := len(out)
-    i := 1
-    for i < n:
-        key := out[i]
-        j := i - 1
-        for j >= 0 and out[j] > key:
-            out[j + 1] = out[j]
-            j = j - 1
-        out[j + 1] = key
-        i = i + 1
-    return out
+    a := xs
+    b := xs
+    n := len(a)
+    width := 1
+    for width < n:
+        lo := 0
+        for lo < n:
+            mid := lo + width
+            hi := lo + width + width
+            if mid > n:
+                mid = n
+            if hi > n:
+                hi = n
+            i := lo
+            j := mid
+            for k := lo; k < hi; k += 1:
+                if i < mid and (j >= hi or (a[j] < a[i]) == false):
+                    b[k] = a[i]
+                    i += 1
+                else:
+                    b[k] = a[j]
+                    j += 1
+            lo = hi
+        for t := 0; t < n; t += 1:
+            a[t] = b[t]
+        width = width + width
+    return a
 
 fn min(xs: [$T]) -> $T where comparable(T):            # minimum; requires non-empty
     m := xs[0]

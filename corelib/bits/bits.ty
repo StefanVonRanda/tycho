@@ -118,3 +118,22 @@ fn reverse64(x: u64) -> u64:
         v = v >> 1
         i += 1
     return out
+
+# IEEE-754 bit patterns, for binary formats (PLY, glTF, CBOR, network floats).
+# Exact both ways, including NaN payloads, infinities and subnormals.
+extern fn bitsx_f32_bits(v: f32) -> u32
+extern fn bitsx_f32_from_bits(u: u32) -> f32
+extern fn bitsx_f64_bits(v: float) -> u64
+extern fn bitsx_f64_from_bits(u: u64) -> float
+
+fn f32_bits(x: f32) -> u32:                # the binary32 bit pattern of x
+    return bitsx_f32_bits(x)
+
+fn f32_from_bits(u: u32) -> f32:           # the binary32 value with bit pattern u
+    return bitsx_f32_from_bits(u)
+
+fn f64_bits(x: float) -> u64:              # the binary64 bit pattern of x
+    return bitsx_f64_bits(x)
+
+fn f64_from_bits(u: u64) -> float:         # the binary64 value with bit pattern u
+    return bitsx_f64_from_bits(u)

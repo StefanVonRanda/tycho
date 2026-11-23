@@ -1,0 +1,5 @@
+# FRICTION 209: a lambda body on the next line, as a block.
+fn main():
+    f := fn(a: int) -> int:
+        a + 1
+    println(str(f(1)))

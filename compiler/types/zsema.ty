@@ -224,6 +224,9 @@ fn _vec_width(cs: inout C, n: string, el: string):
 # numerics are accepted because parse_type consumes the sized-type NAME in an
 # extern signature and hands back `int`; tychoc1 keeps the spelling, so the
 # names are listed.
+fn _ffi_sized(t: string) -> bool:
+    return t == "f32" or t == "u8" or t == "u16" or t == "u32" or t == "u64" or t == "i8" or t == "i16" or t == "i32" or t == "i64"
+
 fn _ffi_scalar(t: string) -> bool:
     if t == "int" or t == "char" or t == "float" or t == "bool":
         return true
@@ -270,6 +273,11 @@ fn _ffi_param_ok(cs: inout C, t: string) -> bool:
     if t == "arr(int)" or t == "arr(float)" or t == "arr(string)":
         return true
     if _head(t) == "arr" and _ffi_pod_struct(&cs, _elem_of(&cs, t)):
+        return true
+    # An array of a sized scalar is stored flat as its C type, so it crosses
+    # as (const T *, len) with no copy -- a GPU upload needs float/uint32
+    # data, and [float] meant converting every element (FRICTION 213).
+    if _head(t) == "arr" and _ffi_sized(_elem_of(&cs, t)):
         return true
     if _ffi_cb_ok(t):
         return true

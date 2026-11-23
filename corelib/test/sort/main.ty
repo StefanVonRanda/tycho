@@ -1,5 +1,6 @@
 # corelib test: core:sort (argsort family + by_key + sort_by). All sorts stable, inputs unmutated.
 package main
+import "core:arrays"
 import "core:sort"
 
 struct Row:
@@ -91,3 +92,60 @@ fn main():
     byc := sort.sort_by(fruit, fn(a: string, b: string) -> int: count_then_name(freq.get(a, 0), freq.get(b, 0), a, b))
     println("capt=" + str(byc))                       # capt=[fig, apple, pear] -- 5 first, then 3s alphabetical
     println("edge2=" + str(len(sort.sort_by(empty, fn(x: int, y: int) -> int: x - y))) + str(len(sort.sort_by([5], fn(x: int, y: int) -> int: x - y))))
+    merge_vs_reference()
+
+# FRICTION 207: every sort here was insertion sort. The merge sorts that replaced
+# them must give exactly the order a stable insertion sort gives -- checked
+# against one written here, on data with many ties -- and stay fast on a size
+# where quadratic would take minutes.
+fn ref_argsort(keys: [int], desc: bool) -> [int]:
+    ord := []int
+    for i := 0; i < len(keys); i += 1:
+        push(ord, i)
+    for i := 1; i < len(ord); i += 1:
+        cur := ord[i]
+        j := i - 1
+        for j >= 0 and ((desc == false and keys[ord[j]] > keys[cur]) or (desc and keys[ord[j]] < keys[cur])):
+            ord[j + 1] = ord[j]
+            j = j - 1
+        ord[j + 1] = cur
+    return ord
+
+fn lcg_keys(n: int, mod: int) -> [int]:
+    out := []int
+    s := 12345
+    for i := 0; i < n; i += 1:
+        s = (s * 1103515245 + 12345) % 2147483648
+        push(out, s % mod)
+    return out
+
+fn sorted_asc(xs: [int]) -> bool:
+    for i := 1; i < len(xs); i += 1:
+        if xs[i] < xs[i - 1]:
+            return false
+    return true
+
+fn merge_vs_reference():
+    bad := 0
+    sizes := [0, 1, 2, 3, 7, 64, 65, 1000, 2047]
+    for n in sizes:
+        ks := lcg_keys(n, 13)
+        if sort.argsort(ks) != ref_argsort(ks, false):
+            bad += 1
+        if sort.argsort_desc(ks) != ref_argsort(ks, true):
+            bad += 1
+        want := []int
+        for i in ref_argsort(ks, false):
+            push(want, ks[i])
+        if sort.asc(ks) != want or arrays.sort(ks) != want:
+            bad += 1
+        if sort.by_key(ks, fn(x: int) -> int: 0 - x) != sort.desc(ks):
+            bad += 1
+    println("ref=" + str(bad))                        # ref=0
+    big := lcg_keys(300000, 1000000)
+    ord := sort.argsort(big)
+    by_ord := []int
+    for i in ord:
+        push(by_ord, big[i])
+    ok := sorted_asc(by_ord) and sorted_asc(sort.asc(big)) and sorted_asc(arrays.sort(big))
+    println("big=" + str(ok))                         # big=true

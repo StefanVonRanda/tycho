@@ -19,12 +19,12 @@ fn main():
     println("beep=" + str(len(beep)) + " " + str(to_str(beep)[0]) + " " + str(to_str(beep)[1]))
 
     controls := gfx.default_controls()
-    a1 := gfx.action(gfx.Event(2, 1, 0, 0, 0), controls)
-    a2 := gfx.action(gfx.Event(2, 2, 0, 0, 0), controls)
-    a3 := gfx.action(gfx.Event(2, 3, 0, 0, 0), controls)
-    a4 := gfx.action(gfx.Event(2, 4, 0, 0, 0), controls)
-    a5 := gfx.action(gfx.Event(2, 27, 0, 0, 0), controls)
-    a0 := gfx.action(gfx.Event(3, 0, 0, 0, 0), controls)
+    a1 := gfx.action(gfx.Event(2, 1, 0, 0, 0, 0), controls)
+    a2 := gfx.action(gfx.Event(2, 2, 0, 0, 0, 0), controls)
+    a3 := gfx.action(gfx.Event(2, 3, 0, 0, 0, 0), controls)
+    a4 := gfx.action(gfx.Event(2, 4, 0, 0, 0, 0), controls)
+    a5 := gfx.action(gfx.Event(2, 27, 0, 0, 0, 0), controls)
+    a0 := gfx.action(gfx.Event(3, 0, 0, 0, 0, 0), controls)
     println("actions=" + str(a1) + " " + str(a2) + " " + str(a3) + " " + str(a4) +
             " " + str(a5) + " " + str(a0))
     println("text=" + str(gfx.text_width("AB", 18)))

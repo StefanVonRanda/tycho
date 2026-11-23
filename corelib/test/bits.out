@@ -12,3 +12,8 @@ bswap64=true
 rev32=true
 rev64=true
 rot0=true rotneg=true
+f32one=true f64one=true
+negzero=true,true
+f32half=0.5 f64two=2.0
+subnormal=true
+roundtrip=0

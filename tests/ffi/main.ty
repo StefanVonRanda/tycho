@@ -21,6 +21,9 @@ struct FVec:                                               # FFI R4b: POD by val
 extern "ffidemo" fn ffi_vec_add(a: FVec, b: FVec) -> FVec
 extern "ffidemo" fn ffi_vec_sum(v: FVec) -> int
 extern "ffidemo" fn ffi_vec_arr_sum(vs: [FVec]) -> int
+extern "ffidemo" fn ffi_f32_arr_sum(xs: [f32]) -> float
+extern "ffidemo" fn ffi_u32_arr_last(xs: [u32]) -> int
+extern "ffidemo" fn ffi_u8_arr_sum(xs: [u8]) -> int
 extern "ffidemo" fn ffi_neg() -> i32                    # exact C int return type
 extern "ffidemo" fn ffi_ptrval(p: ptr) -> int            # echoes a ptr's integer value (to_ptr round-trip)
 extern "ffidemo" fn ffi_isum(xs: [int]) -> int           # [int] param -> (const long*, long)
@@ -150,3 +153,14 @@ fn main():
     println(f"r4b vec={to_int(vc.x)},{to_int(vc.y)} vsum={ffi_vec_sum(vc)} varr={ffi_vec_arr_sum(vs)}")
     # Sized `i32` matches the C int return; to_ptr makes an integer-valued sentinel pointer.
     println(f"neg={ffi_neg()} rawneg_ok={ffi_neg() < 0} sentinel={ffi_ptrval(to_ptr(-1))}")
+    fs := []f32
+    push(fs, to_f32(1.5))
+    push(fs, to_f32(0.25))
+    us := []u32
+    push(us, to_u32(7))
+    push(us, to_u32(4000000000))
+    bs := []u8
+    push(bs, to_u8(200))
+    push(bs, to_u8(100))
+    empty := []u32
+    println(f"sized f32sum={ffi_f32_arr_sum(fs)} u32last={ffi_u32_arr_last(us)} u8sum={ffi_u8_arr_sum(bs)} empty={ffi_u32_arr_last(empty)}")

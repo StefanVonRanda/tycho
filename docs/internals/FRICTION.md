@@ -1018,3 +1018,45 @@ the corpus exercises.
 > Pinned-by: test -f tests/reject/pop_subscript_place.ty
 > Pinned-by: test -f tests/reject/reserve_subscript_place.ty
 > Pinned-by: test -f tests/reject/index_subscript_place.ty
+
+### 207. Every `core:sort` sort except `sort_by`, and `arrays.sort`, was insertion sort, with nothing at the call site saying so — **FIXED 2026-11-23**
+
+> Pinned-by: sh -c '! grep -q "for j >= 0 and" corelib/sort/sort.ty corelib/arrays/arrays.ty'
+> Pinned-by: grep -q "^ref=0$" corelib/test/sort.out
+
+### 208. A call spelled with a keyword (`select(x)`) said only "expected an expression" — **FIXED 2026-11-23**
+
+> Pinned-by: test -f tests/diag/call_reserved_keyword.err
+
+### 209. `return` in a lambda body, or a lambda body on the next line, said only "expected an expression" — **FIXED 2026-11-23**
+
+> Pinned-by: test -f tests/diag/lambda_return.err
+> Pinned-by: test -f tests/diag/lambda_block_body.err
+
+### 210. Python's `a if c else b` said "expected newline, found kw 'if'" and never pointed at the value `if` — **FIXED 2026-11-23**
+
+> Pinned-by: test -f tests/diag/inline_ternary.err
+
+### 211. No public float <-> bit-pattern conversion; binary formats decoded IEEE-754 by hand — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^roundtrip=0$" corelib/test/bits.out
+
+### 212. `core:gfx` folded mouse press and release, logical and pixel resize, and WASD with the arrows into the same events — **FIXED 2026-11-23**
+
+> Pinned-by: sh tests/gfx_events.sh
+
+### 213. An extern could not take `[f32]` or `[u32]`, so GPU and audio data went through `[float]` and a per-element conversion — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "^sized f32sum=1.75 u32last=4000000000 u8sum=300 empty=-1$" tests/ffi/expected.out
+
+### 214. `arrays.fill` grew by `push` from empty, peaking at 4x its result (1.3 GiB for a 305 MiB fill) — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "reserve(out, n)" corelib/arrays/arrays.ty
+
+### 215. `core:gfx` windows could not be resized, though every gfx program handles resize events — **FIXED 2026-11-23**
+
+> Pinned-by: grep -q "SDL_CreateWindow(title, g->w, g->h, SDL_WINDOW_RESIZABLE)" corelib/gfx/gfx_shim.c
+
+### 216. `core:gfx` had no mouse-wheel event, so scroll-to-zoom could not be written — **FIXED 2026-11-23**
+
+> Pinned-by: sh tests/gfx_events.sh

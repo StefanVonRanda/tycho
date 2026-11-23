@@ -51,11 +51,15 @@ struct Mixer:
     samples: [int]
 
 struct Event:
-    kind: i32    # 0 none, 1 quit, 2 key down, 3 mouse move, 4 mouse button, 5 resize, 6 key up
-    key: i32
-    x: i32
-    y: i32
-    button: i32
+    kind: i32    # 0 none, 1 quit, 2 key down, 3 mouse move, 4 mouse button down,
+                 # 5 resize (logical size), 6 key up, 7 mouse button up,
+                 # 8 drawable size change (pixels; differs from 5 on HiDPI),
+                 # 9 mouse wheel (x/y = whole steps; y > 0 scrolled away from the user)
+    key: i32     # 1..4 direction (WASD and arrows alike), 27 quit (Esc and Q), else the SDL keycode
+    x: i32       # mouse position for 3/4/7; the new width for 5/8
+    y: i32       # mouse position for 3/4/7; the new height for 5/8
+    button: i32  # SDL mouse button for 4/7
+    sym: i32     # 2/6: the raw SDL keycode, so W and Up (or Q and Esc) can be told apart
 
 struct Controls:
     up: i32

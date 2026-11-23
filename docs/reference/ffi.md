@@ -50,7 +50,9 @@ rejected at compile time rather than corrupted at run time.
   `bytes` return never leaks: the two directions have opposite ownership, so do
   not reason about them together.
 - **`[int]` and `[float]`** — a scalar array crosses as a `(pointer, length)`
-  pair (like `bytes`); an array of any other element type does not.
+  pair (like `bytes`). As a parameter, so does an array of a sized scalar —
+  `[f32]` arrives as `const float *` and `[u32]` as `const uint32_t *`, no
+  conversion — which is how to hand a GPU or audio API its data.
 - **`ptr`** — an opaque foreign handle, a `void*` Tycho never dereferences. The
   `null` literal and `is_null(p)` work on it. `is_null` accepts a `handle` too,
   which is how to check whether an opener succeeded; the scope-exit free is
@@ -86,8 +88,8 @@ rejected at compile time rather than corrupted at run time.
   array or non-POD struct `inout` is **rejected**.
 
 Maps, non-POD structs, and other non-scalar arrays are **rejected** at the
-boundary — fail closed. (The scalar arrays `[int]`/`[float]`, arrays of POD
-structs, and `[string]` parameters do cross, above.)
+boundary — fail closed. (The scalar arrays `[int]`/`[float]`, parameter arrays of
+sized scalars and of POD structs, and `[string]` parameters do cross, above.)
 
 ## Threads
 

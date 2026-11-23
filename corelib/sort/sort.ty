@@ -15,57 +15,72 @@ package sort
 # When the order needs more than one key, mixed directions, or a type with no
 # `comparable` instance, use sort.sort_by(xs, cmp) and write the compare.
 
+# Every sort here is O(n log n): they share _order, a stable bottom-up merge
+# over the index permutation (FRICTION 207 -- they were insertion sorts).
+
+# The stable permutation that orders keys; desc reverses the order, and equal
+# keys keep their input order either way. Only strict `<` is used, as the
+# insertion sorts this replaced did, so a NaN key lands where it did before
+# relative to its neighbours' comparisons.
+fn _order(keys: [$T], desc: bool) -> [int] where comparable(T):
+    n := len(keys)
+    a := []int
+    for i := 0; i < n; i += 1:
+        push(a, i)
+    b := a
+    width := 1
+    for width < n:
+        lo := 0
+        for lo < n:
+            mid := lo + width
+            hi := lo + width + width
+            if mid > n:
+                mid = n
+            if hi > n:
+                hi = n
+            i := lo
+            j := mid
+            for k := lo; k < hi; k += 1:
+                take_left := i < mid
+                if i < mid and j < hi:
+                    # A tie takes the left run, which holds the earlier input.
+                    if desc:
+                        take_left = (keys[a[i]] < keys[a[j]]) == false
+                    else:
+                        take_left = (keys[a[j]] < keys[a[i]]) == false
+                if take_left:
+                    b[k] = a[i]
+                    i += 1
+                else:
+                    b[k] = a[j]
+                    j += 1
+            lo = hi
+        for t := 0; t < n; t += 1:
+            a[t] = b[t]
+        width = width + width
+    return a
+
+fn _gather(xs: [$T], ord: [int]) -> [$T]:
+    out := xs
+    for i := 0; i < len(ord); i += 1:
+        out[i] = xs[ord[i]]
+    return out
+
 fn argsort(keys: [$T]) -> [int] where comparable(T):        # ascending, stable
-    ord := []int
-    for i := 0; i < len(keys); i += 1:
-        push(ord, i)
-    for i := 1; i < len(ord); i += 1:
-        cur := ord[i]
-        j := i - 1
-        for j >= 0 and keys[ord[j]] > keys[cur]:
-            ord[j + 1] = ord[j]
-            j = j - 1
-        ord[j + 1] = cur
-    return ord
+    return _order(keys, false)
 
 fn argsort_desc(keys: [$T]) -> [int] where comparable(T):   # descending, stable
-    ord := []int
-    for i := 0; i < len(keys); i += 1:
-        push(ord, i)
-    for i := 1; i < len(ord); i += 1:
-        cur := ord[i]
-        j := i - 1
-        for j >= 0 and keys[ord[j]] < keys[cur]:
-            ord[j + 1] = ord[j]
-            j = j - 1
-        ord[j + 1] = cur
-    return ord
+    return _order(keys, true)
 
 fn asc(xs: [$T]) -> [$T] where comparable(T):       # sort the VALUES ascending, stable, new array (the common case)
-    out := xs
-    for i := 1; i < len(out); i += 1:
-        cur := out[i]
-        j := i - 1
-        for j >= 0 and out[j] > cur:
-            out[j + 1] = out[j]
-            j = j - 1
-        out[j + 1] = cur
-    return out
+    return _gather(xs, _order(xs, false))
 
 fn desc(xs: [$T]) -> [$T] where comparable(T):      # sort the VALUES descending, stable, new array
-    out := xs
-    for i := 1; i < len(out); i += 1:
-        cur := out[i]
-        j := i - 1
-        for j >= 0 and out[j] < cur:
-            out[j + 1] = out[j]
-            j = j - 1
-        out[j + 1] = cur
-    return out
+    return _gather(xs, _order(xs, true))
 
 # The general one: any order you can write as a three-way compare -- several keys,
 # mixed directions, a type with no `comparable` instance. cmp(a, b) returns <0, 0, >0.
-# Bottom-up merge, O(n log n), where every other sort here is insertion sort.
+# Bottom-up merge, O(n log n).
 fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]:
     a := xs
     b := xs
@@ -108,13 +123,7 @@ fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]:
 
 # deprecated: use sort_by(xs, cmp) -- by_key(xs, k) is sort_by(xs, fn(a, b) -> int: k(a) - k(b)). Removed in 1.0.
 fn by_key(xs: [$T], key: fn($T) -> int) -> [$T]:    # sort elements by a derived int key, ascending, stable
-    out := xs
-    for i := 1; i < len(out); i += 1:
-        cur := out[i]
-        kc := key(cur)
-        j := i - 1
-        for j >= 0 and key(out[j]) > kc:
-            out[j + 1] = out[j]
-            j = j - 1
-        out[j + 1] = cur
-    return out
+    ks := []int
+    for x in xs:
+        push(ks, key(x))
+    return _gather(xs, _order(ks, false))

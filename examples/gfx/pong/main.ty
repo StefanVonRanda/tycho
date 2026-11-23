@@ -146,7 +146,7 @@ fn main():
         for ev.kind != 0:
             if ev.kind == 1:
                 quit = true
-            if ev.kind == 5:
+            if ev.kind == 5 or ev.kind == 8:
                 win_w = gfx.window_width(win)
                 win_h = gfx.window_height(win)
             act := gfx.action(ev, controls)
