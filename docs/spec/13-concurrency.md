@@ -83,10 +83,14 @@ for a program that did not choose. A width outside `1..64` is refused: a
 literal at compile time, and a computed one aborts at run time rather than
 clamping.
 
-Each chunk's captured values are deep-copied into it, **with one exception: a
-`Channel(T)` capture is a scalar handle and is passed by value.** Every chunk
-therefore shares the one queue rather than receiving a private copy of it; an
-implementation MUST NOT deep-copy a captured channel.
+Captured values are **shared, not copied**: every chunk reads the enclosing
+scope's values in place, so capturing a large array costs nothing per chunk.
+Sharing is unobservable: the body MUST NOT write an outer variable (below), the
+enclosing scope is suspended until every chunk has joined, and a copy the body
+makes of a captured value (`ys := xs`) is its own value, so writing the copy
+never reaches the capture or another chunk. A captured `Channel(T)` is
+likewise its one shared queue; an implementation MUST NOT give a chunk a
+private copy of a captured channel.
 
 The counting spelling is `parallel for i in 0..<N:`, and this is the **only**
 context in which `0..<N` is legal — a sequential `for i in 0..<N:` is a compile

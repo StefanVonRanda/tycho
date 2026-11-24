@@ -63,7 +63,8 @@ parallel for i in 0..<400000000:      # K = min(ncpu(), 64) chunk tasks; TYCHO_T
     total += (i * 31 + 7) % 1000003   # reduction: chunk-local partial, folded at the join
 ```
 
-Works over `0..<N` or a collection. Captures deep-copy into each task, and
+Works over `0..<N` or a collection. Captures are shared with every task, not
+copied (the body cannot write them, and the loop waits for every task), and
 reduction accumulators — `acc = acc + e` / `acc = acc * e` and the `+=`/`*=`
 forms, on outer `int`/`float` locals, up to four — start from the operator's
 identity per chunk and fold at the in-order join. Integer results are therefore

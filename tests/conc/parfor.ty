@@ -29,3 +29,19 @@ fn main():
     parallel for i in 0..<4:
         f = f + 1.5
     print(str(to_int(f)))
+    # Captures are shared, not copied (spec 13 §22): a copy the body makes and
+    # writes stays its own, in every chunk, and the capture is untouched.
+    cxs := []int
+    for k := 0; k < 64; k += 1:
+        push(cxs, k)
+    hits := 0
+    parallel for i in 0..<64:
+        cys := cxs
+        cys[i] = 99
+        hits += cys[i] - cxs[i]
+    same := 0
+    for k := 0; k < 64; k += 1:
+        if cxs[k] == k:
+            same += 1
+    print(" " + str(hits) + " " + str(same))
+

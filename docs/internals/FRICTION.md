@@ -1148,3 +1148,15 @@ argument, so `[v.y, x]` and `min(v.y, x)` would have narrowed `x` to `f32`.
 
 > Pinned-by: grep -q "^\[0.1, 2.5\] \[2.5, 0.1\] true$" tests/f32_widen_mixed.out
 > Pinned-by: test -f tests/reject/f32_widen_generic_inout.ty
+
+### 233. The spec said `parallel for` deep-copies every capture into each chunk; the implementation shares them — **FIXED 2026-11-24** (spec)
+
+The meshlet viewer captured a 300 MB quadric array and a 170 MB index array into a `parallel
+for` and paid nothing per chunk: each chunk receives the capture's handle, as it always had.
+Sharing is unobservable -- the body cannot write an outer variable, a function parameter is
+read-only, the enclosing scope waits for every chunk, and a copy the body makes is its own --
+so the spec (13 §22) and the concurrency reference now say shared, which is the guarantee a
+program that captures large data relies on.
+
+> Pinned-by: grep -q "Captured values are \*\*shared, not copied\*\*" docs/spec/13-concurrency.md
+> Pinned-by: grep -q " 4320 64$" tests/conc/parfor.out

@@ -9,6 +9,8 @@ builtins and corelib signatures.
 
 ### Language
 
+- **Spec: `parallel for` captures are shared, not deep-copied** (13 §22). This is what the
+  implementation always did; capturing a large array costs nothing per chunk.
 - **`f32` widens to `float` in an unannotated array literal and at a generic `$T`**:
   `[x, v.y]` is `[float]` and `math.min(x, v.y)` instantiates at `float`, as `x + v.y`
   already did. By value only; an array of `f32` still never becomes an array of `float`.
