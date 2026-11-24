@@ -193,7 +193,11 @@ Reading it:
   roots, channel cells, and per-statement `_t` temporaries (~1% of bump on the
   self-compile).
 - Counters are only touched when the variable is set; a normal run pays one
-  never-taken branch per allocation.
+  never-taken branch per allocation. With it set, each thread counts on its own
+  and publishes when its task ends, so a `parallel for` keeps its speed (stats
+  on costs ~2x in one thread, about the same across many). Totals and
+  per-function counts are exact; with several threads a **peak** can be off by
+  under 4 KiB per other thread. In one thread it is exact.
 
 ## Limits
 

@@ -1160,3 +1160,18 @@ program that captures large data relies on.
 
 > Pinned-by: grep -q "Captured values are \*\*shared, not copied\*\*" docs/spec/13-concurrency.md
 > Pinned-by: grep -q " 4320 64$" tests/conc/parfor.out
+
+### 234. `TYCHO_ARENA_STATS` made a `parallel for` up to 80x slower, so any timing taken with it was wrong — **FIXED 2026-11-24**
+
+Every allocation incremented shared atomics (a compare-and-swap loop for the peak, a per-label
+block), and every scope exit read the clock twice, even for an empty scratch arena. From 15
+threads the shared cache lines serialised the program: a small-allocation `parallel for` ran
+25 ms with stats off and 2029 ms with them on, and the meshlet viewer's DAG build read 10.7 s
+instead of 4.2 s. Each thread now counts into its own block and publishes at task end; live
+bytes are published at once when a thread's own live bytes reach a new high and otherwise
+every 4 KiB of change; an empty arena's teardown is counted but not timed. 2029 ms -> 65 ms,
+the DAG build 2.29 s against 2.14 s off. Totals and per-function counts stay exact; a peak is
+exact in one thread and off by under 4 KiB per other thread across several.
+
+> Pinned-by: sh tests/arena_stats_threads.sh
+> Pinned-by: grep -q "static __thread StTl st_tl;" runtime/tycho_rt.c

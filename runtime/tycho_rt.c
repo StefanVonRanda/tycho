@@ -483,12 +483,22 @@ static void tycho_map_cap_check(tycho_int cap) {
  * profiling need shows up). All counters are only touched when g_arena_stats is
  * set, so a normal run pays one never-taken branch per alloc.
  *
- * Threading: the block pool is thread-local, but these aggregates are shared, so
- * every counter is atomic. g_arena_stats is set once by a constructor (before
- * main, before any thread) and only read after, so it's a plain int. */
+ * Threading: the block pool is thread-local, and so is the COUNTING: each thread
+ * adds into its own StTl (below) and publishes to these shared atomics when a
+ * task ends and at the final dump -- or, for live bytes, whenever its unpublished
+ * delta passes ST_BATCH. Counting straight into the shared atomics made every
+ * allocation a contended cache line: a 15-thread parallel for ran 80x slower with
+ * stats on (25 ms -> 2029 ms; FRICTION 234). Totals are exact. Live bytes are
+ * published at once whenever a thread's OWN live bytes reach a new high, and
+ * otherwise once the unpublished delta passes ST_BATCH either way; a steady loop
+ * stops setting highs after its first iterations, so it stops publishing. The
+ * peak is then exact in a single thread, and with several it can be off by the
+ * other threads' unpublished deltas, under ST_BATCH each. g_arena_stats is set once by a constructor (before main, before any
+ * thread) and only read after, so it's a plain int. */
 static int g_arena_stats = 0;
 static size_t g_block_override = 0;   /* TYCHO_BLOCK env; 0 = TYCHO_BLOCK_DEFAULT */
-static atomic_size_t st_live, st_peak_live, st_alloc_calls, st_alloc_bytes,
+static _Atomic long long st_live;    /* signed: a drop published before its allocations is transiently negative */
+static atomic_size_t st_peak_live, st_alloc_calls, st_alloc_bytes,
                      st_alloc_reqs, st_recycle_hits, st_recycle_bytes,
                      st_os_bytes, st_os_blocks, st_block_gets,
                      st_arenas, st_arena_frees;
@@ -517,13 +527,14 @@ static uint64_t st_now_ns(void) {
     return (uint64_t)ts.tv_sec * 1000000000u + (uint64_t)ts.tv_nsec;
 }
 
-static void st_peak_up(atomic_size_t *pk, size_t cur) {   /* high-water CAS, shared by the global and per-label counters */
+static void st_peak_up(atomic_size_t *pk, long long cur) {   /* high-water CAS, shared by the global and per-label counters */
+    if (cur <= 0) return;
     size_t p = atomic_load_explicit(pk, memory_order_relaxed);
-    while (cur > p && !atomic_compare_exchange_weak_explicit(
-            pk, &p, cur, memory_order_relaxed, memory_order_relaxed)) {}
+    while ((size_t)cur > p && !atomic_compare_exchange_weak_explicit(
+            pk, &p, (size_t)cur, memory_order_relaxed, memory_order_relaxed)) {}
 }
-static void st_bump_live(size_t n) {  /* live += n; track high-water */
-    st_peak_up(&st_peak_live, atomic_fetch_add_explicit(&st_live, n, memory_order_relaxed) + n);
+static void st_pub_live(long long d) {  /* publish a live-byte delta; track high-water */
+    if (d) st_peak_up(&st_peak_live, atomic_fetch_add_explicit(&st_live, d, memory_order_relaxed) + d);
 }
 static size_t st_chain_off(HBlock *b) { size_t s = 0; for (; b; b = b->next) s += b->off; return s; }
 
@@ -543,7 +554,7 @@ static size_t st_chain_off(HBlock *b) { size_t s = 0; for (; b; b = b->next) s +
  * a truncated profile that says so beats a tidy one that lies. */
 #define TYCHO_NLBL 4096             /* power of two; ~1k allocating functions, x4 for per-scope labels */
 #define TYCHO_LBL_PROBE 24
-typedef struct { _Atomic(const char *) key; atomic_size_t live, peak, bytes, calls; } StLbl;
+typedef struct { _Atomic(const char *) key; _Atomic long long live; atomic_size_t peak, bytes, calls; } StLbl;
 static StLbl st_lbl[TYCHO_NLBL];
 static atomic_size_t st_lbl_lost;
 static const char st_anon[] = "(unlabeled)";   /* task roots, channel cells, statement temporaries */
@@ -564,19 +575,84 @@ static StLbl *st_slot(const char *name) {
     }
     return NULL;
 }
-static void st_lbl_alloc(const Arena *a, size_t n) {
-    StLbl *s = st_slot(a->name ? a->name : st_anon);
-    if (!s) { atomic_fetch_add_explicit(&st_lbl_lost, 1, memory_order_relaxed); return; }
-    atomic_fetch_add_explicit(&s->calls, 1, memory_order_relaxed);
-    atomic_fetch_add_explicit(&s->bytes, n, memory_order_relaxed);
-    st_peak_up(&s->peak, atomic_fetch_add_explicit(&s->live, n, memory_order_relaxed) + n);
+/* ---- per-thread counting (see "Threading" above) ------------------------- */
+#define ST_BATCH (4 * 1024)         /* live-byte delta a thread holds before publishing */
+#define ST_TL_NLBL 1024             /* per-thread label slots; a miss counts straight into the shared table */
+typedef struct { const char *key; StLbl *g; long long dlive, own, hi; size_t bytes, calls; } StTlLbl;
+typedef struct {
+    size_t alloc_calls, alloc_bytes, alloc_reqs, recycle_hits, recycle_bytes,
+           os_bytes, os_blocks, block_gets, arenas, arena_frees, arena_free_noop,
+           ns_os, ns_teardown;
+    long long dlive, own, hi;       /* unpublished delta; this thread's own live bytes and their high */
+    StTlLbl *lbl;                   /* calloc'd on first use */
+} StTl;
+static __thread StTl st_tl;
+
+static void st_pub_lbl(StLbl *s, size_t calls, size_t bytes, long long d) {
+    if (calls) atomic_fetch_add_explicit(&s->calls, calls, memory_order_relaxed);
+    if (bytes) atomic_fetch_add_explicit(&s->bytes, bytes, memory_order_relaxed);
+    if (d) st_peak_up(&s->peak, atomic_fetch_add_explicit(&s->live, d, memory_order_relaxed) + d);
+}
+static void st_tl_lbl_flush(StTlLbl *t) {
+    if (t->g) st_pub_lbl(t->g, t->calls, t->bytes, t->dlive);
+    else if (t->calls) atomic_fetch_add_explicit(&st_lbl_lost, t->calls, memory_order_relaxed);
+    t->calls = 0; t->bytes = 0; t->dlive = 0;
+}
+/* Charge (calls, bytes, live delta) to a label through this thread's table. */
+static void st_lbl_charge(const char *name, size_t calls, size_t bytes, long long d) {
+    if (!st_tl.lbl) st_tl.lbl = (StTlLbl *)calloc(ST_TL_NLBL, sizeof(StTlLbl));
+    if (st_tl.lbl) {
+        size_t h = ((size_t)(const void *)name >> 4) * (size_t)0x9e3779b1u;
+        for (int i = 0; i < 8; i++) {
+            StTlLbl *t = &st_tl.lbl[(h + (size_t)i) & (ST_TL_NLBL - 1)];
+            if (!t->key) { t->key = name; t->g = st_slot(name); }
+            if (t->key != name) continue;
+            t->calls += calls; t->bytes += bytes; t->dlive += d;
+            t->own += d;
+            int high = t->own > t->hi;
+            if (high) t->hi = t->own;
+            if (t->g && (high || t->dlive >= ST_BATCH || t->dlive <= -ST_BATCH)) {
+                st_pub_lbl(t->g, 0, 0, t->dlive);
+                t->dlive = 0;
+            }
+            return;
+        }
+    }
+    StLbl *s = st_slot(name);       /* no thread slot: straight to the shared table */
+    if (s) st_pub_lbl(s, calls, bytes, d);
+    else if (calls) atomic_fetch_add_explicit(&st_lbl_lost, calls, memory_order_relaxed);
+}
+static void st_live_add(long long d) {
+    st_tl.dlive += d;
+    st_tl.own += d;
+    int high = st_tl.own > st_tl.hi;
+    if (high) st_tl.hi = st_tl.own;
+    if (high || st_tl.dlive >= ST_BATCH || st_tl.dlive <= -ST_BATCH) { st_pub_live(st_tl.dlive); st_tl.dlive = 0; }
+}
+/* Publish everything this thread has counted: at task end and at the dump. */
+static void st_tl_flush(void) {
+    if (!g_arena_stats) return;
+    StTl *t = &st_tl;
+#define ST_PUB(f, g) if (t->f) { atomic_fetch_add_explicit(&g, t->f, memory_order_relaxed); t->f = 0; }
+    ST_PUB(alloc_calls, st_alloc_calls) ST_PUB(alloc_bytes, st_alloc_bytes)
+    ST_PUB(alloc_reqs, st_alloc_reqs) ST_PUB(recycle_hits, st_recycle_hits)
+    ST_PUB(recycle_bytes, st_recycle_bytes) ST_PUB(os_bytes, st_os_bytes)
+    ST_PUB(os_blocks, st_os_blocks) ST_PUB(block_gets, st_block_gets)
+    ST_PUB(arenas, st_arenas) ST_PUB(arena_frees, st_arena_frees)
+    ST_PUB(arena_free_noop, st_arena_free_noop) ST_PUB(ns_os, st_ns_os)
+    ST_PUB(ns_teardown, st_ns_teardown)
+#undef ST_PUB
+    st_pub_live(t->dlive); t->dlive = 0;
+    if (t->lbl) for (int i = 0; i < ST_TL_NLBL; i++) if (t->lbl[i].key) st_tl_lbl_flush(&t->lbl[i]);
+}
+static void st_lbl_alloc(const Arena *a, size_t n) {   /* charge it to the arena's owning function */
+    st_lbl_charge(a->name ? a->name : st_anon, 1, n, (long long)n);
 }
 static void st_drop_live(Arena *a) {  /* whole arena chain going away/rewound */
     size_t s = st_chain_off(a->head);
     if (!s) return;
-    atomic_fetch_sub_explicit(&st_live, s, memory_order_relaxed);
-    StLbl *l = st_slot(a->name ? a->name : st_anon);
-    if (l) atomic_fetch_sub_explicit(&l->live, s, memory_order_relaxed);
+    st_live_add(-(long long)s);
+    st_lbl_charge(a->name ? a->name : st_anon, 0, 0, -(long long)s);
 }
 
 static void st_fmt(size_t n, char *out, size_t outsz) {
@@ -595,6 +671,7 @@ static int st_cmp(const void *x, const void *y) {   /* by peak, descending */
 }
 
 static void stats_dump(void) {
+    st_tl_flush();   /* the dumping thread's own counts; every task flushed at its end */
     char live[32], bump[32], os[32], rc_b[32], rc_byte[32];
     size_t gets = atomic_load(&st_block_gets), osbl = atomic_load(&st_os_blocks);
     size_t reuse = gets - osbl;   /* every block_get either mallocs or reuses a pooled block */
@@ -685,7 +762,7 @@ static __thread HBlock *g_block_pool = NULL;
 
 static HBlock *block_get(size_t cap) {
     if (cap > SIZE_MAX - sizeof(HBlock)) tycho_oom();
-    if (g_arena_stats) atomic_fetch_add_explicit(&st_block_gets, 1, memory_order_relaxed);
+    if (g_arena_stats) st_tl.block_gets++;
     if (g_block_pool && g_block_pool->cap >= cap) {  /* fast path: head fits (uniform sizes) */
         HBlock *b = g_block_pool;
         g_block_pool = b->next;
@@ -709,9 +786,9 @@ static HBlock *block_get(size_t cap) {
     HBlock *b = (HBlock *)malloc(sizeof(HBlock) + cap);
     if (!b) tycho_oom();
     if (g_arena_stats) {
-        atomic_fetch_add_explicit(&st_ns_os, (size_t)(st_now_ns() - t_os), memory_order_relaxed);
-        atomic_fetch_add_explicit(&st_os_bytes, sizeof(HBlock) + cap, memory_order_relaxed);
-        atomic_fetch_add_explicit(&st_os_blocks, 1, memory_order_relaxed);
+        st_tl.ns_os += (size_t)(st_now_ns() - t_os);
+        st_tl.os_bytes += sizeof(HBlock) + cap;
+        st_tl.os_blocks++;
     }
     b->cap = cap;
     b->off = 0;
@@ -724,7 +801,7 @@ static void block_release_chain(HBlock *b) {     /* push a block chain onto the 
 }
 
 Arena arena_new(size_t blocksz) {
-    if (g_arena_stats) atomic_fetch_add_explicit(&st_arenas, 1, memory_order_relaxed);
+    if (g_arena_stats) st_tl.arenas++;
     Arena a;
     a.head = NULL;
     a.blocksz = blocksz ? blocksz : (g_block_override ? g_block_override : TYCHO_BLOCK_DEFAULT);
@@ -780,7 +857,7 @@ Arena arena_child(Arena *parent) {   /* inherit the label: a block/loop arena re
  * were dead. */
 static inline Arena arena_child_i(Arena *parent) {
     if (__builtin_expect(g_arena_stats != 0, 0))
-        atomic_fetch_add_explicit(&st_arenas, 1, memory_order_relaxed);
+        st_tl.arenas++;
     Arena a;
     a.head = NULL;
     a.blocksz = parent->blocksz;
@@ -808,7 +885,7 @@ static int arena_owns(Arena *a, const void *p) {
 static void *arena_alloc_slow(Arena *a, size_t n) {
     n = (n + 7u) & ~(size_t)7u;             /* 8-byte align (max align of Tycho types: tycho_int/double/ptr) */
     size_t k = n >> 3;                       /* 8-byte size class */
-    if (g_arena_stats) atomic_fetch_add_explicit(&st_alloc_reqs, 1, memory_order_relaxed);
+    if (g_arena_stats) st_tl.alloc_reqs++;
     /* reuse a recycled buffer first. Tiny objects: O(1) exact-class pop from the
      * segregated list -- no scan, no cap. Larger objects: best-fit in [n, 2n] over
      * the capped `freelist` (a huge recycled buffer is never wasted on a tiny
@@ -818,10 +895,7 @@ static void *arena_alloc_slow(Arena *a, size_t n) {
     if (k < TYCHO_NBKT) {
         if (a->bkt && a->bkt[k]) {
             FreeNode *fn = a->bkt[k]; a->bkt[k] = fn->next;
-            if (g_arena_stats) {
-                atomic_fetch_add_explicit(&st_recycle_hits, 1, memory_order_relaxed);
-                atomic_fetch_add_explicit(&st_recycle_bytes, n, memory_order_relaxed);
-            }
+            if (g_arena_stats) { st_tl.recycle_hits++; st_tl.recycle_bytes += n; }
             return (void *)fn;
         }
     } else if (a->freelist) {
@@ -832,10 +906,7 @@ static void *arena_alloc_slow(Arena *a, size_t n) {
             }
         if (best) {
             FreeNode *fn = *best; *best = fn->next; a->nfree--;
-            if (g_arena_stats) {
-                atomic_fetch_add_explicit(&st_recycle_hits, 1, memory_order_relaxed);
-                atomic_fetch_add_explicit(&st_recycle_bytes, n, memory_order_relaxed);
-            }
+            if (g_arena_stats) { st_tl.recycle_hits++; st_tl.recycle_bytes += n; }
             return (void *)fn;
         }
     }
@@ -848,9 +919,9 @@ static void *arena_alloc_slow(Arena *a, size_t n) {
     void *p = (char *)(a->head + 1) + a->head->off;
     a->head->off += n;
     if (g_arena_stats) {
-        atomic_fetch_add_explicit(&st_alloc_calls, 1, memory_order_relaxed);
-        atomic_fetch_add_explicit(&st_alloc_bytes, n, memory_order_relaxed);
-        st_bump_live(n);   /* recycle-reuse returns earlier and never bumps, so st_live == sum of block offsets */
+        st_tl.alloc_calls++;
+        st_tl.alloc_bytes += n;
+        st_live_add((long long)n);   /* recycle-reuse returns earlier and never bumps, so st_live == sum of block offsets */
         st_lbl_alloc(a, n);   /* charge it to the arena's owning function */
     }
     return p;
@@ -957,6 +1028,14 @@ static inline void arena_free_hot(Arena *a) {
 }
 
 __attribute__((noinline)) static void arena_free_stats(Arena *a) {
+    /* An arena with nothing to release (most per-statement scratch arenas) is
+     * counted but not timed: two clock reads per empty scope were most of what
+     * stats mode cost a single thread (FRICTION 234). */
+    if (!a->head && !a->bkt && !a->freelist) {
+        st_tl.arena_free_noop++;
+        a->nfree = 0;
+        return;
+    }
     uint64_t t_td = st_now_ns();
     /* Count a TEARDOWN, not a call. A waited task's root is freed twice by
      * design -- eagerly at the wait, then again by the scope-exit
@@ -972,13 +1051,10 @@ __attribute__((noinline)) static void arena_free_stats(Arena *a) {
      * two figures can differ for that reason and it is information, not an
      * artefact. The redundant calls are reported separately rather than
      * hidden. */
-    if (a->head || a->bkt || a->freelist)
-        atomic_fetch_add_explicit(&st_arena_frees, 1, memory_order_relaxed);
-    else
-        atomic_fetch_add_explicit(&st_arena_free_noop, 1, memory_order_relaxed);
+    st_tl.arena_frees++;
     st_drop_live(a);
     arena_free_hot(a);
-    atomic_fetch_add_explicit(&st_ns_teardown, (size_t)(st_now_ns() - t_td), memory_order_relaxed);
+    st_tl.ns_teardown += (size_t)(st_now_ns() - t_td);
 }
 
 /* Release the arena entirely (scope/call end): all blocks go to the pool. */
@@ -1026,7 +1102,8 @@ static HTask *tycho_task_new(void) {
  * would otherwise become unreachable when the thread (and its TLS) dies.
  * Blocks still owned by the task's root tree are NOT in the pool -- they're
  * freed later by wait() on the waiting thread, into that thread's pool. */
-static void tycho_pool_flush(void) {
+static void tycho_pool_flush(void) {   /* a task's thread is ending */
+    st_tl_flush();
     while (g_block_pool) { HBlock *b = g_block_pool; g_block_pool = b->next; free(b); }
 }
 

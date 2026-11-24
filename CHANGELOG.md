@@ -93,6 +93,10 @@ builtins and corelib signatures.
 
 ### Performance
 
+- **`TYCHO_ARENA_STATS` no longer serialises threads**: counting is per thread, published at
+  task end, so a `parallel for` with stats on is no longer up to 80x slower (2029 ms -> 65 ms on
+  a small-allocation loop over 15 threads). Totals are unchanged; a multi-threaded peak can be
+  off by under 4 KiB per thread.
 - **`sort.asc` / `sort.desc` are 2x faster** (21.7M ints: 2.9 s -> 1.46 s, now faster than
   `sort_by` and C `qsort`): they merge the values directly instead of an index permutation.
   Every sort's merge passes alternate buffers instead of copying back (`sort_by` 9% faster).

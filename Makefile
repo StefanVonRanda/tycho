@@ -248,6 +248,7 @@ test: tychoc
 	@sh tests/field_rebuild.sh
 	@sh tests/return_projection.sh
 	@sh tests/allocator_contract.sh
+	@sh tests/arena_stats_threads.sh
 	@python3 bench/allocator/directory.py
 	@sh tests/loop_temp_recycle.sh
 	@sh tests/recv_loop_scale.sh
