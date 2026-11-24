@@ -13,6 +13,15 @@ fn main():
     println("sort=" + arrays.join(arrays.sort(xs), ",") + " sok=" + str(b2i(arrays.is_sorted(arrays.sort(xs)))) + " origok=" + str(b2i(arrays.is_sorted(xs))))
     println("rev=" + arrays.join(arrays.reverse(xs), ",") + " take=" + arrays.join(arrays.take(xs, 2), ",") + " drop=" + arrays.join(arrays.drop(xs, 3), ","))
     println("concat=" + arrays.join(arrays.concat([1, 2], [3, 4]), ",") + " fill=" + arrays.join(arrays.fill(3, 7), ",") + " dedup=" + arrays.join(arrays.dedup([1, 1, 2, 2, 2, 3, 1]), ","))
+    ex := [1, 2]
+    arrays.extend(&ex, [3, 4])
+    arrays.extend(&ex, []int)
+    big := []int
+    for k := 0; k < 1000; k += 1:
+        arrays.extend(&big, [k, k])
+    names := ["a"]
+    arrays.extend(&names, ["b", "c"])
+    println("extend=" + arrays.join(ex, ",") + " big=" + str(len(big)) + " " + str(big[1999]) + " names=" + arrays.join(names, ","))
     # strings: comparable + has_str (NOT numeric)
     ss := ["pear", "apple", "fig", "apple"]
     println("s_sort=" + arrays.join(arrays.sort(ss), ",") + " s_min=" + arrays.min(ss) + " s_max=" + arrays.max(ss) + " s_has=" + str(b2i(arrays.contains(ss, "fig"))) + " s_dedup=" + arrays.join(arrays.dedup(arrays.sort(ss)), ","))

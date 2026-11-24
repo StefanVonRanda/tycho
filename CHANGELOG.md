@@ -40,6 +40,8 @@ builtins and corelib signatures.
 
 ### Corelib
 
+- **`arrays.extend(&xs, ys)`** appends every element of `ys` to `xs` in place,
+  where `concat` builds a new array (and so copies `xs` on every call in a loop).
 - `arrays.push_index(&xs, v)` appends and returns the new element's index;
   `arrays.OptIndex` is a one-int "maybe index" (`no_index`, `some_index`,
   `is_none`, `get_or`).

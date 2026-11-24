@@ -238,7 +238,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   `fill(n, v)`, `dedup` (consecutive — sort first for a full dedup); `sort` (ascending),
   `is_sorted`, `min`, `max` (`where comparable` — int/char/float/string); `sum`, `product`
   (`where numeric` — int/float); `join(xs, sep)` (`where` the element converts to a string).
-  All return a new array — value semantics, the input is never mutated. `min`/`max`/`sum`/
+  All return a new array — value semantics, the input is never mutated — except
+  `extend(&xs, ys)`, which appends every element of `ys` to `xs` **in place** (use it
+  rather than `xs = concat(xs, ys)` in a loop, which copies `xs` every time). `min`/`max`/`sum`/
   `product` seed from `xs[0]`, so they need a non-empty array. (`push`/`pop`/`len` are
   builtins; higher-order `map`/`filter`/`reduce` live in `iter`.) Index-pool helpers:
   `push_index(&xs, v) -> int` appends and returns the new index (the one helper that

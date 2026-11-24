@@ -49,6 +49,7 @@
   "arrays.count": "(xs: [$T], x: $T)-> int",
   "arrays.dedup": "(xs: [$T])-> [$T]",
   "arrays.drop": "(xs: [$T], n: int)-> [$T]",
+  "arrays.extend": "(xs: inout [$T], ys: [$T])",
   "arrays.fill": "(n: int, v: $T)-> [$T]",
   "arrays.get_or": "(o: OptIndex, dflt: int)-> int",
   "arrays.index_of": "(xs: [$T], x: $T)-> int",

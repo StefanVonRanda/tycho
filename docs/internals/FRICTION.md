@@ -1120,3 +1120,7 @@ the corpus exercises.
 > Pinned-by: grep -q "^3000 122 400 1 122$" tests/push_bytes.out
 > Pinned-by: grep -q "^1008 65 0 254 113 1008$" tests/push_bytes.out
 > Pinned-by: grep -q "data: \[u8\]" corelib/buffer/buffer.ty
+
+### 230. There was no in-place append of one array to another, so building an array from parts was element loops or a quadratic `concat` — **FIXED 2026-11-24**
+
+> Pinned-by: grep -q "^extend=1,2,3,4 big=2000 999 names=a,b,c$" corelib/test/arrays.out

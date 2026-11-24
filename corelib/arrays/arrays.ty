@@ -90,6 +90,14 @@ fn concat(a: [$T], b: [$T]) -> [$T]:          # a followed by b (new array)
         push(out, v)
     return out
 
+fn extend(xs: inout [$T], ys: [$T]):          # append every element of ys to xs, in place
+    # In place, unlike concat: concat copies `a`, so appending page after page
+    # onto a growing array with it was quadratic (FRICTION 230). No reserve:
+    # it grows to exactly what is asked, which on many small extends would
+    # reallocate every time; push's own doubling is the amortized growth.
+    for v in ys:
+        push(xs, v)
+
 fn fill(n: int, v: $T) -> [$T]:               # n copies of v; n <= 0 -> []
     out := []$T
     # The size is known: one allocation, not a doubling series whose last step
