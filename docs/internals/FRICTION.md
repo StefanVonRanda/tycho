@@ -1239,3 +1239,14 @@ still shadows it.
 > Pinned-by: grep -q "^true true true true$" tests/const_adapt.out
 > Pinned-by: test -f tests/reject/const_adapt_range.ty
 > Pinned-by: grep -q "^const qualified = 128 true$" corelib/test/cbor.out
+
+### 241. A program could not ask how much memory it holds — **FIXED 2026-11-24**
+
+Urani's memory accountant puts one counter over CPU and GPU bytes. The GPU side the engine
+counts itself; the CPU side had no source: `TYCHO_ARENA_STATS` prints arena use at exit for a
+person, not to the program, and the arenas are not all the process holds (SDL, the shader
+translator and the driver allocate too). `os.memory_bytes() -> Option(int)` returns the
+footprint the OS reports: macOS's phys_footprint (what Activity Monitor shows), the Linux
+resident set, Windows private bytes; None where the platform cannot say.
+
+> Pinned-by: grep -q "^memory_bytes_grows=true$" corelib/test/os.out

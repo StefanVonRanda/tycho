@@ -21,9 +21,11 @@
 #ifdef __APPLE__
 #include <TargetConditionals.h>
 #include <mach-o/dyld.h>        /* _NSGetExecutablePath -- osx_exe_path */
+#include <mach/mach.h>          /* task_info -- osx_memory_bytes */
 #endif
 #ifdef _WIN32
 #include <windows.h>            /* CreateProcessA / CreatePipe -- the argv path */
+#include <psapi.h>              /* K32GetProcessMemoryInfo -- osx_memory_bytes */
 #include <process.h>            /* _beginthreadex -- concurrent stdout/stderr drains */
 #include <errno.h>
 #include <sys/stat.h>           /* _chmod */
@@ -751,6 +753,32 @@ char *osx_exe_path(void) {
     return ty_os_exe;
 #else
     return NULL;
+#endif
+}
+
+/* The process's memory footprint in bytes, -1 where the platform cannot say:
+ * macOS's phys_footprint (what Activity Monitor shows: resident and compressed
+ * memory the process owns, GPU allocations included on unified memory), the
+ * resident set on Linux, the private bytes on Windows. */
+tycho_int osx_memory_bytes(void) {
+#if defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS_EX pm;
+    if (!K32GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS *)&pm, sizeof pm)) return -1;
+    return (tycho_int)pm.PrivateUsage;
+#elif defined(__APPLE__)
+    task_vm_info_data_t vi;
+    mach_msg_type_number_t cnt = TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vi, &cnt) != KERN_SUCCESS) return -1;
+    return (tycho_int)vi.phys_footprint;
+#elif defined(__linux__)
+    FILE *f = fopen("/proc/self/statm", "r");
+    if (!f) return -1;
+    long long size = 0, resident = 0;
+    int ok = fscanf(f, "%lld %lld", &size, &resident) == 2;
+    fclose(f);
+    return ok ? (tycho_int)resident * (tycho_int)sysconf(_SC_PAGESIZE) : -1;
+#else
+    return -1;
 #endif
 }
 

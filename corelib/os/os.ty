@@ -40,6 +40,7 @@ extern fn osx_chdir(p: string) -> int          # 0 ok, 1 not found, 2 denied, 3 
 extern fn osx_pid() -> int
 extern fn osx_hostname() -> Option(string)
 extern fn osx_exe_path() -> Option(string)
+extern fn osx_memory_bytes() -> int
 extern fn osx_chmod(p: string, mode: int) -> int
 extern fn osx_umask(mask: int) -> int
 extern fn osx_getuid() -> int
@@ -200,6 +201,16 @@ fn pid() -> int:
 # no directory -- so a program that keeps its data beside its binary needs this.
 fn exe_path() -> Option(string):
     return osx_exe_path()
+
+# The process's memory footprint in bytes -- macOS's phys_footprint (what
+# Activity Monitor shows), the resident set on Linux, the private bytes on
+# Windows -- or None where the platform cannot say. For a program's own
+# accounting: what it holds, everything included (allocator, libraries, drivers).
+fn memory_bytes() -> Option(int):
+    n := osx_memory_bytes()
+    if n < 0:
+        return None
+    return Some(n)
 
 # Host name, or None when the platform call fails or truncates.
 fn hostname() -> Option(string):

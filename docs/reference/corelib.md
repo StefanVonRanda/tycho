@@ -852,6 +852,9 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`os`** — `exe_path() -> Option(string)` is the running program's own file, absolute with
   links resolved (macOS, Linux, Windows) -- unlike `args()[0]`, which is only the name it was
   started by, so a program that keeps data beside its binary finds it from anywhere.
+  `memory_bytes() -> Option(int)` is the process's memory footprint (macOS phys_footprint,
+  the Linux resident set, Windows private bytes), everything included, for a program's own
+  accounting.
   `is_windows()` reports the host family at runtime — run external commands via
   a **libc-only FFI shim** (no `deps`, nothing to install). `os.system(cmd)` runs `cmd`
   through the shell with stdout/stderr inherited, returning its exit code (0..255,

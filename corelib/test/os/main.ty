@@ -335,4 +335,17 @@ fn main():
             absolute := len(p) > 0 and (p[0] == 47 or (len(p) > 2 and p[1] == 58))
             println("exe_path_absolute_and_ours=" + str(absolute and find(p, tail) >= 0))
         None: println("exe_path_absolute_and_ours=false")
+    # memory_bytes: the footprint, which 64 MB written grows by at least half that
+    mem_a := -1
+    match os.memory_bytes():
+        Some(n): mem_a = n
+        None: pass
+    xs := []int
+    for i := 0; i < 8000000; i += 1:
+        push(xs, i)
+    mem_b := -1
+    match os.memory_bytes():
+        Some(n): mem_b = n
+        None: pass
+    println("memory_bytes_grows=" + str(mem_a > 0 and mem_b - mem_a > 32000000 and xs[7999999] == 7999999))
 
