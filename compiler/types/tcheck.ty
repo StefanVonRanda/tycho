@@ -2049,6 +2049,15 @@ fn _neg_lit(cs: inout C, e: ast.Expr) -> ast.Expr:
                     k = n
                 if len(k) > 0:
                     return cs.constlit[k]
+        ast.Field(l, k, f):
+            # pkg.NAME -- another package's const, as qualified names resolve
+            match k[0]:
+                ast.Name(l2, q):
+                    if len(_vtype(&cs, q)) == 0 and _is_pkg(&cs, q):
+                        m := _prefix_of(&cs, q) + f
+                        if m in cs.constlit:
+                            return cs.constlit[m]
+                _: pass
         _: pass
     return _neg_lit0(e)
 

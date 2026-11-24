@@ -25,3 +25,4 @@ indef-array=Ok:[u1,u2]
 indef-text=Ok:tab
 half=Ok:f1.5
 f32=Ok:f1.5
+const qualified = 128 true

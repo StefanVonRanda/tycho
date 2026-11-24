@@ -74,3 +74,8 @@ fn main():
     println("half=" + show(cbor.decode(half)))
     float32 := to_bytes([250, 63, 192, 0, 0])
     println("f32=" + show(cbor.decode(float32)))
+    # another package's const adapts like its literal too (FRICTION 240)
+    dmax: u16 = cbor.MAX_DEPTH
+    w: i32 = to_i32(128)
+    println("const qualified = " + str(dmax) + " " + str(w == cbor.MAX_DEPTH))
+
