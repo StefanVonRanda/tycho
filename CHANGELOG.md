@@ -9,6 +9,8 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`push(xs, b)` with `xs: [u8]` appends bytes as bytes**, one copy, so a
+  byte builder no longer needs an `[int]`.
 - **The bytes bridge takes vectors and number arrays.** A packed struct may hold a
   `vector[N]T` field (laid out as its lanes), and `to_bytes(xs)` /
   `from_bytes$([T])(b)` take an array of a sized number (`[f32]`, `[u32]`,
@@ -90,6 +92,16 @@ builtins and corelib signatures.
   unchanged. Sorting 300k keys went from 21 s to well under a second.
 - `arrays.fill(n, v)` allocates once: a 40M-element fill peaked at 1.3 GiB and
   now peaks at the 305 MiB it returns.
+
+### Fixed
+
+- **`push(xs, b)` (`xs: [int]`, `b: bytes`) inside a loop kept nothing.** Loops
+  cache a pushed-to array's length and storage in locals, and the bulk append
+  wrote around that cache, so the loop's write-back erased every appended
+  element, silently. The append now flushes and reloads the cache.
+- **`core:buffer` stored one byte per `int`** (8x the memory, and a
+  byte-at-a-time conversion on read). It now holds `[u8]`: assembling 280 MB
+  takes 0.18 s instead of 1.8 s.
 
 ## [0.9.2] — 2026-11-12
 

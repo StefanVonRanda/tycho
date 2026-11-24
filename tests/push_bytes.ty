@@ -1,6 +1,9 @@
 # push(xs, b): append every byte of a `bytes` as one [int] element, in order.
 # Covers a non-empty target, a packed struct with high bytes, an empty source,
-# and growth past one doubling.
+# and growth past one doubling. Then the same inside loops, which cache an
+# array's spine in locals: the bulk append once wrote around that cache and the
+# loop's write-back erased everything it appended (FRICTION 229). And
+# push([u8], b), the byte-builder form: the bytes as they are.
 packed struct Rec:
     tag: u8
     n: i32
@@ -30,3 +33,25 @@ fn main():
     for v in xs:
         sum += v
     println(str(len(xs)) + " " + str(xs[0]) + " " + str(xs[len(xs) - 1]) + " " + str(sum))
+
+    # in a loop, alone and interleaved with single pushes, and nested
+    lp := []int
+    for k := 0; k < 1000; k += 1:
+        push(lp, to_bytes("xyz"))
+    mixed := []int
+    for k := 0; k < 100; k += 1:
+        push(mixed, k)
+        push(mixed, to_bytes("c"))
+        for j := 0; j < 2; j += 1:
+            push(mixed, to_bytes("z"))
+    println(str(len(lp)) + " " + str(lp[2999]) + " " + str(len(mixed)) + " " + str(mixed[4]) + " " + str(mixed[399]))
+
+    # [u8]: each byte as itself
+    ub := []u8
+    push(ub, to_bytes("AB"))
+    push(ub, to_u8(0))
+    push(ub, to_bytes(Rec(to_u8(1), to_i32(-2))))
+    for k := 0; k < 1000; k += 1:
+        push(ub, to_bytes("q"))
+    println(str(len(ub)) + " " + str(ub[0]) + " " + str(ub[2]) + " " + str(ub[4]) + " " + str(ub[len(ub) - 1]) +
+        " " + str(len(to_bytes(ub))))

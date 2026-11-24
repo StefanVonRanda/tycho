@@ -1,10 +1,14 @@
 package buffer
 
+# A growable byte builder. Bytes are kept as bytes ([u8]): appending a `bytes`
+# or `string` is one memcpy (push([u8], bytes)) and as_bytes is one copy
+# (to_bytes([u8])). It held an [int] until 2026-11-24 -- eight bytes of memory
+# per byte, and a byte-at-a-time conversion back (FRICTION 229).
 struct Buffer:
-    data: [int]
+    data: [u8]
 
 fn new() -> Buffer:
-    return Buffer([]int)
+    return Buffer([]u8)
 
 fn size(b: Buffer) -> int:
     return len(b.data)
@@ -12,7 +16,7 @@ fn size(b: Buffer) -> int:
 fn write_byte(b: inout Buffer, c: int):
     if c < 0 or c > 255:
         die("buffer.write_byte: byte must be 0..255")
-    push(b.data, c)
+    push(b.data, to_u8(c))
 
 fn write(b: inout Buffer, s: string):
     push(b.data, to_bytes(s))

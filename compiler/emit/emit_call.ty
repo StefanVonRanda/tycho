@@ -1054,14 +1054,36 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         if et == "float" and vt == "int":
             vc = "(double)(" + vc + ")"
         ow := _ownerof(&cs, args[0])
+        # A bulk append works on the array itself, so in a loop that caches the
+        # array's spine in locals (_fuse_open) the cache is flushed first and
+        # reloaded after -- without it the loop's write-back overwrote every
+        # appended byte with the stale spine (push([int], bytes) in a loop kept
+        # nothing: FRICTION 229).
+        fsy0, fsy1 := _fuse_sync(&cs, args[0])
         if et == "int" and vt == "bytes":
             # One growth for the whole run, and the source is evaluated ONCE:
             # a bare `vc` used twice would re-run a to_bytes(packed) statement
             # expression (and its allocation).
             pb := _fresh(&cs, "_pb")
-            return (_with_pre(hp, "(__extension__ ({ char *" + pb + " = " + vc + "; " +
+            return (_with_pre(hp, "(__extension__ ({ char *" + pb + " = " + vc + "; " + fsy0 +
                 _u(&cs, "tycho_arr_int_append_bytes") + "(" + ow + ", &(" + rc + "), " + pb +
-                ", tycho_str_len(" + pb + ")); }))"), "void")
+                ", tycho_str_len(" + pb + ")); " + fsy1 + "}))"), "void")
+        if et == "u8" and vt == "bytes":
+            # push([u8], bytes): one growth to at least double the capacity (so
+            # many small appends stay amortized O(1)) and one memcpy -- the
+            # byte-builder form core:buffer is built on (FRICTION 229).
+            pb := _fresh(&cs, "_pb")
+            pn := _fresh(&cs, "_pn")
+            pa := _fresh(&cs, "_pa")
+            pneed := _fresh(&cs, "_pneed")
+            pcap := _fresh(&cs, "_pcap")
+            return (_with_pre(hp, "(__extension__ ({ char *" + pb + " = " + vc + "; " + fsy0 + "tycho_int " + pn +
+                " = tycho_str_len(" + pb + "); " + _cty(&cs, rt) + " *" + pa + " = &(" + rc + "); if (" + pn +
+                " > 0) { tycho_int " + pneed + " = " + pa + "->len + " + pn + "; if (" + pneed + " < " + pa +
+                "->len) tycho_die(\"tycho: array length overflow\"); if (" + pneed + " > " + pa + "->cap) { tycho_int " +
+                pcap + " = " + pa + "->cap * 2; if (" + pcap + " < " + pneed + ") " + pcap + " = " + pneed + "; " +
+                _arrf(&cs, et, "_reserve") + "(" + ow + ", " + pa + ", " + pcap + "); } memcpy(" + pa + "->data + " +
+                pa + "->len, " + pb + ", (size_t)" + pn + "); " + pa + "->len = " + pneed + "; } " + fsy1 + "}))"), "void")
         mv := _canmove_push(&cs, args[0], args[1], et)
         # A CONSTRUCTED value needs the copy as much as a place does: its
         # interior strings/arrays were allocated in the caller's temporary

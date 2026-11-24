@@ -311,6 +311,22 @@ fn _fresh(cs: inout C, p: string) -> string:
 # it. bench/prongB iter-transform was 248 ms against ./tychoc's 219 at -O3 for
 # exactly this reason -- and 336 vs 433 at -O2, where the call is not the
 # bottleneck, which is why it only shows up under the harness's flags.
+# For an operation that works on a fused array's own struct (a bulk append):
+# statements that write the cached spine back before it and reload it after.
+# Both "" when the target is not a fused array.
+fn _fuse_sync(cs: inout C, target: ast.Expr) -> (string, string):
+    match target:
+        ast.Name(l, nm):
+            fi := _fuse_idx(&cs, nm)
+            if fi < 0:
+                return ("", "")
+            id := cs.fuid[fi]
+            cn := _vcname(&cs, nm)
+            return (cn + ".data = " + id + "; " + cn + ".len = " + id + "l; " + cn + ".cap = " + id + "c; ",
+                id + " = " + cn + ".data; " + id + "l = " + cn + ".len; " + id + "c = " + cn + ".cap; ")
+        _: pass
+    return ("", "")
+
 fn _fuse_idx(cs: inout C, nm: string) -> int:
     for i := len(cs.fua) - 1; i >= 0; i -= 1:
         if cs.fua[i] == nm:

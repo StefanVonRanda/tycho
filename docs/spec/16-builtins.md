@@ -128,7 +128,7 @@ rejected — so they may grow or shrink the value in the owning arena.
 | Builtin | Signature | Kind | Semantics |
 |---|---|---|---|
 | `len(a)` | `[T] -> int` | magic | Element count. Also accepts `string`, `bytes`, a map, or a `soa`. |
-| `push(a, v)` | `([T], T) -> void` | magic | Append `v` in place; `a` MUST be a mutable array (or `soa`) place. Grounds a still-pending array type to `[typeof(v)]`. `push(xs, b)` with `xs: [int]`, `b: bytes` appends `len(b)` elements in order, each in `0..255`. |
+| `push(a, v)` | `([T], T) -> void` | magic | Append `v` in place; `a` MUST be a mutable array (or `soa`) place. Grounds a still-pending array type to `[typeof(v)]`. `push(xs, b)` with `xs: [int]`, `b: bytes` appends `len(b)` elements in order, each in `0..255`; with `xs: [u8]` it appends the bytes themselves. |
 | `pop(a)` | `[T] -> T` | magic | Remove and return the last element; aborts at run time if empty. `a` MUST be mutable. |
 | `reserve(a, n)` | `([T], int) -> void` | magic | Capacity hint: preallocate room for `n` elements. `len` is unchanged and pushing past `n` still grows; an unallocatable capacity aborts. Restricted to arrays of scalars, structs, tuples, or nested arrays (not `soa`), and to **maps** — `reserve(m, n)` pre-sizes a map's entry + index arrays. |
 

@@ -113,7 +113,7 @@ first argument.
 | Form | Effect |
 |---|---|
 | `push(a, v)` | Append a deep copy of `v` as the new last element; `len` grows by one. |
-| `push(a, b)` | `a: [int]`, `b: bytes`: append `len(b)` elements in order, each in `0..255`. |
+| `push(a, b)` | `a: [int]`, `b: bytes`: append `len(b)` elements in order, each in `0..255`. With `a: [u8]`, append the bytes themselves — the byte-builder form. |
 | `pop(a)` | Remove the last element and return it (deep-copied into the caller). |
 | `reserve(a, n)` | Grow backing capacity to at least `n`; `len` is unchanged. |
 

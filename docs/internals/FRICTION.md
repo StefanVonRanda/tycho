@@ -1114,3 +1114,9 @@ the corpus exercises.
 ### 228. Only `[int]` (as bytes) and arrays of packed structs crossed the bytes bridge, so a `[f32]` needed a one-field wrapper struct and a copy loop each way — **FIXED 2026-11-24**
 
 > Pinned-by: grep -q "^8 0 0 192 63$" tests/packed_array_bytes.out
+
+### 229. `core:buffer` kept one byte per `int`, and `push([int], bytes)` in a loop silently kept nothing — **FIXED 2026-11-24**
+
+> Pinned-by: grep -q "^3000 122 400 1 122$" tests/push_bytes.out
+> Pinned-by: grep -q "^1008 65 0 254 113 1008$" tests/push_bytes.out
+> Pinned-by: grep -q "data: \[u8\]" corelib/buffer/buffer.ty

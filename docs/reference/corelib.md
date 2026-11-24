@@ -127,7 +127,8 @@ expression-bodied; pass a named function where you need a multi-line body.
   success), `read_line` (LF/CRLF) and `eof`.
 - **`buffer`** — a mutable binary buffer: `new`, `size`, `write` (string),
   `write_byte`, `write_bytes`, `reserve_cap`, `as_bytes`, `as_string` and
-  `clear`. It stores bytes in an `[int]` and converts once when read.
+  `clear`. It stores bytes as bytes (`[u8]`): an append is one copy and
+  `as_bytes` is one copy.
 - **`glob`** — shell-style wildcard matching. `matches(pattern, s)` treats `*`
   and `?` as matching any byte including `/`; `matches_path` stops them at `/`
   but lets `**` cross it. Both support `[abc]`, `[a-z]` and `[!…]`/`[^…]`

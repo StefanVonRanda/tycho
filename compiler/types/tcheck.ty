@@ -2939,6 +2939,10 @@ fn _call_builtin(cs: inout C, l: int, n: string, args: [ast.Expr], want: string)
         # because the per-byte form costs one push per byte on every save path.
         if known(b0) and _is_arr(b0) and _elem_of(&cs, b0) == "int" and ats[1] == "bytes":
             return "void"
+        # push([u8], bytes): append the bytes as they are -- the byte-builder
+        # form (FRICTION 229); [int] above widens each one.
+        if known(b0) and _is_arr(b0) and _elem_of(&cs, b0) == "u8" and ats[1] == "bytes":
+            return "void"
         if not compat(el, ats[1]):
             _cerr(&cs, "push's value must be " + el)
         return "void"
