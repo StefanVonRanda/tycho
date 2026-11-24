@@ -95,6 +95,8 @@ builtins and corelib signatures.
 
 ### Performance
 
+- **A loop that calls a closure resets its scratch arena with one load** instead of four
+  (`sort_by` ~6% faster).
 - **`TYCHO_ARENA_STATS` no longer serialises threads**: counting is per thread, published at
   task end, so a `parallel for` with stats on is no longer up to 80x slower (2029 ms -> 65 ms on
   a small-allocation loop over 15 threads). Totals are unchanged; a multi-threaded peak can be

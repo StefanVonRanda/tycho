@@ -820,7 +820,11 @@ Arena arena_new(size_t blocksz) {
  * so a recycled chunk (already below the bump pointer) can never overlap a fresh
  * bump — each region is handed out by exactly one path at a time. */
 void arena_recycle(Arena *a, void *p, size_t n) {
-    if (!p || n < sizeof(FreeNode)) return;
+    /* An arena with no block owns no buffer, so nothing is ever recycled into
+     * one. That keeps an INVARIANT arena_reset_i leans on: head == NULL implies
+     * no bucket table and no free list (a dropped recycle is always safe -- the
+     * buffer still frees with its own arena). */
+    if (!p || n < sizeof(FreeNode) || !a->head) return;
     n = (n + 7u) & ~(size_t)7u;             /* match arena_alloc's rounding so size classes line up */
     size_t k = n >> 3;                       /* 8-byte size class */
     FreeNode *fn = (FreeNode *)p;
@@ -991,8 +995,12 @@ static inline void arena_reset_i(Arena *a) {
     HBlock *b = a->head;
     /* A loop whose body allocated nothing has no state to rewind. This is the
      * common apply/read loop: the scratch arena is passed through a call but
-     * never touched, and the old reset still paid a real call per iteration. */
-    if (__builtin_expect(!g_arena_stats && !b && !a->bkt && !a->freelist, 1))
+     * never touched. One load decides it: with no block there is no bucket
+     * table or free list either (arena_recycle's invariant), and nothing for
+     * stats to drop. Testing all four fields after an opaque call -- the call
+     * may have written the arena, so each is reloaded -- cost sort_by's merge
+     * loop 16% (FRICTION 236). */
+    if (!b)
         return;
     if (__builtin_expect(!g_arena_stats && b && b->off == 0 && !b->next &&
                          !a->bkt && !a->freelist, 1))

@@ -1184,3 +1184,13 @@ which does not satisfy `comparable(T)`", and so was `sort.asc` over a `[f32]` of
 admits the sized numerics `u8`…`u64`, `i8`…`i64`, `f32`.
 
 > Pinned-by: grep -q "^sized=\[-1.0, -0.0, 0.0, 2.25, 3.5\] \[255, 200, 17, 3, 0\] 0,2,1,3$" corelib/test/sort.out
+
+### 236. A loop calling a closure reset its scratch arena through four reloaded fields per iteration — **FIXED 2026-11-24**
+
+`sort_by`'s merge loop passes its scratch arena to the compare closure, so after every call the
+reset's early-out reloaded `head`, `bkt`, `freelist` and the stats flag: 16% of the loop in a
+hand-edited measurement. `arena_recycle` now refuses an arena with no block (it cannot own the
+buffer), which makes `head == NULL` imply no table and no free list, and the reset's early-out
+is that one load. `sort_by` on 21.7M ints: ~2.06 s -> ~1.94 s.
+
+> Pinned-by: grep -q "|| !a->head) return;" runtime/tycho_rt.c
