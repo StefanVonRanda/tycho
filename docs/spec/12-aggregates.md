@@ -340,7 +340,8 @@ implementation-defined ([Appendix F](appendix-f-impl-defined.md)).
 
 Every field of a packed struct MUST be a **fixed-width value type**: `int`,
 `float`, `bool`, `char`, one of `u8`/`u16`/`u32`/`u64`/`i8`/`i16`/`i32`/`i64`/`f32`,
-a newtype over one of those, or another packed struct. A heap-owning field
+a `vector[N]T` (its lanes are fixed-width, so it lays out as `N` of them in lane
+order), a newtype over one of those, or another packed struct. A heap-owning field
 (`string`, `bytes`, an array, a map, an enum, an `Option`, a `Result`, a tuple)
 is refused at the declaration, and so is a `$T` type parameter. `packed` on any
 declaration other than a `struct` is refused.
@@ -420,6 +421,12 @@ storage a program may move into or out of a `bytes` value. Four forms:
   elements; `len(b)` MUST be an exact multiple of `size_of$(T)`, and a remainder
   is a runtime error naming the type and both numbers (a torn last record is
   never silently dropped). An empty `bytes` yields an empty array.
+- The same two forms take an array of a **sized number** — `[u8]` … `[u64]`,
+  `[i8]` … `[i64]`, `[f32]`, `[float]` — as if each element were a one-field
+  packed struct: `to_bytes(xs)` yields `len(xs) * width` bytes and
+  `from_bytes$([f32])(b)` reads them back, with the same multiple-of rule.
+  `[int]` is not one of them: `to_bytes([int])` keeps its meaning of one byte
+  per element ([§8.2](06-conversions.md#82-explicit-conversion-builtins)), so 8-byte integers are written `[i64]`.
 
 **The byte order is LITTLE-ENDIAN on every host**, not the host's own. Each
 field occupies its own width with the least significant byte first, fields in

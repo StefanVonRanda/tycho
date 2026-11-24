@@ -95,7 +95,8 @@ fn main():
 ```
 
 Every field must be fixed-width: `int`, `float`, `bool`, a sized numeric
-(`u8`…`u64`, `i8`…`i64`, `f32`), a newtype over one, or another packed struct. A `string`,
+(`u8`…`u64`, `i8`…`i64`, `f32`), a `vector[N]T` (laid out as its `N` lanes), a newtype over
+one, or another packed struct. A `string`,
 array, map, `Option` or other heap-owning field is refused. `from_bytes$` aborts unless the
 length is exactly `size_of$(T)`; see [builtins](builtins.md).
 

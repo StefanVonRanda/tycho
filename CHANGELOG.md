@@ -9,6 +9,11 @@ builtins and corelib signatures.
 
 ### Language
 
+- **The bytes bridge takes vectors and number arrays.** A packed struct may hold a
+  `vector[N]T` field (laid out as its lanes), and `to_bytes(xs)` /
+  `from_bytes$([T])(b)` take an array of a sized number (`[f32]`, `[u32]`,
+  `[i64]`, `[float]`, ...), each element little-endian. `[int]` keeps its
+  one-byte-per-element meaning.
 - **`to_float(b)` and `to_int(b)` take a `bool`** (`1.0`/`0.0`, `1`/`0`), so a
   flag becomes a number in one expression instead of a three-line `if`.
 - **`for i in a..<b:` counts sequentially.** It is `for i := a; i < b; i += 1:`

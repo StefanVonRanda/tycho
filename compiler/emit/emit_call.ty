@@ -257,8 +257,8 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
         bc, _bt := _ex(&cs, args[0])
         if _is_arr(ta[0]):
             e := _elem(ta[0])
-            if not _is_struct(e):
-                _bad("from_bytes$([...]) takes an array of a packed struct")
+            if not _is_struct(e) and not _pk_scalar(e):
+                _bad("from_bytes$([...]) takes an array of a packed struct or a sized number")
             ct := _cty(&cs, ta[0])
             v2 := _fresh(&cs, "_pkr")
             bsrc := _fresh(&cs, "_pkb")
@@ -266,8 +266,8 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
             dp := _fresh(&cs, "_pkd")
             return ("(__extension__ ({ char *" + bsrc + " = " + bc + "; tycho_int " + nlen +
                 " = 0; void *" + dp + " = tycho_unpack_arr(" + cs.arena + ", " + bsrc +
-                ", Pk_" + _tname(e) + "_, " + str(_pk_n(&cs, e)) + ", (tycho_int)sizeof(" +
-                _cty(&cs, e) + "), \"[" + _pk_disp(_tname(e)) + "]\", &" + nlen + "); " +
+                ", " + _pk_table(&cs, e) + ", " + str(_pk_n(&cs, e)) + ", (tycho_int)sizeof(" +
+                _cty(&cs, e) + "), \"[" + _pk_name(e) + "]\", &" + nlen + "); " +
                 ct + " " + v2 + "; " + v2 + ".data = (" + _cty(&cs, e) + " *)" + dp + "; " +
                 v2 + ".len = " + nlen + "; " + v2 + ".cap = " + nlen + "; " + v2 + "; }))", ta[0])
         v2 := _fresh(&cs, "_pkr")
@@ -1191,13 +1191,13 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             e := _elem(t)
             if e == "int":
                 return ("tycho_bytes_from_intarr(" + cs.arena + ", " + c + ")", "bytes")
-            if not _is_struct(e):
-                _bad("to_bytes([...]) takes an array of a packed struct")
+            if not _is_struct(e) and not _pk_scalar(e):
+                _bad("to_bytes([...]) takes an array of a packed struct or a sized number")
             ct := _cty(&cs, t)
             v := _fresh(&cs, "_pka")
             return ("(__extension__ ({ " + ct + " " + v + " = " + c +
-                "; tycho_pack_arr(" + cs.arena + ", " + v + ".data, " + v + ".len, Pk_" +
-                _tname(e) + "_, " + str(_pk_n(&cs, e)) + ", (tycho_int)sizeof(" +
+                "; tycho_pack_arr(" + cs.arena + ", " + v + ".data, " + v + ".len, " +
+                _pk_table(&cs, e) + ", " + str(_pk_n(&cs, e)) + ", (tycho_int)sizeof(" +
                 _cty(&cs, e) + ")); }))", "bytes")
         if _is_struct(t):
             v := _fresh(&cs, "_pkv")

@@ -39,6 +39,7 @@ the reader must see a line while the program is still running.
 | `to_bytes(v)` | packed struct `-> bytes` | Exactly `size_of$(T)` bytes, little-endian, fields in declaration order. |
 | `size_of$(T)` | `-> int` | The byte size of a packed struct, exact. Also takes an `align(N)` struct, whose size is implementation-defined but a multiple of `N`. |
 | `from_bytes$(T)(b)` | `bytes -> T` | Read a packed struct back. `len(b)` must equal `size_of$(T)` exactly; any other length aborts, naming the type and both lengths. |
+| `to_bytes(xs)` / `from_bytes$([T])(b)` | `[T] <-> bytes` | `T` a packed struct or a sized number (`f32`, `u32`, `i64`, `float`, …): every element in order, each little-endian. A length that is not a whole number of elements aborts. `[int]` is the byte-per-element form above, not this one. |
 | `chr(n)` | `int -> string` | The one-byte string for byte value `n` (`0`–`255`). |
 | `to_char(n)` | `int -> char` | The byte value `n` as a `char`. Outside `0..255` it **aborts** — where `chr(n)` returns a one-byte *string*, this returns a `char`. |
 

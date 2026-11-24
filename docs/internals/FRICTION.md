@@ -1106,3 +1106,11 @@ the corpus exercises.
 ### 226. A bool could not become a number, so every flag handed to a shader took three lines — **FIXED 2026-11-23**
 
 > Pinned-by: grep -q "^bool=1.0 0$" tests/floats.out
+
+### 227. A packed struct could not hold a vector, so a file record spelled every lane as its own field — **FIXED 2026-11-24**
+
+> Pinned-by: grep -q "^33 66 true$" tests/packed_array_bytes.out
+
+### 228. Only `[int]` (as bytes) and arrays of packed structs crossed the bytes bridge, so a `[f32]` needed a one-field wrapper struct and a copy loop each way — **FIXED 2026-11-24**
+
+> Pinned-by: grep -q "^8 0 0 192 63$" tests/packed_array_bytes.out

@@ -6,6 +6,14 @@ packed struct Pt:
     x: i16
     y: i16
 
+# A vector field is N fixed-width lanes, so it may sit in a packed struct and
+# crosses as N little-endian scalars (FRICTION 227). It sits at an unaligned
+# offset here (after a u8); field reads, lane writes and copies must still work.
+packed struct Rec:
+    id: u8
+    c: vector[4]f32
+    d: vector[2]float
+
 fn main():
     xs := []Pt
     push(xs, Pt(to_i16(1), to_i16(2)))
@@ -27,3 +35,25 @@ fn main():
     eb := to_bytes(e)
     zs := from_bytes$([Pt])(to_bytes(""))
     println(str(len(eb)) + " " + str(len(zs)))
+
+    # an array of a sized number crosses directly, each element little-endian at
+    # its own width (FRICTION 228); [int] keeps its one-byte-per-element meaning
+    pos: [f32] = [1.5, -2.25]
+    pb := to_bytes(pos)
+    println(str(len(pb)) + " " + str(pb[0]) + " " + str(pb[1]) + " " + str(pb[2]) + " " + str(pb[3]))
+    println(str(from_bytes$([f32])(pb)))
+    ids: [u32] = [to_u32(7), to_u32(4000000000)]
+    big: [i64] = [to_i64(-5), to_i64(1) << 40]
+    fs: [float] = [0.1, -1e300]
+    println(str(from_bytes$([u32])(to_bytes(ids))) + " " + str(from_bytes$([i64])(to_bytes(big))) + " " +
+            str(from_bytes$([float])(to_bytes(fs))))
+
+    rs := []Rec
+    push(rs, Rec(to_u8(1), [1.0, 2.0, 3.0, 4.0], [7.0, 8.0]))
+    push(rs, Rec(to_u8(2), [5.0, 6.0, 7.0, 8.0], [9.0, 10.0]))
+    rs[1].c.y = 60.0
+    rs[0].c = rs[0].c * 2.0
+    rb := to_bytes(rs)
+    back := from_bytes$([Rec])(rb)
+    println(str(size_of$(Rec)) + " " + str(len(rb)) + " " + str(back == rs))
+    println(str(back[0]) + " " + str(back[1].c))
