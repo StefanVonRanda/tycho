@@ -650,6 +650,8 @@
   "hash.adler32": "(s: string)-> int",
   "hash.crc16_ccitt": "(s: string)-> int",
   "hash.crc32": "(s: string)-> int",
+  "hash.crc32_bytes": "(b: bytes)-> int",
+  "hash.crc32_update": "(crc: int, b: bytes)-> int",
   "hash.crc64_ecma": "(s: string)-> u64",
   "hash.djb2": "(s: string)-> int",
   "hash.fnv1a_32": "(s: string)-> int",

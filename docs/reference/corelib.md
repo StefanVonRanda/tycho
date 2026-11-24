@@ -564,7 +564,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   `[0, 2^32)`, and `to_hex` renders one as 8 lowercase digits. `xxh32(s, seed)` and
   `murmur3_32(s, seed)` return `u32`; `xxh64(s, seed)`, `crc64_ecma` (CRC-64/ECMA-182)
   and `fnv1a_64` return `u64`. Matches published vectors:
-  `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`. For a hash of
+  `crc32("123456789") = cbf43926`, `fnv1a_32("foobar") = bf9cf968`. `crc32_bytes(b)` is
+  the CRC of raw `bytes`, and `crc32_update(crc, b)` continues one over more data, so a
+  large file is hashed in chunks (zlib's `crc32(crc, buf)`). CRC-32 runs at memory speed
+  (hardware CRC32 instructions on arm64, slicing-by-8 elsewhere). For a hash of
   **any** hashable value (struct/tuple/array, not just a string) use the generic builtin
   `hash(x)` — deterministic (the same value hashes the same on every run and machine),
   full 64-bit as a signed int ([builtins §29.7](../spec/16-builtins.md#297-maps)).

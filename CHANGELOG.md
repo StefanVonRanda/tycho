@@ -47,6 +47,9 @@ builtins and corelib signatures.
 
 ### Corelib
 
+- **`hash.crc32` runs at memory speed** (64 MB: 398 ms -> 5 ms; arm64 CRC32
+  instructions, slicing-by-8 elsewhere), and takes `bytes` too: `crc32_bytes(b)`, and
+  `crc32_update(crc, b)` to continue a CRC over chunks. `zip.crc32` is now the same code.
 - **`arrays.extend(&xs, ys)`** appends every element of `ys` to `xs` in place,
   where `concat` builds a new array (and so copies `xs` on every call in a loop).
   Pushes onto an `inout` array in a loop now take the same fast path as onto a

@@ -1,6 +1,7 @@
 package zip
 
 import "core:compress"
+import "core:hash"
 
 struct Entry:
     name: string
@@ -70,17 +71,9 @@ const SIG_LOCAL = 67324752       # 0x04034b50
 const SIG_CENTRAL = 33639248     # 0x02014b50
 const SIG_EOCD = 101010256       # 0x06054b50
 
-# CRC-32 (IEEE 802.3), bit-by-bit, in u32 like core:hash's.
+# CRC-32 (IEEE 802.3): core:hash's, the one CRC in corelib (FRICTION 237).
 fn crc32(b: bytes) -> int:
-    crc := to_u32(4294967295)
-    for i := 0; i < len(b); i += 1:
-        crc = crc ^ to_u32(b[i])
-        for k := 0; k < 8; k += 1:
-            if (crc & 1) == 1:
-                crc = (crc >> 1) ^ to_u32(3988292384)
-            else:
-                crc = crc >> 1
-    return to_int(crc ^ to_u32(4294967295))
+    return hash.crc32_bytes(b)
 
 # --- reading ----------------------------------------------------------------
 

@@ -43,17 +43,22 @@ fn sdbm(s: string) -> int:
         h = to_u32(s[i]) + (h << 16) + (h << 6) - h
     return to_int(h)
 
-# CRC-32 (IEEE 802.3 / zlib, reflected, polynomial 0xEDB88320), bit by bit.
+# CRC-32 (IEEE 802.3 / zlib, reflected, polynomial 0xEDB88320). The shim
+# (hash_shim.c) does slicing-by-8, or the ARMv8 CRC32 instructions; the bit-at-a-
+# time loop this was ran at 160 MB/s (FRICTION 237).
+extern fn hashx_crc32(crc: int, data: string, n: int) -> int
+extern fn hashx_crc32_b(crc: int, data: bytes) -> int
+
 fn crc32(s: string) -> int:
-    crc := to_u32(4294967295)              # 0xFFFFFFFF
-    for i := 0; i < len(s); i += 1:
-        crc = crc ^ to_u32(s[i])
-        for k := 0; k < 8; k += 1:
-            if (crc & 1) == 1:
-                crc = (crc >> 1) ^ to_u32(3988292384)   # ^ 0xEDB88320
-            else:
-                crc = crc >> 1
-    return to_int(crc ^ to_u32(4294967295))
+    return hashx_crc32(0, s, len(s))
+
+fn crc32_bytes(b: bytes) -> int:              # crc32 of raw bytes
+    return hashx_crc32_b(0, b)
+
+# Continue a CRC over more data: crc32_update(crc32_bytes(a), b) is the CRC of a
+# followed by b, so a large file can be hashed in chunks (zlib's crc32(crc, buf)).
+fn crc32_update(crc: int, b: bytes) -> int:
+    return hashx_crc32_b(crc, b)
 
 # ---- xxHash (32/64-bit), the hash Odin's core:hash exposes ----
 fn _rd32(s: string, i: int) -> u32:

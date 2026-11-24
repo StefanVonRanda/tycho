@@ -1194,3 +1194,16 @@ buffer), which makes `head == NULL` imply no table and no free list, and the res
 is that one load. `sort_by` on 21.7M ints: ~2.06 s -> ~1.94 s.
 
 > Pinned-by: grep -q "|| !a->head) return;" runtime/tycho_rt.c
+
+### 237. `hash.crc32` ran bit by bit at 160 MB/s, took only a `string`, and `core:zip` had a second copy — **FIXED 2026-11-24**
+
+Urani checks a pack file's CRC on every read, as Pandora did. Tycho's CRC-32 processed one bit
+per step (64 MB in 398 ms; zlib does it in 2 ms), accepted only a `string` (so `bytes` paid a
+copy through `to_str`), had no way to continue a CRC across chunks, and `core:zip` carried its own
+identical bit-by-bit copy over `bytes`. Tycho has no global tables, so a fast table cannot live
+in Tycho; `core:hash` now has a C shim: slicing-by-8 with tables built before `main`, or the
+ARMv8 CRC32 instructions where the compiler targets them (same polynomial, same result).
+`crc32_bytes(b)` and `crc32_update(crc, b)` are new; `zip.crc32` delegates. 64 MB: 5 ms.
+
+> Pinned-by: grep -q "^crc update = cbf43926$" corelib/test/hash.out
+> Pinned-by: test -f corelib/hash/hash_shim.c

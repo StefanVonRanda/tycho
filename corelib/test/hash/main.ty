@@ -11,6 +11,10 @@ fn main():
     println("crc a      = " + hash.to_hex(hash.crc32("a")))         # e8b7be43
     println("crc abc    = " + hash.to_hex(hash.crc32("abc")))       # 352441c2
     println("crc check  = " + hash.to_hex(hash.crc32("123456789"))) # cbf43926
+    # bytes and chaining (FRICTION 237): the same CRC, and a + b in two parts
+    println("crc bytes  = " + hash.to_hex(hash.crc32_bytes(to_bytes("123456789"))))   # cbf43926
+    println("crc update = " + hash.to_hex(hash.crc32_update(hash.crc32_bytes(to_bytes("1234")), to_bytes("56789"))))   # cbf43926
+    println("crc empty  = " + hash.to_hex(hash.crc32_update(hash.crc32_bytes(to_bytes("123456789")), to_bytes(""))))   # cbf43926
 
     # ---- FNV-1a 32 (reference vectors) ----
     println("fnv ''     = " + hash.to_hex(hash.fnv1a_32("")))       # 811c9dc5
