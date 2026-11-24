@@ -1250,3 +1250,14 @@ footprint the OS reports: macOS's phys_footprint (what Activity Monitor shows), 
 resident set, Windows private bytes; None where the platform cannot say.
 
 > Pinned-by: grep -q "^memory_bytes_grows=true$" corelib/test/os.out
+
+### 242. No package handled the host's paths, so a path from the OS broke on Windows — **FIXED 2026-11-24**
+
+`core:path` is POSIX on every host and `core:filepath` was Windows on every host. A program
+taking the directory of `os.exe_path()` had to pick one: Urani used `core:path`, so on Windows
+`path.dir("C:\Games\Urani\urani.exe")` gave `.` and the engine looked for `./urani.pak`. And
+`filepath` borrowed Go's name without Go's meaning, so the reflex picked it on macOS and got
+backslashes. `core:filepath` now follows the host, as Go's does: Windows rules on Windows,
+`core:path`'s elsewhere; the always-Windows functions are `win_join`, `win_dir`, ...
+
+> Pinned-by: grep -q "^host=true$" corelib/test/filepath.out

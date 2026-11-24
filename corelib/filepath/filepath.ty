@@ -1,5 +1,16 @@
 package filepath
 
+import "core:os"
+import "core:path"
+
+# Paths of the host: Windows rules on Windows (drive letters, \\server\share,
+# either slash accepted, `\` written), POSIX rules elsewhere (core:path). Use it
+# for paths that come from or go to the OS -- os.exe_path, os.config_dir, a user's
+# argument. core:path is `/` on every host: paths inside archives, URLs.
+#
+# The win_ functions apply the Windows rules on every host, for a program that
+# handles Windows paths from elsewhere.
+
 fn _sep(c: int) -> bool:
     return c == 92 or c == 47
 
@@ -32,17 +43,17 @@ fn _vol_len(n: string) -> int:
         return 1
     return 0
 
-fn volume(p: string) -> string:
+fn win_volume(p: string) -> string:
     n := _norm(p)
     return n[0:_vol_len(n)]
 
 # Volume plus the rest, e.g. ("C:", "\a\b") or ("\\srv\share", "\d").
-fn split_volume(p: string) -> (string, string):
+fn win_split_volume(p: string) -> (string, string):
     n := _norm(p)
     vl := _vol_len(n)
     return (n[0:vl], n[vl:len(n)])
 
-fn is_abs(p: string) -> bool:
+fn win_is_abs(p: string) -> bool:
     n := _norm(p)
     vl := _vol_len(n)
     if vl == 0:
@@ -53,7 +64,7 @@ fn is_abs(p: string) -> bool:
         return true
     return vl < len(n) and _sep(n[vl])
 
-fn clean(p: string) -> string:
+fn win_clean(p: string) -> string:
     n := _norm(p)
     vl := _vol_len(n)
     vol := n[0:vl]
@@ -101,14 +112,14 @@ fn clean(p: string) -> string:
         return vol + "\\" + r
     return "\\" + r
 
-fn join(a: string, b: string) -> string:
+fn win_join(a: string, b: string) -> string:
     if len(b) == 0:
-        return clean(a)
-    if is_abs(b) or len(volume(b)) > 0:
-        return clean(b)
+        return win_clean(a)
+    if win_is_abs(b) or len(win_volume(b)) > 0:
+        return win_clean(b)
     if len(a) == 0:
-        return clean(b)
-    return clean(a + "\\" + b)
+        return win_clean(b)
+    return win_clean(a + "\\" + b)
 
 fn _strip_trailing(n: string) -> int:
     e := len(n)
@@ -116,7 +127,7 @@ fn _strip_trailing(n: string) -> int:
         e -= 1
     return e
 
-fn base(p: string) -> string:
+fn win_base(p: string) -> string:
     n := _norm(p)
     e := _strip_trailing(n)
     if e == 0:
@@ -132,7 +143,7 @@ fn base(p: string) -> string:
         i -= 1
     return n[i:e]
 
-fn dir(p: string) -> string:
+fn win_dir(p: string) -> string:
     n := _norm(p)
     e := _strip_trailing(n)
     if e == 0:
@@ -153,8 +164,8 @@ fn dir(p: string) -> string:
         return n[0:d] + "\\"
     return n[0:d]
 
-fn ext(p: string) -> string:
-    b := base(p)
+fn win_ext(p: string) -> string:
+    b := win_base(p)
     i := len(b) - 1
     for i > 0:
         if b[i] == 46:
@@ -162,7 +173,55 @@ fn ext(p: string) -> string:
         i -= 1
     return ""
 
-fn stem(p: string) -> string:
-    b := base(p)
-    e := ext(p)
+fn win_stem(p: string) -> string:
+    b := win_base(p)
+    e := win_ext(p)
     return b[0:len(b) - len(e)]
+
+# ---- host paths -----------------------------------------------------------
+
+fn volume(p: string) -> string:
+    if os.is_windows():
+        return win_volume(p)
+    return ""
+
+# Volume plus the rest; the volume is always "" off Windows.
+fn split_volume(p: string) -> (string, string):
+    if os.is_windows():
+        return win_split_volume(p)
+    return ("", p)
+
+fn is_abs(p: string) -> bool:
+    if os.is_windows():
+        return win_is_abs(p)
+    return path.is_abs(p)
+
+fn clean(p: string) -> string:
+    if os.is_windows():
+        return win_clean(p)
+    return path.clean(p)
+
+fn join(a: string, b: string) -> string:
+    if os.is_windows():
+        return win_join(a, b)
+    return path.join(a, b)
+
+fn base(p: string) -> string:
+    if os.is_windows():
+        return win_base(p)
+    return path.base(p)
+
+fn dir(p: string) -> string:
+    if os.is_windows():
+        return win_dir(p)
+    return path.dir(p)
+
+fn ext(p: string) -> string:
+    if os.is_windows():
+        return win_ext(p)
+    return path.ext(p)
+
+fn stem(p: string) -> string:
+    if os.is_windows():
+        return win_stem(p)
+    return path.stem(p)

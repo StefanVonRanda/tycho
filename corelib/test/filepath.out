@@ -11,3 +11,4 @@ ext=.txt||
 stem=b|.bashrc
 join=C:\a\b|D:\b|a\b|C:\a\b
 split=C:|\a\b||a\b
+host=true

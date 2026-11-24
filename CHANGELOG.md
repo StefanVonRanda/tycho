@@ -53,6 +53,10 @@ builtins and corelib signatures.
 - **`os.exe_path()`**: the running program's own file, absolute, so data kept beside a
   binary is found when it is started from `PATH` (where `args()[0]` has no directory).
 - **`cli.get_all(c, key)`**: every value of a repeated option, in order.
+- **`core:filepath` follows the host** (as Go's does): Windows rules on Windows,
+  `core:path`'s elsewhere. The always-Windows functions are now `win_join`,
+  `win_dir`, ... **Breaking** for a program that relied on Windows rules on a
+  POSIX host: call the `win_` names.
 - **`os.memory_bytes()`**: the process's memory footprint (what Activity Monitor or `top`
   shows), for a program that accounts for its own memory.
 - **`hash.crc32` runs at memory speed** (64 MB: 398 ms -> 5 ms; arm64 CRC32

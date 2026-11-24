@@ -1,19 +1,31 @@
 package main
 import "core:filepath"
+import "core:os"
 
 fn main():
-    println("clean1=" + filepath.clean("C:/a/./b/../c"))
-    println("clean2=" + filepath.clean("C:\\"))
-    println("clean3=" + filepath.clean("\\\\server\\share\\a\\..\\b"))
-    println("clean4=" + filepath.clean("a\\..\\..\\b"))
-    println("clean5=" + filepath.clean("C:foo\\..\\bar"))
-    println("vol=" + filepath.volume("C:\\a\\b") + "|" + filepath.volume("\\\\srv\\share\\d") + "|" + filepath.volume("a\\b"))
-    println("abs=" + str(filepath.is_abs("C:\\a")) + "," + str(filepath.is_abs("C:a")) + "," + str(filepath.is_abs("\\\\srv\\share")) + "," + str(filepath.is_abs("\\a")) + "," + str(filepath.is_abs("a")))
-    println("base=" + filepath.base("C:\\a\\b.txt") + "|" + filepath.base("/a/b/") + "|" + filepath.base("a"))
-    println("dir=" + filepath.dir("C:\\a\\b.txt") + "|" + filepath.dir("C:\\a") + "|" + filepath.dir("a"))
-    println("ext=" + filepath.ext("C:\\a\\b.txt") + "|" + filepath.ext(".bashrc") + "|" + filepath.ext("noext"))
-    println("stem=" + filepath.stem("C:\\a\\b.txt") + "|" + filepath.stem(".bashrc"))
-    println("join=" + filepath.join("C:\\a", "b") + "|" + filepath.join("C:\\a", "D:\\b") + "|" + filepath.join("", "a\\b") + "|" + filepath.join("C:\\a\\", "b"))
-    v1, r1 := filepath.split_volume("C:\\a\\b")
-    v2, r2 := filepath.split_volume("a\\b")
+    println("clean1=" + filepath.win_clean("C:/a/./b/../c"))
+    println("clean2=" + filepath.win_clean("C:\\"))
+    println("clean3=" + filepath.win_clean("\\\\server\\share\\a\\..\\b"))
+    println("clean4=" + filepath.win_clean("a\\..\\..\\b"))
+    println("clean5=" + filepath.win_clean("C:foo\\..\\bar"))
+    println("vol=" + filepath.win_volume("C:\\a\\b") + "|" + filepath.win_volume("\\\\srv\\share\\d") + "|" + filepath.win_volume("a\\b"))
+    println("abs=" + str(filepath.win_is_abs("C:\\a")) + "," + str(filepath.win_is_abs("C:a")) + "," + str(filepath.win_is_abs("\\\\srv\\share")) + "," + str(filepath.win_is_abs("\\a")) + "," + str(filepath.win_is_abs("a")))
+    println("base=" + filepath.win_base("C:\\a\\b.txt") + "|" + filepath.win_base("/a/b/") + "|" + filepath.win_base("a"))
+    println("dir=" + filepath.win_dir("C:\\a\\b.txt") + "|" + filepath.win_dir("C:\\a") + "|" + filepath.win_dir("a"))
+    println("ext=" + filepath.win_ext("C:\\a\\b.txt") + "|" + filepath.win_ext(".bashrc") + "|" + filepath.win_ext("noext"))
+    println("stem=" + filepath.win_stem("C:\\a\\b.txt") + "|" + filepath.win_stem(".bashrc"))
+    println("join=" + filepath.win_join("C:\\a", "b") + "|" + filepath.win_join("C:\\a", "D:\\b") + "|" + filepath.win_join("", "a\\b") + "|" + filepath.win_join("C:\\a\\", "b"))
+    v1, r1 := filepath.win_split_volume("C:\\a\\b")
+    v2, r2 := filepath.win_split_volume("a\\b")
     println("split=" + v1 + "|" + r1 + "|" + v2 + "|" + r2)
+    # The plain names follow the host (FRICTION 242): Windows rules there, POSIX elsewhere.
+    host := false
+    if os.is_windows():
+        host = filepath.join("C:\\Games\\Urani", "urani.pak") == "C:\\Games\\Urani\\urani.pak" and
+               filepath.dir("C:\\Games\\Urani\\urani.exe") == "C:\\Games\\Urani" and filepath.is_abs("C:\\a")
+    else:
+        host = filepath.join("/Users/x", "urani.pak") == "/Users/x/urani.pak" and
+               filepath.dir("/opt/urani/urani") == "/opt/urani" and filepath.is_abs("/a") and
+               filepath.volume("/a") == "" and filepath.clean("a/../b") == "b"
+    println("host=" + str(host))
+

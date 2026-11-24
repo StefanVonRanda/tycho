@@ -143,11 +143,13 @@ expression-bodied; pass a named function where you need a multi-line body.
   least one digit; advances only on success), `rest`, `remaining`, `pos`, `eof`.
   `Writer` accumulates text: `new_writer`, `write`, `write_byte`, `write_line`,
   `text`, `reset`. This is a string buffer, not an fd-buffering layer.
-- **`filepath`** — Windows-style lexical paths, independent of the host. Both
-  `/` and `\` are separators; `clean` preserves a drive (`C:`) or UNC
-  (`\\server\share`) volume and resolves `.`/`..` without climbing above the
-  root. `is_abs`, `volume`, `split_volume`, `join`, `base`, `dir`, `ext` and
-  `stem` are the corresponding operations. Use `core:path` for POSIX semantics.
+- **`filepath`** — the host's lexical paths, for paths that come from or go to
+  the OS: Windows rules on Windows, `core:path`'s elsewhere. `is_abs`, `volume`,
+  `split_volume`, `clean`, `join`, `base`, `dir`, `ext` and `stem`. Their
+  `win_` twins apply the Windows rules on every host: both `/` and `\` are
+  separators; `clean` preserves a drive (`C:`) or UNC (`\\server\share`) volume
+  and resolves `.`/`..` without climbing above the root. Use `core:path` for
+  `/` paths on every host (archives, URLs).
 - **`path`** — POSIX path utilities (separator `/`). The pure functions below are
   string math only (no filesystem access, every function returns a fresh value):
   `base` (final element, trailing slashes ignored; `""`→`.`, `"/"`→`/`), `dir`
