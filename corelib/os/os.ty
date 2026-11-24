@@ -39,6 +39,7 @@ extern fn osx_cwd() -> Option(string)
 extern fn osx_chdir(p: string) -> int          # 0 ok, 1 not found, 2 denied, 3 not a dir, 4 failed
 extern fn osx_pid() -> int
 extern fn osx_hostname() -> Option(string)
+extern fn osx_exe_path() -> Option(string)
 extern fn osx_chmod(p: string, mode: int) -> int
 extern fn osx_umask(mask: int) -> int
 extern fn osx_getuid() -> int
@@ -192,6 +193,13 @@ fn chdir(p: string) -> Result(void, OsErr):
 
 fn pid() -> int:
     return osx_pid()
+
+# The running program's own file: absolute, links resolved where the platform
+# allows (macOS, Linux, Windows), None where it cannot say. Not args()[0], which
+# is only the name the program was started by -- a bare `prog` found on PATH has
+# no directory -- so a program that keeps its data beside its binary needs this.
+fn exe_path() -> Option(string):
+    return osx_exe_path()
 
 # Host name, or None when the platform call fails or truncates.
 fn hostname() -> Option(string):

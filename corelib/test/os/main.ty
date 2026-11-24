@@ -324,3 +324,15 @@ fn main():
     else:
         want = os.Windows
     println("platform_matches_host=" + str(os.platform() == want and want != os.Other))
+    # exe_path: the program's own file, absolute -- not args()[0] (FRICTION 238)
+    match os.exe_path():
+        Some(p):
+            me := args()[0]
+            tail := me
+            for i := 0; i < len(me); i += 1:
+                if me[i] == 47 or me[i] == 92:
+                    tail = me[i + 1:len(me)]
+            absolute := len(p) > 0 and (p[0] == 47 or (len(p) > 2 and p[1] == 58))
+            println("exe_path_absolute_and_ours=" + str(absolute and find(p, tail) >= 0))
+        None: println("exe_path_absolute_and_ours=false")
+

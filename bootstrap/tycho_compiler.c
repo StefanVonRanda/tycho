@@ -7748,6 +7748,7 @@ extern char *osx_cwd(void);
 extern tycho_int osx_chdir(char *);
 extern tycho_int osx_pid(void);
 extern char *osx_hostname(void);
+extern char *osx_exe_path(void);
 extern tycho_int osx_chmod(char *, tycho_int );
 extern tycho_int osx_umask(tycho_int );
 extern tycho_int osx_getuid(void);

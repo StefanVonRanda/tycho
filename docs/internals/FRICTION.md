@@ -1207,3 +1207,21 @@ ARMv8 CRC32 instructions where the compiler targets them (same polynomial, same 
 
 > Pinned-by: grep -q "^crc update = cbf43926$" corelib/test/hash.out
 > Pinned-by: test -f corelib/hash/hash_shim.c
+
+### 238. A program could not find its own file, so data kept beside the binary was found only from its own directory — **FIXED 2026-11-24**
+
+Urani boots from a base pack that sits beside its binary. The only handle was `args()[0]`, the
+name the program was started by: run as `./urani` it worked, run as `urani` from `PATH` the
+directory was `.` and the pack was not found. `os.exe_path()` returns the program's own file,
+absolute, links resolved (`_NSGetExecutablePath` + `realpath`, `/proc/self/exe`,
+`GetModuleFileNameA`), or `None` where the platform cannot say.
+
+> Pinned-by: grep -q "^exe_path_absolute_and_ours=true$" corelib/test/os.out
+
+### 239. `core:cli` kept every value of a repeated option but offered only the last — **FIXED 2026-11-24**
+
+`--pak a.pak --pak b.pak` stacks layers in Urani, in order. `cli.get` returns the last value
+("last one wins"), so the caller had to walk the `Cli` struct's parallel `keys`/`vals` fields by
+hand. `cli.get_all(c, key)` returns them all, in order.
+
+> Pinned-by: grep -q "^get_all    = \[a.pak, b.pak\] \[d\] 0 b.pak$" corelib/test/cli.out

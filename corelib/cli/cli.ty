@@ -188,8 +188,17 @@ fn parse_checked(av: [string], valued: [string], boolean: [string]) -> Result(Cl
 fn parse_spec(av: [string], valued: [string], boolean: [string]) -> Cli:
     return _parse_into(av, valued, boolean, true)
 
+# Every value given for option `key`, in order: `--pak a --pak b` is ["a", "b"].
+fn get_all(c: Cli, key_in: string) -> [string]:
+    key := _undash(key_in)
+    out := []string
+    for i := 0; i < len(c.keys); i += 1:
+        if c.keys[i] == key:
+            push(out, c.vals[i])
+    return out
+
 # The value of option `key`, or `dflt` if it was not supplied. Last one wins if
-# an option is repeated.
+# an option is repeated (get_all has them all).
 fn get(c: Cli, key_in: string, dflt: string) -> string:
     key := _undash(key_in)          # `get(c, "--out", ...)` reads the same as `get(c, "out", ...)`
     out := dflt

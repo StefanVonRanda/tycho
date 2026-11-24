@@ -137,3 +137,7 @@ fn main():
     # exists to absorb.
     println("nargs      = " + str(len(args())))
     println("nargv      = " + str(len(cli.argv())))
+    # get_all: every value of a repeated option, in order (FRICTION 239)
+    r := cli.parse_spec(["--pak", "a.pak", "x", "--pak=b.pak", "--dev", "d"], ["pak", "dev"], []string)
+    println("get_all    = " + str(cli.get_all(r, "pak")) + " " + str(cli.get_all(r, "--dev")) + " " + str(len(cli.get_all(r, "none"))) + " " + cli.get(r, "pak", ""))
+

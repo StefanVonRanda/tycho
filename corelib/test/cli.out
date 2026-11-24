@@ -40,3 +40,4 @@ free nmiss = 0
 free nunk  = 0
 nargs      = 1
 nargv      = 0
+get_all    = [a.pak, b.pak] [d] 0 b.pak

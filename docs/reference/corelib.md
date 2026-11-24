@@ -849,7 +849,10 @@ expression-bodied; pass a named function where you need a multi-line body.
   pipe reader must see a startup line before the process exits (`print`/`println`
   are block-buffered when stdout is not a terminal). Its checked sibling
   `flush_stdout_checked() -> Result(void, IoErr)` reports the refusal. Nothing aborts.
-- **`os`** — `is_windows()` reports the host family at runtime — run external commands via
+- **`os`** — `exe_path() -> Option(string)` is the running program's own file, absolute with
+  links resolved (macOS, Linux, Windows) -- unlike `args()[0]`, which is only the name it was
+  started by, so a program that keeps data beside its binary finds it from anywhere.
+  `is_windows()` reports the host family at runtime — run external commands via
   a **libc-only FFI shim** (no `deps`, nothing to install). `os.system(cmd)` runs `cmd`
   through the shell with stdout/stderr inherited, returning its exit code (0..255,
   `128+signal` if killed, `-1` if the shell won't start); `os.run(cmd)` additionally
@@ -1023,7 +1026,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   a bare `--`). Values always attach with `=`, so `parse` needs **no schema** of which options
   take a value — `--verbose` is unambiguously a flag and `--out=x` unambiguously an option.
   `argv()` is the builtin `args()` with `args()[0]` (the program path) dropped, which is what
-  `parse` wants, so a program's whole front door is `c := cli.parse(cli.argv())`. Pass a
+  `parse` wants, so a program's whole front door is `c := cli.parse(cli.argv())`.
+  `get(c, key, dflt)` is an option's last value; `get_all(c, key)` every value of a repeated
+  option, in order (`--pak a --pak b` gives `["a", "b"]`). Pass a
   vector to `parse` yourself and it is used as given; the skip lives in `argv()`, not in
   `parse`. `parse_spec(argv, valued, boolean) -> Cli` is the **schema-carrying** form, and it
   is what buys the space-separated Unix spelling `--root DIR`: `valued` and `boolean` list

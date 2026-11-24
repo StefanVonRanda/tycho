@@ -20,6 +20,7 @@
 
 #ifdef __APPLE__
 #include <TargetConditionals.h>
+#include <mach-o/dyld.h>        /* _NSGetExecutablePath -- osx_exe_path */
 #endif
 #ifdef _WIN32
 #include <windows.h>            /* CreateProcessA / CreatePipe -- the argv path */
@@ -727,6 +728,31 @@ static _Thread_local char ty_os_cwd[8192];
 static _Thread_local char ty_os_host[1024];
 static _Thread_local char ty_os_temp[4096];
 static _Thread_local char ty_os_user[256];
+static _Thread_local char ty_os_exe[4096];
+
+/* The running program's own file, absolute and with links resolved where the
+ * platform allows; NULL where it cannot say. args()[0] is only the name the
+ * program was started by: a bare `urani` found on PATH has no directory. */
+char *osx_exe_path(void) {
+#if defined(_WIN32)
+    DWORD n = GetModuleFileNameA(NULL, ty_os_exe, (DWORD)sizeof ty_os_exe);
+    if (n == 0 || n >= sizeof ty_os_exe) return NULL;
+    return ty_os_exe;
+#elif defined(__APPLE__)
+    char raw[4096];
+    uint32_t sz = (uint32_t)sizeof raw;
+    if (_NSGetExecutablePath(raw, &sz) != 0) return NULL;
+    if (!realpath(raw, ty_os_exe)) return NULL;
+    return ty_os_exe;
+#elif defined(__linux__)
+    ssize_t n = readlink("/proc/self/exe", ty_os_exe, sizeof ty_os_exe - 1);
+    if (n <= 0 || (size_t)n >= sizeof ty_os_exe - 1) return NULL;
+    ty_os_exe[n] = 0;
+    return ty_os_exe;
+#else
+    return NULL;
+#endif
+}
 
 char *osx_cwd(void) {
 #ifdef _WIN32

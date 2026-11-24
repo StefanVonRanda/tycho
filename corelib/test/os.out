@@ -61,3 +61,4 @@ pipe_read=true
 pipe_bad_read=true
 pipe_bad_write=true
 platform_matches_host=true
+exe_path_absolute_and_ours=true

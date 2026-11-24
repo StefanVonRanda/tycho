@@ -166,6 +166,11 @@ fn main():
 works; one `_` per destructuring list, and `_, b = f()` with no prior `_` is an
 error naming the rule.
 
+**`core:filepath` is Windows-style on every host.** It turns `/a/b` into
+`\a\b` even on macOS and Linux; POSIX paths are `core:path` (`path.join`,
+`path.dir`). The Go reflex -- `filepath` is the host-native one -- picks the
+wrong package and still compiles.
+
 **A slice clamps, it does not bounds-check.** `b[1:99]` on a 3-byte value gives
 you length 2 and no trap. Use `strings.slice_bytes` / `slice_str` when the
 bounds must be checked.

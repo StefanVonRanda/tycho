@@ -47,6 +47,9 @@ builtins and corelib signatures.
 
 ### Corelib
 
+- **`os.exe_path()`**: the running program's own file, absolute, so data kept beside a
+  binary is found when it is started from `PATH` (where `args()[0]` has no directory).
+- **`cli.get_all(c, key)`**: every value of a repeated option, in order.
 - **`hash.crc32` runs at memory speed** (64 MB: 398 ms -> 5 ms; arm64 CRC32
   instructions, slicing-by-8 elsewhere), and takes `bytes` too: `crc32_bytes(b)`, and
   `crc32_update(crc, b)` to continue a CRC over chunks. `zip.crc32` is now the same code.
