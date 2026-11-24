@@ -8236,6 +8236,7 @@ void h_types___aff_bind_check(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs
 void h_types___aff_reassign_check(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, char *h_name, char *h_vt);
 int h_types___unify(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, E_ast__Ty *h_pat, char *h_at, TychoMapM3 *h_b, Arena *_ina_h_b);
 char *h_types___bnd_stage2(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, E_ast__Ty *h_pat, char *h_at);
+int h_types___sized_num(Arena *_parent, char *h_t);
 int h_types___pred_ok(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, char *h_pred, char *h_t);
 int h_types___has_name6(Arena *_parent, TychoArrStr h_xs, char *h_n);
 int h_types___tp_in_pats(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, tycho_int h_ti, tycho_int h_at0, tycho_int h_npay, char *h_tp);
@@ -28065,6 +28066,10 @@ char *h_types___bnd_stage2(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, E
     { char *_ret = TYCHO_LIT(""); arena_free(&_scope); return _ret; }
 }
 
+int h_types___sized_num(Arena *_parent, char *h_t) {
+    { int _ret = ((((((((tycho_str_eq(h_t, TYCHO_LIT("u8")) || tycho_str_eq(h_t, TYCHO_LIT("u16"))) || tycho_str_eq(h_t, TYCHO_LIT("u32"))) || tycho_str_eq(h_t, TYCHO_LIT("u64"))) || tycho_str_eq(h_t, TYCHO_LIT("i8"))) || tycho_str_eq(h_t, TYCHO_LIT("i16"))) || tycho_str_eq(h_t, TYCHO_LIT("i32"))) || tycho_str_eq(h_t, TYCHO_LIT("i64"))) || tycho_str_eq(h_t, TYCHO_LIT("f32"))); return _ret; }
+}
+
 int h_types___pred_ok(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, char *h_pred, char *h_t) {
     Arena _scope = arena_child(_parent); _scope.name = "types___pred_ok";
     if (!h_types__known(_parent, h_t)) {
@@ -28075,7 +28080,7 @@ int h_types___pred_ok(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, char *
         { int _ret = (tycho_str_eq(h_b, TYCHO_LIT("int")) || tycho_str_eq(h_b, TYCHO_LIT("float"))); arena_free(&_scope); return _ret; }
     }
     if (tycho_str_eq(h_pred, TYCHO_LIT("comparable"))) {
-        { int _ret = (((tycho_str_eq(h_b, TYCHO_LIT("int")) || tycho_str_eq(h_b, TYCHO_LIT("char"))) || tycho_str_eq(h_b, TYCHO_LIT("float"))) || tycho_str_eq(h_b, TYCHO_LIT("string"))); arena_free(&_scope); return _ret; }
+        { int _ret = ((((tycho_str_eq(h_b, TYCHO_LIT("int")) || tycho_str_eq(h_b, TYCHO_LIT("char"))) || tycho_str_eq(h_b, TYCHO_LIT("float"))) || tycho_str_eq(h_b, TYCHO_LIT("string"))) || h_types___sized_num(_parent, h_b)); arena_free(&_scope); return _ret; }
     }
     if (tycho_str_eq(h_pred, TYCHO_LIT("has_str"))) {
         { int _ret = (((tycho_str_eq(h_b, TYCHO_LIT("int")) || tycho_str_eq(h_b, TYCHO_LIT("bool"))) || tycho_str_eq(h_b, TYCHO_LIT("float"))) || tycho_str_eq(h_b, TYCHO_LIT("string"))); arena_free(&_scope); return _ret; }

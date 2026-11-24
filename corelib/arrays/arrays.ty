@@ -2,7 +2,7 @@
 # `import "core:arrays"`. (push/pop/len/range are builtins; higher-order
 # map/filter/reduce live in core:iter.)
 #
-# Ordering functions carry `where comparable(T)` (int/char/float/string),
+# Ordering functions carry `where comparable(T)` (int/char/float/string, sized numerics),
 # arithmetic ones `where numeric(T)` (int/float), formatting `where has_str(T)`.
 # Value semantics: functions that "modify" (sort/reverse/...) return a NEW array;
 # the input is never mutated. `min`/`max`/`sum`/`product` seed from `xs[0]`, so

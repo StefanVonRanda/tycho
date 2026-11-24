@@ -9,6 +9,8 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`comparable(T)` admits the sized numerics** (`u8`…`u64`, `i8`…`i64`, `f32`), so
+  `sort.asc` over `[f32]` and `math.max` on two `f32`s compile.
 - **Spec: `parallel for` captures are shared, not deep-copied** (13 §22). This is what the
   implementation always did; capturing a large array costs nothing per chunk.
 - **`f32` widens to `float` in an unannotated array literal and at a generic `$T`**:

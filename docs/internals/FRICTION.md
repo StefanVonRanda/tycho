@@ -1175,3 +1175,12 @@ exact in one thread and off by under 4 KiB per other thread across several.
 
 > Pinned-by: sh tests/arena_stats_threads.sh
 > Pinned-by: grep -q "static __thread StTl st_tl;" runtime/tycho_rt.c
+
+### 235. `comparable(T)` admitted `int`, `char`, `float` and `string` only, so an `f32` or `u8` could not be sorted or passed to `math.max` — **FIXED 2026-11-24**
+
+Found while fixing 232: `math.max(b, b)` with `b: f32` was "'max' instantiated with T = f32,
+which does not satisfy `comparable(T)`", and so was `sort.asc` over a `[f32]` of depths or a
+`[u8]` of bytes -- although `<` on two f32s or two u8s was always legal. `comparable` now also
+admits the sized numerics `u8`…`u64`, `i8`…`i64`, `f32`.
+
+> Pinned-by: grep -q "^sized=\[-1.0, -0.0, 0.0, 2.25, 3.5\] \[255, 200, 17, 3, 0\] 0,2,1,3$" corelib/test/sort.out

@@ -158,3 +158,10 @@ fn merge_vs_reference():
     # input order, ascending and descending, at a length ending on either buffer.
     zs := [0.0, -0.0, 1.0, -0.0, 0.0, -1.0, 0.0]
     println("zeros=" + str(sort.asc(zs)) + " " + str(sort.desc(zs)) + " " + str(sort.asc(zs[0:6])))
+    # comparable covers the sized numerics (FRICTION 235): asc/desc/argsort over
+    # f32, u8 and i16 keys, stable, -0.0 before 0.0 as given
+    fs: [f32] = [3.5, -1.0, 2.25, -0.0, 0.0]
+    us: [u8] = [200, 3, 255, 0, 17]
+    hs: [i16] = [-300, 5, -2, 1000]
+    println("sized=" + str(sort.asc(fs)) + " " + str(sort.desc(us)) + " " + jn(sort.argsort(hs)))
+

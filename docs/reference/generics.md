@@ -29,7 +29,7 @@ there is no way to add one:
 | predicate | satisfied by |
 |---|---|
 | `numeric(T)` | `int`, `float` |
-| `comparable(T)` | `int`, `char`, `float`, `string` |
+| `comparable(T)` | `int`, `char`, `float`, `string`, and the sized numerics `u8`…`u64`, `i8`…`i64`, `f32` |
 | `has_str(T)` | `int`, `bool`, `float`, `string` |
 | `hashable(T)` | any legal map key type — and it admits `K` as a map key *inside* the body |
 | `defaultable(T)` | exactly `int`, `float`, `bool`, `string` |

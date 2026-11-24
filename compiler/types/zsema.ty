@@ -610,6 +610,10 @@ fn _bnd_stage2(cs: inout C, pat: ast.Ty, at: string) -> string:
         _: return ""
     return ""
 
+fn _sized_num(t: string) -> bool:
+    return t == "u8" or t == "u16" or t == "u32" or t == "u64" or t == "i8" or t == "i16" or
+        t == "i32" or t == "i64" or t == "f32"
+
 # The five closed predicates, src/tychoc.c@constraint_ok. The first four see
 # through a newtype (`base_of`); `defaultable` does NOT, and that asymmetry is
 # the whole of tests/reject/where_defaultable_bad.ty.
@@ -620,7 +624,8 @@ fn _pred_ok(cs: inout C, pred: string, t: string) -> bool:
     if pred == "numeric":
         return b == "int" or b == "float"
     if pred == "comparable":
-        return b == "int" or b == "char" or b == "float" or b == "string"
+        # the sized numerics order with `<` like int and float (FRICTION 235)
+        return b == "int" or b == "char" or b == "float" or b == "string" or _sized_num(b)
     if pred == "has_str":
         return b == "int" or b == "bool" or b == "float" or b == "string"
     if pred == "hashable":
