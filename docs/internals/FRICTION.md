@@ -1125,3 +1125,14 @@ the corpus exercises.
 
 > Pinned-by: grep -q "^extend=1,2,3,4 big=2000 999 names=a,b,c$" corelib/test/arrays.out
 > Pinned-by: grep -q "^\[7, 0, 1, 2, 3, 4\] \[7, 0, 1, 2, 99\] \[0, 1, 10, 11, 20, 21\] three \[7, 0, 1, 2, 3\]$" tests/push_bytes.out
+
+### 231. `sort.asc` was 1.5x slower than `sort_by` with a closure, and every sort copied its buffer back after each pass — **FIXED 2026-11-24**
+
+The meshlet viewer's Morton sort (7.2M packed ints) used `sort_by(xs, fn(a, b) -> int: a - b)`
+rather than the obvious `sort.asc(xs)`, because `asc` was the slower one: it sorted an index
+permutation and gathered through it (21.7M random ints: `asc` 2.9 s, `sort_by` 1.9 s, C `qsort`
+1.7 s). `asc`/`desc` now merge the values directly, making the same comparisons in the same
+order (so the result is unchanged, NaN and `-0.0` placement included), and every merge pass
+alternates buffers instead of copying back: `asc` 1.46 s, `sort_by` 1.75 s.
+
+> Pinned-by: grep -q "^zeros=\[-1.0, 0.0, -0.0, -0.0, 0.0, 0.0, 1.0\]" corelib/test/sort.out

@@ -15,8 +15,10 @@ package sort
 # When the order needs more than one key, mixed directions, or a type with no
 # `comparable` instance, use sort.sort_by(xs, cmp) and write the compare.
 
-# Every sort here is O(n log n): they share _order, a stable bottom-up merge
-# over the index permutation (FRICTION 207 -- they were insertion sorts).
+# Every sort here is O(n log n), a stable bottom-up merge (FRICTION 207 -- they
+# were insertion sorts): _order over the index permutation for argsort, _values
+# over the values for asc/desc, sort_by with the caller's compare. Each pass
+# merges into the other buffer, alternating, never copying back (FRICTION 231).
 
 # The stable permutation that orders keys; desc reverses the order, and equal
 # keys keep their input order either way. Only strict `<` is used, as the
@@ -28,37 +30,91 @@ fn _order(keys: [$T], desc: bool) -> [int] where comparable(T):
     for i := 0; i < n; i += 1:
         push(a, i)
     b := a
+    # Two passes per round, a -> b then b -> a: alternating the direction
+    # saves copying the merged run back after every pass (FRICTION 231).
     width := 1
     for width < n:
-        lo := 0
-        for lo < n:
-            mid := lo + width
-            hi := lo + width + width
-            if mid > n:
-                mid = n
-            if hi > n:
-                hi = n
-            i := lo
-            j := mid
-            for k := lo; k < hi; k += 1:
-                take_left := i < mid
-                if i < mid and j < hi:
-                    # A tie takes the left run, which holds the earlier input.
-                    if desc:
-                        take_left = (keys[a[i]] < keys[a[j]]) == false
-                    else:
-                        take_left = (keys[a[j]] < keys[a[i]]) == false
-                if take_left:
-                    b[k] = a[i]
-                    i += 1
-                else:
-                    b[k] = a[j]
-                    j += 1
-            lo = hi
-        for t := 0; t < n; t += 1:
-            a[t] = b[t]
+        _pass_ord(keys, a, &b, width, desc)
+        width = width + width
+        if width >= n:
+            return b
+        _pass_ord(keys, b, &a, width, desc)
         width = width + width
     return a
+
+# One bottom-up merge pass of the index permutation src into dst: runs of
+# `width` merged pairwise. A tie takes the left run, which holds the earlier
+# input -- that is the stability.
+fn _pass_ord(keys: [$T], src: [int], dst: inout [int], width: int, desc: bool) where comparable(T):
+    n := len(src)
+    lo := 0
+    for lo < n:
+        mid := lo + width
+        hi := lo + width + width
+        if mid > n:
+            mid = n
+        if hi > n:
+            hi = n
+        i := lo
+        j := mid
+        for k := lo; k < hi; k += 1:
+            take_left := i < mid
+            if i < mid and j < hi:
+                if desc:
+                    take_left = (keys[src[i]] < keys[src[j]]) == false
+                else:
+                    take_left = (keys[src[j]] < keys[src[i]]) == false
+            if take_left:
+                dst[k] = src[i]
+                i += 1
+            else:
+                dst[k] = src[j]
+                j += 1
+        lo = hi
+
+# The same merge over the values themselves, for asc/desc: the comparisons
+# are the ones _order makes, in the same sequence, so the result is exactly
+# the gathered permutation's -- without the indirection through it.
+fn _values(xs: [$T], desc: bool) -> [$T] where comparable(T):
+    n := len(xs)
+    a := xs
+    b := xs
+    width := 1
+    for width < n:
+        _pass_val(a, &b, width, desc)
+        width = width + width
+        if width >= n:
+            return b
+        _pass_val(b, &a, width, desc)
+        width = width + width
+    return a
+
+fn _pass_val(src: [$T], dst: inout [$T], width: int, desc: bool) where comparable(T):
+    n := len(src)
+    lo := 0
+    for lo < n:
+        mid := lo + width
+        hi := lo + width + width
+        if mid > n:
+            mid = n
+        if hi > n:
+            hi = n
+        i := lo
+        j := mid
+        for k := lo; k < hi; k += 1:
+            take_left := i < mid
+            if i < mid and j < hi:
+                if desc:
+                    take_left = (src[i] < src[j]) == false
+                else:
+                    take_left = (src[j] < src[i]) == false
+            if take_left:
+                dst[k] = src[i]
+                i += 1
+            else:
+                dst[k] = src[j]
+                j += 1
+        lo = hi
 
 fn _gather(xs: [$T], ord: [int]) -> [$T]:
     out := xs
@@ -73,10 +129,10 @@ fn argsort_desc(keys: [$T]) -> [int] where comparable(T):   # descending, stable
     return _order(keys, true)
 
 fn asc(xs: [$T]) -> [$T] where comparable(T):       # sort the VALUES ascending, stable, new array (the common case)
-    return _gather(xs, _order(xs, false))
+    return _values(xs, false)
 
 fn desc(xs: [$T]) -> [$T] where comparable(T):      # sort the VALUES descending, stable, new array
-    return _gather(xs, _order(xs, true))
+    return _values(xs, true)
 
 # The general one: any order you can write as a three-way compare -- several keys,
 # mixed directions, a type with no `comparable` instance. cmp(a, b) returns <0, 0, >0.
@@ -87,39 +143,43 @@ fn sort_by(xs: [$T], cmp: fn($T, $T) -> int) -> [$T]:
     n := len(a)
     width := 1
     for width < n:
-        lo := 0
-        for lo < n:
-            mid := lo + width
-            hi := lo + width + width
-            if mid > n:
-                mid = n
-            if hi > n:
-                hi = n
-            i := lo
-            j := mid
-            k := lo
-            for k < hi:
-                take_left := false
-                if i >= mid:
-                    take_left = false
-                elif j >= hi:
-                    take_left = true
-                else:
-                    # `<= 0`, not `< 0`: on a tie the left run holds the earlier
-                    # input elements, so taking it first is what makes this stable.
-                    take_left = (cmp(a[i], a[j]) <= 0)
-                if take_left:
-                    b[k] = a[i]
-                    i = i + 1
-                else:
-                    b[k] = a[j]
-                    j = j + 1
-                k = k + 1
-            lo = lo + width + width
-        for t := 0; t < n; t += 1:
-            a[t] = b[t]
+        _pass_by(a, &b, width, cmp)
+        width = width + width
+        if width >= n:
+            return b
+        _pass_by(b, &a, width, cmp)
         width = width + width
     return a
+
+fn _pass_by(src: [$T], dst: inout [$T], width: int, cmp: fn($T, $T) -> int):
+    n := len(src)
+    lo := 0
+    for lo < n:
+        mid := lo + width
+        hi := lo + width + width
+        if mid > n:
+            mid = n
+        if hi > n:
+            hi = n
+        i := lo
+        j := mid
+        for k := lo; k < hi; k += 1:
+            take_left := false
+            if i >= mid:
+                take_left = false
+            elif j >= hi:
+                take_left = true
+            else:
+                # `<= 0`, not `< 0`: on a tie the left run holds the earlier
+                # input elements, so taking it first is what makes this stable.
+                take_left = (cmp(src[i], src[j]) <= 0)
+            if take_left:
+                dst[k] = src[i]
+                i += 1
+            else:
+                dst[k] = src[j]
+                j += 1
+        lo = hi
 
 # deprecated: use sort_by(xs, cmp) -- by_key(xs, k) is sort_by(xs, fn(a, b) -> int: k(a) - k(b)). Removed in 1.0.
 fn by_key(xs: [$T], key: fn($T) -> int) -> [$T]:    # sort elements by a derived int key, ascending, stable

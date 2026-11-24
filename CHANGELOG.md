@@ -88,6 +88,10 @@ builtins and corelib signatures.
 
 ### Performance
 
+- **`sort.asc` / `sort.desc` are 2x faster** (21.7M ints: 2.9 s -> 1.46 s, now faster than
+  `sort_by` and C `qsort`): they merge the values directly instead of an index permutation.
+  Every sort's merge passes alternate buffers instead of copying back (`sort_by` 9% faster).
+  Results are unchanged.
 - A fresh `to_bytes` result is no longer copied on return for a `[int]` or
   packed argument, and `core:buffer.write` / `write_bytes` append a whole
   `bytes` at once (flat-state save/load roughly 2x faster).

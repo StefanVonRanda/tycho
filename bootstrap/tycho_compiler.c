@@ -8744,8 +8744,9 @@ char *h_emit___tofloat__own0(Arena *_parent, char *h_c);
 char *h_emit___replace__own0(Arena *_parent, char *h_s, char *h_from, char *h_to);
 TychoArrStr h_sort__asc__string__string(Arena *_parent, TychoArrStr h_xs);
 TychoArrK24 h_sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef(Arena *_parent, TychoArrK24 h_xs, FnC0 h_cmp);
-TychoArrInt h_sort___order__string(Arena *_parent, TychoArrStr h_keys, int h_desc);
-TychoArrStr h_sort___gather__string__string(Arena *_parent, TychoArrStr h_xs, TychoArrInt h_ord);
+TychoArrStr h_sort___values__string__string(Arena *_parent, TychoArrStr h_xs, int h_desc);
+void h_sort___pass_by__types__DRef__types__DRef__types__DRef__types__DRef(Arena *_parent, TychoArrK24 h_src, TychoArrK24 *h_dst, Arena *_ina_h_dst, tycho_int h_width, FnC0 h_cmp);
+void h_sort___pass_val__string__string(Arena *_parent, TychoArrStr h_src, TychoArrStr *h_dst, Arena *_ina_h_dst, tycho_int h_width, int h_desc);
 tycho_int types___dref_cmp__clo(void *_env, Arena *_parent, S_types__DRef _a0, S_types__DRef _a1);
 
 static int tycho_fn_is_heap(void *p) {
@@ -63435,85 +63436,28 @@ char *h_emit___replace__own0(Arena *_parent, char *h_s, char *h_from, char *h_to
 }
 
 TychoArrStr h_sort__asc__string__string(Arena *_parent, TychoArrStr h_xs) {
-    { TychoArrStr _ret = h_sort___gather__string__string(_parent, h_xs, h_sort___order__string(_parent, h_xs, 0)); return _ret; }
+    { TychoArrStr _ret = h_sort___values__string__string(_parent, h_xs, 0); return _ret; }
 }
 
 TychoArrK24 h_sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef(Arena *_parent, TychoArrK24 h_xs, FnC0 h_cmp) {
     Arena _scope = arena_child(_parent); _scope.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef";
     TychoArrK24 h_a = tycho_arr_K24_copy(_parent, h_xs);
-    TychoArrK24 h_b = tycho_arr_K24_copy(&_scope, h_xs);
+    TychoArrK24 h_b = tycho_arr_K24_copy(_parent, h_xs);
     tycho_int h_n = ((h_a).len);
     tycho_int h_width = 1LL;
     {
         Arena _scr8676 = arena_child(&_scope); _scr8676.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:0";
+        #if defined(__GNUC__) && !defined(__clang__)
+        #pragma GCC unroll 4
+        #endif
         while (h_width < h_n) {
             arena_reset(&_scr8676);
-            tycho_int h_lo = 0LL;
-            {
-                Arena _scr8677 = arena_child(&_scr8676); _scr8677.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:1";
-                while (h_lo < h_n) {
-                    arena_reset(&_scr8677);
-                    tycho_int h_mid = (h_lo + h_width);
-                    tycho_int h_hi = ((h_lo + h_width) + h_width);
-                    if (h_mid > h_n) {
-                        h_mid = h_n;
-                    }
-                    if (h_hi > h_n) {
-                        h_hi = h_n;
-                    }
-                    tycho_int h_i = h_lo;
-                    tycho_int h_j = h_mid;
-                    tycho_int h_k = h_lo;
-                    {
-                        Arena _scr8678 = arena_child(&_scr8677); _scr8678.name = "sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef:2";
-                        #if defined(__GNUC__) && !defined(__clang__)
-                        #pragma GCC unroll 4
-                        #endif
-                        while (h_k < h_hi) {
-                            arena_reset(&_scr8678);
-                            int h_take_left = 0;
-                            if (h_i >= h_mid) {
-                                h_take_left = 0;
-                            } else if (h_j >= h_hi) {
-                                h_take_left = 1;
-                            } else {
-                                h_take_left = (({ FnC0  *_fv8679 = &(h_cmp); _fv8679->call((void *)&_fv8679->c0, &_scr8678, tycho_arr_K24_get(h_a, h_i), tycho_arr_K24_get(h_a, h_j)); }) <= 0LL);
-                            }
-                            if (h_take_left) {
-                                tycho_int h__mk8681 = h_k;
-                                S_types__DRef _ps8681 = tycho_arr_K24_get(h_a, h_i);
-                                (*tycho_arr_K24_ptr(&(h_b), h__mk8681)) = _ps8681;
-                                h_i = (h_i + 1LL);
-                            } else {
-                                tycho_int h__mk8683 = h_k;
-                                S_types__DRef _ps8683 = tycho_arr_K24_get(h_a, h_j);
-                                (*tycho_arr_K24_ptr(&(h_b), h__mk8683)) = _ps8683;
-                                h_j = (h_j + 1LL);
-                            }
-                            h_k = (h_k + 1LL);
-                        }
-                        arena_free(&_scr8678);
-                    }
-                    h_lo = ((h_lo + h_width) + h_width);
-                }
-                arena_free(&_scr8677);
+            h_sort___pass_by__types__DRef__types__DRef__types__DRef__types__DRef(&_scr8676, h_a, &(h_b), _parent, h_width, h_cmp);
+            h_width = (h_width + h_width);
+            if (h_width >= h_n) {
+                { TychoArrK24 _ret = h_b; arena_free(&_scr8676); arena_free(&_scope); return _ret; }
             }
-            {
-                tycho_int h_t = 0LL;
-                #if defined(__clang__)
-                #pragma clang loop unroll_count(4)
-                #elif defined(__GNUC__)
-                #pragma GCC unroll 4
-                #endif
-                while (h_t < h_n) {
-                    {
-                        tycho_int h__mk8686 = h_t;
-                        S_types__DRef _ps8686 = tycho_arr_K24_get(h_b, h_t);
-                        (*tycho_arr_K24_ptr(&(h_a), h__mk8686)) = _ps8686;
-                    }
-                    h_t = (h_t + 1LL);
-                }
-            }
+            h_sort___pass_by__types__DRef__types__DRef__types__DRef__types__DRef(&_scr8676, h_b, &(h_a), _parent, h_width, h_cmp);
             h_width = (h_width + h_width);
         }
         arena_free(&_scr8676);
@@ -63521,120 +63465,146 @@ TychoArrK24 h_sort__sort_by__types__DRef__types__DRef__types__DRef__types__DRef(
     { TychoArrK24 _ret = h_a; arena_free(&_scope); return _ret; }
 }
 
-TychoArrInt h_sort___order__string(Arena *_parent, TychoArrStr h_keys, int h_desc) {
-    Arena _scope = arena_child(_parent); _scope.name = "sort___order__string";
-    tycho_int h_n = ((h_keys).len);
-    TychoArrInt h_a = ({ TychoArrInt _l8687 = tycho_arr_int_with_cap(_parent, 0); _l8687.len = 0; _l8687; });
-    tycho_arr_int_reserve(_parent, &(h_a), ((h_n) > 0 ? (tycho_int)(h_n) : 0));
+TychoArrStr h_sort___values__string__string(Arena *_parent, TychoArrStr h_xs, int h_desc) {
+    Arena _scope = arena_child(_parent); _scope.name = "sort___values__string__string";
+    tycho_int h_n = ((h_xs).len);
+    TychoArrStr h_a = tycho_arr_str_copy(_parent, h_xs);
+    TychoArrStr h_b = tycho_arr_str_copy(_parent, h_xs);
+    tycho_int h_width = 1LL;
     {
-        tycho_int h_i = 0LL;
-        tycho_int *_fd8689 = h_a.data; tycho_int _fd8689l = h_a.len, _fd8689c = h_a.cap;
+        Arena _scr8677 = arena_child(&_scope); _scr8677.name = "sort___values__string__string:0";
         #if defined(__GNUC__) && !defined(__clang__)
         #pragma GCC unroll 4
         #endif
-        while (h_i < h_n) {
-            {
-                ({ _fd8689[_fd8689l++] = h_i; });
-            }
-            h_i = (h_i + 1LL);
-        }
-        h_a.data = _fd8689; h_a.len = _fd8689l; h_a.cap = _fd8689c;
-    }
-    TychoArrInt h_b = tycho_arr_int_copy(&_scope, h_a);
-    tycho_int h_width = 1LL;
-    {
         while (h_width < h_n) {
-            tycho_int h_lo = 0LL;
-            {
-                while (h_lo < h_n) {
-                    tycho_int h_mid = (h_lo + h_width);
-                    tycho_int h_hi = ((h_lo + h_width) + h_width);
-                    if (h_mid > h_n) {
-                        h_mid = h_n;
-                    }
-                    if (h_hi > h_n) {
-                        h_hi = h_n;
-                    }
-                    tycho_int h_i = h_lo;
-                    tycho_int h_j = h_mid;
-                    {
-                        tycho_int h_k = h_lo;
-                        #if defined(__GNUC__) && !defined(__clang__)
-                        #pragma GCC unroll 4
-                        #endif
-                        while (h_k < h_hi) {
-                            {
-                                int h_take_left = (h_i < h_mid);
-                                if ((h_i < h_mid) && (h_j < h_hi)) {
-                                    if (h_desc) {
-                                        h_take_left = ((tycho_str_cmp(tycho_arr_str_get(h_keys, tycho_arr_int_get(h_a, h_i)), tycho_arr_str_get(h_keys, tycho_arr_int_get(h_a, h_j))) < 0) == 0);
-                                    } else {
-                                        h_take_left = ((tycho_str_cmp(tycho_arr_str_get(h_keys, tycho_arr_int_get(h_a, h_j)), tycho_arr_str_get(h_keys, tycho_arr_int_get(h_a, h_i))) < 0) == 0);
-                                    }
-                                }
-                                if (h_take_left) {
-                                    tycho_int h__mk8694 = h_k;
-                                    tycho_int _ps8694 = tycho_arr_int_get(h_a, h_i);
-                                    (*tycho_arr_int_ptr(&(h_b), h__mk8694)) = _ps8694;
-                                    h_i = (h_i + 1LL);
-                                } else {
-                                    tycho_int h__mk8696 = h_k;
-                                    tycho_int _ps8696 = tycho_arr_int_get(h_a, h_j);
-                                    (*tycho_arr_int_ptr(&(h_b), h__mk8696)) = _ps8696;
-                                    h_j = (h_j + 1LL);
-                                }
-                            }
-                            h_k = (h_k + 1LL);
-                        }
-                    }
-                    h_lo = h_hi;
-                }
+            arena_reset(&_scr8677);
+            h_sort___pass_val__string__string(&_scr8677, h_a, &(h_b), _parent, h_width, h_desc);
+            h_width = (h_width + h_width);
+            if (h_width >= h_n) {
+                { TychoArrStr _ret = h_b; arena_free(&_scr8677); arena_free(&_scope); return _ret; }
             }
-            {
-                tycho_int h_t = 0LL;
-                #if defined(__clang__)
-                #pragma clang loop unroll_count(4)
-                #elif defined(__GNUC__)
-                #pragma GCC unroll 4
-                #endif
-                while (h_t < h_n) {
-                    {
-                        tycho_int h__mk8699 = h_t;
-                        tycho_int _ps8699 = tycho_arr_int_get(h_b, h_t);
-                        (*tycho_arr_int_ptr(&(h_a), h__mk8699)) = _ps8699;
-                    }
-                    h_t = (h_t + 1LL);
-                }
-            }
+            h_sort___pass_val__string__string(&_scr8677, h_b, &(h_a), _parent, h_width, h_desc);
             h_width = (h_width + h_width);
         }
+        arena_free(&_scr8677);
     }
-    { TychoArrInt _ret = h_a; arena_free(&_scope); return _ret; }
+    { TychoArrStr _ret = h_a; arena_free(&_scope); return _ret; }
 }
 
-TychoArrStr h_sort___gather__string__string(Arena *_parent, TychoArrStr h_xs, TychoArrInt h_ord) {
-    Arena _scope = arena_child(_parent); _scope.name = "sort___gather__string__string";
-    TychoArrStr h_out = tycho_arr_str_copy(_parent, h_xs);
+void h_sort___pass_by__types__DRef__types__DRef__types__DRef__types__DRef(Arena *_parent, TychoArrK24 h_src, TychoArrK24 *h_dst, Arena *_ina_h_dst, tycho_int h_width, FnC0 h_cmp) {
+    Arena _scope = arena_child(_parent); _scope.name = "sort___pass_by__types__DRef__types__DRef__types__DRef__types__DRef";
+    tycho_int h_n = ((h_src).len);
+    tycho_int h_lo = 0LL;
     {
-        tycho_int h_i = 0LL;
-        Arena _scr8700 = arena_child(&_scope); _scr8700.name = "sort___gather__string__string:0";
-        #if defined(__clang__)
-        #pragma clang loop unroll_count(4)
-        #elif defined(__GNUC__)
-        #pragma GCC unroll 4
-        #endif
-        while (h_i < ((h_ord).len)) {
-            arena_reset(&_scr8700);
-            {
-                tycho_int h__mk8702 = h_i;
-                char * _ps8702 = tycho_str_copy(&_scr8700, tycho_arr_str_get(h_xs, (h_ord).data[h_i]));
-                tycho_arr_str_set(_parent, &(h_out), h__mk8702, _ps8702);
+        Arena _scr8678 = arena_child(&_scope); _scr8678.name = "sort___pass_by__types__DRef__types__DRef__types__DRef__types__DRef:0";
+        while (h_lo < h_n) {
+            arena_reset(&_scr8678);
+            tycho_int h_mid = (h_lo + h_width);
+            tycho_int h_hi = ((h_lo + h_width) + h_width);
+            if (h_mid > h_n) {
+                h_mid = h_n;
             }
-            h_i = (h_i + 1LL);
+            if (h_hi > h_n) {
+                h_hi = h_n;
+            }
+            tycho_int h_i = h_lo;
+            tycho_int h_j = h_mid;
+            {
+                tycho_int h_k = h_lo;
+                Arena _scr8679 = arena_child(&_scr8678); _scr8679.name = "sort___pass_by__types__DRef__types__DRef__types__DRef__types__DRef:1";
+                #if defined(__GNUC__) && !defined(__clang__)
+                #pragma GCC unroll 4
+                #endif
+                while (h_k < h_hi) {
+                    arena_reset(&_scr8679);
+                    {
+                        int h_take_left = 0;
+                        if (h_i >= h_mid) {
+                            h_take_left = 0;
+                        } else if (h_j >= h_hi) {
+                            h_take_left = 1;
+                        } else {
+                            h_take_left = (({ FnC0  *_fv8680 = &(h_cmp); _fv8680->call((void *)&_fv8680->c0, &_scr8679, tycho_arr_K24_get(h_src, h_i), tycho_arr_K24_get(h_src, h_j)); }) <= 0LL);
+                        }
+                        if (h_take_left) {
+                            tycho_int h__mk8682 = h_k;
+                            S_types__DRef _ps8682 = tycho_arr_K24_get(h_src, h_i);
+                            (*tycho_arr_K24_ptr(&((*h_dst)), h__mk8682)) = _ps8682;
+                            h_i = (h_i + 1LL);
+                        } else {
+                            tycho_int h__mk8684 = h_k;
+                            S_types__DRef _ps8684 = tycho_arr_K24_get(h_src, h_j);
+                            (*tycho_arr_K24_ptr(&((*h_dst)), h__mk8684)) = _ps8684;
+                            h_j = (h_j + 1LL);
+                        }
+                    }
+                    h_k = (h_k + 1LL);
+                }
+                arena_free(&_scr8679);
+            }
+            h_lo = h_hi;
         }
-        arena_free(&_scr8700);
+        arena_free(&_scr8678);
     }
-    { TychoArrStr _ret = h_out; arena_free(&_scope); return _ret; }
+    if (_scope.head) arena_free(&_scope);
+}
+
+void h_sort___pass_val__string__string(Arena *_parent, TychoArrStr h_src, TychoArrStr *h_dst, Arena *_ina_h_dst, tycho_int h_width, int h_desc) {
+    Arena _scope = arena_child(_parent); _scope.name = "sort___pass_val__string__string";
+    tycho_int h_n = ((h_src).len);
+    tycho_int h_lo = 0LL;
+    {
+        Arena _scr8685 = arena_child(&_scope); _scr8685.name = "sort___pass_val__string__string:0";
+        while (h_lo < h_n) {
+            arena_reset(&_scr8685);
+            tycho_int h_mid = (h_lo + h_width);
+            tycho_int h_hi = ((h_lo + h_width) + h_width);
+            if (h_mid > h_n) {
+                h_mid = h_n;
+            }
+            if (h_hi > h_n) {
+                h_hi = h_n;
+            }
+            tycho_int h_i = h_lo;
+            tycho_int h_j = h_mid;
+            {
+                tycho_int h_k = h_lo;
+                Arena _scr8686 = arena_child(&_scr8685); _scr8686.name = "sort___pass_val__string__string:1";
+                #if defined(__GNUC__) && !defined(__clang__)
+                #pragma GCC unroll 4
+                #endif
+                while (h_k < h_hi) {
+                    arena_reset(&_scr8686);
+                    {
+                        int h_take_left = (h_i < h_mid);
+                        if ((h_i < h_mid) && (h_j < h_hi)) {
+                            if (h_desc) {
+                                h_take_left = ((tycho_str_cmp(tycho_arr_str_get(h_src, h_i), tycho_arr_str_get(h_src, h_j)) < 0) == 0);
+                            } else {
+                                h_take_left = ((tycho_str_cmp(tycho_arr_str_get(h_src, h_j), tycho_arr_str_get(h_src, h_i)) < 0) == 0);
+                            }
+                        }
+                        if (h_take_left) {
+                            tycho_int h__mk8688 = h_k;
+                            char * _ps8688 = tycho_str_copy(&_scr8686, tycho_arr_str_get(h_src, h_i));
+                            tycho_arr_str_set(_ina_h_dst, &((*h_dst)), h__mk8688, _ps8688);
+                            h_i = (h_i + 1LL);
+                        } else {
+                            tycho_int h__mk8690 = h_k;
+                            char * _ps8690 = tycho_str_copy(&_scr8686, tycho_arr_str_get(h_src, h_j));
+                            tycho_arr_str_set(_ina_h_dst, &((*h_dst)), h__mk8690, _ps8690);
+                            h_j = (h_j + 1LL);
+                        }
+                    }
+                    h_k = (h_k + 1LL);
+                }
+                arena_free(&_scr8686);
+            }
+            h_lo = h_hi;
+        }
+        arena_free(&_scr8685);
+    }
+    if (_scope.head) arena_free(&_scope);
 }
 
 int main(int argc, char **argv) {

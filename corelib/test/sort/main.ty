@@ -141,6 +141,11 @@ fn merge_vs_reference():
             bad += 1
         if sort.by_key(ks, fn(x: int) -> int: 0 - x) != sort.desc(ks):
             bad += 1
+        wantd := []int
+        for i in ref_argsort(ks, true):
+            push(wantd, ks[i])
+        if sort.desc(ks) != wantd or sort.sort_by(ks, fn(x: int, y: int) -> int: x - y) != want:
+            bad += 1
     println("ref=" + str(bad))                        # ref=0
     big := lcg_keys(300000, 1000000)
     ord := sort.argsort(big)
@@ -149,3 +154,7 @@ fn merge_vs_reference():
         push(by_ord, big[i])
     ok := sorted_asc(by_ord) and sorted_asc(sort.asc(big)) and sorted_asc(arrays.sort(big))
     println("big=" + str(ok))                         # big=true
+    # Stable on values that compare equal but differ: 0.0 and -0.0 keep their
+    # input order, ascending and descending, at a length ending on either buffer.
+    zs := [0.0, -0.0, 1.0, -0.0, 0.0, -1.0, 0.0]
+    println("zeros=" + str(sort.asc(zs)) + " " + str(sort.desc(zs)) + " " + str(sort.asc(zs[0:6])))
