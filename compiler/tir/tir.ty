@@ -1,0 +1,145 @@
+package tir
+
+# The typed IR: what the checker knows about a program, written down. Every
+# expression carries its type, every local is a slot, every call names its
+# callee's mangled symbol, every implicit conversion the checker allowed is an
+# explicit node. A back end walks it without re-deriving anything -- Urani's
+# bytecode compiler is the first consumer.
+#
+# Types are the checker's encoding (compiler/types/tcheck.ty): int float bool
+# string, arr(T), @Name for a declared struct. A statement's ty is "".
+#
+# The script subset (v1): int, float, bool and string scalars; structs; arrays;
+# functions (with inout parameters); if/elif/else, `for cond`, three-clause
+# `for`, `for x in array`, break/continue/return; calls to user functions and
+# to the builtins. Anything else is refused by name, never lowered wrongly.
+
+# Expressions
+const INT = 1                 # i: the value (a char literal is an INT)
+const FLOAT = 2               # f: the value
+const BOOL = 3                # i: 0 or 1
+const STR = 4                 # s: the value
+const LOCAL = 5               # i: the slot; s: the name, for reading the dump
+const BIN = 6                 # s: + - * / % == != < <= > >= and or & | ^ << >>; kids: lhs, rhs
+const UN = 7                  # s: - not ~; kids: operand
+const CALL = 8                # s: the callee's mangled name; kids: arguments
+const BUILTIN = 9             # s: the builtin's name (len, push, str, println, ...); kids: arguments
+const FIELD = 10              # i: the field's index; s: its name; kids: the struct value
+const INDEX = 11              # kids: the array, the index
+const ARRAY = 12              # kids: the elements; ty: arr(T)
+const NEW = 13                # s: the struct's mangled name; kids: the fields, in order
+const ADDR = 14               # kids: a place passed to an inout parameter
+const CONV = 15               # kids: a value converted to ty (an int literal at a float, ...)
+# Statements
+const BLOCK = 20              # kids: statements; its locals end with it
+const EXPR = 21               # kids: the value, discarded
+const LET = 22                # i: the slot; s: the name; kids: the value
+const SET = 23                # kids: the place (LOCAL, FIELD or INDEX), the value
+const IF = 24                 # kids: the condition, the then BLOCK, the else BLOCK
+const LOOP = 25               # kids: the condition, the body BLOCK, the post BLOCK (run on continue too)
+const BREAK = 26
+const CONTINUE = 27
+const RETURN = 28             # kids: the value, or none
+
+struct Node:
+    op: int
+    ty: string
+    i: int
+    f: float
+    s: string
+    kids: [Node]
+    line: int
+
+struct Local:
+    name: string
+    ty: string
+    by_ref: bool              # an inout parameter: passed by reference
+
+struct Func:
+    name: string              # mangled
+    nparams: int              # the first nparams locals are the parameters
+    locals: [Local]
+    ret: string               # "void" for none
+    body: Node                # a BLOCK
+    file: string
+    line: int
+
+struct Field:
+    name: string
+    ty: string
+
+struct Struct:
+    name: string              # mangled
+    fields: [Field]
+
+struct Module:
+    structs: [Struct]
+    funcs: [Func]
+    errs: [string]            # a program outside the subset, or a checker error
+
+fn node(op: int, ty: string, line: int) -> Node:
+    return Node(op, ty, 0, 0.0, "", []Node, line)
+
+fn op_name(op: int) -> string:
+    names := ["?", "int", "float", "bool", "str", "local", "bin", "un", "call", "builtin", "field",
+              "index", "array", "new", "addr", "conv", "?", "?", "?", "?", "block", "expr", "let",
+              "set", "if", "loop", "break", "continue", "return"]
+    if op < 0 or op >= len(names):
+        return "?"
+    return names[op]
+
+# A readable dump: one function per header line, one node per line, indented.
+fn dump(m: Module) -> string:
+    out := ""
+    for s in m.structs:
+        out = out + "struct " + s.name
+        for f in s.fields:
+            out = out + " " + f.name + ":" + f.ty
+        out = out + "\n"
+    for f in m.funcs:
+        out = out + "fn " + f.name + "("
+        for i := 0; i < f.nparams; i += 1:
+            if i > 0:
+                out = out + ", "
+            if f.locals[i].by_ref:
+                out = out + "inout "
+            out = out + f.locals[i].name + ":" + f.locals[i].ty
+        out = out + ") -> " + f.ret + "\n"
+        for i := f.nparams; i < len(f.locals); i += 1:
+            out = out + "  local " + str(i) + " " + f.locals[i].name + ":" + f.locals[i].ty + "\n"
+        out = out + _dump_node(f.body, 1)
+    return out
+
+fn _dump_node(n: Node, depth: int) -> string:
+    pad := ""
+    for i := 0; i < depth; i += 1:
+        pad = pad + "  "
+    line := pad + op_name(n.op)
+    if n.op == INT or n.op == BOOL:
+        line = line + " " + str(n.i)
+    elif n.op == FLOAT:
+        line = line + " " + str(n.f)
+    elif n.op == STR:
+        line = line + " " + _quote(n.s)
+    elif n.op == LOCAL or n.op == LET or n.op == FIELD:
+        line = line + " " + str(n.i) + " " + n.s
+    elif len(n.s) > 0:
+        line = line + " " + n.s
+    if len(n.ty) > 0:
+        line = line + " :" + n.ty
+    out := line + "\n"
+    for k in n.kids:
+        out = out + _dump_node(k, depth + 1)
+    return out
+
+fn _quote(s: string) -> string:
+    out := "\""
+    for i := 0; i < len(s); i += 1:
+        c := s[i]
+        if c == 34 or c == 92:
+            out = out + "\\" + chr(c)
+        elif c == 10:
+            out = out + "\\n"
+        else:
+            out = out + chr(c)
+    return out + "\""

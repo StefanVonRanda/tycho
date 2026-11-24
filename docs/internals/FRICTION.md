@@ -1261,3 +1261,14 @@ backslashes. `core:filepath` now follows the host, as Go's does: Windows rules o
 `core:path`'s elsewhere; the always-Windows functions are `win_join`, `win_dir`, ...
 
 > Pinned-by: grep -q "^host=true$" corelib/test/filepath.out
+
+### 243. A method-style call to a builtin was typed `?`, so nothing after it was checked — **FIXED 2026-11-24**
+
+Found by the typed IR (docs/internals/tir.md), whose sweep asks the checker for every
+expression's type. `s.split(",")` resolved only through UFCS over user functions, which
+skips builtins, so the checker typed the call `?`. A `?` is compatible with everything:
+`n: string = s.split(",")` compiled, and `parts := s.split(",")` left `parts` unchecked for the
+rest of the function. The C emitter resolved the call on its own, so the program ran. A builtin
+with a signature now takes the receiver as its first argument, as the shape builtins already did.
+
+> Pinned-by: grep -q "builtin split :arr(string)" tests/tir/ufcs_builtin.tir

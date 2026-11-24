@@ -1,0 +1,627 @@
+package types
+
+import "../ast"
+import "../tir"
+
+# Lowering a checked program to the typed IR (compiler/tir). Every type comes
+# from the checker itself: each function is entered exactly as check_on2 enters
+# it, each local is declared with _vpush as _tstmt declares it, and each
+# expression is typed by _ex2 with the type its context expects -- so the IR and
+# the checker cannot disagree, and there is no second copy of the type rules.
+# Re-typing a checked function must raise nothing; if it does, that is reported
+# as an internal error rather than lowered.
+
+struct Lw:
+    names: [string]           # the locals in scope, innermost last ...
+    slots: [int]              # ... and their slots
+    locals: [tir.Local]       # every slot of the function
+    errs: [string]
+    file: string
+    consts: [string: ast.Expr]   # mangled const -> its value
+
+# The typed IR of a program, or the reasons it has none (checker errors first).
+fn lower(p: Program) -> tir.Module:
+    cs := check(p)
+    mod := tir.Module([]tir.Struct, []tir.Func, []string)
+    if len(check_errs(cs)) > 0:
+        mod.errs = check_errs(cs)
+        return mod
+    lw := Lw([]string, []int, []tir.Local, []string, "", []string: ast.Expr)
+    for f in p.files:
+        for cd in f.unit.consts:
+            lw.consts[f.prefix + cd.name] = cd.value
+    for td in cs.tds:
+        if td.kind == "struct" and not td.generic:
+            fs := []tir.Field
+            for k := 0; k < len(td.fnames); k += 1:
+                push(fs, tir.Field(td.fnames[k], td.ftypes[k]))
+            push(mod.structs, tir.Struct(td.name, fs))
+    for f in p.files:
+        cs.file = f.path
+        cs.prefix = f.prefix
+        cs.imports = f.unit.imports
+        lw.file = f.path
+        for fd in f.unit.fns:
+            if fd.is_extern or len(fd.typarams) > 0:
+                continue
+            si := _sigidx(&cs, f.prefix + fd.name)
+            if si < 0 or len(cs.sg[si].szs) > 0:
+                continue                   # a `[$N]T` function is a template too
+            fn_out := _lower_fn(&cs, &lw, fd, si)
+            push(mod.funcs, fn_out)
+    mod.errs = lw.errs
+    return mod
+
+# Enters a function as check_on2 does, then lowers its body.
+fn _lower_fn(cs: inout C, lw: inout Lw, fd: ast.Fn, si: int) -> tir.Func:
+    cs.line = fd.line
+    cs.symfn = fd.line
+    cs.symfnm = cs.sg[si].name
+    cs.ment = _mentions(fd.body)
+    cs.sinkp = []string: bool
+    cs.parms = []string: bool
+    cs.loopd = 0
+    for pm in fd.params:
+        cs.parms[pm.name] = true
+        if pm.is_sink:
+            cs.sinkp[pm.name] = true
+    lw.names = []string
+    lw.slots = []int
+    lw.locals = []tir.Local
+    m := _vmark(&cs)
+    for i := 0; i < len(fd.params); i += 1:
+        t := cs.sg[si].ptypes[i]
+        fl := cs.sg[si].pflags[i]
+        if fl == "var":
+            _lw_err(&cs, &lw, fd.line, "a variadic parameter")
+            t = "arr(" + t + ")"
+        if fl == "sink":
+            _lw_err(&cs, &lw, fd.line, "a sink parameter")
+        _vpush(&cs, fd.params[i].name, t, false)
+        cs.vars[cs.nvars - 1].param = true
+        _lw_local(&lw, fd.params[i].name, t, fl == "inout")
+    cs.ret = cs.sg[si].ret
+    cs.paramset = []string: bool
+    for pnm in cs.sg[si].pnames:
+        cs.paramset[pnm] = true
+    cs.npend = 0
+    cs.pendok = ""
+    cs.mbind = []string: bool
+    e0 := len(cs.errs)
+    r0 := len(lw.errs)
+    body := _lw_block(&cs, &lw, fd.body, fd.line)
+    # A function's first refusal is its answer: past it the scope is no longer
+    # the checker's (a refused statement declared nothing), so what follows is
+    # a cascade, not a finding. Without one, re-typing must have raised nothing.
+    if len(lw.errs) > r0:
+        lw.errs = lw.errs[0:r0 + 1]
+    else:
+        for k := e0; k < len(cs.errs); k += 1:
+            push(lw.errs, "tir: internal: re-typing " + cs.sg[si].name + " raised: " + cs.errs[k])
+    cs.errs = cs.errs[0:e0]
+    _vrestore(&cs, m)
+    out := tir.Func(cs.sg[si].name, len(fd.params), lw.locals, cs.ret, body, lw.file, fd.line)
+    cs.ret = "?"
+    return out
+
+fn _lw_err(cs: inout C, lw: inout Lw, line: int, what: string):
+    push(lw.errs, lw.file + ":" + str(line) + ": tir: " + what + " is not in the script subset")
+
+# A new slot for a local, in scope until its block ends.
+fn _lw_local(lw: inout Lw, name: string, ty: string, inout_: bool) -> int:
+    slot := len(lw.locals)
+    push(lw.locals, tir.Local(name, ty, inout_))
+    push(lw.names, name)
+    push(lw.slots, slot)
+    return slot
+
+fn _lw_slot(lw: Lw, name: string) -> int:
+    for i := len(lw.names) - 1; i >= 0; i -= 1:
+        if lw.names[i] == name:
+            return lw.slots[i]
+    return -1
+
+fn _lw_block(cs: inout C, lw: inout Lw, body: [ast.Stmt], line: int) -> tir.Node:
+    m := _vmark(&cs)
+    nm := len(lw.names)
+    b := tir.node(tir.BLOCK, "", line)
+    for s in body:
+        _lw_stmt(&cs, &lw, s, &b)
+    _vrestore(&cs, m)
+    lw.names = lw.names[0:nm]
+    lw.slots = lw.slots[0:nm]
+    return b
+
+# Lowers one statement, appending to block `b` (a three-clause `for` appends
+# its init and its loop).
+fn _lw_stmt(cs: inout C, lw: inout Lw, s: ast.Stmt, b: inout tir.Node):
+    cs.line = ast.sline_of(s)
+    match s:
+        ast.ExprStmt(l, k):
+            n := tir.node(tir.EXPR, "", l)
+            push(n.kids, _lw_ex(&cs, &lw, k[0], "?"))
+            push(b.kids, n)
+        ast.Decl(l, name, ty, rhs, vb):
+            if len(rhs) != 1:
+                _lw_err(&cs, &lw, l, "a value `if`/`match`")
+                return
+            want := "?"
+            if len(ty) == 1:
+                want = _enc(&cs, ty[0])
+            v := _lw_ex(&cs, &lw, rhs[0], want)
+            t := v.ty
+            if len(ty) == 1:
+                t = want
+                v = _lw_conv(v, t)
+            _vpush(&cs, name, t, true)
+            n := tir.node(tir.LET, "", l)
+            n.i = _lw_local(&lw, name, t, false)
+            n.s = name
+            push(n.kids, v)
+            push(b.kids, n)
+        ast.ConstS(l, name, k):
+            v := _lw_ex(&cs, &lw, k[0], "?")
+            _vpush(&cs, name, v.ty, false)
+            n := tir.node(tir.LET, "", l)
+            n.i = _lw_local(&lw, name, v.ty, false)
+            n.s = name
+            push(n.kids, v)
+            push(b.kids, n)
+        ast.Assign(l, name, rhs):
+            slot := _lw_slot(lw, name)
+            if slot < 0:
+                _lw_err(&cs, &lw, l, "assigning to '" + name + "', which is not a local,")
+                return
+            vt := _vtype(&cs, name)
+            n := tir.node(tir.SET, "", l)
+            dst := tir.node(tir.LOCAL, vt, l)
+            dst.i = slot
+            dst.s = name
+            push(n.kids, dst)
+            push(n.kids, _lw_conv(_lw_ex(&cs, &lw, rhs[0], vt), vt))
+            push(b.kids, n)
+        ast.PlaceSet(l, k):
+            pt := _place_ty(&cs, k[0])
+            n := tir.node(tir.SET, "", l)
+            push(n.kids, _lw_ex(&cs, &lw, k[0], "?"))
+            push(n.kids, _lw_conv(_lw_ex(&cs, &lw, k[1], pt), pt))
+            push(b.kids, n)
+        ast.PassS(l):
+            pass
+        ast.ReturnS(l, k):
+            n := tir.node(tir.RETURN, "", l)
+            if len(k) == 1:
+                push(n.kids, _lw_conv(_lw_ex(&cs, &lw, k[0], cs.ret), cs.ret))
+            push(b.kids, n)
+        ast.BreakS(l):
+            push(b.kids, tir.node(tir.BREAK, "", l))
+        ast.ContinueS(l):
+            push(b.kids, tir.node(tir.CONTINUE, "", l))
+        ast.IfS(l, arms, els):
+            push(b.kids, _lw_if(&cs, &lw, arms, 0, els, l))
+        ast.WhileS(l, c, body):
+            n := tir.node(tir.LOOP, "", l)
+            if len(c) == 1:
+                push(n.kids, _lw_ex(&cs, &lw, c[0], "bool"))
+            else:
+                t := tir.node(tir.BOOL, "bool", l)
+                t.i = 1
+                push(n.kids, t)
+            cs.loopd += 1
+            push(n.kids, _lw_block(&cs, &lw, body, l))
+            cs.loopd -= 1
+            push(n.kids, tir.node(tir.BLOCK, "", l))
+            push(b.kids, n)
+        ast.For3(l, ip, c, body):
+            # { init; loop(cond) { body } post { post } } -- init's local ends with the loop
+            outer := tir.node(tir.BLOCK, "", l)
+            m := _vmark(&cs)
+            nm := len(lw.names)
+            if len(ip) > 0:
+                _lw_stmt(&cs, &lw, ip[0], &outer)
+            n := tir.node(tir.LOOP, "", l)
+            if len(c) == 1:
+                push(n.kids, _lw_ex(&cs, &lw, c[0], "bool"))
+            else:
+                t := tir.node(tir.BOOL, "bool", l)
+                t.i = 1
+                push(n.kids, t)
+            cs.loopd += 1
+            push(n.kids, _lw_block(&cs, &lw, body, l))
+            cs.loopd -= 1
+            post := tir.node(tir.BLOCK, "", l)
+            if len(ip) > 1:
+                _lw_stmt(&cs, &lw, ip[1], &post)
+            push(n.kids, post)
+            push(outer.kids, n)
+            _vrestore(&cs, m)
+            lw.names = lw.names[0:nm]
+            lw.slots = lw.slots[0:nm]
+            push(b.kids, outer)
+        ast.ForIn(l, v, coll, body, par):
+            if par:
+                _lw_err(&cs, &lw, l, "`parallel for`")
+                return
+            _lw_forin(&cs, &lw, l, v, coll[0], body, &b)
+        _:
+            _lw_err(&cs, &lw, ast.sline_of(s), _stmt_kind(s))
+
+fn _stmt_kind(s: ast.Stmt) -> string:
+    match s:
+        ast.MDecl(l, d, ns, r): return "a destructuring or multi-assign"
+        ast.ForRange(l, n, c, b): return "a `parallel for` over a range"
+        ast.ParallelS(l, w, b): return "`parallel`"
+        ast.MatchS(l, c, a): return "`match`"
+        ast.SelectS(l, a): return "`select`"
+        ast.DeleteS(l, k): return "`delete`"
+        _: return "this statement"
+    return "this statement"
+
+# `if c1: A elif c2: B else: C` -> IF(c1, A, { IF(c2, B, C) })
+fn _lw_if(cs: inout C, lw: inout Lw, arms: [ast.IfArm], i: int, els: [ast.Stmt], l: int) -> tir.Node:
+    n := tir.node(tir.IF, "", arms[i].line)
+    push(n.kids, _lw_ex(&cs, &lw, arms[i].cond[0], "bool"))
+    push(n.kids, _lw_block(&cs, &lw, arms[i].body, arms[i].line))
+    if i + 1 < len(arms):
+        e := tir.node(tir.BLOCK, "", l)
+        push(e.kids, _lw_if(&cs, &lw, arms, i + 1, els, l))
+        push(n.kids, e)
+    else:
+        push(n.kids, _lw_block(&cs, &lw, els, l))
+    return n
+
+# `for x in xs: body` over an array, as the loop it means:
+#   { $c := xs; $i := 0; loop($i < len($c)) { x := $c[$i]; body } post { $i += 1 } }
+# The collection is read once, as `for x in` reads it.
+fn _lw_forin(cs: inout C, lw: inout Lw, l: int, v: string, coll: ast.Expr, body: [ast.Stmt], b: inout tir.Node):
+    cn := _lw_ex(&cs, &lw, coll, "?")
+    ct := _base(&cs, cn.ty)
+    if _head(ct) != "arr":
+        _lw_err(&cs, &lw, l, "`for x in` over " + _show(&cs, cn.ty) + " (only an array)")
+        return
+    et := _elem_of(&cs, ct)
+    outer := tir.node(tir.BLOCK, "", l)
+    m := _vmark(&cs)
+    nm := len(lw.names)
+    cslot := _lw_local(&lw, "$c", cn.ty, false)
+    islot := _lw_local(&lw, "$i", "int", false)
+    lc := tir.node(tir.LET, "", l)
+    lc.i = cslot
+    lc.s = "$c"
+    push(lc.kids, cn)
+    push(outer.kids, lc)
+    li := tir.node(tir.LET, "", l)
+    li.i = islot
+    li.s = "$i"
+    push(li.kids, _lw_int(0, l))
+    push(outer.kids, li)
+    loop := tir.node(tir.LOOP, "", l)
+    cond := tir.node(tir.BIN, "bool", l)
+    cond.s = "<"
+    push(cond.kids, _lw_ref(islot, "$i", "int", l))
+    ln := tir.node(tir.BUILTIN, "int", l)
+    ln.s = "len"
+    push(ln.kids, _lw_ref(cslot, "$c", cn.ty, l))
+    push(cond.kids, ln)
+    push(loop.kids, cond)
+    # the body block: x := $c[$i], then the body, in one scope
+    cs.loopd += 1
+    bm := _vmark(&cs)
+    bnm := len(lw.names)
+    inner := tir.node(tir.BLOCK, "", l)
+    _vpush(&cs, v, et, true)
+    lx := tir.node(tir.LET, "", l)
+    lx.i = _lw_local(&lw, v, et, false)
+    lx.s = v
+    ix := tir.node(tir.INDEX, et, l)
+    push(ix.kids, _lw_ref(cslot, "$c", cn.ty, l))
+    push(ix.kids, _lw_ref(islot, "$i", "int", l))
+    push(lx.kids, ix)
+    push(inner.kids, lx)
+    for s in body:
+        _lw_stmt(&cs, &lw, s, &inner)
+    _vrestore(&cs, bm)
+    lw.names = lw.names[0:bnm]
+    lw.slots = lw.slots[0:bnm]
+    cs.loopd -= 1
+    push(loop.kids, inner)
+    post := tir.node(tir.BLOCK, "", l)
+    inc := tir.node(tir.SET, "", l)
+    push(inc.kids, _lw_ref(islot, "$i", "int", l))
+    add := tir.node(tir.BIN, "int", l)
+    add.s = "+"
+    push(add.kids, _lw_ref(islot, "$i", "int", l))
+    push(add.kids, _lw_int(1, l))
+    push(inc.kids, add)
+    push(post.kids, inc)
+    push(loop.kids, post)
+    push(outer.kids, loop)
+    _vrestore(&cs, m)
+    lw.names = lw.names[0:nm]
+    lw.slots = lw.slots[0:nm]
+    push(b.kids, outer)
+
+fn _lw_int(v: int, l: int) -> tir.Node:
+    n := tir.node(tir.INT, "int", l)
+    n.i = v
+    return n
+
+fn _lw_ref(slot: int, name: string, ty: string, l: int) -> tir.Node:
+    n := tir.node(tir.LOCAL, ty, l)
+    n.i = slot
+    n.s = name
+    return n
+
+# An int literal where a float is expected becomes a float literal; any other
+# difference the checker accepted is an explicit CONV.
+fn _lw_conv(v: tir.Node, want: string) -> tir.Node:
+    if want == "?" or len(want) == 0 or v.ty == want:
+        return v
+    if v.op == tir.INT and want == "float":
+        f := tir.node(tir.FLOAT, "float", v.line)
+        f.f = to_float(v.i)
+        return f
+    c := tir.node(tir.CONV, want, v.line)
+    push(c.kids, v)
+    return c
+
+fn _lw_scalar_ok(t: string) -> bool:
+    return t == "int" or t == "float" or t == "bool" or t == "string" or t == "void"
+
+# Lowers an expression whose context expects `want` ("?" for none).
+fn _lw_ex(cs: inout C, lw: inout Lw, e: ast.Expr, want: string) -> tir.Node:
+    l := ast.line_of(e)
+    if _expr_kind(e) != "":
+        _lw_err(&cs, &lw, l, _expr_kind(e))
+        return _lw_int(0, l)
+    match e:
+        ast.EmptyArr(l2, ts):
+            if len(ts) == 0 and (want == "?" or not known(want)):
+                _lw_err(&cs, &lw, l, "an untyped `[]` (write []T)")
+                return _lw_int(0, l)
+            if _head(_base(&cs, want)) == "map":
+                _lw_err(&cs, &lw, l, "a map")
+                return _lw_int(0, l)
+        ast.Call(l2, q, nm, ts, args):
+            if len(ts) > 0:
+                _lw_err(&cs, &lw, l, "a call with explicit type arguments")
+                return _lw_int(0, l)
+            if nm in cs.subs:
+                _lw_err(&cs, &lw, l, "the subscript '" + nm + "'")
+                return _lw_int(0, l)
+        _: pass
+    t := _ex2(&cs, e, want)
+    cs.line = l
+    if not known(t):
+        _lw_err(&cs, &lw, l, "an expression the checker could not type")
+        return tir.node(tir.INT, "int", l)
+    h := _head(_base(&cs, t))
+    if not _lw_scalar_ok(t) and h != "arr" and _tdecl(&cs, t) < 0:
+        _lw_err(&cs, &lw, l, "a value of type " + _show(&cs, t))
+    elif _tdecl(&cs, t) >= 0 and cs.tds[_tdecl(&cs, t)].kind != "struct":
+        _lw_err(&cs, &lw, l, "a value of " + cs.tds[_tdecl(&cs, t)].kind + " type " + _show(&cs, t))
+    match e:
+        ast.IntLit(l2, v):
+            n := tir.node(tir.INT, "int", l)
+            n.i = v
+            return _lw_conv(n, t)
+        ast.CharLit(l2, v):
+            return _lw_int(v, l)
+        ast.FloatLit(l2, v):
+            n := tir.node(tir.FLOAT, "float", l)
+            n.f = v
+            return n
+        ast.BoolLit(l2, v):
+            n := tir.node(tir.BOOL, "bool", l)
+            if v:
+                n.i = 1
+            return n
+        ast.StrLit(l2, v):
+            n := tir.node(tir.STR, "string", l)
+            n.s = v
+            return n
+        ast.Name(l2, nm):
+            slot := _lw_slot(lw, nm)
+            if slot >= 0:
+                return _lw_ref(slot, nm, t, l)
+            k := ""
+            if (cs.prefix + nm) in lw.consts:
+                k = cs.prefix + nm
+            elif nm in lw.consts:
+                k = nm
+            if len(k) > 0:
+                return _lw_conv(_lw_ex(&cs, &lw, lw.consts[k], want), t)
+            _lw_err(&cs, &lw, l, "the name '" + nm + "' as a value")
+            return _lw_int(0, l)
+        ast.Field(l2, k, f):
+            # pkg.CONST is a const of another package
+            match k[0]:
+                ast.Name(l3, q):
+                    if _lw_slot(lw, q) < 0 and _is_pkg(&cs, q):
+                        mc := _prefix_of(&cs, q) + f
+                        if mc in lw.consts:
+                            return _lw_conv(_lw_ex(&cs, &lw, lw.consts[mc], want), t)
+                        _lw_err(&cs, &lw, l, "'" + q + "." + f + "'")
+                        return _lw_int(0, l)
+                _: pass
+            recv := _lw_ex(&cs, &lw, k[0], "?")
+            ti := _tdecl(&cs, _base(&cs, recv.ty))
+            n := tir.node(tir.FIELD, t, l)
+            n.s = f
+            n.i = -1
+            if ti >= 0:
+                for j := 0; j < len(cs.tds[ti].fnames); j += 1:
+                    if cs.tds[ti].fnames[j] == f:
+                        n.i = j
+            if n.i < 0:
+                _lw_err(&cs, &lw, l, "the field read '." + f + "'")
+            push(n.kids, recv)
+            return n
+        ast.Index(l2, k):
+            recv := _lw_ex(&cs, &lw, k[0], "?")
+            if _head(_base(&cs, recv.ty)) != "arr":
+                _lw_err(&cs, &lw, l, "indexing " + _show(&cs, recv.ty) + " (only an array)")
+            n := tir.node(tir.INDEX, t, l)
+            push(n.kids, recv)
+            push(n.kids, _lw_ex(&cs, &lw, k[1], "int"))
+            return n
+        ast.Binop(l2, op, k):
+            n := tir.node(tir.BIN, t, l)
+            n.s = op
+            if op == "and" or op == "or":
+                push(n.kids, _lw_ex(&cs, &lw, k[0], "bool"))
+                push(n.kids, _lw_ex(&cs, &lw, k[1], "bool"))
+                return n
+            # each side expects the other's type, so a literal adapts as the checker let it
+            lt := _ex(&cs, k[0])
+            rt := _ex(&cs, k[1])
+            wl := "?"
+            wr := "?"
+            if _is_numlit(&cs, k[0]) and not _is_numlit(&cs, k[1]):
+                wl = rt
+            if _is_numlit(&cs, k[1]) and not _is_numlit(&cs, k[0]):
+                wr = lt
+            a := _lw_ex(&cs, &lw, k[0], wl)
+            c := _lw_ex(&cs, &lw, k[1], wr)
+            if wl != "?":
+                a = _lw_conv(a, wl)
+            if wr != "?":
+                c = _lw_conv(c, wr)
+            push(n.kids, a)
+            push(n.kids, c)
+            return n
+        ast.Unop(l2, op, k):
+            n := tir.node(tir.UN, t, l)
+            n.s = op
+            w := t
+            if op == "not":
+                w = "bool"
+            push(n.kids, _lw_conv(_lw_ex(&cs, &lw, k[0], w), w))
+            return n
+        ast.ArrLit(l2, k):
+            n := tir.node(tir.ARRAY, t, l)
+            et := _elem_of(&cs, t)
+            for x in k:
+                push(n.kids, _lw_conv(_lw_ex(&cs, &lw, x, et), et))
+            return n
+        ast.EmptyArr(l2, ts):
+            return tir.node(tir.ARRAY, t, l)
+        ast.Addr(l2, k):
+            n := tir.node(tir.ADDR, t, l)
+            push(n.kids, _lw_ex(&cs, &lw, k[0], "?"))
+            return n
+        ast.Call(l2, q, nm, ts, args):
+            return _lw_call(&cs, &lw, l, q, nm, args, t)
+        _:
+            _lw_err(&cs, &lw, l, "this expression")
+            return _lw_int(0, l)
+    return _lw_int(0, l)
+
+# What an expression outside the subset is, by name; "" for one inside it.
+fn _expr_kind(e: ast.Expr) -> string:
+    match e:
+        ast.FStrLit(l, s, h): return "an f-string"
+        ast.NullLit(l): return "`null`"
+        ast.TupIdx(l, k, i): return "a tuple"
+        ast.Tuple(l, k): return "a tuple"
+        ast.Slice(l, a, b, k): return "a slice"
+        ast.CallVal(l, k): return "a call through a function value"
+        ast.Lambda(l, p, r, b): return "a lambda"
+        ast.MapLit(l, k): return "a map"
+        ast.EmptyMap(l, t): return "a map"
+        ast.IsVar(l, k, q, v): return "`is`"
+        ast.SomeE(l, k): return "an Option"
+        ast.NoneE(l): return "an Option"
+        ast.OkE(l, k): return "a Result"
+        ast.ErrE(l, k): return "a Result"
+        ast.OrRet(l, b, k): return "`or_return`/`or_else`"
+        ast.SpawnE(l, k): return "`spawn`"
+        ast.ChanE(l, t, k): return "a channel"
+        ast.Spread(l, k): return "a spread argument"
+        ast.Named(l, n, k): return "a named argument"
+        ast.SoaLit(l, t): return "a soa"
+        _: return ""
+    return ""
+
+# A call, resolved as _call resolves it: UFCS, a package-qualified name, the
+# shape builtins, then the user's functions and structs, then the builtins.
+fn _lw_call(cs: inout C, lw: inout Lw, l: int, q: string, nm: string, args: [ast.Expr], t: string) -> tir.Node:
+    if len(q) > 0 and not _is_pkg(&cs, q):
+        args2 := []ast.Expr
+        push(args2, ast.Name(l, q))
+        for a in args:
+            push(args2, a)
+        if _shape_builtin(nm):
+            return _lw_builtin(&cs, &lw, l, nm, args2, t, -1)
+        recv := _base(&cs, _vtype(&cs, q))
+        si := _ufcs_sig(&cs, nm, recv)
+        bsi := _sigidx(&cs, nm)
+        if si < 0 and bsi >= 0 and cs.sg[bsi].builtin:
+            return _lw_builtin(&cs, &lw, l, nm, args2, t, bsi)
+        if si < 0:
+            _lw_err(&cs, &lw, l, "the method call '" + q + "." + nm + "'")
+            return _lw_int(0, l)
+        return _lw_named(&cs, &lw, l, cs.sg[si].name, nm, args2, t)
+    if len(q) > 0:
+        return _lw_named(&cs, &lw, l, _prefix_of(&cs, q) + nm, nm, args, t)
+    if _shape_builtin(nm) or nm == "to_ptr":
+        return _lw_builtin(&cs, &lw, l, nm, args, t, -1)
+    if len(_vtype(&cs, nm)) > 0:
+        _lw_err(&cs, &lw, l, "a call through a function value")
+        return _lw_int(0, l)
+    if len(cs.prefix) > 0:
+        m := cs.prefix + nm
+        if _sigidx(&cs, m) >= 0 or m in cs.tindex or m in cs.vowner:
+            return _lw_named(&cs, &lw, l, m, nm, args, t)
+    return _lw_named(&cs, &lw, l, nm, nm, args, t)
+
+fn _lw_named(cs: inout C, lw: inout Lw, l: int, m: string, nm: string, args: [ast.Expr], t: string) -> tir.Node:
+    if _any_named(args):
+        _lw_err(&cs, &lw, l, "a named argument")
+        return _lw_int(0, l)
+    si := _sigidx(&cs, m)
+    if si >= 0:
+        sg := cs.sg[si]
+        if sg.generic:
+            _lw_err(&cs, &lw, l, "a call to the generic function '" + nm + "'")
+            return _lw_int(0, l)
+        if sg.builtin:
+            return _lw_builtin(&cs, &lw, l, nm, args, t, si)
+        if m in cs.extfn or nm in cs.extfn:
+            _lw_err(&cs, &lw, l, "a call to the extern function '" + nm + "'")
+            return _lw_int(0, l)
+        if len(args) != len(sg.ptypes):
+            _lw_err(&cs, &lw, l, "a call with a variable argument count")
+            return _lw_int(0, l)
+        n := tir.node(tir.CALL, t, l)
+        n.s = m
+        keep := cs.in_arg
+        cs.in_arg = true                   # `&x` is typed only as an argument, as in _check_args
+        for i := 0; i < len(args); i += 1:
+            push(n.kids, _lw_conv(_lw_ex(&cs, &lw, args[i], sg.ptypes[i]), sg.ptypes[i]))
+        cs.in_arg = keep
+        return n
+    if m in cs.tindex:
+        ti := cs.tindex[m]
+        if cs.tds[ti].kind == "struct" and not cs.tds[ti].generic:
+            n := tir.node(tir.NEW, t, l)
+            n.s = m
+            for i := 0; i < len(args); i += 1:
+                ft := cs.tds[ti].ftypes[i]
+                push(n.kids, _lw_conv(_lw_ex(&cs, &lw, args[i], ft), ft))
+            return n
+        _lw_err(&cs, &lw, l, "constructing a " + cs.tds[ti].kind + " '" + nm + "'")
+        return _lw_int(0, l)
+    return _lw_builtin(&cs, &lw, l, nm, args, t, -1)
+
+# A builtin by its name; its arguments typed against its signature when it has
+# one (si >= 0), else as they stand.
+fn _lw_builtin(cs: inout C, lw: inout Lw, l: int, nm: string, args: [ast.Expr], t: string, si: int) -> tir.Node:
+    n := tir.node(tir.BUILTIN, t, l)
+    n.s = nm
+    for i := 0; i < len(args); i += 1:
+        w := "?"
+        if si >= 0 and i < len(cs.sg[si].ptypes) and known(cs.sg[si].ptypes[i]):
+            w = cs.sg[si].ptypes[i]
+        push(n.kids, _lw_conv(_lw_ex(&cs, &lw, args[i], w), w))
+    return n

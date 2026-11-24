@@ -146,7 +146,8 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`filepath`** — the host's lexical paths, for paths that come from or go to
   the OS: Windows rules on Windows, `core:path`'s elsewhere. `is_abs`, `volume`,
   `split_volume`, `clean`, `join`, `base`, `dir`, `ext` and `stem`. Their
-  `win_` twins apply the Windows rules on every host: both `/` and `\` are
+  `win_` twins (`win_is_abs`, `win_volume`, `win_split_volume`, `win_clean`, `win_join`,
+  `win_base`, `win_dir`, `win_ext`, `win_stem`) apply the Windows rules on every host: both `/` and `\` are
   separators; `clean` preserves a drive (`C:`) or UNC (`\\server\share`) volume
   and resolves `.`/`..` without climbing above the root. Use `core:path` for
   `/` paths on every host (archives, URLs).

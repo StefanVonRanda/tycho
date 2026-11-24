@@ -2637,6 +2637,17 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
                 for a in args:
                     push(args2, a)
                 return _call_builtin(&cs, l, n, args2, want)
+            # `s.split(",")` is split(s, ","): a builtin with a signature whose
+            # first parameter takes the receiver. Without this the call was `?`,
+            # so everything downstream of it went unchecked (FRICTION 243).
+            bsi := _sigidx(&cs, n)
+            if bsi >= 0 and cs.sg[bsi].builtin and len(cs.sg[bsi].ptypes) > 0 and
+                    (cs.sg[bsi].ptypes[0] == recv or not known(cs.sg[bsi].ptypes[0])) and _ufcs_sig(&cs, n, recv) < 0:
+                args3 := []ast.Expr
+                push(args3, ast.Name(l, q))
+                for a in args:
+                    push(args3, a)
+                return _call_builtin(&cs, l, n, args3, want)
             # UFCS is a free function whose first parameter has the receiver's
             # type. Prepend the receiver before checking the full signature, so
             # literals in method arguments receive the same expected type as

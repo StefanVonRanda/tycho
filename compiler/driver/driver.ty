@@ -9,6 +9,7 @@ import "../emit"
 import "../lex"
 import "../parse"
 import "../types"
+import "../tir"
 
 # The compile pipeline, and the one place that knows where the runtime source
 # lives. src/tychoc.c embeds runtime/tycho_rt.c at BUILD time via an awk-made
@@ -564,6 +565,26 @@ fn _read(src_path: string) -> string:
         Ok(s): return s
         Err(e): die("tychoc: cannot read '" + src_path + "'")
     return ""
+
+# --emit-tir: the typed IR of the script subset (compiler/tir), or why there is none.
+fn emit_tir(src_path: string, argv0: string):
+    p := types.Program([]types.File, "", "", "", "")
+    types.load_into(src_path, argv0, &p)
+    rs := types.resolve(p)
+    if len(rs.errs) > 0:
+        out := ""
+        for e in rs.errs:
+            out = out + e + "\n"
+        eprint(out)
+        exit(1)
+    m := types.lower(p)
+    if len(m.errs) > 0:
+        out2 := ""
+        for e in m.errs:
+            out2 = out2 + e + "\n"
+        eprint(out2)
+        exit(1)
+    print(tir.dump(m))
 
 fn parse_only(src_path: string):
     toks, notes := lex.tokenize_file(_read(src_path), false, src_path)

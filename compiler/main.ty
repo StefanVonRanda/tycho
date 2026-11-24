@@ -34,6 +34,7 @@ fn _help() -> string:
         "  --                 end of flags: the next argument is the source, even if it\n" +
         "                     starts with '-' (put -o and other flags BEFORE it)\n" +
         "  --emit-c           stop at the C; to stdout unless -o names a file\n" +
+        "  --emit-tir         print the typed IR of the script subset (compiler/tir)\n" +
         "  -g                 build with debug information\n" +
         "  --native           tune the build for this machine\n" +
         "  --target <level>   raise the baseline for this build: x86-64-v2, x86-64-v3,\n" +
@@ -146,6 +147,8 @@ fn main():
             return
         elif a == "--symbols":
             mode = "lspsym"
+        elif a == "--emit-tir":
+            mode = "tir"
         elif a == "--cc":
             i += 1
             if i >= len(av):
@@ -205,6 +208,9 @@ fn main():
         return
     if mode == "parse":
         driver.parse_only(src)
+        return
+    if mode == "tir":
+        driver.emit_tir(src, av[0])
         return
     if mode == "census":
         driver.parse_census(src)

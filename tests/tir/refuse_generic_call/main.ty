@@ -1,0 +1,6 @@
+# expect: tir: a call to the generic function 'first' is not in the script subset
+fn first(xs: [$T]) -> $T:
+    return xs[0]
+
+fn main():
+    println(str(first([1, 2])))

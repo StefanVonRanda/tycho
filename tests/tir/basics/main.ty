@@ -1,0 +1,28 @@
+const LIMIT = 10
+
+struct P:
+    x: float
+    y: float
+
+fn scale(p: P, k: float) -> P:
+    return P(p.x * k, p.y * k)
+
+fn bump(n: inout int):
+    n += 1
+
+fn sum(xs: [int]) -> int:
+    t := 0
+    for x in xs:
+        if x > LIMIT:
+            continue
+        t += x
+    return t
+
+fn main():
+    p := scale(P(1.0, 2.0), 2)
+    c := 0
+    for i := 0; i < 3; i += 1:
+        bump(&c)
+    xs := [1, 2, 30]
+    push(xs, 4)
+    println(str(sum(xs)) + " " + str(p.y) + " " + str(c))

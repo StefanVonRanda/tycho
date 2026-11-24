@@ -1,0 +1,5 @@
+fn main():
+    s := "a,b"
+    parts := s.split(",")
+    n := parts.len()
+    println(str(n) + parts.pop())

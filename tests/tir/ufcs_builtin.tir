@@ -1,0 +1,21 @@
+fn main() -> void
+  local 0 s:string
+  local 1 parts:arr(string)
+  local 2 n:int
+  block
+    let 0 s
+      str "a,b" :string
+    let 1 parts
+      builtin split :arr(string)
+        local 0 s :string
+        str "," :string
+    let 2 n
+      builtin len :int
+        local 1 parts :arr(string)
+    expr
+      builtin println :void
+        bin + :string
+          builtin str :string
+            local 2 n :int
+          builtin pop :string
+            local 1 parts :arr(string)

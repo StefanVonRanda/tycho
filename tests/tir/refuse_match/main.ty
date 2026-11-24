@@ -1,0 +1,12 @@
+# expect: tir: `match` is not in the script subset
+enum Dir:
+    North
+    South
+
+fn flip(d: Dir) -> int:
+    match d:
+        North: return 1
+        South: return 2
+
+fn main():
+    println(str(flip(North)))

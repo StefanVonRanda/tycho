@@ -1,0 +1,120 @@
+struct P x:float y:float
+fn scale(p:@P, k:float) -> @P
+  block
+    return
+      new P :@P
+        bin * :float
+          field 0 x :float
+            local 0 p :@P
+          local 1 k :float
+        bin * :float
+          field 1 y :float
+            local 0 p :@P
+          local 1 k :float
+fn bump(inout n:int) -> void
+  block
+    set
+      local 0 n :int
+      bin + :int
+        local 0 n :int
+        int 1 :int
+fn sum(xs:arr(int)) -> int
+  local 1 t:int
+  local 2 $c:arr(int)
+  local 3 $i:int
+  local 4 x:int
+  block
+    let 1 t
+      int 0 :int
+    block
+      let 2 $c
+        local 0 xs :arr(int)
+      let 3 $i
+        int 0 :int
+      loop
+        bin < :bool
+          local 3 $i :int
+          builtin len :int
+            local 2 $c :arr(int)
+        block
+          let 4 x
+            index :int
+              local 2 $c :arr(int)
+              local 3 $i :int
+          if
+            bin > :bool
+              local 4 x :int
+              int 10 :int
+            block
+              continue
+            block
+          set
+            local 1 t :int
+            bin + :int
+              local 1 t :int
+              local 4 x :int
+        block
+          set
+            local 3 $i :int
+            bin + :int
+              local 3 $i :int
+              int 1 :int
+    return
+      local 1 t :int
+fn main() -> void
+  local 0 p:@P
+  local 1 c:int
+  local 2 i:int
+  local 3 xs:arr(int)
+  block
+    let 0 p
+      call scale :@P
+        new P :@P
+          float 1.0 :float
+          float 2.0 :float
+        float 2.0 :float
+    let 1 c
+      int 0 :int
+    block
+      let 2 i
+        int 0 :int
+      loop
+        bin < :bool
+          local 2 i :int
+          int 3 :int
+        block
+          expr
+            call bump :void
+              addr :int
+                local 1 c :int
+        block
+          set
+            local 2 i :int
+            bin + :int
+              local 2 i :int
+              int 1 :int
+    let 3 xs
+      array :arr(int)
+        int 1 :int
+        int 2 :int
+        int 30 :int
+    expr
+      builtin push :void
+        local 3 xs :arr(int)
+        int 4 :int
+    expr
+      builtin println :void
+        bin + :string
+          bin + :string
+            bin + :string
+              bin + :string
+                builtin str :string
+                  call sum :int
+                    local 3 xs :arr(int)
+                str " " :string
+              builtin str :string
+                field 1 y :float
+                  local 0 p :@P
+            str " " :string
+          builtin str :string
+            local 1 c :int

@@ -9,6 +9,8 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`s.split(",")` and other method-style builtin calls are type-checked**: they were typed
+  `?`, so `n: string = s.split(",")` compiled and the result went unchecked.
 - **An int or float `const` adapts like its literal**: `ev.kind == EV_QUIT` at an `i32`
   field, `x: u8 = FLAG`, `h: f32 = HALF` compile as they would with the literal written in
   place (range checks included).
@@ -47,6 +49,12 @@ builtins and corelib signatures.
   back and refuses a length that is not a whole number of records.
   `push(dst: [int], src: bytes)` appends a byte source in one growth step
   (spec §17.1b).
+
+### Tools
+
+- **`tychoc --emit-tir`**: the typed IR of the script subset -- every expression typed,
+  every local a slot, every conversion explicit -- for back ends other than C
+  (docs/internals/tir.md).
 
 ### Corelib
 

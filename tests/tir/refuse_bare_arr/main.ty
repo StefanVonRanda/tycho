@@ -1,0 +1,5 @@
+# expect: tir: an untyped `[]` (write []T) is not in the script subset
+fn main():
+    xs := []
+    push(xs, 1)
+    println(str(len(xs)))
