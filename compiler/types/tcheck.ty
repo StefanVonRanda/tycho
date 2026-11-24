@@ -61,7 +61,7 @@ fn _vfill_ok(cs: inout C, want: string, t: string, rhs: [ast.Expr]) -> bool:
         return true
     if t == lane:
         return true
-    return t == "int" and len(rhs) == 1 and _is_intlit(rhs[0]) and _is_int(lane)
+    return t == "int" and len(rhs) == 1 and _is_intlit(&cs, rhs[0]) and _is_int(lane)
 
 fn compat(a: string, b: string) -> bool:
     if a == "?" or b == "?" or a == b:
@@ -172,6 +172,7 @@ struct C:
     vpay: [string: string]             # mangled variant -> payload joined by "|"
     consts: [string: string]           # mangled const -> type
     constv: [string: int]              # ... and its folded int value, for a match arm
+    constlit: [string: ast.Expr]       # an int or float const's literal: its name adapts like it (FRICTION 240)
     typarams: [string: bool]           # the type parameters in scope right now
     tbind: [string: string]            # $T -> the type it is BOUND to at this
                                        # instantiation; empty outside one
@@ -1245,7 +1246,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
     # here rather than only in _binop: a LITERAL takes the expected type's width
     # (`x: u32 = 1`, `scale(v, 2)` at a float parameter), a variable never does.
     if want != "?":
-        el := _neg_lit(e)
+        el := _neg_lit(&cs, e)
         if (el is ast.IntLit) and (_is_int(want) or want == "float" or want == "f32"):
             if _is_int(want) and want != "int":
                 _sized_fits(&cs, el, want)
@@ -2026,12 +2027,30 @@ fn _is_or_else(e: ast.Expr) -> bool:
         ast.OrRet(l, b, k): return len(k) > 1
         _: return false
 
-fn _is_intlit(e: ast.Expr) -> bool:
-    return _neg_lit(e) is ast.IntLit
+fn _is_intlit(cs: inout C, e: ast.Expr) -> bool:
+    return _neg_lit(&cs, e) is ast.IntLit
 
-fn _is_numlit(e: ast.Expr) -> bool:
-    f := _neg_lit(e)
+fn _is_numlit(cs: inout C, e: ast.Expr) -> bool:
+    f := _neg_lit(&cs, e)
     return (f is ast.IntLit) or (f is ast.FloatLit)
+
+# A literal as the adaptation rules see it: a folded `-literal`, or the name of
+# an int or float `const` -- which adapts exactly as the literal it names, so
+# `ev.kind == EV_QUIT` at an i32 field compiles as `ev.kind == 1` does (FRICTION
+# 240). A local variable of the same name shadows the const and stays a value.
+fn _neg_lit(cs: inout C, e: ast.Expr) -> ast.Expr:
+    match e:
+        ast.Name(l, n):
+            if len(_vtype(&cs, n)) == 0:
+                k := ""
+                if len(cs.prefix) > 0 and (cs.prefix + n) in cs.constlit:
+                    k = cs.prefix + n
+                elif n in cs.constlit:
+                    k = n
+                if len(k) > 0:
+                    return cs.constlit[k]
+        _: pass
+    return _neg_lit0(e)
 
 # src/tychoc.c@neg_lit_fold: `-1` parses as a unary minus over a literal, so a
 # rule that asks "is this a literal?" skipped it, and `x: f32 = -0.5`,
@@ -2039,7 +2058,7 @@ fn _is_numlit(e: ast.Expr) -> bool:
 # ./tychoc -- which folds the sign into the literal before every such rule --
 # accepted them. Seen as the two compilers disagreeing on 2026-09-24 (FRICTION
 # 128's lane work); no fixture had a negative literal at an adapting type.
-fn _neg_lit(e: ast.Expr) -> ast.Expr:
+fn _neg_lit0(e: ast.Expr) -> ast.Expr:
     match e:
         ast.Unop(l, op, k):
             if op == "-" and len(k) == 1:
@@ -2147,17 +2166,17 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     # width, a variable never widens.
     # The width check is src/tychoc.c@sized_lit's: `x + 300` at a u8 `x` is
     # refused there and was accepted here, wrapping at run time.
-    if _is_intlit(k[0]) and _is_int(rt):
+    if _is_intlit(&cs, k[0]) and _is_int(rt):
         if rt != "int":
-            _sized_fits(&cs, _neg_lit(k[0]), rt)
+            _sized_fits(&cs, _neg_lit(&cs, k[0]), rt)
         lt = rt
-    if _is_intlit(k[1]) and _is_int(lt):
+    if _is_intlit(&cs, k[1]) and _is_int(lt):
         if lt != "int":
-            _sized_fits(&cs, _neg_lit(k[1]), lt)
+            _sized_fits(&cs, _neg_lit(&cs, k[1]), lt)
         rt = lt
-    if rt == "f32" and _is_numlit(k[0]):
+    if rt == "f32" and _is_numlit(&cs, k[0]):
         lt = "f32"
-    if lt == "f32" and _is_numlit(k[1]):
+    if lt == "f32" and _is_numlit(&cs, k[1]):
         rt = "f32"
     if not known(lt) or not known(rt):
         if op == "==" or op == "!=":
@@ -2187,9 +2206,9 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
             _cerr(&cs, "functions are not comparable -- closures have no structural equality; compare the values they produce instead")
         return "bool"
     if op == "<" or op == ">" or op == "<=" or op == ">=":
-        if lt == "float" and rt == "int" and _is_intlit(k[1]):
+        if lt == "float" and rt == "int" and _is_intlit(&cs, k[1]):
             rt = "float"
-        elif rt == "float" and lt == "int" and _is_intlit(k[0]):
+        elif rt == "float" and lt == "int" and _is_intlit(&cs, k[0]):
             lt = "float"
         b := _base(&cs, lt)
         if lt != rt or not (_is_num(b) or b == "char" or b == "string"):
@@ -2242,14 +2261,14 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
             _cerr(&cs, "element-wise `" + op + "` is defined for [T] and [N]T only (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ")")
             return at
         et := _elem_of(&cs, at)
-        if _is_intlit(sc) and _is_int(et):
+        if _is_intlit(&cs, sc) and _is_int(et):
             if _is_int(et) and et != "int":
-                _sized_fits(&cs, _neg_lit(sc), et)
+                _sized_fits(&cs, _neg_lit(&cs, sc), et)
             st = et
-        elif et == "f32" and _is_numlit(sc):
-            _f32_fits(&cs, _neg_lit(sc))
+        elif et == "f32" and _is_numlit(&cs, sc):
+            _f32_fits(&cs, _neg_lit(&cs, sc))
             st = "f32"
-        elif et == "float" and st == "int" and _is_intlit(sc):
+        elif et == "float" and st == "int" and _is_intlit(&cs, sc):
             st = "float"
         elif (et == "f32" or et == "float") and (st == "float" or st == "f32"):
             # A float or f32 scalar VARIABLE adapts to float/f32 lanes: `v * k`
@@ -2287,9 +2306,9 @@ fn _binop(cs: inout C, op: string, k: [ast.Expr]) -> string:
     if lt == rt and _tdecl(&cs, lt) >= 0 and cs.tds[_tdecl(&cs, lt)].kind == "newtype" and
             (ln == "int" or ln == "float"):
         return lt
-    if lt == "float" and rt == "int" and _is_intlit(k[1]):
+    if lt == "float" and rt == "int" and _is_intlit(&cs, k[1]):
         return "float"
-    if rt == "float" and lt == "int" and _is_intlit(k[0]):
+    if rt == "float" and lt == "int" and _is_intlit(&cs, k[0]):
         return "float"
     if lt == "bytes" or rt == "bytes":
         _cerr(&cs, "bytes has no arithmetic (got " + _show(&cs, lt) + ", " + _show(&cs, rt) + ") -- bytes supports `a + b` and `b + 'c'` (concat), `b[i]` (the byte value, an int) and `b[i:j]` (a sub-buffer); for anything else use to_str(b)")
@@ -4250,6 +4269,9 @@ fn _fill_decls(cs: inout C, p: Program):
                     ast.IntLit(cl, cv): cs.constv[f.prefix + cd.name] = cv
                     ast.CharLit(cl, cv): cs.constv[f.prefix + cd.name] = cv
                     _: pass
+                lit := _neg_lit0(cd.value)
+                if (lit is ast.IntLit) or (lit is ast.FloatLit):
+                    cs.constlit[f.prefix + cd.name] = lit
             elif d.cat == 6:
                 sb := f.unit.subscripts[d.idx]
                 cs.subs[sb.name] = true
@@ -4429,7 +4451,7 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string])
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: ast.Expr, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string])
     cs.symon = syms
     cs.vtgt = tgt
     for f in p.files:

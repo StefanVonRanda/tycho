@@ -1225,3 +1225,15 @@ absolute, links resolved (`_NSGetExecutablePath` + `realpath`, `/proc/self/exe`,
 hand. `cli.get_all(c, key)` returns them all, in order.
 
 > Pinned-by: grep -q "^get_all    = \[a.pak, b.pak\] \[d\] 0 b.pak$" corelib/test/cli.out
+
+### 240. A `const` did not adapt like its literal, so every constant describing a sized field needed a conversion per use — **FIXED 2026-11-24**
+
+Urani's platform events are a packed struct of `i32` fields returned over the FFI, with the
+event kinds as constants. `ev.kind == 1` compiled; `ev.kind == EV_QUIT` was "cannot compare i32
+with int", as were `x: i32 = QUIT` and `take_u8(FLAG)`. There is no typed `const`
+(`const X: i32 = 1` is a syntax error), so each use needed `to_int(ev.kind)` or a `to_i32`. The
+name of an int or float `const` now adapts exactly as the literal it names: to a sized int (range
+checked), to `f32`, to `float`. A variable of the same name still shadows it.
+
+> Pinned-by: grep -q "^true true true true$" tests/const_adapt.out
+> Pinned-by: test -f tests/reject/const_adapt_range.ty

@@ -114,6 +114,7 @@ tests/reject/cond_if_int.ty	TYPE	9585	if condition must be bool
 tests/reject/cond_if_str.ty	TYPE	9585	if condition must be bool
 tests/reject/cond_if_void.ty	TYPE	9585	if condition must be bool
 tests/reject/cond_value_if_int.ty	TYPE	9585	if condition must be bool
+tests/reject/const_adapt_range.ty	SEMANTIC	6813	300 does not fit u8 (its range is 0..255) -- write to_u8(x) to convert with wraparound
 tests/reject/const_div_overflow.ty	SYNTAX	5987	const expression overflows: the smallest int divided by -1 has no int value
 tests/reject/const_dup.ty	NAME	4946	'MAX' is already defined
 tests/reject/const_expr_divzero.ty	SYNTAX	5986	const expression divides by zero

@@ -1,0 +1,10 @@
+# expect: 300 does not fit u8 (its range is 0..255)
+# A const adapts like its literal (FRICTION 240), range check included: 300 at
+# a u8 parameter is refused as the literal 300 would be.
+const BIG = 300
+
+fn take(b: u8) -> int:
+    return to_int(b)
+
+fn main():
+    println(str(take(BIG)))

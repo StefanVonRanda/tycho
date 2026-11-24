@@ -1,0 +1,23 @@
+# FRICTION 240: the name of an int or float `const` adapts exactly as the
+# literal it names -- to a sized int, to f32, to float -- so constants describing
+# a packed or FFI field (an event kind, a format) need no conversion per use.
+const QUIT = 1
+const NEG = -1
+const HALF = 0.5
+
+packed struct Ev:
+    kind: i32
+    v: u8
+    f: f32
+
+fn take(b: u8) -> int:
+    return to_int(b)
+
+fn main():
+    e := Ev(QUIT, 7, HALF)
+    x: i32 = QUIT
+    n: i64 = NEG
+    h: f32 = HALF
+    w: float = QUIT
+    println(str(e.kind == QUIT) + " " + str(x == QUIT) + " " + str(n == NEG) + " " + str(h == HALF))
+    println(str(e.f * HALF) + " " + str(take(QUIT)) + " " + str(QUIT + 1) + " " + str(w))

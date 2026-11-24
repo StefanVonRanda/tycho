@@ -9,7 +9,9 @@ conversion is an explicit builtin call (§8.2).
 ## 8.1 Literal adaptation
 
 An integer or floating-point **literal** — an `int`/`float` literal token, not a
-typed value or variable — adapts to the type expected by its context. Adaptation
+typed value or variable — adapts to the type expected by its context. The **name of
+an int or float `const`** adapts exactly as the literal it names (range checks
+included), unless a variable of the same name shadows it. Adaptation
 changes the type the literal is compiled to; it never changes a variable's type
 and never converts a value at run time. The permitted adaptations are:
 

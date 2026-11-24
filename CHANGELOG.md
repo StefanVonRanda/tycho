@@ -9,6 +9,9 @@ builtins and corelib signatures.
 
 ### Language
 
+- **An int or float `const` adapts like its literal**: `ev.kind == EV_QUIT` at an `i32`
+  field, `x: u8 = FLAG`, `h: f32 = HALF` compile as they would with the literal written in
+  place (range checks included).
 - **`comparable(T)` admits the sized numerics** (`u8`…`u64`, `i8`…`i64`, `f32`), so
   `sort.asc` over `[f32]` and `math.max` on two `f32`s compile.
 - **Spec: `parallel for` captures are shared, not deep-copied** (13 §22). This is what the
