@@ -713,6 +713,9 @@ fn _generic_call_hinted(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty
     cs.typarams = ktp
     return r
 
+fn _byval(cs: inout C, si: int, i: int) -> bool:
+    return i >= len(cs.sg[si].pflags) or (cs.sg[si].pflags[i] != "inout" and cs.sg[si].pflags[i] != "sink")
+
 fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], args: [ast.Expr], hints: [string]) -> string:
     # read in place: this is a whole declaration, and only fields are wanted
     ats := []string
@@ -747,6 +750,22 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
         return "?"                     # arity is the monomorphic checker's rule
     if not variadic and len(args) != np:
         return "?"
+    # A bare by-value `$T` given both a float and an f32 argument is float:
+    # the f32 one widens, as into a float parameter (FRICTION 232). The
+    # emitter's _widen_binds makes the same choice.
+    wide := []string: bool
+    for i := 0; i < np; i += 1:
+        if ats[i] == "float" and _byval(&cs, si, i):
+            match cs.sg[si].pty[i]:
+                ast.TParam(n): wide[n] = true
+                _: pass
+    for i := 0; i < np; i += 1:
+        if ats[i] == "f32" and _byval(&cs, si, i):
+            match cs.sg[si].pty[i]:
+                ast.TParam(n):
+                    if n in wide and not (n in b and b[n] == "f32"):
+                        ats[i] = "float"
+                _: pass
     for i := 0; i < np; i += 1:
         if not _unify(&cs, cs.sg[si].pty[i], ats[i], &b):
             s2 := _bnd_stage2(&cs, cs.sg[si].pty[i], ats[i])

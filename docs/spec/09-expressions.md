@@ -22,8 +22,12 @@ which is `int`, `float`, a sized numeric (`u32`/`u64`/`f32`), `char` (for `+`/`-
 with the byte-domain rule below), or a newtype over an `int` or `float` base; the
 result keeps that type. **The one widening:** an `f32` operand against a `float`
 widens to `float` (lossless), and the result is `float`; the same holds for a
-comparison, for initialising a declared `float`, and for a `float` parameter
-taken by value (never `inout`). Unary `-` applies to `int`, `float`, `f32`, the
+comparison, for initialising a declared `float`, for a `float` parameter
+taken by value (never `inout`), for an unannotated array literal whose elements
+are `float` and `f32` values (it is `[float]`; a numeric literal element takes
+the final element type, so it is never rounded through `f32`), and for a generic
+`$T` parameter taken by value that receives both (it binds `float`). An array of
+`f32` is never an array of `float`. Unary `-` applies to `int`, `float`, `f32`, the
 signed sized ints and vectors (lane-wise); an unsigned operand is refused. `int`/`u32`/`u64` division or modulo by a zero *value*
 aborts ([§30](17-runtime.md)). Division or modulo by an **integer literal `0`** is
 a compile error regardless of operand type (so `x / 0` is rejected even when `x`

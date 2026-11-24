@@ -477,6 +477,22 @@ fn _declared_short(cs: inout C, n: string) -> bool:
             return true
     return false
 
+# _unify binds a type parameter from the FIRST argument that reaches it. A bare
+# by-value `$T` seen at both f32 and float binds float instead -- f32 widens
+# to float, as for a float parameter (FRICTION 232) -- so `min(f32, float)`
+# instantiates at float, as the checker typed it. Explicit type arguments
+# (the first `nexplicit`) are never touched.
+fn _widen_binds(cs: inout C, ps: [ast.Param], ats: [string], tps: [string], nexplicit: int, bs: inout [string]):
+    for j := 0; j < len(ps) and j < len(ats); j += 1:
+        if len(ps[j].ty) == 0 or ps[j].is_inout or ats[j] != "float":
+            continue
+        match ps[j].ty[0]:
+            ast.TParam(n):
+                for i := nexplicit; i < len(tps); i += 1:
+                    if tps[i] == n and bs[i] == "f32":
+                        bs[i] = "float"
+            _: pass
+
 fn _unify(cs: inout C, t: ast.Ty, a: string, tps: [string], bs: inout [string]):
     if len(a) == 0:
         return

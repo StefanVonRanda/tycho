@@ -294,6 +294,7 @@ fn _call_with_types(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], ar
                     if cs.gf[gfi].params[j].is_variadic and (args[j] is ast.Spread) and _is_arr(aj):
                         aj = _elem(aj)
                     _unify(&cs, cs.gf[gfi].params[j].ty[0], aj, tps, &bs)
+            _widen_binds(&cs, cs.gf[gfi].params, ats, tps, len(ta), &bs)
         for j := 0; j < len(bs); j += 1:
             if len(bs[j]) == 0:
                 _bad("cannot infer '$" + tps[j] + "' at a call to '" + n + "'")
@@ -743,6 +744,7 @@ fn _call_type(cs: inout C, l: int, q: string, n: string, tas: [ast.Ty], args: [a
                     if cs.gf[gfi].params[j].is_variadic and (args[j] is ast.Spread) and _is_arr(aj):
                         aj = _elem(aj)
                     _unify(&cs, cs.gf[gfi].params[j].ty[0], aj, tps, &bs)
+            _widen_binds(&cs, cs.gf[gfi].params, ats, tps, len(ta), &bs)
         for j := 0; j < len(bs); j += 1:
             if len(bs[j]) == 0:
                 _bad("cannot infer '$" + tps[j] + "' at a call to '" + n + "'")

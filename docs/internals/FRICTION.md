@@ -1136,3 +1136,15 @@ order (so the result is unchanged, NaN and `-0.0` placement included), and every
 alternates buffers instead of copying back: `asc` 1.46 s, `sort_by` 1.75 s.
 
 > Pinned-by: grep -q "^zeros=\[-1.0, 0.0, -0.0, -0.0, 0.0, 0.0, 1.0\]" corelib/test/sort.out
+
+### 232. f32 widened to float in arithmetic but not in an array literal or at a generic `$T` — **FIXED 2026-11-24**
+
+FRICTION 223 widened `f32` to `float` in operations, declarations and by-value `float`
+parameters. Two places it stopped short: `[x, v.y]` with `x: float` was "array elements must
+all have the same type", and `math.min(x, v.y)` was "argument 2 of 'min' is f32, which does
+not fit the parameter pattern". Both now widen (`[float]`, `T = float`). The emitter had to
+agree: it took a literal's element type from element 0 and bound `$T` from the first
+argument, so `[v.y, x]` and `min(v.y, x)` would have narrowed `x` to `f32`.
+
+> Pinned-by: grep -q "^\[0.1, 2.5\] \[2.5, 0.1\] true$" tests/f32_widen_mixed.out
+> Pinned-by: test -f tests/reject/f32_widen_generic_inout.ty

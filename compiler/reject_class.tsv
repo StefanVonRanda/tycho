@@ -685,6 +685,7 @@ tests/reject/zero_bad_type.ty	SEMANTIC	7328	zero$([int]): only int, float, bool,
 tests/reject/zero_two_typeargs.ty	SEMANTIC	7325	zero$(T) takes exactly one type argument
 tests/reject/zero_value_args.ty	SEMANTIC	7324	zero$(T) takes no value arguments
 tests/reject/f32_widen_array.ty	TYPE	8218	argument type mismatch: argument 1 of 'first' is [f32], expected [float]
+tests/reject/f32_widen_generic_inout.ty	SEMANTIC	10113	argument 2 of 'bump' is float, which does not fit the parameter pattern
 tests/reject/f32_widen_inout.ty	TYPE	8218	argument type mismatch: argument 1 of 'bump' is f32, expected float
 tests/reject/neg_unsigned.ty	SEMANTIC	8307	unary `-` needs an int or a float
 tests/reject/swizzle_lane_range.ty	SEMANTIC	7288	'.z' names lane 2, and this value has only 2 lanes

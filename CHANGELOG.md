@@ -9,6 +9,9 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`f32` widens to `float` in an unannotated array literal and at a generic `$T`**:
+  `[x, v.y]` is `[float]` and `math.min(x, v.y)` instantiates at `float`, as `x + v.y`
+  already did. By value only; an array of `f32` still never becomes an array of `float`.
 - **`push(xs, b)` with `xs: [u8]` appends bytes as bytes**, one copy, so a
   byte builder no longer needs an `[int]`.
 - **The bytes bridge takes vectors and number arrays.** A packed struct may hold a

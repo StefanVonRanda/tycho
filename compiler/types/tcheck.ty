@@ -1674,6 +1674,10 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                     return wb
                 elif et == "?":
                     et = t
+                elif (et == "f32" and t == "float") or (et == "float" and t == "f32"):
+                    # f32 widens to float (lossless), as in arithmetic: an
+                    # unannotated literal mixing the two is [float] (FRICTION 232).
+                    et = "float"
                 elif not compat(t, et):
                     _cerr(&cs, "array elements must all have the same type")
                     return "?"

@@ -1177,10 +1177,35 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     if _is_arr(cs.want):
         et = _elem(cs.want)
         cs.want = et
+    annotated := len(et) > 0
     c0, et0 := _ex(&cs, k[0])
     if len(et) == 0:
         et = et0
         cs.want = et
+    codes := [c0]
+    tys := [et0]
+    for i := 1; i < len(k); i += 1:
+        ac, at := _ex(&cs, k[i])
+        push(codes, ac)
+        push(tys, at)
+    # An unannotated literal mixing float and f32 is [float]: f32 widens, as in
+    # arithmetic (FRICTION 232). A numeric literal emitted under f32 before the
+    # float element appeared is emitted again under float, so `[b, 0.1, a]`
+    # never rounds 0.1 through f32 (a literal has no side effects to repeat).
+    # Only a non-literal element decides: a literal reports float even when it
+    # was emitted under f32 (`[b, 0.5]` stays [f32]).
+    mixed := false
+    for i := 0; i < len(k); i += 1:
+        if tys[i] == "float" and not _static_scalar_expr(k[i]):
+            mixed = true
+    if not annotated and et == "f32" and mixed:
+        et = "float"
+        cs.want = et
+        for i := 0; i < len(k); i += 1:
+            if tys[i] == "f32" and _static_scalar_expr(k[i]):
+                ac, at := _ex(&cs, k[i])
+                codes[i] = ac
+                tys[i] = at
     ct := _cty(&cs, "[" + et + "]")
     static_lit := len(k) >= 64 and _static_scalar_type(et)
     for i := 0; static_lit and i < len(k); i += 1:
@@ -1190,13 +1215,8 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
         lit := _fresh(&cs, "_lit")
         pieces := ["({ static const " + _cty(&cs, et) + " " + lit + "[" + str(len(k)) + "] = {"]
         for i := 0; i < len(k); i += 1:
-            ac := c0
-            at2 := et0
-            if i > 0:
-                ac2, at3 := _ex(&cs, k[i])
-                ac = ac2
-                at2 = at3
-            if at2 != et:
+            ac := codes[i]
+            if tys[i] != et:
                 ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
             if i > 0:
                 push(pieces, ", ")
@@ -1209,13 +1229,8 @@ fn _arrlit(cs: inout C, k: [ast.Expr]) -> (string, string):
     pieces2 := ["({ " + ct + " " + v + " = " + _arrf(&cs, et, "_with_cap") + "(" +
         cs.arena + ", " + str(len(k)) + "L); "]
     for i := 0; i < len(k); i += 1:
-        ac := c0
-        at2 := et0
-        if i > 0:
-            ac2, at3 := _ex(&cs, k[i])
-            ac = ac2
-            at2 = at3
-        if at2 != et and not _heap(&cs, et):
+        ac := codes[i]
+        if tys[i] != et and not _heap(&cs, et):
             ac = "((" + _cty(&cs, et) + ")(" + ac + "))"
         if _place(k[i]) and _heap(&cs, et) and not _shares(&cs, k[i], et, cs.arena) and
                 not _canmove(&cs, k[i], cs.arena):

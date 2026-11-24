@@ -1,0 +1,22 @@
+# FRICTION 232: f32 widens to float in an unannotated array literal and at a
+# generic `$T` seen at both -- as it does in arithmetic and into a float
+# parameter (FRICTION 223). Arrays of f32 still never become arrays of float.
+
+fn pick(a: $T, b: $T) -> $T:
+    return b
+
+fn keep(xs: [f32]) -> int:
+    return len(xs)
+
+fn main():
+    a := 0.1
+    b: f32 = to_f32(2.5)
+    # either order is [float]; a literal next to the f32 is not rounded through f32
+    xs := [a, b]
+    ys := [b, a]
+    zs := [b, 0.1, a, -0.1]
+    println(str(xs) + " " + str(ys) + " " + str(zs[1] == 0.1 and zs[3] == -0.1))
+    # with no float VALUE among them, literals still adapt: these stay [f32]
+    println(str(keep([b, 0.5])) + " " + str(keep([b, 2])))
+    # a generic $T at float and f32 instantiates at float, in either order
+    println(str(pick(a, b)) + " " + str(pick(b, a) == 0.1))

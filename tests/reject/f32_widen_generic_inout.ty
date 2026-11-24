@@ -1,0 +1,11 @@
+# expect: argument 2 of 'bump' is float, which does not fit the parameter pattern
+# The f32 -> float widening at a generic $T (FRICTION 232) is by value only: an
+# inout $T bound to f32 cannot take a float.
+fn bump(x: inout $T, y: $T):
+    x = y
+
+fn main():
+    a := 0.1
+    b: f32 = to_f32(2.5)
+    bump(&b, a)
+    println(str(b))
