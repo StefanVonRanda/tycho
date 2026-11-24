@@ -42,6 +42,8 @@ builtins and corelib signatures.
 
 - **`arrays.extend(&xs, ys)`** appends every element of `ys` to `xs` in place,
   where `concat` builds a new array (and so copies `xs` on every call in a loop).
+  Pushes onto an `inout` array in a loop now take the same fast path as onto a
+  local (unless the loop can return early), which made `extend` 1.8x faster.
 - `arrays.push_index(&xs, v)` appends and returns the new element's index;
   `arrays.OptIndex` is a one-int "maybe index" (`no_index`, `some_index`,
   `is_none`, `get_or`).

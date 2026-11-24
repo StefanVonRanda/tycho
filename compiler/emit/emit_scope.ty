@@ -422,6 +422,30 @@ fn _defs_a(ar: [ast.Arm], nm: string) -> bool:
             return true
     return false
 
+# Can control leave the function from inside `b`: a return, or an
+# or_return / or_else (both return from the enclosing function)?
+fn _exits_b(b: [ast.Stmt]) -> bool:
+    for st in b:
+        match st:
+            ast.ReturnS(l, k): return true
+            _: pass
+        for e in _stmt_es(st):
+            if _exits_e(e):
+                return true
+        for sb in _stmt_bs(st):
+            if _exits_b(sb):
+                return true
+    return false
+
+fn _exits_e(e: ast.Expr) -> bool:
+    match e:
+        ast.OrRet(l, b, k): return true
+        _: pass
+    for c in ast.kids(e):
+        if _exits_e(c):
+            return true
+    return false
+
 fn _defs_b(b: [ast.Stmt], nm: string) -> bool:
     for st in b:
         if _defs_s(st, nm):
@@ -635,9 +659,14 @@ fn _fuse_open(cs: inout C, b: [ast.Stmt], ind: string, guard: [ast.Expr]) -> (st
         nmx := ast.Name(0, nm)
         if not _is_arr(t) or _cap_of_target(&cs, nmx) > 0:
             continue                       # bounded has no growable spine
-        ow := _ownerof(&cs, nmx)
-        if strings.starts_with(ow, "_ina_"):
-            continue                       # an inout param is a pointer, not a value
+        # An inout array's cached spine is written back after the loop, so the
+        # loop must not be able to leave the function: an early return would
+        # skip the write-back and lose every push (the caller's array kept
+        # none). Without one, an inout array fuses like a local -- per-element
+        # pushes through the pointer made arrays.extend 4x slower than an
+        # inline loop (FRICTION 230).
+        if strings.starts_with(_ownerof(&cs, nmx), "_ina_") and _exits_b(b):
+            continue
         if _defs_b(b, nm):
             continue
         if _creads_b(b, nm) != _pushn_b(b, nm):

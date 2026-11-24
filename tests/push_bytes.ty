@@ -4,6 +4,42 @@
 # array's spine in locals: the bulk append once wrote around that cache and the
 # loop's write-back erased everything it appended (FRICTION 229). And
 # push([u8], b), the byte-builder form: the bytes as they are.
+# Pushes onto an inout array in a loop fuse too (its spine cached, written back
+# after the loop) -- unless the loop can leave the function early, which would
+# skip the write-back: these must keep every push made before the exit.
+fn fill_until(xs: inout [int], n: int, stop: int):
+    for i := 0; i < n; i += 1:
+        push(xs, i)
+        if i == stop:
+            return
+
+fn fill_break(xs: inout [int], n: int, stop: int):
+    for i := 0; i < n; i += 1:
+        push(xs, i)
+        if i == stop:
+            break
+    push(xs, 99)
+
+fn fill_nested(xs: inout [int]):
+    for i := 0; i < 3; i += 1:
+        for j := 0; j < 2; j += 1:
+            push(xs, 10 * i + j)
+            if j == 1 and i == 2:
+                return
+
+fn three(i: int) -> Result(int, string):
+    if i == 3:
+        return Err("three")
+    return Ok(i)
+
+fn fill_or_return(xs: inout [int]) -> Result(int, string):
+    for i := 0; i < 10; i += 1:
+        push(xs, i)
+        v := three(i) or_return
+        if v < 0:
+            println("never")
+    return Ok(0)
+
 packed struct Rec:
     tag: u8
     n: i32
@@ -55,3 +91,14 @@ fn main():
         push(ub, to_bytes("q"))
     println(str(len(ub)) + " " + str(ub[0]) + " " + str(ub[2]) + " " + str(ub[4]) + " " + str(ub[len(ub) - 1]) +
         " " + str(len(to_bytes(ub))))
+
+    fa := [7]
+    fill_until(&fa, 10, 4)
+    fb := [7]
+    fill_break(&fb, 10, 2)
+    fc := []int
+    fill_nested(&fc)
+    fd := [7]
+    match fill_or_return(&fd):
+        Ok(_): println("unexpected")
+        Err(e): println(str(fa) + " " + str(fb) + " " + str(fc) + " " + e + " " + str(fd))
