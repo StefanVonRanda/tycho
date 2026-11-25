@@ -1315,3 +1315,30 @@ on the type would have been made on the wrong one.
 
 > Pinned-by: grep -q "^true true$" tests/emitter_types.out
 > Pinned-by: grep -q "^0.30000001192092896 0.30000001192092896 true$" tests/emitter_types.out
+
+### 247. Eight constructs were typed `?` by the checker, so nothing after them was checked — **FIXED 2026-11-25**
+
+The type-agreement gate (FRICTION 246) lists every expression the checker typed `?` and the C
+emitter typed: places no type rule reaches, since `?` is compatible with everything. It found
+309 such expressions; eight causes accounted for 294 of them, each now typed:
+- a nested pattern's bindings (`Err(cli.Unknown(tok))`: `tok` was `?`) -- from the nested
+  variant's payload;
+- a call through a subscript (`w.px(d)`, `c.member(i).name`) -- the type it yields;
+- a call through a function-typed field (`t.less(k, t.keys[n])`) -- its arguments now checked
+  against the field's parameters, its result the field's;
+- `.get` on a map-valued expression (`st.counts.get(k, 0)`);
+- `[]` under a map annotation (`m: [K: V] = []`), which the emitter makes the empty map;
+- a `select` arm's `recv(ch, v)` binding -- the channel's element;
+- a `$N` size parameter in a size-generic body -- an int;
+- a value `match` (`name := match s: ...`), whose arms were typed as statements: each arm's
+  tail is now its value. This one hid a real defect: a value match whose arms gave a string
+  and an int was accepted, and the C compiler refused the C it produced (`h_x = 5LL` into a
+  `char *`). It is now "if/match branches produce different types (string and int)".
+- an explicit generic variant (`Leaf$(int)`, `box.Nothing$(int)`), left `?` as "6c" work --
+  now its instance, its payload checked against that instance's variant.
+The 15 expressions left (8 lines: a generic constructor of a bare `[]`, a pending Option, two
+method-style builtins on a literal or a chain, a spread argument, a `[$N]T` parameter in a
+size-generic body) are the gate's baseline, compiler/type_agreement.baseline.
+
+> Pinned-by: test -f tests/reject/value_match_mixed_types.ty
+> Pinned-by: test "$(grep -vc '^#' compiler/type_agreement.baseline)" -le 15

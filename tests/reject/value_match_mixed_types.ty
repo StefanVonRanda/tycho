@@ -1,0 +1,15 @@
+# expect: if/match branches produce different types (string and int)
+# A value match whose arms give different types. The checker typed every value
+# match `?`, so this compiled to C that the C compiler refused (h_x = 5LL into a
+# char *): the type-agreement gate found the gap.
+enum E:
+    A
+    B
+
+fn main():
+    x := match A:
+        A:
+            "text"
+        B:
+            5
+    println(str(x))

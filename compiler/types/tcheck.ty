@@ -266,6 +266,9 @@ struct C:
     srclines: [string: [string]]       # split once per file; warning excerpts must not rescan the source per warning
     trecon: bool                       # TYCHO_TYPEAGREE: record each expression's type ...
     trec: [string]                     # ... as file, line, shape, type (scripts/type_agreement.py)
+    vmatch: bool                       # _match is typing a VALUE match: each arm's tail ...
+    vmatch_ty: string                  # ... merges into this (`?` until an arm gives a type)
+    vmatch_want: string
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -1561,6 +1564,25 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                                 _: pass
                             if not pkgrecv:
                                 rt := _base(&cs, _ex(&cs, fk[0]))
+                                if fnm in cs.subs and fnm in cs.subrt:
+                                    ua0 := []ast.Expr
+                                    for ai := 1; ai < len(k); ai += 1:
+                                        push(ua0, k[ai])
+                                    _walk_args(&cs, ua0)
+                                    return cs.subrt[fnm]
+                                if fnm == "get" and _head(rt) == "map" and (len(k) == 2 or len(k) == 3):
+                                    # `st.counts.get(k, 0)` on a map-valued place
+                                    mt := _targs(rt)
+                                    kt := _ex2(&cs, k[1], mt[0])
+                                    if known(kt) and not compat(kt, mt[0]):
+                                        cs.line = ast.line_of(k[1])
+                                        _cerr(&cs, "map key must be " + _show(&cs, mt[0]) + ", got " + _show(&cs, kt))
+                                    if len(k) == 3:
+                                        vt := _ex2(&cs, k[2], mt[1])
+                                        if known(vt) and not compat(vt, mt[1]):
+                                            cs.line = ast.line_of(k[2])
+                                            _cerr(&cs, "map default must be " + _show(&cs, mt[1]) + ", got " + _show(&cs, vt))
+                                    return mt[1]
                                 ft := _base(&cs, _field_ty(&cs, rt, fnm))
                                 if _head(ft) != "fun":
                                     si := _ufcs_sig(&cs, fnm, rt)
@@ -1753,6 +1775,8 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                         cs.line = l
                         _cerr(&cs, "a fixed-size array of length " + n + " needs " + n + " elements, got 0")
                     return want
+                if _head(wb) == "map":
+                    return want            # `m: [K: V] = []` is the empty map, as the emitter makes it
                 if nowant:
                     cs.line = l
                     _cerr(&cs, "cannot type a bare [] here -- no expected type (write []T, or use it where the element type is known)")   # src/tychoc.c:7078
@@ -2698,7 +2722,16 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
                     return _generic_call(&cs, l, si, n, []ast.Ty, args2)
                 _check_args(&cs, n, si, args2, l)
                 return cs.sg[si].ret
-            # A fn-typed struct field is a callable value rather than UFCS.
+            # A subscript projects a place: its value has the type it yields.
+            if n in cs.subs and n in cs.subrt:
+                _walk_args(&cs, args)
+                return cs.subrt[n]
+            # A fn-typed struct field is a callable value rather than UFCS: its
+            # arguments check against its parameters and it yields its result.
+            # (Both were `?`, so nothing after them was checked.)
+            ft := _base(&cs, _field_ty(&cs, recv, n))
+            if _head(ft) == "fun":
+                return _call_fnval(&cs, l, q + "." + n, ft, args)
             _walk_args(&cs, args)
             return "?"
         m := _prefix_of(&cs, q) + n
@@ -2750,6 +2783,25 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
     if _sigidx(&cs, n) >= 0 or n in cs.tindex or n in cs.vowner:
         return _call_named(&cs, l, n, n, args, want)
     return _call_builtin(&cs, l, n, args, want)
+
+# A call through a function value of type ft (fun(R, P...)): the arguments
+# check against the parameters, and it yields R.
+fn _call_fnval(cs: inout C, l: int, what: string, ft: string, args: [ast.Expr]) -> string:
+    fps := _targs(ft)
+    if len(args) != len(fps) - 1:
+        _walk_args(&cs, args)
+        cs.line = l
+        _cerr(&cs, "'" + what + "' expects " + str(len(fps) - 1) + " argument(s), got " + str(len(args)))
+        return fps[0]
+    keep := cs.in_arg
+    cs.in_arg = true
+    for i := 0; i < len(args); i += 1:
+        at := _ex2(&cs, args[i], fps[i + 1])
+        if known(at) and known(fps[i + 1]) and not compat(at, fps[i + 1]):
+            cs.line = l
+            _cerr(&cs, "argument " + str(i + 1) + " to '" + what + "' must be " + _show(&cs, fps[i + 1]))
+    cs.in_arg = keep
+    return fps[0]
 
 fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], want: string) -> string:
     # src/tychoc.c:7603-7605: `f(a: 1)` at anything but a struct is refused
@@ -3204,9 +3256,32 @@ fn _arm_binds(cs: inout C, a: ast.Arm, tys: [string]):
             t = "?"
         _vpush(&cs, a.binds[i], t, true)
         cs.mbind[a.binds[i]] = true
-    for b in a.subbinds:
-        _vpush(&cs, b, "?", true)
-        cs.mbind[b] = true
+    # `Err(Sized(n, s))`: the nested variant's own payload types the inner
+    # bindings (they were `?`, so nothing after them was checked -- the
+    # type-agreement gate's largest checker gap)
+    sub := []string
+    if len(a.sub) > 0 and len(tys) > 0:
+        sub = _variant_payload(&cs, _base(&cs, tys[0]), a.sub)
+    for i := 0; i < len(a.subbinds); i += 1:
+        t := "?"
+        if i < len(sub):
+            t = sub[i]
+        _vpush(&cs, a.subbinds[i], t, true)
+        cs.mbind[a.subbinds[i]] = true
+
+# An arm's body: a statement block, or in a value match the arm's value, whose
+# type merges with the other arms'.
+fn _arm_body(cs: inout C, body: [ast.Stmt]):
+    if not cs.vmatch:
+        _tblock(&cs, body)
+        return
+    cs.vmatch = false                  # a match nested in the arm is a statement unless it is the tail
+    t := _value_type(&cs, body, cs.vmatch_want)
+    cs.vmatch = true
+    if cs.vmatch_ty == "?":
+        cs.vmatch_ty = t
+    elif t != "?" and not compat(cs.vmatch_ty, t):
+        _cerr(&cs, "if/match branches produce different types (" + cs.vmatch_ty + " and " + t + ")")
 
 fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
     st := _base(&cs, _ex(&cs, subj[0]))
@@ -3306,7 +3381,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                     _cerr(&cs, "an Option's arms are Some(x), None, and _, not '" + spelt2 + "'")
                 else:
                     _cerr(&cs, "a Result's arms are Ok(x), Err(e), and _, not '" + spelt2 + "'")
-            _tblock(&cs, a.body)
+            _arm_body(&cs, a.body)
             _vrestore(&cs, m)
         if not wild and known(st):
             cs.line = l
@@ -3357,7 +3432,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                         _cerr(&cs, "'" + a.binds[b] + "' is a variant of " + _show(&cs, pay[b]) +
                             ", not a binding name -- match it in its own match, or rename the binding")
                 _arm_binds(&cs, a, pay)
-            _tblock(&cs, a.body)
+            _arm_body(&cs, a.body)
             _vrestore(&cs, m)
         if not wild:
             for v in names:
@@ -3403,7 +3478,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                     push(los, cv[1])
                     push(his, cv[1])
                     push(lns, a.line)
-            _tblock(&cs, a.body)
+            _arm_body(&cs, a.body)
             _vrestore(&cs, m)
         for i := 0; i < len(los); i += 1:
             for j := i + 1; j < len(los); j += 1:
@@ -3436,7 +3511,7 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
         _cerr(&cs, "match expects an Option, Result, or enum value, or an int/char/bool, got " + _show(&cs, st))
     for a in arms:
         m := _vmark(&cs)
-        _tblock(&cs, a.body)
+        _arm_body(&cs, a.body)
         _vrestore(&cs, m)
 
 # (found, value) for an int `const` by the name written at a match arm.
@@ -3637,9 +3712,21 @@ fn _tail_type(cs: inout C, s: ast.Stmt, want: string) -> string:
                 _cerr(&cs, "if/match branches produce different types (" + ta + " and " + te + ")")
             return ta
         ast.MatchS(l, subj, arms):
+            # A value match: _match types each arm's tail as a value, with its
+            # bindings in scope (it was `?`: nothing that used the result was checked)
+            k0 := cs.vmatch
+            t0 := cs.vmatch_ty
+            w0 := cs.vmatch_want
+            cs.vmatch = true
+            cs.vmatch_ty = "?"
+            cs.vmatch_want = want
             _match(&cs, l, subj, arms)
-            _tail_add(&cs, l, "?")     # arms are typed by _match, which returns no list
-            return "?"
+            tm := cs.vmatch_ty
+            cs.vmatch = k0
+            cs.vmatch_ty = t0
+            cs.vmatch_want = w0
+            _tail_add(&cs, l, tm)
+            return tm
         _:
             _tstmt(&cs, s)
             _tail_add(&cs, ast.sline_of(s), "?")
@@ -4204,6 +4291,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             nclosed := 0
             for a in arms:
                 m := _vmark(&cs)
+                bt := "?"
                 if a.kind == "recv":
                     nrecv += 1
                     ct := "?"
@@ -4212,6 +4300,8 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                     if known(ct) and _head(ct) != "chan":
                         cs.line = a.line
                         _cerr(&cs, "select recv needs a channel, got " + _show(&cs, ct))
+                    if _head(ct) == "chan":
+                        bt = _targs(ct)[0]     # `recv(ch, v)` binds the channel's element (it was `?`)
                 elif a.kind == "default":
                     ndef += 1
                     _exs(&cs, a.ch)
@@ -4219,7 +4309,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                     nclosed += 1
                     _exs(&cs, a.ch)
                 for bnd in a.binds:
-                    _vpush(&cs, bnd, "?", true)
+                    _vpush(&cs, bnd, bt, true)
                 _tblock(&cs, a.body)
                 _vrestore(&cs, m)
             cs.line = l
@@ -4507,7 +4597,7 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: ast.Expr, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string], false, []string)
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: ast.Expr, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string], false, []string, false, "?", "?")
     cs.symon = syms
     cs.vtgt = tgt
     cs.trecon = len(getenv("TYCHO_TYPEAGREE")) > 0

@@ -953,6 +953,12 @@ fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string, 
             pt9 = "arr(" + pt9 + ")"   # a variadic parameter IS the array
         _vpush(&cs, s.pnames[i], pt9, false)
         cs.vars[cs.nvars - 1].param = true
+    # a `$N` size parameter is an int const in the body (it was `?`)
+    for sz in s.szs:
+        szn := sz
+        if len(szn) > 0 and szn[0] == 36:
+            szn = szn[1:len(szn)]
+        _vpush(&cs, szn, "int", false)
     cs.ret = "void"
     if len(s.rty) == 1:
         cs.ret = _subst(&cs, s, s.rty[0], b)
@@ -1032,6 +1038,26 @@ fn _explicit_call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args:
         if si < 0:
             si = _sigidx(&cs, n)
     if si < 0:
+        vkey := ""
+        if len(q) == 0 and n in cs.vowner:
+            vkey = n
+        elif len(q) > 0 and (_prefix_of(&cs, q) + n) in cs.vowner:
+            vkey = _prefix_of(&cs, q) + n
+        if len(vkey) > 0:
+            # `Leaf$(int)` / `box.Nothing$(int)`: the instance the type arguments
+            # name, its payload checked against that instance's variant (it was `?`)
+            tiv := _tdecl(&cs, cs.vowner[vkey])
+            if tiv >= 0 and cs.tds[tiv].generic and len(ts) == len(cs.tds[tiv].tps):
+                it := _enc(&cs, ast.TName(q, _short(cs.tds[tiv].name), ts))
+                if known(it):
+                    pay := _variant_payload(&cs, it, n)
+                    if len(args) == len(pay):
+                        for i := 0; i < len(args); i += 1:
+                            at := _ex2(&cs, args[i], pay[i])
+                            if known(at) and known(pay[i]) and not compat(at, pay[i]):
+                                cs.line = l
+                                _cerr(&cs, n + "'s payload " + str(i + 1) + " must be " + _show(&cs, pay[i]) + ", got " + _show(&cs, at))
+                        return it
         for t in ts:
             _enc(&cs, t)
         _walk_args(&cs, args)
