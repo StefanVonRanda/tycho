@@ -101,6 +101,16 @@ fn outcome(ok: bool) -> (Result(int, Local), string):
         return (Ok(3), "full")
     return (Err(Worse), "partial")
 
+# Result(void, E) through the combinators that carry the ok value (FRICTION
+# 253): their $T is void, a placeholder that binds and returns nothing.
+fn void_map(ok: bool) -> Result(void, io.IoErr):
+    result.map_err(touch(ok), io.Failed) or_return
+    return Ok()
+
+fn void_with(ok: bool) -> Result(void, Wrapped):
+    result.map_err_with(touch(ok), to_wrapped) or_return
+    return Ok()
+
 fn main():
     # ---- unwrap_or: the workhorse, over four different payload types ----
     println("int_ok    = " + str(result.unwrap_or(mk(true), -1)))
@@ -162,3 +172,7 @@ fn main():
     println("void_err  = " + str(b(result.is_err(touch(true)))) + " " + str(b(result.is_err(touch(false)))))
     println("void_why  = " + str(b(result.err_or(touch(false), Nope) == Worse)))
     println("void_why2 = " + str(b(result.err_or(touch(true), Nope) == Nope)))   # Ok -> the fallback
+    println("void_map  = " + str(b(void_map(true) is Ok)) + " " + str(b(result.err_or(void_map(false), io.NotFound) == io.Failed)))
+    println("void_with = " + str(b(void_with(true) is Ok)) + " " + str(b(void_with(false) is Err)))
+    result.expect(touch(true), "touch")
+    println("void_expect = passed")

@@ -315,6 +315,9 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 # was then copied AGAIN into every Tok built from it.
                 cs.vown[len(cs.vown) - 1] = own5
             out9 := ind + _ctyz(&cs, t) + "" + cn + " = " + c + ";\n"
+            if t == "void":
+                # a void $T (FRICTION 253): evaluate, keep an empty placeholder
+                out9 = ind + "(void)(" + c + "); char " + cn + " = 0; (void)" + cn + ";\n"
             if _share_bind_ok(&cs, rhs[0], t, own5):
                 sh1 := _share_call(&cs, t, cn)
                 src9, _st9 := _lvalue(&cs, rhs[0])
@@ -656,6 +659,10 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             cs.in_ret = false
             cs.ret_ast = ast.NullLit(0)
             rt := cs.cur_ret
+            if rt == "void":
+                # `return v` of a void $T (FRICTION 253): v is evaluated and nothing is returned
+                return ind + "{ (void)(" + c + "); " + _oneline(fin) + _scr_frees(&cs) +
+                    "if (_scope.head) arena_free(&_scope); return; }\n"
             v := "_ret"
             return ind + "{ " + _ctyz(&cs, rt) + "" + v + " = " + c + "; " +
                 _oneline(fin) + _scr_frees(&cs) + "arena_free(&_scope); return " + v + "; }\n"
@@ -1243,6 +1250,12 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
             nulsub := ""
             for i := 0; i < len(a.binds); i += 1:
                 if i >= len(pay):
+                    if len(pay) == 0 and len(a.binds) == 1:
+                        # `Ok(v)` on a void $T (FRICTION 253): v is the empty placeholder
+                        if a.binds[0] != "_":
+                            vcn := _push(&cs, a.binds[0], "void")
+                            binds = binds + ind + "        char " + vcn + " = 0; (void)" + vcn + ";\n"
+                        continue
                     _bad("variant " + a.name + " binds more than its payload")
                 # `Err(NotFound)` -- a NULLARY nested variant. It has no parens,
                 # so the parser cannot tell it from a binding name and files it

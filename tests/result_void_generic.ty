@@ -1,0 +1,39 @@
+# FRICTION 253: a generic whose $T is bound to void. Inside the instance a $T
+# value is the empty placeholder -- bound, passed to Ok, returned, bound by an
+# Ok(v) arm -- so a generic over Result($T, E) works at Result(void, E).
+# Code that names void itself still cannot bind one (tests/reject).
+
+fn touch(x: int) -> Result(void, string):
+    if x < 0:
+        return Err("negative " + str(x))
+    return Ok()
+
+fn retry(r: Result($T, string), again: Result($T, string)) -> Result($T, string):
+    v := r or_else _: again
+    return Ok(v)
+
+fn ok_value(r: Result($T, string), fallback: Result($T, string)) -> Result($T, string):
+    match r:
+        Ok(v):
+            return Ok(v)
+        Err(_):
+            return fallback
+    return fallback
+
+fn unwrap(r: Result($T, string)) -> $T:
+    match r:
+        Ok(v):
+            return v
+        Err(e):
+            println("unwrap: " + e)
+    return unwrap(r)
+
+fn main():
+    println("retry: " + str(retry(touch(-1), touch(3)) is Ok) + " " + str(retry(touch(-1), touch(-3)) is Err) + " " +
+            str(retry(touch(1), touch(-3)) is Ok))
+    println("ok_value: " + str(ok_value(touch(2), touch(-2)) is Ok) + " " + str(ok_value(touch(-2), touch(-5)) is Err))
+    unwrap(touch(7))
+    println("unwrap: returned")
+    five: Result(int, string) = Ok(5)
+    n := unwrap(five)
+    println("unwrap int: " + str(n))

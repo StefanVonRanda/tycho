@@ -996,6 +996,13 @@ fn _variant(cs: inout C, ei: int, vn: string, args: [ast.Expr]) -> (string, stri
     en := cs.eds[ei].name
     tag := _tag(&cs, ei, vn)
     pay := cs.eds[ei].vpay[tag].ptypes
+    if len(pay) == 0 and len(args) == 1:
+        # Ok(v) where a generic's $T is void: v is the empty placeholder, evaluated
+        # for any effect and dropped (FRICTION 253)
+        vc, vt := _ex(&cs, args[0])
+        if vt == "void" or vt == "":
+            bare, bt := _variant(&cs, ei, vn, []ast.Expr)
+            return ("({ (void)(" + vc + "); " + bare + "; })", bt)
     if len(pay) != len(args):
         _bad("variant " + vn + " takes " + str(len(pay)) + " payload value(s)")
     inl := _inline_enum(&cs, en)
@@ -1195,6 +1202,13 @@ fn _orelse(cs: inout C, b: string, h: ast.Expr, c: string, t: string, ei: int) -
     if len(ok) > 0:
         got = "(" + v + "->u." + _vfield(cs.eds[ei].vnames[1 - bad]) + ".f0)"
         gt = ok[0]
+    if cs.cur_ret == "void":
+        # a void $T return (FRICTION 253): run the clause, return nothing
+        return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
+            str(bad) + ") { " + bind + "(void)(" + hc + "); " +
+            _oneline(_finalizers(&cs, cs.fnbase, "")) + _scr_frees(&cs) +
+            "if (_scope.head) arena_free(&_scope); return; } " +
+            got + "; })", gt)
     return ("({ E_" + _tname(t) + " *" + v + " = " + c + "; if (" + v + "->tag == " +
         str(bad) + ") { " + bind + _ctyz(&cs, cs.cur_ret) + "_orr = " + hc + "; " +
         _oneline(_finalizers(&cs, cs.fnbase, "")) + _scr_frees(&cs) +

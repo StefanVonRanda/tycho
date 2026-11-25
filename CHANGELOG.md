@@ -127,6 +127,10 @@ builtins and corelib signatures.
 
 ### Changed
 
+- **A generic's `$T` may be `void`**: in the instance a `$T` value is an empty placeholder
+  that binds, passes to `Ok` and returns, so `result.map_err`, `map_err_with` and
+  `expect` (and any generic over `Result($T, E)`) work at `Result(void, E)`. Binding a
+  direct call to a function that returns nothing is still refused. FRICTION 253.
 - **The typed IR lets a record of scalars cross an extern** (`extern fn ent_fields(e: int) ->
   Fields`, a struct of int, float and bool fields), so a script host can hand typed records to
   the script. FRICTION 252.

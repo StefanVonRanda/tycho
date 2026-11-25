@@ -1,0 +1,20 @@
+# expect: cannot bind a void value
+# FRICTION 253 lets a generic's $T bound to void be bound as an empty
+# placeholder -- but only what reaches void THROUGH $T. A direct call to a
+# function that returns nothing is a void value nobody may bind, in an
+# instance as anywhere else.
+fn nothing():
+    pass
+
+fn touch() -> Result(void, string):
+    return Ok()
+
+fn keep(r: Result($T, string)) -> Result($T, string):
+    y := nothing()
+    v := r or_else _: r
+    return Ok(v)
+
+fn main():
+    match keep(touch()):
+        Ok: println("ok")
+        Err(e): println(e)

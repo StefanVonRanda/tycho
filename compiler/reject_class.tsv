@@ -674,6 +674,7 @@ tests/reject/vector_push.ty	SEMANTIC	8011	cannot push to a vector[4]int -- its l
 tests/reject/vector_reserve.ty	SEMANTIC	8066	reserve does not apply to a vector[2]int — its length is fixed
 tests/reject/vector_slice.ty	SEMANTIC	7205	cannot slice a vector[4]float value; copy it into a [float] first
 tests/reject/void_as_type.ty	TYPE	2978	'void' is a type only as a Result's ok payload, as in Result(void, string)
+tests/reject/void_bind_in_void_generic.ty	TYPE	9458	cannot bind a void value
 tests/reject/void_bound_to_decl.ty	TYPE	9458	cannot bind a void value
 tests/reject/void_grounds_pending_push.ty	SEMANTIC	6722	cannot infer the type of 'xs' from this use
 tests/reject/void_not_a_type.ty	TYPE	2978	'void' is a type only as a Result's ok payload, as in Result(void, string)

@@ -35,3 +35,6 @@ void_ok   = 1 0
 void_err  = 0 1
 void_why  = 1
 void_why2 = 1
+void_map  = 1 1
+void_with = 1 1
+void_expect = passed

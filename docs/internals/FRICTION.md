@@ -1437,7 +1437,7 @@ is still refused by name. The host still verifies the record's shape when it loa
 > Pinned-by: grep -q "extern ent_fields(int) -> @Fields" tests/tir/extern_record.tir
 > Pinned-by: grep -q "taking Packed is not in the script subset" tests/tir/refuse_extern_record/main.ty
 
-### 253. `result.map_err` and `result.expect` refuse `Result(void, E)` — **OPEN 2026-11-25**
+### 253. `result.map_err` and `result.expect` refuse `Result(void, E)` — **FIXED 2026-11-25**
 
 Urani's saves wanted `result.map_err(io.write_bytes(p, b), "cannot write " + p) or_return`
 to turn an `io.IoErr` into its own `string` error, and its tests wanted
@@ -1450,3 +1450,22 @@ with a `Result(void, E)` writes its own match: Urani has `_io` in src/main/save.
 instantiated (`v := <void>` binds nothing, `Ok(v)` at a void ok type is `Ok()`, `return v`
 of a void value returns), which fixes every generic of this shape; or add void siblings
 to corelib/result. The first is a language decision.
+
+**Fixed: a generic's `$T` bound to `void` is an empty placeholder in its instance.** Why
+`void` had no values: on 2026-08-09 the old C compiler's `T_VOID` meant both "returns
+nothing" and "type parameter not yet bound", so `Result(void, E)` was made spellable by
+re-marking the sentinel, as a type with no values -- the cheap route; a real unit type was
+rated "cleanest, most work" and not taken. The self-hosted compiler marks an unbound `$T` as
+`?`, and the C already stores the void ok payload in a `char okv`, so nothing stands in the
+way now. Inside an instance whose `$T` is `void`, a `$T` value may be bound (`v := r
+or_else ...`, an `Ok(v)` arm), passed to `Ok(v)` (emitted as `Ok()` after evaluating `v`),
+returned from a `$T`-returning function (emitted as `return;`), and be an `or_else`
+clause's value there. Code that names void itself keeps today's rules: a direct call to a
+non-generic function returning nothing still cannot be bound, in an instance or not
+(`die`/`exit` excepted). `result.map_err`, `map_err_with` and `expect` now work at
+`Result(void, E)`; Urani's two stand-ins go.
+
+> Pinned-by: grep -q "^void_expect = passed$" corelib/test/result.out
+> Pinned-by: grep -q "^retry: true true true$" tests/result_void_generic.out
+> Pinned-by: test -f tests/reject/void_bind_in_void_generic.ty
+> Pinned-by: test -f tests/abort/result_void_generic_die.err

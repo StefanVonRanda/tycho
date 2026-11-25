@@ -1,0 +1,18 @@
+# FRICTION 253: a generic over Result($T, E) at T = void still stops on Err --
+# the or_else clause runs, binding and returning the void placeholder never
+# hides the failure.
+
+fn touch(x: int) -> Result(void, string):
+    if x < 0:
+        return Err("negative")
+    return Ok()
+
+fn must(r: Result($T, string)) -> $T:
+    v := r or_else e: die("must: " + e)
+    return v
+
+fn main():
+    must(touch(1))
+    println("first passed")
+    must(touch(-1))
+    println("not reached")

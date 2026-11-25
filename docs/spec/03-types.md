@@ -317,6 +317,17 @@ type with **no values**, so:
   it ([§4.3.1](02-grammar.md#431-simple-statements));
 - a `Result`'s ERROR type may NOT be `void` — `Err` always carries a value.
 
+**A generic's type parameter bound to `void`.** `Result($T, E)` in a generic
+MAY be instantiated at `Result(void, E)`. Inside that instance a value of the
+`void`-bound `$T` is an **empty placeholder**: it may be bound (`v := r or_else
+...`, an `Ok(v)` arm), passed to `Ok(v)` (which is then `Ok()`), and returned
+from a function whose `$T` return is `void` (which then returns nothing). The
+placeholder holds no value and its evaluation only runs its effects. The
+permission covers only what reaches `void` through the type parameter: binding
+a direct call to a non-generic function that returns nothing is rejected in an
+instance as everywhere else. So `result.map_err`, `result.map_err_with` and
+`result.expect` work at `Result(void, E)`, as does any generic of that shape.
+
 `void` is spellable in **no other position**, and the permission does not nest:
 `Result(Option(void), E)`, `Result([void], E)` and `Result((void, int), E)` are
 all rejected, as is a `void` parameter, field, element or return annotation.

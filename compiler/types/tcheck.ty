@@ -269,6 +269,7 @@ struct C:
     vmatch: bool                       # _match is typing a VALUE match: each arm's tail ...
     vmatch_ty: string                  # ... merges into this (`?` until an arm gives a type)
     vmatch_want: string
+    arm_void_ok: bool                  # the Ok arm being bound may bind a void $T placeholder (FRICTION 253)
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -1856,6 +1857,9 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             if _head(wb) == "res":
                 w = _targs(wb)[0]
                 if w == "void":
+                    # a generic's $T bound to void: its value is the empty placeholder (FRICTION 253)
+                    if _void_ok(&cs, k[0]) and _ex2(&cs, k[0], "void") == "void":
+                        return want
                     _cerr(&cs, "Result(void, " + _targs(wb)[1] + ") carries no ok value -- write Ok(), not Ok(x)")
                     return want
             ot := _ex2(&cs, k[0], w)
@@ -2055,6 +2059,35 @@ fn _decl_or_else(cs: inout C, orelse: bool, want: string) -> string:
 
 # `e or_else b: h` -- src/tychoc.c@resolve_expr_inner's E_ORRETURN rhs leg, in
 # its order. `t` is the operand's base type; the unwrapped payload is returned.
+# FRICTION 253: inside the instance of a generic whose $T is bound to void, a
+# $T value is the empty placeholder -- it may be bound, passed to Ok and
+# returned. The permission stops at what reaches void through $T: a direct call
+# to a non-generic function that returns nothing is still a void value nobody
+# may bind, as everywhere else (die and exit, which never return, excepted).
+fn _void_ok(cs: inout C, e: ast.Expr) -> bool:
+    if cs.instdepth == 0:
+        return false
+    bound := false
+    for k in keys(cs.tbind):
+        if cs.tbind[k] == "void":
+            bound = true
+    if not bound:
+        return false
+    match e:
+        ast.Call(l, q, n, ts, a):
+            if len(q) == 0 and (n == "die" or n == "exit"):
+                return true
+            m := n
+            if len(q) > 0:
+                m = _prefix_of(&cs, q) + n
+            elif len(cs.prefix) > 0 and _sigidx(&cs, cs.prefix + n) >= 0:
+                m = cs.prefix + n
+            si := _sigidx(&cs, m)
+            if si < 0 or not cs.sg[si].generic:
+                return false
+        _: pass
+    return true
+
 fn _or_else(cs: inout C, l: int, b: string, t: string, h: ast.Expr) -> string:
     okt := "?"
     errt := "?"
@@ -2071,10 +2104,6 @@ fn _or_else(cs: inout C, l: int, b: string, t: string, h: ast.Expr) -> string:
         _cerr(&cs, "or_else applies to a Result or Option value, got " + _show(&cs, t))
     # ponytail: a void fn has no value to return, so or_else is refused there
     # (src/tychoc.c says the same; lift both if a real program wants it)
-    if cs.ret == "void":
-        cs.line = l
-        _cerr(&cs, "or_else returns its value from the enclosing function, which returns nothing -- " +
-            "use `or_return` or a `match` here")
     m := _vmark(&cs)
     if len(b) > 0:
         _vpush(&cs, b, errt, true)
@@ -2083,6 +2112,11 @@ fn _or_else(cs: inout C, l: int, b: string, t: string, h: ast.Expr) -> string:
     ht := _ex2(&cs, h, cs.ret)
     cs.orelse = false
     _vrestore(&cs, m)
+    # a generic's $T return bound to void takes a void clause (FRICTION 253)
+    if cs.ret == "void" and not (ht == "void" and _void_ok(&cs, h)):
+        cs.line = l
+        _cerr(&cs, "or_else returns its value from the enclosing function, which returns nothing -- " +
+            "use `or_return` or a `match` here")
     if known(cs.ret) and known(ht) and not compat(cs.ret, ht):
         cs.line = l
         _cerr(&cs, "or_else returns its value from the enclosing function, which returns " +
@@ -3283,7 +3317,7 @@ fn _arm_binds(cs: inout C, a: ast.Arm, tys: [string]):
         t := "?"
         if i < len(tys):
             t = tys[i]
-        if t == "void":
+        if t == "void" and not cs.arm_void_ok:
             cs.line = a.line
             _cerr(&cs, "cannot bind a void value")
             t = "?"
@@ -3373,12 +3407,14 @@ fn _match(cs: inout C, l: int, subj: [ast.Expr], arms: [ast.Arm]):
                     full0 = true       # a plain binding covers the whole side
                 pay := []string
                 push(pay, _targs(st)[0])
-                if h == "res" and _targs(st)[0] == "void" and len(a.binds) > 0:
+                if h == "res" and _targs(st)[0] == "void" and len(a.binds) > 0 and not _void_ok(&cs, subj[0]):
                     _cerr(&cs, "Ok carries no value here -- write a bare `Ok:` arm")
                 else:
                     if _targs(st)[0] != "void":
                         _pay_shape(&cs, a, _targs(st)[0], yes)
+                    cs.arm_void_ok = _void_ok(&cs, subj[0])
                     _arm_binds(&cs, a, pay)
+                    cs.arm_void_ok = false
             elif a.name == no and len(a.qual) == 0:
                 nested := ""
                 if h == "res":
@@ -4118,7 +4154,7 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 _bare_result(&cs, t, rhs[0])
             if want == "f32" and len(rhs) == 1:
                 _f32_fits(&cs, rhs[0])
-            if t == "void":
+            if t == "void" and not (len(rhs) == 1 and _void_ok(&cs, rhs[0])):
                 _cerr(&cs, "cannot bind a void value")
                 t = "?"
             if len(vb) > 0 and _head(t) == "task":
@@ -4223,7 +4259,8 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
                 # with no return type is told it returns nothing rather than
                 # being handed a `returning int but proc returns void`.
                 if cs.ret == "void":
-                    _cerr(&cs, "this proc returns nothing")
+                    if not (t == "void" and _void_ok(&cs, k[0])):    # `return v` of a void $T (FRICTION 253)
+                        _cerr(&cs, "this proc returns nothing")
                 elif not compat(t, cs.ret):
                     _cerr(&cs, "returning " + _show(&cs, t) + " but proc returns " + _show(&cs, cs.ret))
             elif known(cs.ret) and cs.ret != "void":
@@ -4645,7 +4682,7 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: ast.Expr, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string], false, []string, false, "?", "?")
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: ast.Expr, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string], false, []string, false, "?", "?", false)
     cs.symon = syms
     cs.vtgt = tgt
     cs.trecon = len(getenv("TYCHO_TYPEAGREE")) > 0
