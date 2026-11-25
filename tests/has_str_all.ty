@@ -1,0 +1,33 @@
+# FRICTION 250: `has_str(T)` admits exactly what `str` formats. It admitted int,
+# bool, float and string while `str` also formatted enums, structs, chars,
+# bytes and containers -- so result.expect, which needs has_str(E), refused
+# every enum error type in corelib. Each generic line must equal its direct one.
+enum E:
+    Missing
+    Bad(int)
+
+struct P:
+    x: int
+    tag: string
+
+fn show(x: $T) -> string where has_str(T):
+    return str(x)
+
+fn main():
+    e := Bad(4)
+    p := P(3, "a")
+    xs := [1, 2]
+    m := []string: int
+    m["k"] = 7
+    t := (1, "two")
+    o := Some(5)
+    c := 'z'
+    println(show(e) + " | " + str(e))
+    println(show(Missing) + " | " + str(Missing))
+    println(show(p) + " | " + str(p))
+    println(show(xs) + " | " + str(xs))
+    println(show(m) + " | " + str(m))
+    println(show(t) + " | " + str(t))
+    println(show(o) + " | " + str(o))
+    println(show(c) + " | " + str(c))
+    println(show(to_bytes("hi")) + " | " + str(to_bytes("hi")))

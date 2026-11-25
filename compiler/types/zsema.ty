@@ -627,7 +627,9 @@ fn _pred_ok(cs: inout C, pred: string, t: string) -> bool:
         # the sized numerics order with `<` like int and float (FRICTION 235)
         return b == "int" or b == "char" or b == "float" or b == "string" or _sized_num(b)
     if pred == "has_str":
-        return b == "int" or b == "bool" or b == "float" or b == "string"
+        # exactly what `str` accepts (FRICTION 250): it formatted enums,
+        # structs and containers while the predicate admitted four scalars
+        return _str_ok(&cs, t)
     if pred == "hashable":
         return _mapkey_ok(&cs, t)
     if pred == "defaultable":

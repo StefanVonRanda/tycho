@@ -1389,3 +1389,14 @@ sides, all agreeing; 151 of 151 adapted literals proven; 2,062 emitter-only expr
 explained.
 
 > Pinned-by: grep -q "unexplained" scripts/type_agreement.py
+
+### 250. `has_str(T)` refused types `str` formats, so `result.expect` refused every enum error — **FIXED 2026-11-25**
+
+Urani's `urani cook` called `result.expect(io.read_text(p), "...")` and got "'expect' instantiated
+with E = io.IoErr, which does not satisfy `has_str(E)`". `str` formats an enum (`Missing`,
+`Bad(4)`), a struct, a char, bytes and every container, but the predicate admitted only int,
+bool, float and string -- so the generic helper FRICTION 245 added for "the value or stop"
+refused the error types most of corelib returns. `has_str(T)` now admits exactly what `str`
+accepts (the checker asks the same function), and spec 05's table says so.
+
+> Pinned-by: grep -q "^Bad(4) | Bad(4)$" tests/has_str_all.out

@@ -31594,7 +31594,7 @@ int h_types___pred_ok(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, char *
         { int _ret = ((((tycho_str_eq(h_b, TYCHO_LIT("int")) || tycho_str_eq(h_b, TYCHO_LIT("char"))) || tycho_str_eq(h_b, TYCHO_LIT("float"))) || tycho_str_eq(h_b, TYCHO_LIT("string"))) || h_types___sized_num(_parent, h_b)); arena_free(&_scope); return _ret; }
     }
     if (tycho_str_eq(h_pred, TYCHO_LIT("has_str"))) {
-        { int _ret = (((tycho_str_eq(h_b, TYCHO_LIT("int")) || tycho_str_eq(h_b, TYCHO_LIT("bool"))) || tycho_str_eq(h_b, TYCHO_LIT("float"))) || tycho_str_eq(h_b, TYCHO_LIT("string"))); arena_free(&_scope); return _ret; }
+        { int _ret = h_types___str_ok(_parent, &((*h_cs)), _ina_h_cs, h_t); arena_free(&_scope); return _ret; }
     }
     if (tycho_str_eq(h_pred, TYCHO_LIT("hashable"))) {
         { int _ret = h_types___mapkey_ok(_parent, &((*h_cs)), _ina_h_cs, h_t); arena_free(&_scope); return _ret; }

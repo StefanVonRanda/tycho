@@ -55,7 +55,7 @@ type bound to the parameter at instantiation:
 |---|---|
 | `numeric(T)` | `int`, `float` |
 | `comparable(T)` | `int`, `char`, `float`, `string`, and the sized numerics `u8`…`u64`, `i8`…`i64`, `f32` |
-| `has_str(T)` | `int`, `bool`, `float`, `string` |
+| `has_str(T)` | whatever `str` formats: the numbers (sized ones too), `bool`, `string`, `char`, `bytes`, an array, map, tuple, `Option` or `Result` of them, a struct or an enum |
 | `hashable(T)` | any legal map key type ([§5.3.5](03-types.md#535-maps-k-v)) |
 | `defaultable(T)` | **exactly** `int`, `float`, `bool`, `string` |
 

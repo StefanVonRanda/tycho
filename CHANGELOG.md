@@ -9,6 +9,8 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`has_str(T)` admits everything `str` formats** -- enums, structs, chars, bytes and
+  containers, not just int/bool/float/string -- so `result.expect` takes corelib's enum errors.
 - **`for x in` over bytes works, and over a string binds each byte as an `int`** (as the
   spec and the checker always said): it bound a `char`, so `str(c)` gave the glyph. **Breaking**
   for code that relied on that: write `chr(c)`.
