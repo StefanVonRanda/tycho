@@ -1,0 +1,53 @@
+const BIG = 100
+
+enum Shape:
+    Circle(float)
+    Rect(float, float)
+    Dot
+
+struct Item:
+    name: string
+    shape: Shape
+
+fn area(s: Shape) -> float:
+    match s:
+        Circle(r): return 3.0 * r * r
+        Rect(w, h): return w * h
+        Dot: return 0.0
+
+fn size(n: int) -> string:
+    match n:
+        0: return "none"
+        1..9: return "few"
+        BIG: return "big"
+        _: return "many"
+
+fn yes(b: bool) -> string:
+    match b:
+        true: return "y"
+        false: return "n"
+
+fn main():
+    items := [Item("c", Circle(2.0)), Item("r", Rect(2.0, 3.5)), Item("d", Dot)]
+    total := 0.0
+    for it in items:
+        total = total + area(it.shape)
+        if it.shape is Dot:
+            println(it.name + " is a dot")
+    println(str(total))
+    println(size(0) + " " + size(5) + " " + size(100) + " " + size(42) + " " + size(-3))
+    println(yes(true) + yes(false))
+    s := Rect(1.0, 1.0)
+    copy := s
+    s = Dot
+    match copy:
+        Rect(w, h): println("still a rect " + str(w + h))
+        _: println("changed")
+    count := 0
+    for it in items:
+        match it.shape:
+            Circle(r):
+                if r > 1.0:
+                    count += 10
+            _: count += 1
+    println(str(count))

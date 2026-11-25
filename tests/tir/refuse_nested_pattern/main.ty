@@ -1,0 +1,10 @@
+# expect: tir: a value of type Option(int) is not in the script subset
+fn first(xs: [int]) -> Option(int):
+    if len(xs) == 0:
+        return None
+    return Some(xs[0])
+
+fn main():
+    match first([3]):
+        Some(v): println(str(v))
+        None: println("none")

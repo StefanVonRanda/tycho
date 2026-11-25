@@ -1,0 +1,321 @@
+struct Item name:string shape:@Shape
+enum Shape Circle(float) Rect(float,float) Dot
+fn area(s:@Shape) -> float
+  local 1 $m:@Shape
+  local 2 r:float
+  local 3 w:float
+  local 4 h:float
+  block
+    block
+      let 1 $m
+        local 0 s :@Shape
+      block
+        if
+          bin == :bool
+            tag :int
+              local 1 $m :@Shape
+            int 0 :int
+          block
+            let 2 r
+              payload 0  :float
+                local 1 $m :@Shape
+            return
+              bin * :float
+                bin * :float
+                  float 3.0 :float
+                  local 2 r :float
+                local 2 r :float
+          block
+            if
+              bin == :bool
+                tag :int
+                  local 1 $m :@Shape
+                int 1 :int
+              block
+                let 3 w
+                  payload 0  :float
+                    local 1 $m :@Shape
+                let 4 h
+                  payload 1  :float
+                    local 1 $m :@Shape
+                return
+                  bin * :float
+                    local 3 w :float
+                    local 4 h :float
+              block
+                if
+                  bin == :bool
+                    tag :int
+                      local 1 $m :@Shape
+                    int 2 :int
+                  block
+                    return
+                      float 0.0 :float
+                  block
+fn size(n:int) -> string
+  local 1 $m:int
+  block
+    block
+      let 1 $m
+        local 0 n :int
+      block
+        if
+          bin == :bool
+            local 1 $m :int
+            int 0 :int
+          block
+            return
+              str "none" :string
+          block
+            if
+              bin and :bool
+                bin >= :bool
+                  local 1 $m :int
+                  int 1 :int
+                bin <= :bool
+                  local 1 $m :int
+                  int 9 :int
+              block
+                return
+                  str "few" :string
+              block
+                if
+                  bin == :bool
+                    local 1 $m :int
+                    int 100 :int
+                  block
+                    return
+                      str "big" :string
+                  block
+                    return
+                      str "many" :string
+fn yes(b:bool) -> string
+  local 1 $m:bool
+  block
+    block
+      let 1 $m
+        local 0 b :bool
+      block
+        if
+          bin == :bool
+            local 1 $m :bool
+            bool 1 :bool
+          block
+            return
+              str "y" :string
+          block
+            if
+              bin == :bool
+                local 1 $m :bool
+                bool 0 :bool
+              block
+                return
+                  str "n" :string
+              block
+fn main() -> void
+  local 0 items:arr(@Item)
+  local 1 total:float
+  local 2 $c:arr(@Item)
+  local 3 $i:int
+  local 4 it:@Item
+  local 5 s:@Shape
+  local 6 copy:@Shape
+  local 7 $m:@Shape
+  local 8 w:float
+  local 9 h:float
+  local 10 count:int
+  local 11 $c:arr(@Item)
+  local 12 $i:int
+  local 13 it:@Item
+  local 14 $m:@Shape
+  local 15 r:float
+  block
+    let 0 items
+      array :arr(@Item)
+        new Item :@Item
+          str "c" :string
+          variant Shape 0 :@Shape
+            float 2.0 :float
+        new Item :@Item
+          str "r" :string
+          variant Shape 1 :@Shape
+            float 2.0 :float
+            float 3.5 :float
+        new Item :@Item
+          str "d" :string
+          variant Shape 2 :@Shape
+    let 1 total
+      float 0.0 :float
+    block
+      let 2 $c
+        local 0 items :arr(@Item)
+      let 3 $i
+        int 0 :int
+      loop
+        bin < :bool
+          local 3 $i :int
+          builtin len :int
+            local 2 $c :arr(@Item)
+        block
+          let 4 it
+            index :@Item
+              local 2 $c :arr(@Item)
+              local 3 $i :int
+          set
+            local 1 total :float
+            bin + :float
+              local 1 total :float
+              call area :float
+                field 1 shape :@Shape
+                  local 4 it :@Item
+          if
+            bin == :bool
+              tag :int
+                field 1 shape :@Shape
+                  local 4 it :@Item
+              int 2 :int
+            block
+              expr
+                builtin println :void
+                  bin + :string
+                    field 0 name :string
+                      local 4 it :@Item
+                    str " is a dot" :string
+            block
+        block
+          set
+            local 3 $i :int
+            bin + :int
+              local 3 $i :int
+              int 1 :int
+    expr
+      builtin println :void
+        builtin str :string
+          local 1 total :float
+    expr
+      builtin println :void
+        bin + :string
+          bin + :string
+            bin + :string
+              bin + :string
+                bin + :string
+                  bin + :string
+                    bin + :string
+                      bin + :string
+                        call size :string
+                          int 0 :int
+                        str " " :string
+                      call size :string
+                        int 5 :int
+                    str " " :string
+                  call size :string
+                    int 100 :int
+                str " " :string
+              call size :string
+                int 42 :int
+            str " " :string
+          call size :string
+            un - :int
+              int 3 :int
+    expr
+      builtin println :void
+        bin + :string
+          call yes :string
+            bool 1 :bool
+          call yes :string
+            bool 0 :bool
+    let 5 s
+      variant Shape 1 :@Shape
+        float 1.0 :float
+        float 1.0 :float
+    let 6 copy
+      local 5 s :@Shape
+    set
+      local 5 s :@Shape
+      variant Shape 2 :@Shape
+    block
+      let 7 $m
+        local 6 copy :@Shape
+      block
+        if
+          bin == :bool
+            tag :int
+              local 7 $m :@Shape
+            int 1 :int
+          block
+            let 8 w
+              payload 0  :float
+                local 7 $m :@Shape
+            let 9 h
+              payload 1  :float
+                local 7 $m :@Shape
+            expr
+              builtin println :void
+                bin + :string
+                  str "still a rect " :string
+                  builtin str :string
+                    bin + :float
+                      local 8 w :float
+                      local 9 h :float
+          block
+            expr
+              builtin println :void
+                str "changed" :string
+    let 10 count
+      int 0 :int
+    block
+      let 11 $c
+        local 0 items :arr(@Item)
+      let 12 $i
+        int 0 :int
+      loop
+        bin < :bool
+          local 12 $i :int
+          builtin len :int
+            local 11 $c :arr(@Item)
+        block
+          let 13 it
+            index :@Item
+              local 11 $c :arr(@Item)
+              local 12 $i :int
+          block
+            let 14 $m
+              field 1 shape :@Shape
+                local 13 it :@Item
+            block
+              if
+                bin == :bool
+                  tag :int
+                    local 14 $m :@Shape
+                  int 0 :int
+                block
+                  let 15 r
+                    payload 0  :float
+                      local 14 $m :@Shape
+                  if
+                    bin > :bool
+                      local 15 r :float
+                      float 1.0 :float
+                    block
+                      set
+                        local 10 count :int
+                        bin + :int
+                          local 10 count :int
+                          int 10 :int
+                    block
+                block
+                  set
+                    local 10 count :int
+                    bin + :int
+                      local 10 count :int
+                      int 1 :int
+        block
+          set
+            local 12 $i :int
+            bin + :int
+              local 12 $i :int
+              int 1 :int
+    expr
+      builtin println :void
+        builtin str :string
+          local 10 count :int

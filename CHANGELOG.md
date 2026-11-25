@@ -54,7 +54,8 @@ builtins and corelib signatures.
 
 - **`tychoc --emit-tir`**: the typed IR of the script subset -- every expression typed,
   every local a slot, every conversion explicit -- for back ends other than C
-  (docs/internals/tir.md).
+  (docs/internals/tir.md). It covers scalars, structs, enums with payloads, arrays,
+  functions, loops and `match`.
 
 ### Corelib
 

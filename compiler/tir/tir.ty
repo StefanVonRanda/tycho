@@ -9,10 +9,13 @@ package tir
 # Types are the checker's encoding (compiler/types/tcheck.ty): int float bool
 # string, arr(T), @Name for a declared struct. A statement's ty is "".
 #
-# The script subset (v1): int, float, bool and string scalars; structs; arrays;
-# functions (with inout parameters); if/elif/else, `for cond`, three-clause
-# `for`, `for x in array`, break/continue/return; calls to user functions and
-# to the builtins. Anything else is refused by name, never lowered wrongly.
+# The script subset: int, float, bool and string scalars; structs; enums (with
+# payloads; not generic); arrays; functions (with inout parameters);
+# if/elif/else, `for cond`, three-clause `for`, `for x in array`,
+# break/continue/return; `match` on an enum, int, char or bool and `x is V`
+# (lowered to tests of TAG and literals: no match node); calls to user
+# functions and to the builtins. Anything else is refused by name, never
+# lowered wrongly.
 
 # Expressions
 const INT = 1                 # i: the value (a char literal is an INT)
@@ -30,6 +33,9 @@ const ARRAY = 12              # kids: the elements; ty: arr(T)
 const NEW = 13                # s: the struct's mangled name; kids: the fields, in order
 const ADDR = 14               # kids: a place passed to an inout parameter
 const CONV = 15               # kids: a value converted to ty (an int literal at a float, ...)
+const VARIANT = 16            # s: the enum's mangled name; i: the variant's tag (its index); kids: the payload
+const TAG = 17                # kids: an enum value; ty int: its variant's tag
+const PAYLOAD = 18            # i: the payload's index; kids: an enum value (whose tag the code has tested)
 # Statements
 const BLOCK = 20              # kids: statements; its locals end with it
 const EXPR = 21               # kids: the value, discarded
@@ -72,8 +78,17 @@ struct Struct:
     name: string              # mangled
     fields: [Field]
 
+struct Variant:
+    name: string
+    payload: [string]         # its payload's types, in order
+
+struct Enum:
+    name: string              # mangled
+    variants: [Variant]       # in declaration order: a variant's index is its tag
+
 struct Module:
     structs: [Struct]
+    enums: [Enum]
     funcs: [Func]
     errs: [string]            # a program outside the subset, or a checker error
 
@@ -82,7 +97,7 @@ fn node(op: int, ty: string, line: int) -> Node:
 
 fn op_name(op: int) -> string:
     names := ["?", "int", "float", "bool", "str", "local", "bin", "un", "call", "builtin", "field",
-              "index", "array", "new", "addr", "conv", "?", "?", "?", "?", "block", "expr", "let",
+              "index", "array", "new", "addr", "conv", "variant", "tag", "payload", "?", "block", "expr", "let",
               "set", "if", "loop", "break", "continue", "return"]
     if op < 0 or op >= len(names):
         return "?"
@@ -95,6 +110,18 @@ fn dump(m: Module) -> string:
         out = out + "struct " + s.name
         for f in s.fields:
             out = out + " " + f.name + ":" + f.ty
+        out = out + "\n"
+    for e in m.enums:
+        out = out + "enum " + e.name
+        for v in e.variants:
+            out = out + " " + v.name
+            if len(v.payload) > 0:
+                out = out + "("
+                for i := 0; i < len(v.payload); i += 1:
+                    if i > 0:
+                        out = out + ","
+                    out = out + v.payload[i]
+                out = out + ")"
         out = out + "\n"
     for f in m.funcs:
         out = out + "fn " + f.name + "("
@@ -121,8 +148,10 @@ fn _dump_node(n: Node, depth: int) -> string:
         line = line + " " + str(n.f)
     elif n.op == STR:
         line = line + " " + _quote(n.s)
-    elif n.op == LOCAL or n.op == LET or n.op == FIELD:
+    elif n.op == LOCAL or n.op == LET or n.op == FIELD or n.op == PAYLOAD:
         line = line + " " + str(n.i) + " " + n.s
+    elif n.op == VARIANT:
+        line = line + " " + n.s + " " + str(n.i)
     elif len(n.s) > 0:
         line = line + " " + n.s
     if len(n.ty) > 0:

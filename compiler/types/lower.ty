@@ -22,7 +22,7 @@ struct Lw:
 # The typed IR of a program, or the reasons it has none (checker errors first).
 fn lower(p: Program) -> tir.Module:
     cs := check(p)
-    mod := tir.Module([]tir.Struct, []tir.Func, []string)
+    mod := tir.Module([]tir.Struct, []tir.Enum, []tir.Func, []string)
     if len(check_errs(cs)) > 0:
         mod.errs = check_errs(cs)
         return mod
@@ -36,6 +36,14 @@ fn lower(p: Program) -> tir.Module:
             for k := 0; k < len(td.fnames); k += 1:
                 push(fs, tir.Field(td.fnames[k], td.ftypes[k]))
             push(mod.structs, tir.Struct(td.name, fs))
+        if td.kind == "enum" and not td.generic:
+            vs := []tir.Variant
+            for k := 0; k < len(td.fnames); k += 1:
+                pay := []string
+                if len(td.ftypes[k]) > 0:
+                    pay = split(td.ftypes[k], "|")
+                push(vs, tir.Variant(td.fnames[k], pay))
+            push(mod.enums, tir.Enum(td.name, vs))
     for f in p.files:
         cs.file = f.path
         cs.prefix = f.prefix
@@ -238,6 +246,8 @@ fn _lw_stmt(cs: inout C, lw: inout Lw, s: ast.Stmt, b: inout tir.Node):
             lw.names = lw.names[0:nm]
             lw.slots = lw.slots[0:nm]
             push(b.kids, outer)
+        ast.MatchS(l, subj, arms):
+            _lw_match(&cs, &lw, l, subj[0], arms, &b)
         ast.ForIn(l, v, coll, body, par):
             if par:
                 _lw_err(&cs, &lw, l, "`parallel for`")
@@ -251,11 +261,143 @@ fn _stmt_kind(s: ast.Stmt) -> string:
         ast.MDecl(l, d, ns, r): return "a destructuring or multi-assign"
         ast.ForRange(l, n, c, b): return "a `parallel for` over a range"
         ast.ParallelS(l, w, b): return "`parallel`"
-        ast.MatchS(l, c, a): return "`match`"
         ast.SelectS(l, a): return "`select`"
         ast.DeleteS(l, k): return "`delete`"
         _: return "this statement"
     return "this statement"
+
+# `match` as the tests it means, on the scrutinee held in a hidden local:
+#   { $m := subj; if <arm 1 test> { binds; body } else { if <arm 2 test> ... else { `_` arm } } }
+# The checker has proven the arms exhaustive and disjoint, so their order and an
+# empty final else are exact.
+fn _lw_match(cs: inout C, lw: inout Lw, l: int, subj: ast.Expr, arms: [ast.Arm], b: inout tir.Node):
+    sv := _lw_ex(&cs, &lw, subj, "?")
+    st := _base(&cs, sv.ty)
+    ti := _tdecl(&cs, st)
+    is_enum := ti >= 0 and cs.tds[ti].kind == "enum"
+    if not is_enum and st != "int" and st != "bool":
+        _lw_err(&cs, &lw, l, "`match` on " + _show(&cs, sv.ty))
+        return
+    outer := tir.node(tir.BLOCK, "", l)
+    m := _vmark(&cs)
+    nm := len(lw.names)
+    ms := _lw_local(&lw, "$m", sv.ty, false)
+    lm := tir.node(tir.LET, "", l)
+    lm.i = ms
+    lm.s = "$m"
+    push(lm.kids, sv)
+    push(outer.kids, lm)
+    push(outer.kids, _lw_arms(&cs, &lw, arms, 0, ms, sv.ty, is_enum, l))
+    _vrestore(&cs, m)
+    lw.names = lw.names[0:nm]
+    lw.slots = lw.slots[0:nm]
+    push(b.kids, outer)
+
+# Arms i.. as a block: an IF on arm i's test, the rest in its else.
+fn _lw_arms(cs: inout C, lw: inout Lw, arms: [ast.Arm], i: int, ms: int, st: string, is_enum: bool, l: int) -> tir.Node:
+    blk := tir.node(tir.BLOCK, "", l)
+    if i >= len(arms):
+        return blk
+    a := arms[i]
+    cs.line = a.line
+    if len(a.sub) > 0 or len(a.subbinds) > 0:
+        _lw_err(&cs, &lw, a.line, "a nested match pattern")
+        return blk
+    wild := a.kind != "scalar" and a.name == "_"
+    for p in a.pats:
+        if p.kind == "name" and p.loname == "_":
+            wild = true
+    m := _vmark(&cs)
+    nm := len(lw.names)
+    body := tir.node(tir.BLOCK, "", a.line)
+    test := tir.node(tir.BOOL, "bool", a.line)
+    test.i = 1
+    if not wild:
+        if is_enum:
+            tag := _lw_tag(&cs, st, a.name)
+            if tag < 0:
+                _lw_err(&cs, &lw, a.line, "the arm '" + a.name + "'")
+                return blk
+            test = _lw_tag_eq(_lw_ref(ms, "$m", st, a.line), tag, a.line)
+            pay := _variant_payload(&cs, st, a.name)
+            for k := 0; k < len(a.binds); k += 1:
+                pt := "?"
+                if k < len(pay):
+                    pt = pay[k]
+                _vpush(&cs, a.binds[k], pt, true)
+                cs.mbind[a.binds[k]] = true
+                pl := tir.node(tir.PAYLOAD, pt, a.line)
+                pl.i = k
+                push(pl.kids, _lw_ref(ms, "$m", st, a.line))
+                lb := tir.node(tir.LET, "", a.line)
+                lb.i = _lw_local(&lw, a.binds[k], pt, false)
+                lb.s = a.binds[k]
+                push(lb.kids, pl)
+                push(body.kids, lb)
+        else:
+            test = _lw_scalar_test(&cs, &lw, a, ms, st)
+    for s in a.body:
+        _lw_stmt(&cs, &lw, s, &body)
+    _vrestore(&cs, m)
+    lw.names = lw.names[0:nm]
+    lw.slots = lw.slots[0:nm]
+    if wild:
+        return body
+    n := tir.node(tir.IF, "", a.line)
+    push(n.kids, test)
+    push(n.kids, body)
+    push(n.kids, _lw_arms(&cs, &lw, arms, i + 1, ms, st, is_enum, l))
+    push(blk.kids, n)
+    return blk
+
+# A scalar arm's test: any of its patterns -- a literal, a lo..hi range, or a
+# named int constant -- matching the scrutinee.
+fn _lw_scalar_test(cs: inout C, lw: inout Lw, a: ast.Arm, ms: int, st: string) -> tir.Node:
+    tests := []tir.Node
+    if a.kind != "scalar":
+        cv := _const_int(&cs, a.name)
+        push(tests, _lw_eq(ms, st, cv[1], a.line))
+    for p in a.pats:
+        lo := p.lo
+        hi := p.hi
+        if p.kind == "name":
+            lo = _const_int(&cs, p.loname)[1]
+            hi = lo
+            if p.ranged:
+                hi = _const_int(&cs, p.hiname)[1]
+        if p.ranged and lo != hi:
+            ge := _lw_cmp(">=", ms, st, lo, a.line)
+            le := _lw_cmp("<=", ms, st, hi, a.line)
+            both := tir.node(tir.BIN, "bool", a.line)
+            both.s = "and"
+            push(both.kids, ge)
+            push(both.kids, le)
+            push(tests, both)
+        else:
+            push(tests, _lw_eq(ms, st, lo, a.line))
+    out := tests[0]
+    for k := 1; k < len(tests); k += 1:
+        o := tir.node(tir.BIN, "bool", a.line)
+        o.s = "or"
+        push(o.kids, out)
+        push(o.kids, tests[k])
+        out = o
+    return out
+
+fn _lw_eq(ms: int, st: string, v: int, l: int) -> tir.Node:
+    return _lw_cmp("==", ms, st, v, l)
+
+fn _lw_cmp(op: string, ms: int, st: string, v: int, l: int) -> tir.Node:
+    n := tir.node(tir.BIN, "bool", l)
+    n.s = op
+    push(n.kids, _lw_ref(ms, "$m", st, l))
+    if st == "bool":
+        bv := tir.node(tir.BOOL, "bool", l)
+        bv.i = v
+        push(n.kids, bv)
+    else:
+        push(n.kids, _lw_int(v, l))
+    return n
 
 # `if c1: A elif c2: B else: C` -> IF(c1, A, { IF(c2, B, C) })
 fn _lw_if(cs: inout C, lw: inout Lw, arms: [ast.IfArm], i: int, els: [ast.Stmt], l: int) -> tir.Node:
@@ -341,6 +483,16 @@ fn _lw_forin(cs: inout C, lw: inout Lw, l: int, v: string, coll: ast.Expr, body:
     lw.slots = lw.slots[0:nm]
     push(b.kids, outer)
 
+# TAG(v) == tag
+fn _lw_tag_eq(v: tir.Node, tag: int, l: int) -> tir.Node:
+    tg := tir.node(tir.TAG, "int", l)
+    push(tg.kids, v)
+    eq := tir.node(tir.BIN, "bool", l)
+    eq.s = "=="
+    push(eq.kids, tg)
+    push(eq.kids, _lw_int(tag, l))
+    return eq
+
 fn _lw_int(v: int, l: int) -> tir.Node:
     n := tir.node(tir.INT, "int", l)
     n.i = v
@@ -364,6 +516,53 @@ fn _lw_conv(v: tir.Node, want: string) -> tir.Node:
     c := tir.node(tir.CONV, want, v.line)
     push(c.kids, v)
     return c
+
+fn _lw_typedecl_ok(cs: inout C, ti: int) -> bool:
+    k := cs.tds[ti].kind
+    return (k == "struct" or k == "enum") and not cs.tds[ti].generic
+
+# The mangled variant a name (as written in this file) means, or "".
+fn _lw_variant(cs: inout C, nm: string) -> string:
+    if len(cs.prefix) > 0 and (cs.prefix + nm) in cs.vowner:
+        return cs.prefix + nm
+    if nm in cs.vowner:
+        return nm
+    return ""
+
+# A variant's tag: its index among its enum's variants.
+fn _lw_tag(cs: inout C, et: string, vname: string) -> int:
+    ti := _tdecl(&cs, _base(&cs, et))
+    if ti < 0:
+        return -1
+    for k := 0; k < len(cs.tds[ti].fnames); k += 1:
+        if cs.tds[ti].fnames[k] == vname:
+            return k
+    return -1
+
+# The variant `mv` (mangled) of type t, with its payload arguments.
+fn _lw_mkvariant(cs: inout C, lw: inout Lw, l: int, mv: string, args: [ast.Expr], t: string) -> tir.Node:
+    et := cs.vowner[mv]
+    ti := _tdecl(&cs, et)
+    if ti < 0 or cs.tds[ti].generic:
+        _lw_err(&cs, &lw, l, "a variant of a generic enum")
+        return _lw_int(0, l)
+    vname := mv
+    if len(cs.tds[ti].pfx) > 0 and len(mv) > len(cs.tds[ti].pfx) and mv[0:len(cs.tds[ti].pfx)] == cs.tds[ti].pfx:
+        vname = mv[len(cs.tds[ti].pfx):len(mv)]
+    tag := _lw_tag(&cs, et, vname)
+    if tag < 0:
+        _lw_err(&cs, &lw, l, "the variant '" + mv + "'")
+        return _lw_int(0, l)
+    n := tir.node(tir.VARIANT, et, l)
+    n.s = cs.tds[ti].name
+    n.i = tag
+    pay := _variant_payload(&cs, et, vname)
+    for i := 0; i < len(args); i += 1:
+        w := "?"
+        if i < len(pay):
+            w = pay[i]
+        push(n.kids, _lw_conv(_lw_ex(&cs, &lw, args[i], w), w))
+    return n
 
 fn _lw_scalar_ok(t: string) -> bool:
     return t == "int" or t == "float" or t == "bool" or t == "string" or t == "void"
@@ -398,7 +597,7 @@ fn _lw_ex(cs: inout C, lw: inout Lw, e: ast.Expr, want: string) -> tir.Node:
     h := _head(_base(&cs, t))
     if not _lw_scalar_ok(t) and h != "arr" and _tdecl(&cs, t) < 0:
         _lw_err(&cs, &lw, l, "a value of type " + _show(&cs, t))
-    elif _tdecl(&cs, t) >= 0 and cs.tds[_tdecl(&cs, t)].kind != "struct":
+    elif _tdecl(&cs, t) >= 0 and not _lw_typedecl_ok(&cs, _tdecl(&cs, t)):
         _lw_err(&cs, &lw, l, "a value of " + cs.tds[_tdecl(&cs, t)].kind + " type " + _show(&cs, t))
     match e:
         ast.IntLit(l2, v):
@@ -431,6 +630,9 @@ fn _lw_ex(cs: inout C, lw: inout Lw, e: ast.Expr, want: string) -> tir.Node:
                 k = nm
             if len(k) > 0:
                 return _lw_conv(_lw_ex(&cs, &lw, lw.consts[k], want), t)
+            mv := _lw_variant(&cs, nm)
+            if len(mv) > 0:
+                return _lw_mkvariant(&cs, &lw, l, mv, []ast.Expr, t)
             _lw_err(&cs, &lw, l, "the name '" + nm + "' as a value")
             return _lw_int(0, l)
         ast.Field(l2, k, f):
@@ -441,6 +643,8 @@ fn _lw_ex(cs: inout C, lw: inout Lw, e: ast.Expr, want: string) -> tir.Node:
                         mc := _prefix_of(&cs, q) + f
                         if mc in lw.consts:
                             return _lw_conv(_lw_ex(&cs, &lw, lw.consts[mc], want), t)
+                        if mc in cs.vowner:
+                            return _lw_mkvariant(&cs, &lw, l, mc, []ast.Expr, t)
                         _lw_err(&cs, &lw, l, "'" + q + "." + f + "'")
                         return _lw_int(0, l)
                 _: pass
@@ -510,6 +714,13 @@ fn _lw_ex(cs: inout C, lw: inout Lw, e: ast.Expr, want: string) -> tir.Node:
             n := tir.node(tir.ADDR, t, l)
             push(n.kids, _lw_ex(&cs, &lw, k[0], "?"))
             return n
+        ast.IsVar(l2, k, q, vn):
+            subj := _lw_ex(&cs, &lw, k[0], "?")
+            tag := _lw_tag(&cs, subj.ty, vn)
+            if tag < 0:
+                _lw_err(&cs, &lw, l, "`is` on " + _show(&cs, subj.ty))
+                return _lw_int(0, l)
+            return _lw_tag_eq(subj, tag, l)
         ast.Call(l2, q, nm, ts, args):
             return _lw_call(&cs, &lw, l, q, nm, args, t)
         _:
@@ -529,7 +740,6 @@ fn _expr_kind(e: ast.Expr) -> string:
         ast.Lambda(l, p, r, b): return "a lambda"
         ast.MapLit(l, k): return "a map"
         ast.EmptyMap(l, t): return "a map"
-        ast.IsVar(l, k, q, v): return "`is`"
         ast.SomeE(l, k): return "an Option"
         ast.NoneE(l): return "an Option"
         ast.OkE(l, k): return "a Result"
@@ -601,6 +811,8 @@ fn _lw_named(cs: inout C, lw: inout Lw, l: int, m: string, nm: string, args: [as
             push(n.kids, _lw_conv(_lw_ex(&cs, &lw, args[i], sg.ptypes[i]), sg.ptypes[i]))
         cs.in_arg = keep
         return n
+    if m in cs.vowner:
+        return _lw_mkvariant(&cs, &lw, l, m, args, t)
     if m in cs.tindex:
         ti := cs.tindex[m]
         if cs.tds[ti].kind == "struct" and not cs.tds[ti].generic:

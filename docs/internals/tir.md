@@ -30,12 +30,19 @@ an IR.
 
 The node kinds and their fields are listed in `compiler/tir/tir.ty`.
 
-## The script subset (v1)
+## The script subset
 
-int, float, bool and string scalars; structs; arrays; functions, including
+int, float, bool and string scalars; structs; enums with payloads (not generic);
+arrays; functions, including
 `inout` parameters; `s[i]` on a string (its byte, an int); `if`/`elif`/`else`, `for cond:`, three-clause `for`,
-`for x in array`, `break`, `continue`, `return`; calls to user functions and to
-the builtins.
+`for x in array`, `break`, `continue`, `return`; `match` on an enum, int, char or
+bool, and `x is V`; calls to user functions and to the builtins.
+
+`match` has no node of its own: it is the tests it means, on the scrutinee held in
+a hidden `$m` local -- `TAG($m) == tag` for an enum arm (its bindings `PAYLOAD($m, k)`),
+literals, ranges and named constants for a scalar arm, `_` as the final else. The
+checker has already proven the arms exhaustive and disjoint. `x is V` is
+`TAG(x) == tag`. A variant is `VARIANT` (enum, tag, payload).
 
 Anything else is **refused by name** (`tir: `match` is not in the script subset`),
 never lowered wrongly. A function's first refusal is its answer: past it the
