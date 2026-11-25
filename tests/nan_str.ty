@@ -1,0 +1,13 @@
+# FRICTION 254: a NaN prints as "nan" whatever its sign bit -- x86-64's 0/0
+# sets it, arm64's does not, and negating one sets it everywhere -- so str()
+# of the same computation reads the same on every target.
+
+fn div(a: float, b: float) -> float:
+    return a / b
+
+fn main():
+    n := div(0.0, 0.0)
+    println(str(n))
+    println(str(-n))
+    println(str(0.0 - n))
+    println(f"{n} {-n}")

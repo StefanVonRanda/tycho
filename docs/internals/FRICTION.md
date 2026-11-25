@@ -1469,3 +1469,13 @@ non-generic function returning nothing still cannot be bound, in an instance or 
 > Pinned-by: grep -q "^retry: true true true$" tests/result_void_generic.out
 > Pinned-by: test -f tests/reject/void_bind_in_void_generic.ty
 > Pinned-by: test -f tests/abort/result_void_generic_die.err
+
+### 254. `str()` of a NaN printed its sign bit, which is the platform's — **FIXED 2026-11-25**
+
+Urani's determinism work: `str(0.0 / 0.0)` printed `-nan` on x86-64 (whose 0/0 sets the
+sign bit) and `nan` on arm64 (whose does not), and `str(-n)` printed `-nan` everywhere, so
+the same computation printed differently on two machines. The runtime formatted a NaN with
+`%.17g`, which shows the sign. A NaN now prints as `nan` whatever its bits: the sign of a
+NaN carries no meaning a program can rely on, and printing it made output platform-dependent.
+
+> Pinned-by: test "$(cat tests/nan_str.out)" = "$(printf 'nan\nnan\nnan\nnan nan')"

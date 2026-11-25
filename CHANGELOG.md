@@ -127,6 +127,8 @@ builtins and corelib signatures.
 
 ### Changed
 
+- **`str()` of a NaN is `nan` on every platform**: its sign bit, which x86-64's `0/0`
+  sets and arm64's does not, no longer shows. FRICTION 254.
 - **A generic's `$T` may be `void`**: in the instance a `$T` value is an empty placeholder
   that binds, passes to `Ok` and returns, so `result.map_err`, `map_err_with` and
   `expect` (and any generic over `Result($T, E)`) work at `Result(void, E)`. Binding a

@@ -2105,7 +2105,10 @@ static int ty_fix_decimal_point(char *s, int n) {
 }
 
 static int ty_fmt_shortest(char *b, size_t bs, double x) {
-    if (x != x) return snprintf(b, bs, "%.17g", x);
+    /* a NaN prints as "nan" on every target: its sign bit is the platform's
+     * (x86-64's 0/0 sets it, arm64's does not), and "-nan" would make str()
+     * of the same computation differ between them (FRICTION 254) */
+    if (x != x) return snprintf(b, bs, "nan");
     int m = 0;
     for (int p = 15; p <= 17; p++) {
         m = snprintf(b, bs, "%.*g", p, x);
