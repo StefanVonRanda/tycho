@@ -1,0 +1,4 @@
+package engine
+
+extern fn action_down(name: string) -> bool
+extern fn log(msg: string)

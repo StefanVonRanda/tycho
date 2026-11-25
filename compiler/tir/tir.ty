@@ -36,6 +36,7 @@ const CONV = 15               # kids: a value converted to ty (an int literal at
 const VARIANT = 16            # s: the enum's mangled name; i: the variant's tag (its index); kids: the payload
 const TAG = 17                # kids: an enum value; ty int: its variant's tag
 const PAYLOAD = 18            # i: the payload's index; kids: an enum value (whose tag the code has tested)
+const EXTERN = 19             # s: an `extern fn`'s symbol; kids: its arguments -- a call out to the host
 # Statements
 const BLOCK = 20              # kids: statements; its locals end with it
 const EXPR = 21               # kids: the value, discarded
@@ -86,9 +87,17 @@ struct Enum:
     name: string              # mangled
     variants: [Variant]       # in declaration order: a variant's index is its tag
 
+# An `extern fn` the program calls: for a host that is not C (a script VM),
+# the calls it must answer.
+struct Extern:
+    name: string              # the symbol
+    params: [string]          # parameter types: int, float, bool or string
+    ret: string               # one of those, or "void"
+
 struct Module:
     structs: [Struct]
     enums: [Enum]
+    externs: [Extern]         # in order of first call
     funcs: [Func]
     errs: [string]            # a program outside the subset, or a checker error
 
@@ -97,7 +106,7 @@ fn node(op: int, ty: string, line: int) -> Node:
 
 fn op_name(op: int) -> string:
     names := ["?", "int", "float", "bool", "str", "local", "bin", "un", "call", "builtin", "field",
-              "index", "array", "new", "addr", "conv", "variant", "tag", "payload", "?", "block", "expr", "let",
+              "index", "array", "new", "addr", "conv", "variant", "tag", "payload", "extern", "block", "expr", "let",
               "set", "if", "loop", "break", "continue", "return"]
     if op < 0 or op >= len(names):
         return "?"
@@ -111,6 +120,13 @@ fn dump(m: Module) -> string:
         for f in s.fields:
             out = out + " " + f.name + ":" + f.ty
         out = out + "\n"
+    for x in m.externs:
+        out = out + "extern " + x.name + "("
+        for i := 0; i < len(x.params); i += 1:
+            if i > 0:
+                out = out + ","
+            out = out + x.params[i]
+        out = out + ") -> " + x.ret + "\n"
     for e in m.enums:
         out = out + "enum " + e.name
         for v in e.variants:

@@ -36,7 +36,10 @@ int, float, bool and string scalars; structs; enums with payloads (not generic);
 arrays; functions, including
 `inout` parameters; `s[i]` on a string (its byte, an int); `if`/`elif`/`else`, `for cond:`, three-clause `for`,
 `for x in array`, `break`, `continue`, `return`; `match` on an enum, int, char or
-bool, and `x is V`; calls to user functions and to the builtins.
+bool, and `x is V`; calls to user functions and to the builtins; calls to an
+`extern fn` taking and returning int, float, bool or string, as `EXTERN` (a call
+out to the host: the module lists each extern the program calls, with its
+signature, for a host that is not C -- a script VM's engine -- to bind).
 
 `match` has no node of its own: it is the tests it means, on the scrutinee held in
 a hidden `$m` local -- `TAG($m) == tag` for an enum arm (its bindings `PAYLOAD($m, k)`),

@@ -1,0 +1,8 @@
+package main
+
+import "engine"
+
+fn main():
+    n := 0
+    if engine.action_down("forward"):
+        engine.log("go " + str(n))

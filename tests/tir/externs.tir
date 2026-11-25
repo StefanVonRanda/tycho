@@ -1,0 +1,18 @@
+extern action_down(string) -> bool
+extern log(string) -> void
+fn main() -> void
+  local 0 n:int
+  block
+    let 0 n
+      int 0 :int
+    if
+      extern action_down :bool
+        str "forward" :string
+      block
+        expr
+          extern log :void
+            bin + :string
+              str "go " :string
+              builtin str :string
+                local 0 n :int
+      block

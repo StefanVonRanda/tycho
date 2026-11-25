@@ -1,0 +1,7 @@
+# expect: tir: the extern 'sum' taking [int] is not in the script subset
+package main
+
+import "engine"
+
+fn main():
+    println(str(engine.sum([1, 2])))

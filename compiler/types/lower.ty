@@ -18,15 +18,17 @@ struct Lw:
     errs: [string]
     file: string
     consts: [string: ast.Expr]   # mangled const -> its value
+    externs: [tir.Extern]
+    extseen: [string: bool]
 
 # The typed IR of a program, or the reasons it has none (checker errors first).
 fn lower(p: Program) -> tir.Module:
     cs := check(p)
-    mod := tir.Module([]tir.Struct, []tir.Enum, []tir.Func, []string)
+    mod := tir.Module([]tir.Struct, []tir.Enum, []tir.Extern, []tir.Func, []string)
     if len(check_errs(cs)) > 0:
         mod.errs = check_errs(cs)
         return mod
-    lw := Lw([]string, []int, []tir.Local, []string, "", []string: ast.Expr)
+    lw := Lw([]string, []int, []tir.Local, []string, "", []string: ast.Expr, []tir.Extern, []string: bool)
     for f in p.files:
         for cd in f.unit.consts:
             lw.consts[f.prefix + cd.name] = cd.value
@@ -57,6 +59,7 @@ fn lower(p: Program) -> tir.Module:
                 continue                   # a `[$N]T` function is a template too
             fn_out := _lower_fn(&cs, &lw, fd, si)
             push(mod.funcs, fn_out)
+    mod.externs = lw.externs
     mod.errs = lw.errs
     return mod
 
@@ -564,6 +567,9 @@ fn _lw_mkvariant(cs: inout C, lw: inout Lw, l: int, mv: string, args: [ast.Expr]
         push(n.kids, _lw_conv(_lw_ex(&cs, &lw, args[i], w), w))
     return n
 
+fn _lw_cross_ok(t: string) -> bool:
+    return t == "int" or t == "float" or t == "bool" or t == "string"
+
 fn _lw_scalar_ok(t: string) -> bool:
     return t == "int" or t == "float" or t == "bool" or t == "string" or t == "void"
 
@@ -773,7 +779,13 @@ fn _lw_call(cs: inout C, lw: inout Lw, l: int, q: string, nm: string, args: [ast
             return _lw_int(0, l)
         return _lw_named(&cs, &lw, l, cs.sg[si].name, nm, args2, t)
     if len(q) > 0:
-        return _lw_named(&cs, &lw, l, _prefix_of(&cs, q) + nm, nm, args, t)
+        m := _prefix_of(&cs, q) + nm
+        # an extern is registered under its C symbol, unmangled, as _call resolves it
+        if _sigidx(&cs, m) < 0 and nm in cs.extfn:
+            si := _sigidx(&cs, nm)
+            if si >= 0 and cs.sg[si].pfx == _prefix_of(&cs, q):
+                m = nm
+        return _lw_named(&cs, &lw, l, m, nm, args, t)
     if _shape_builtin(nm) or nm == "to_ptr":
         return _lw_builtin(&cs, &lw, l, nm, args, t, -1)
     if len(_vtype(&cs, nm)) > 0:
@@ -798,8 +810,22 @@ fn _lw_named(cs: inout C, lw: inout Lw, l: int, m: string, nm: string, args: [as
         if sg.builtin:
             return _lw_builtin(&cs, &lw, l, nm, args, t, si)
         if m in cs.extfn or nm in cs.extfn:
-            _lw_err(&cs, &lw, l, "a call to the extern function '" + nm + "'")
-            return _lw_int(0, l)
+            # a call out to the host: only scalars and strings cross
+            for k := 0; k < len(sg.ptypes); k += 1:
+                if not _lw_cross_ok(sg.ptypes[k]) or sg.pflags[k] != "":
+                    _lw_err(&cs, &lw, l, "the extern '" + nm + "' taking " + _show(&cs, sg.ptypes[k]))
+                    return _lw_int(0, l)
+            if not _lw_cross_ok(sg.ret) and sg.ret != "void":
+                _lw_err(&cs, &lw, l, "the extern '" + nm + "' returning " + _show(&cs, sg.ret))
+                return _lw_int(0, l)
+            if not (sg.name in lw.extseen):
+                lw.extseen[sg.name] = true
+                push(lw.externs, tir.Extern(sg.name, sg.ptypes, sg.ret))
+            n := tir.node(tir.EXTERN, t, l)
+            n.s = sg.name
+            for i := 0; i < len(args); i += 1:
+                push(n.kids, _lw_conv(_lw_ex(&cs, &lw, args[i], sg.ptypes[i]), sg.ptypes[i]))
+            return n
         if len(args) != len(sg.ptypes):
             _lw_err(&cs, &lw, l, "a call with a variable argument count")
             return _lw_int(0, l)
