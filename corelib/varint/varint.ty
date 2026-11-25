@@ -17,6 +17,8 @@ fn put_u64(v: u64) -> bytes:
             return to_bytes(out)
     return to_bytes(out)
 
+# The value at b[at], and how many bytes it took -- a length, not the next
+# index: the next value starts at at + that.
 fn get_u64(b: bytes, at: int) -> Result((u64, int), VarintErr):
     if at < 0 or at >= len(b):
         return Err(Truncated)
@@ -43,6 +45,7 @@ fn put_i64(v: int) -> bytes:
         u = ~u
     return put_u64(u)
 
+# As get_u64, zigzag-decoded: the value and how many bytes it took.
 fn get_i64(b: bytes, at: int) -> Result((int, int), VarintErr):
     match get_u64(b, at):
         Ok(pair):
