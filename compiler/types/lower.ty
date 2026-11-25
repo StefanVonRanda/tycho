@@ -567,8 +567,21 @@ fn _lw_mkvariant(cs: inout C, lw: inout Lw, l: int, mv: string, args: [ast.Expr]
         push(n.kids, _lw_conv(_lw_ex(&cs, &lw, args[i], w), w))
     return n
 
-fn _lw_cross_ok(t: string) -> bool:
-    return t == "int" or t == "float" or t == "bool" or t == "string"
+# What may cross to the host: a scalar, a string, or a struct of int, float
+# and bool fields (a record the host copies field by field: a script VM's
+# entity fields).
+fn _lw_cross_ok(cs: C, t: string) -> bool:
+    if t == "int" or t == "float" or t == "bool" or t == "string":
+        return true
+    if len(t) < 2 or t[0] != 64 or not (t[1:len(t)] in cs.tindex):
+        return false
+    td := cs.tds[cs.tindex[t[1:len(t)]]]
+    if td.kind != "struct" or td.generic or len(td.ftypes) == 0:
+        return false
+    for ft in td.ftypes:
+        if ft != "int" and ft != "float" and ft != "bool":
+            return false
+    return true
 
 fn _lw_scalar_ok(t: string) -> bool:
     return t == "int" or t == "float" or t == "bool" or t == "string" or t == "void"
@@ -810,12 +823,12 @@ fn _lw_named(cs: inout C, lw: inout Lw, l: int, m: string, nm: string, args: [as
         if sg.builtin:
             return _lw_builtin(&cs, &lw, l, nm, args, t, si)
         if m in cs.extfn or nm in cs.extfn:
-            # a call out to the host: only scalars and strings cross
+            # a call out to the host: scalars, strings and records of scalars cross
             for k := 0; k < len(sg.ptypes); k += 1:
-                if not _lw_cross_ok(sg.ptypes[k]) or sg.pflags[k] != "":
+                if not _lw_cross_ok(cs, sg.ptypes[k]) or sg.pflags[k] != "":
                     _lw_err(&cs, &lw, l, "the extern '" + nm + "' taking " + _show(&cs, sg.ptypes[k]))
                     return _lw_int(0, l)
-            if not _lw_cross_ok(sg.ret) and sg.ret != "void":
+            if not _lw_cross_ok(cs, sg.ret) and sg.ret != "void":
                 _lw_err(&cs, &lw, l, "the extern '" + nm + "' returning " + _show(&cs, sg.ret))
                 return _lw_int(0, l)
             if not (sg.name in lw.extseen):

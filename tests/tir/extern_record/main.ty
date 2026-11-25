@@ -1,0 +1,15 @@
+package main
+
+# A record of scalars crosses to the host whole: a script VM's entity fields.
+struct Fields:
+    health: int
+    glow: float
+    lit: bool
+
+extern fn ent_fields(e: int) -> Fields
+extern fn set_ent_fields(e: int, f: Fields)
+
+fn main():
+    f := ent_fields(3)
+    f.health = f.health - 10
+    set_ent_fields(3, f)

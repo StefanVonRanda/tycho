@@ -91,7 +91,7 @@ struct Enum:
 # the calls it must answer.
 struct Extern:
     name: string              # the symbol
-    params: [string]          # parameter types: int, float, bool or string
+    params: [string]          # parameter types: int, float, bool, string, or @Struct of int/float/bool fields
     ret: string               # one of those, or "void"
 
 struct Module:

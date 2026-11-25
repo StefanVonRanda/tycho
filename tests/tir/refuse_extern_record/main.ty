@@ -1,0 +1,13 @@
+# expect: tir: the extern 'put' taking Packed is not in the script subset
+package main
+
+# Only int, float and bool fields cross to a script host: a sized scalar is a
+# POD struct to C, not to the VM.
+struct Packed:
+    n: u32
+    k: int
+
+extern fn put(x: Packed)
+
+fn main():
+    put(Packed(to_u32(1), 2))

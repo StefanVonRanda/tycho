@@ -1421,3 +1421,18 @@ workaround (0.106 s against 0.176 s without the borrow).
 > Pinned-by: grep -q "^source written: 1 99$" tests/ro_borrow.out
 > Pinned-by: grep -q "^10,20,99, 3$" tests/self_truncate.out
 > Pinned-by: test -f tests/abort/self_truncate_oob.ty
+
+### 252. A script host could not take a record across an extern — **FIXED 2026-11-25**
+
+Urani's entities keep their typed fields in the engine, declared by the game script as a
+record (`struct Fields` of int, float and bool fields) that the script reads and writes whole:
+`extern fn ent_fields(e: int) -> Fields`. The C checker already lets a POD struct cross an
+extern, but the typed IR's script subset refused anything but scalars and strings ("the
+extern 'ent_fields' returning Fields is not in the script subset"), so the only way to give a
+script typed entity fields was one engine call per field, by a name string checked at run time.
+TIR lowering now lets a struct cross when all its fields are int, float or bool (a record the
+host copies cell by cell); one with a string, array, enum, sized-scalar or nested-struct field
+is still refused by name. The host still verifies the record's shape when it loads the bytecode.
+
+> Pinned-by: grep -q "extern ent_fields(int) -> @Fields" tests/tir/extern_record.tir
+> Pinned-by: grep -q "taking Packed is not in the script subset" tests/tir/refuse_extern_record/main.ty

@@ -125,6 +125,12 @@ builtins and corelib signatures.
   (`select(x)`), `return` in a lambda body, a lambda body on its own line, and
   Python's inline `a if c else b` (which names the value `if` instead).
 
+### Changed
+
+- **The typed IR lets a record of scalars cross an extern** (`extern fn ent_fields(e: int) ->
+  Fields`, a struct of int, float and bool fields), so a script host can hand typed records to
+  the script. FRICTION 252.
+
 ### Performance
 
 - **A binding that only reads shares its source** (`f := xs[i]` then reading `f.x`): no deep

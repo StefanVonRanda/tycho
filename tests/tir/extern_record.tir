@@ -1,0 +1,20 @@
+struct Fields health:int glow:float lit:bool
+extern ent_fields(int) -> @Fields
+extern set_ent_fields(int,@Fields) -> void
+fn main() -> void
+  local 0 f:@Fields
+  block
+    let 0 f
+      extern ent_fields :@Fields
+        int 3 :int
+    set
+      field 0 health :int
+        local 0 f :@Fields
+      bin - :int
+        field 0 health :int
+          local 0 f :@Fields
+        int 10 :int
+    expr
+      extern set_ent_fields :void
+        int 3 :int
+        local 0 f :@Fields
