@@ -266,7 +266,9 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if len(promoted) > 0:
                 cs.concat_scratch = sav5
             cs.share_place = true
+            cs.ro_borrow = _place(rhs[0]) and _ro_borrow(&cs, n, rhs[0], l)
             c, t := _rhs3(&cs, rhs[0], want, own5, true)
+            cs.ro_borrow = false
             cs.share_place = false
             cs.concat_scratch = oldconcat
             cs.projection = path5
@@ -353,6 +355,11 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 return ind + _vcname(&cs, n) + " = " + gc + ";\n"
             if t == "?":
                 t = ""
+            # `xs = xs[0:n]` shrinks xs where it stands (FRICTION 251)
+            if _is_arr(t):
+                trunc := _self_truncate(&cs, n, k[0], ind)
+                if len(trunc) > 0:
+                    return trunc
             # `out = out + X` on an accumulator becomes an in-place append,
             # which is what makes a concat loop linear instead of quadratic.
             if (t == "string" or t == "bytes") and len(_accof(&cs, n)) > 0:
@@ -1381,3 +1388,39 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
         # C provably returns on every path.
         out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT(); }\n"
     return out2 + ind + "}\n"
+
+# `xs = xs[0:n]` (or `xs[:n]`) on an array: a length change where xs stands,
+# not two copies of the kept prefix (FRICTION 251). An array is uniquely owned
+# -- assignment deep-copies, a move hands the buffer over whole -- so nothing
+# else sees the buffer shrink. `hi` is checked as the slice checks it -- outside
+# 0..len it traps with the slice's message -- and evaluated first, so
+# `xs = xs[0:len(xs) - 1]` reads the old length. "" when the statement is not
+# that shape.
+fn _self_truncate(cs: inout C, n: string, rhs: ast.Expr, ind: string) -> string:
+    match rhs:
+        ast.Slice(l, hl, hh, kk):
+            same := false
+            match kk[0]:
+                ast.Name(l2, n2): same = n2 == n
+                _: pass
+            if not same:
+                return ""
+            j := 1
+            if hl:
+                match kk[1]:
+                    ast.IntLit(l3, v3):
+                        if v3 != 0:
+                            return ""
+                    _: return ""
+                j = 2
+            if not hh:
+                return ind + ";\n"            # xs = xs[0:] keeps everything
+            hc, ht := _ex(&cs, kk[j])
+            th := _fresh(&cs, "_th")
+            x := _vcname(&cs, n)
+            return ind + "{ tycho_int " + th + " = (tycho_int)(" + hc + "); if (" + th + " < 0 || " + th + " > (" + x +
+                ").len) { fprintf(stderr, \"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
+                "(tycho_int)0, " + th + ", (" + x + ").len); TYCHO_EXIT(); } (" + x + ").len = " + th + "; }\n"
+        _: return ""
+    return ""
+

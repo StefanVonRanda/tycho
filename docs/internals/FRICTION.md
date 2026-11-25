@@ -1400,3 +1400,24 @@ refused the error types most of corelib returns. `has_str(T)` now admits exactly
 accepts (the checker asks the same function), and spec 05's table says so.
 
 > Pinned-by: grep -q "^Bad(4) | Bad(4)$" tests/has_str_all.out
+
+### 251. A binding that only reads deep-copied its source, and `xs = xs[0:n]` copied twice — **FIXED 2026-11-25**
+
+Profiling Urani's script VM found the same trap twice: `d := vm.p.descs[i]` and
+`fn_ := vm.p.funcs[f]`, each only read, deep-copied a struct -- its strings and arrays -- on
+every call; together they were most of the VM's time on struct-heavy and call-heavy scripts.
+And `xs = xs[0:n]`, to shrink an array, copied the kept prefix twice. Both compile without a
+word, and value semantics make the copies unobservable, so the compiler may drop them:
+- a read-only borrow: `f := <place>` shares the source when neither can change while f is in
+  scope -- f and the source's root variable each appear afterwards only as the base of a field
+  or index read; a bare use, an assignment, a store, `&`, a method call, a mutating builtin on a
+  chain rooted there, a re-declaration or a mention in a lambda keeps the copy, as does any
+  spawn or parallel in the function (`TYCHOC_NO_RO_BORROW=1` turns it off);
+- `xs = xs[0:n]` (or `xs[:n]`) on an array is a length change where xs stands, trapping as the
+  slice does when n is outside 0..len.
+Urani's VM written the natural way (`d := vm.p.descs[...]`) now runs as fast as the hand-made
+workaround (0.106 s against 0.176 s without the borrow).
+
+> Pinned-by: grep -q "^source written: 1 99$" tests/ro_borrow.out
+> Pinned-by: grep -q "^10,20,99, 3$" tests/self_truncate.out
+> Pinned-by: test -f tests/abort/self_truncate_oob.ty

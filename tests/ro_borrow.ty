@@ -1,0 +1,80 @@
+# FRICTION 251: `f := <place>` shares the source when neither side can change
+# while f is in scope -- and copies in every case below, where one can. Each
+# refused case prints what a wrong borrow would get wrong.
+struct F:
+    name: string
+    ks: [int]
+
+struct P:
+    fs: [F]
+
+fn bump(f: inout F):
+    push(f.ks, 100)
+
+fn grow(p: inout P):
+    push(p.fs[0].ks, 7)
+
+fn first(p: P) -> F:
+    f := p.fs[0]
+    return f                            # f escapes: copied
+
+fn read_only(fs: [F], i: int) -> int:
+    f := fs[i]                          # borrowed: only reads follow
+    return len(f.ks) + len(f.name) + f.ks[0]
+
+fn mk() -> P:
+    return P([F("a", [1, 2]), F("bb", [3])])
+
+fn main():
+    p := mk()
+    println("read only " + str(read_only(p.fs, 0)) + " " + str(read_only(p.fs, 1)))
+
+    a := mk()
+    f1 := a.fs[0]
+    a.fs[0].ks[0] = 99                  # the source written while f1 lives
+    println("source written: " + str(f1.ks[0]) + " " + str(a.fs[0].ks[0]))
+
+    b := mk()
+    f2 := b.fs[0]
+    f2.ks[0] = 55                       # f written
+    println("f written: " + str(f2.ks[0]) + " " + str(b.fs[0].ks[0]))
+
+    c := mk()
+    f3 := c.fs[0]
+    push(c.fs[0].ks, 9)                 # a push onto the source
+    println("push on source: " + str(len(f3.ks)) + " " + str(len(c.fs[0].ks)))
+
+    d := mk()
+    f4 := d.fs[0]
+    grow(&d)                            # an inout call on the source
+    println("inout source: " + str(len(f4.ks)) + " " + str(len(d.fs[0].ks)))
+
+    e := mk()
+    f5 := e.fs[1]
+    bump(&e.fs[1])                      # an inout call on the very element
+    println("inout element: " + str(len(f5.ks)) + " " + str(len(e.fs[1].ks)))
+
+    g := mk()
+    f6 := g.fs[0]
+    h := f6                             # f moved on
+    push(h.ks, 4)
+    println("moved: " + str(len(h.ks)) + " " + str(len(g.fs[0].ks)))
+
+    m := mk()
+    r := first(m)
+    push(m.fs[0].ks, 8)                 # the source changed after f was returned
+    println("returned: " + str(len(r.ks)) + " " + str(len(m.fs[0].ks)))
+
+    q := mk()
+    total := 0
+    for i := 0; i < 2; i += 1:
+        fi := q.fs[i]
+        q.fs[i].ks[0] = 0               # the source written later in the same iteration
+        total = total + fi.ks[0]
+    println("loop: " + str(total))
+
+    s := mk()
+    f7 := s.fs[0]
+    s = mk()                            # the source's root reassigned
+    s.fs[0].ks[0] = 77
+    println("root reassigned: " + str(f7.ks[0]) + " " + str(s.fs[0].ks[0]))

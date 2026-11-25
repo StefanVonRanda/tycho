@@ -1,0 +1,10 @@
+read only 4 6
+source written: 1 99
+f written: 55 1
+push on source: 2 3
+inout source: 2 3
+inout element: 1 2
+moved: 3 2
+returned: 2 3
+loop: 4
+root reassigned: 1 77

@@ -127,6 +127,9 @@ builtins and corelib signatures.
 
 ### Performance
 
+- **A binding that only reads shares its source** (`f := xs[i]` then reading `f.x`): no deep
+  copy when neither side can change while it lives; and `xs = xs[0:n]` shrinks the array in
+  place instead of copying it twice. FRICTION 251.
 - **A loop that calls a closure resets its scratch arena with one load** instead of four
   (`sort_by` ~6% faster).
 - **`TYCHO_ARENA_STATS` no longer serialises threads**: counting is per thread, published at

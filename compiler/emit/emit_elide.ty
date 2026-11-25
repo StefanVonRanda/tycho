@@ -656,6 +656,8 @@ fn _rhs3(cs: inout C, e: ast.Expr, want: string, arena: string, mv: bool) -> (st
     if sl9 and (t == "string" or t == "bytes"):
         return (c, t)
     if _place(e) and _heap(&cs, t):
+        if cs.ro_borrow:
+            return (c, t)                     # a read-only borrow: nothing can change either side
         if _own_path_ok(&cs, e):
             return (c, t)
         if _shared_get_expr(&cs, e):
@@ -675,3 +677,280 @@ fn _rhs3(cs: inout C, e: ast.Expr, want: string, arena: string, mv: bool) -> (st
         c = _tofloat(c)
         t = "float"
     return (c, t)
+
+# --- read-only borrow (copy elision for a binding that only reads) ----------
+#
+# FRICTION 251. `f := fs[i]` deep-copies a heap value so the two are
+# independent. When neither side can change while f is in scope, the copy is
+# unobservable waste: f may share the source's buffers. The rule, checked over
+# the statements after the binding in its block (and everything nested in
+# them), is one uniform test applied to f AND to the source's root variable r:
+# each may appear only as the base of a field or index READ (`f.x`, `r.ks[i]`).
+# A bare use (it could be moved, returned, sent, consumed by a sink), an
+# assignment, a store, `&`, a method call (it may take the receiver inout), a
+# mutating builtin on a chain rooted there, a re-declaration of the name, or any
+# mention inside a lambda refuses the borrow; so does any spawn or parallel in
+# the function. Escape hatch: TYCHOC_NO_RO_BORROW=1.
+
+fn _ro_borrow(cs: inout C, n: string, rhs: ast.Expr, line: int) -> bool:
+    if len(getenv("TYCHOC_NO_RO_BORROW")) > 0:
+        return false
+    r := _rb_root(rhs)
+    if len(r) == 0 or r == n:
+        return false
+    if _rb_conc_b(cs.pbody):
+        return false
+    # the source's own index expressions are evaluated once, at the binding
+    rest, found := _rb_after(cs.pbody, n, line)
+    if not found:
+        return false
+    return _rb_ok_b(rest, n) and _rb_ok_b(rest, r)
+
+# The variable a place reads from: the Name at the base of a Field/Index/TupIdx
+# chain, or "".
+fn _rb_root(e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n): return n
+        ast.Field(l, k, f): return _rb_root(k[0])
+        ast.Index(l, k): return _rb_root(k[0])
+        ast.TupIdx(l, k, i): return _rb_root(k[0])
+        _: return ""
+    return ""
+
+# The statements after `n := ...` on `line`, in the block that declares it.
+fn _rb_after(b: [ast.Stmt], n: string, line: int) -> ([ast.Stmt], bool):
+    for i := 0; i < len(b); i += 1:
+        match b[i]:
+            ast.Decl(l, dn, t, k, vb):
+                if dn == n and l == line:
+                    return (b[i + 1:len(b)], true)
+            _: pass
+        for sub in _rb_blocks(b[i]):
+            r, ok := _rb_after(sub, n, line)
+            if ok:
+                return (r, true)
+    return ([]ast.Stmt, false)
+
+# The statement lists nested directly in a statement.
+fn _rb_blocks(s: ast.Stmt) -> [[ast.Stmt]]:
+    out := [][ast.Stmt]
+    match s:
+        ast.Decl(l, n, t, k, vb): push(out, vb)
+        ast.IfS(l, arms, e):
+            for a in arms:
+                push(out, a.body)
+            push(out, e)
+        ast.WhileS(l, c, b): push(out, b)
+        ast.For3(l, ip, c, b):
+            push(out, ip)
+            push(out, b)
+        ast.ForIn(l, n, c, b, p): push(out, b)
+        ast.ForRange(l, n, c, b): push(out, b)
+        ast.ParallelS(l, w, b): push(out, b)
+        ast.MatchS(l, c, arms):
+            for a in arms:
+                push(out, a.body)
+        ast.SelectS(l, arms):
+            for a in arms:
+                push(out, a.body)
+        _: pass
+    return out
+
+fn _rb_conc_b(b: [ast.Stmt]) -> bool:
+    for s in b:
+        match s:
+            ast.ParallelS(l, w, bb): return true
+            ast.ForRange(l, n, c, bb): return true
+            ast.ForIn(l, n, c, bb, p):
+                if p:
+                    return true
+            _: pass
+        for e in _rb_exprs(s):
+            if _rb_conc_e(e):
+                return true
+        for sub in _rb_blocks(s):
+            if _rb_conc_b(sub):
+                return true
+    return false
+
+fn _rb_conc_e(e: ast.Expr) -> bool:
+    match e:
+        ast.SpawnE(l, k): return true
+        _: pass
+    for k in _rb_kids(e):
+        if _rb_conc_e(k):
+            return true
+    return false
+
+# The expressions a statement evaluates itself (not those of nested blocks).
+fn _rb_exprs(s: ast.Stmt) -> [ast.Expr]:
+    match s:
+        ast.ExprStmt(l, k): return k
+        ast.Decl(l, n, t, k, vb): return k
+        ast.MDecl(l, d, ns, k): return k
+        ast.Assign(l, n, k): return k
+        ast.PlaceSet(l, k): return k
+        ast.ConstS(l, n, k): return k
+        ast.ReturnS(l, k): return k
+        ast.IfS(l, arms, e):
+            out := []ast.Expr
+            for a in arms:
+                for c in a.cond:
+                    push(out, c)
+            return out
+        ast.WhileS(l, c, b): return c
+        ast.For3(l, ip, c, b): return c
+        ast.ForIn(l, n, c, b, p): return c
+        ast.ForRange(l, n, c, b): return c
+        ast.ParallelS(l, w, b): return w
+        ast.MatchS(l, c, arms): return c
+        ast.SelectS(l, arms):
+            out2 := []ast.Expr
+            for a in arms:
+                for c in a.ch:
+                    push(out2, c)
+            return out2
+        ast.DeleteS(l, k): return k
+        _: return []ast.Expr
+    return []ast.Expr
+
+# Every name a statement binds.
+fn _rb_binds(s: ast.Stmt) -> [string]:
+    match s:
+        ast.Decl(l, n, t, k, vb): return [n]
+        ast.ConstS(l, n, k): return [n]
+        ast.MDecl(l, d, ns, k): return ns
+        ast.ForIn(l, n, c, b, p): return [n]
+        ast.ForRange(l, n, c, b): return [n]
+        ast.MatchS(l, c, arms):
+            out := []string
+            for a in arms:
+                for x in a.binds:
+                    push(out, x)
+                for x in a.subbinds:
+                    push(out, x)
+            return out
+        ast.SelectS(l, arms):
+            out2 := []string
+            for a in arms:
+                for x in a.binds:
+                    push(out2, x)
+            return out2
+        _: return []string
+    return []string
+
+fn _rb_ok_b(b: [ast.Stmt], n: string) -> bool:
+    for s in b:
+        for x in _rb_binds(s):
+            if x == n:
+                return false                  # a re-declaration: the name means something else after it
+        match s:
+            ast.Assign(l, an, k):
+                if an == n:
+                    return false
+            ast.MDecl(l, d, ns, k):
+                for x in ns:
+                    if x == n:
+                        return false
+            ast.PlaceSet(l, k):
+                if _rb_root(k[0]) == n:
+                    return false              # a store into it
+            ast.DeleteS(l, k):
+                if _rb_root(k[0]) == n:
+                    return false
+            _: pass
+        for e in _rb_exprs(s):
+            if not _rb_ok_e(e, n):
+                return false
+        for sub in _rb_blocks(s):
+            if not _rb_ok_b(sub, n):
+                return false
+    return true
+
+# Does every mention of n in e read through a field or index chain?
+fn _rb_ok_e(e: ast.Expr, n: string) -> bool:
+    match e:
+        ast.Name(l, m): return m != n         # bare: could be moved, returned, consumed
+        ast.Field(l, k, f):
+            if _rb_root(e) == n:
+                return _rb_chain_ok(e, n)
+        ast.Index(l, k):
+            if _rb_root(e) == n:
+                return _rb_chain_ok(e, n)
+        ast.TupIdx(l, k, i):
+            if _rb_root(e) == n:
+                return _rb_chain_ok(e, n)
+        ast.Addr(l, k):
+            if _rb_root(k[0]) == n:
+                return false                  # &n...: an inout argument writes it
+        ast.Call(l, q, nm, ts, args):
+            if q == n:
+                return false                  # a method call may take the receiver inout
+            if nm == "push" or nm == "pop" or nm == "reserve" or nm == "insert" or nm == "remove" or
+                    nm == "clear" or nm == "sort" or nm == "swap":
+                for a in args:
+                    if _rb_root(a) == n:
+                        return false          # a mutating builtin on a chain rooted at n
+        ast.CallVal(l, k):
+            match k[0]:
+                ast.Field(l2, fk, fnm):
+                    if _rb_root(fk[0]) == n:
+                        return false          # a method call through a chain rooted at n
+                _: pass
+        ast.Lambda(l, ps, rt, body):
+            return not _rb_mentions(body, n)
+        _: pass
+    for k in _rb_kids(e):
+        if not _rb_ok_e(k, n):
+            return false
+    return true
+
+# A read chain rooted at n: only its index expressions need checking.
+fn _rb_chain_ok(e: ast.Expr, n: string) -> bool:
+    match e:
+        ast.Name(l, m): return true
+        ast.Field(l, k, f): return _rb_chain_ok(k[0], n)
+        ast.TupIdx(l, k, i): return _rb_chain_ok(k[0], n)
+        ast.Index(l, k): return _rb_chain_ok(k[0], n) and _rb_ok_e(k[1], n)
+        _: return false
+    return false
+
+fn _rb_mentions(es: [ast.Expr], n: string) -> bool:
+    for e in es:
+        match e:
+            ast.Name(l, m):
+                if m == n:
+                    return true
+            _: pass
+        if _rb_mentions(_rb_kids(e), n):
+            return true
+    return false
+
+# The sub-expressions of an expression.
+fn _rb_kids(e: ast.Expr) -> [ast.Expr]:
+    match e:
+        ast.FStrLit(l, s, h): return h
+        ast.Field(l, k, f): return k
+        ast.TupIdx(l, k, i): return k
+        ast.Index(l, k): return k
+        ast.Slice(l, a, b, k): return k
+        ast.Call(l, q, n, ts, a): return a
+        ast.CallVal(l, k): return k
+        ast.Named(l, n, k): return k
+        ast.Binop(l, op, k): return k
+        ast.Unop(l, op, k): return k
+        ast.IsVar(l, k, q, v): return k
+        ast.ArrLit(l, k): return k
+        ast.MapLit(l, k): return k
+        ast.Tuple(l, k): return k
+        ast.SomeE(l, k): return k
+        ast.OkE(l, k): return k
+        ast.ErrE(l, k): return k
+        ast.SpawnE(l, k): return k
+        ast.OrRet(l, b, k): return k
+        ast.Spread(l, k): return k
+        ast.Addr(l, k): return k
+        ast.ChanE(l, t, k): return k
+        ast.Lambda(l, p, r, b): return b
+        _: return []ast.Expr
+    return []ast.Expr

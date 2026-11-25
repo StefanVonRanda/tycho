@@ -1,0 +1,6 @@
+# FRICTION 251: an in-place `xs = xs[0:n]` traps as the slice did when n is
+# past the end -- not a silent clamp.
+fn main():
+    xs := [1, 2, 3]
+    xs = xs[0:5]
+    println(str(len(xs)))
