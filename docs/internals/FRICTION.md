@@ -1297,3 +1297,21 @@ return". `result.expect(r, msg)` / `result.expect_some(o, msg)` give the value o
 
 > Pinned-by: test -f tests/result_expect/main.ty
 > Pinned-by: grep -q "^half of 7: odd$" tests/result_expect/expected.err
+
+### 246. The C emitter typed four builtins and operators differently from the checker — **FIXED 2026-11-25**
+
+Found by the type-agreement gate (`make type-agreement`, scripts/type_agreement.py), which compares
+the type the checker and the emitter each give every expression across the tree. Its first run
+listed 427 disagreements in 32 patterns; four were emitter bugs, the rest spellings it now folds.
+- `write_file(...)` was an `int` to the emitter, a `bool` to the spec and the checker:
+  `str(write_file(p, s))` printed `1`, and so did a bool variable holding it.
+- An f32 beside a numeric literal (`x * 3.0`) was computed in double precision: the literal was
+  a double and the f32 widened to it, so writing a value as a literal changed the result
+  (`0.30000000447034836` against `0.30000001192092896` for `x * y`).
+- `to_str(b)` was typed as its argument, `bytes`, and every variable assigned from it with it.
+- `bytes + bytes` was typed `string`.
+The last two share string's C form and showed no output difference yet; any emitter decision
+on the type would have been made on the wrong one.
+
+> Pinned-by: grep -q "^true true$" tests/emitter_types.out
+> Pinned-by: grep -q "^0.30000001192092896 0.30000001192092896 true$" tests/emitter_types.out

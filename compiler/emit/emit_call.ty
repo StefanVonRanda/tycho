@@ -1193,6 +1193,8 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
         return ("tycho_str_get(" + c + ", " + ic + ")", "char")
     if (n == "to_under" or n == "to_str" or n == "to_bool") and len(args) == 1:
         c, t := _ex(&cs, args[0])
+        if n == "to_str":
+            return (c, "string")          # to_str(bytes) is a string: the same buffer, the checker's type
         return (c, t)
     if n == "to_int" and len(args) == 1:
         c, t := _ex(&cs, args[0])
@@ -1288,7 +1290,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
     if n == "write_file" and len(args) == 2:
         c, t := _ex(&cs, args[0])
         d, dt := _ex(&cs, args[1])
-        return ("tycho_write_file(" + c + ", " + d + ")", "int")
+        return ("tycho_write_file(" + c + ", " + d + ")", "bool")    # spec and checker: bool (type agreement)
     if n == "send" and len(args) == 2:
         c, t := _ex(&cs, args[0])
         et := _cinner(t)

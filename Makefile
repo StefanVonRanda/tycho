@@ -240,6 +240,8 @@ wine-ffi:
 	@sh scripts/wine_ffi.sh
 
 test: tychoc
+	@python3 scripts/type_agreement.py --gate > /tmp/tycho_type_agreement.log 2>&1 || { tail -25 /tmp/tycho_type_agreement.log; exit 1; }
+	@tail -1 /tmp/tycho_type_agreement.log
 	@sh tests/tir.sh
 	@sh tests/result_expect.sh
 	@sh tests/compress_limits.sh

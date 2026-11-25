@@ -1246,13 +1246,9 @@ fn _ta_canon(cs: inout C, t0: string) -> string:
     ti := _tdecl(&cs, t)
     if ti >= 0:
         nm := cs.tds[ti].name
-        d := find(nm, "$")
-        if d >= 0:
-            # an instance: the emitter spells Item$string as Item__string
-            args := split(nm[d + 1:len(nm)], ",")
-            nm = nm[0:d]
-            for a in args:
-                nm = nm + "__" + a
+        # an instance keeps its `$args`: the gate compares instances by their
+        # base name, since the emitter mangles arguments its own way (a newtype
+        # erased, a tuple interned)
         if cs.tds[ti].kind == "struct":
             return "S:" + nm
         if cs.tds[ti].kind == "enum":

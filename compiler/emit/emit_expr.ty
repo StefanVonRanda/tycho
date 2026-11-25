@@ -1534,6 +1534,14 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
     a, at := _ex(&cs, ea)
     b, bt := _ex(&cs, eb)
     cs.arena = savebin
+    # A numeric literal (or a named numeric const, FRICTION 240) beside an f32
+    # is an f32, as the checker types it -- not a double the f32 widens to.
+    if at == "f32" and (bt == "float" or bt == "int") and _num_literal(&cs, eb):
+        b = "((float)(" + b + "))"
+        bt = "f32"
+    elif bt == "f32" and (at == "float" or at == "int") and _num_literal(&cs, ea):
+        a = "((float)(" + a + "))"
+        at = "f32"
     if op == "in":
         if not _is_map(bt):
             _bad("`in` tests membership in a map")
@@ -1667,7 +1675,7 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
                 "   " + vr + "; })", rt2)
     if op == "+" and (at == "string" or at == "bytes"):
         if bt == "char":
-            return ("tycho_str_concat_char(" + cs.arena + ", " + a + ", " + b + ")", "string")
+            return ("tycho_str_concat_char(" + cs.arena + ", " + a + ", " + b + ")", at)
         # FLATTEN a chain: `w + x + y + z` parses left-nested, so each `+` would
         # allocate an intermediate and re-copy the whole growing prefix -- O(n^2)
         # bytes for n pieces. The runtime already carries concat3..concat6 (one
@@ -1686,8 +1694,8 @@ fn _binop(cs: inout C, op: string, ea: ast.Expr, eb: ast.Expr) -> (string, strin
                 pre = pre2
             if strings.starts_with(a, pre) and _one_call(a):
                 return ("tycho_str_concat" + str(k + 1) + "(" + cs.arena + ", " +
-                    a[len(pre):len(a) - 1] + ", " + b + ")", "string")
-        return ("tycho_str_concat(" + cs.arena + ", " + a + ", " + b + ")", "string")
+                    a[len(pre):len(a) - 1] + ", " + b + ")", at)
+        return ("tycho_str_concat(" + cs.arena + ", " + a + ", " + b + ")", at)
     if op == "/" and at == "int" and bt == "int":
         return ("tycho_idiv(" + a + ", " + b + ")", "int")
     if op == "%" and at == "int" and bt == "int":
@@ -1763,6 +1771,18 @@ fn _tofloat(c: string) -> string:
         if ok:
             return c[0:n - 2] + ".0"
     return "(double)(" + c + ")"
+
+# A numeric literal, a negated one, or the name of a numeric const.
+fn _num_literal(cs: inout C, e: ast.Expr) -> bool:
+    match e:
+        ast.IntLit(l, v): return true
+        ast.FloatLit(l, v): return true
+        ast.Unop(l, op, k):
+            return op == "-" and _num_literal(&cs, k[0])
+        ast.Name(l, n):
+            return len(_vtype(&cs, n)) == 0 and _cidx(&cs, n) >= 0
+        _: return false
+    return false
 
 fn _widen(a: string, at: string, b: string, bt: string) -> (string, string):
     if at == "float" and bt != "float":

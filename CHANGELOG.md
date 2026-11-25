@@ -146,6 +146,10 @@ builtins and corelib signatures.
 
 ### Fixed
 
+- **The emitter's types agree with the checker's** (FRICTION 246, found by the new
+  `make type-agreement` gate, now part of `make test`): `write_file` returns a bool (it
+  printed `1`); an f32 beside a literal is computed in f32, not double; `to_str(bytes)` is a
+  string and `bytes + bytes` is bytes.
 - **`push(xs, b)` (`xs: [int]`, `b: bytes`) inside a loop kept nothing.** Loops
   cache a pushed-to array's length and storage in locals, and the bulk append
   wrote around that cache, so the loop's write-back erased every appended

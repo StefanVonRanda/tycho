@@ -13,8 +13,9 @@ to its context; a generic body is checked per instance), so its types form a
 set.
 
   python3 scripts/type_agreement.py            # the report
-  python3 scripts/type_agreement.py --gate     # exit 1 if anything disagrees
-                                               # beyond the recorded baseline
+  python3 scripts/type_agreement.py --gate     # exit 1 on any disagreement, or
+                                               # on a checker gap not in the baseline
+  python3 scripts/type_agreement.py --record   # write the checker gaps as the baseline
 """
 import collections, concurrent.futures, glob, os, re, subprocess, sys, tempfile
 
@@ -109,7 +110,7 @@ def _show(n):
     if head.startswith("S:") or head.startswith("E:"):
         head = head.replace("@", "")            # an instance's argument, as the emitter mangles it
     if not args and head.startswith("[") and head.endswith("]"):
-        return head
+        return "[" + _norm(head[1:-1]) + "]"
     return head + ("(" + ",".join(_show(a) for a in args) + ")" if args else "")
 
 
@@ -170,16 +171,26 @@ def matches(ct, et):
     if _norm(ct) == et:
         return True
     if "?" in ct and ct != "?":
-        return re.match(_pattern(ct), et) is not None
+        nc, ne = _norm(ct), _norm_e(et)
+        pat = ""
+        i = 0
+        for m in re.finditer(r"([SE]):([A-Za-z0-9_]+)<>", nc):
+            pat += _pattern(nc[i:m.start()])[1:-1]
+            pat += m.group(1) + ":" + re.escape(m.group(2)) + r"(__[A-Za-z0-9_]+)?<>"
+            i = m.end()
+        pat += _pattern(nc[i:])[1:-1]
+        return re.match("^" + pat + "$", ne) is not None or re.match(_pattern(ct), et) is not None
     return False
 
 
 def is_literal(fp):
-    return re.match(r"^(i-?\d|f-?\d|c\d|un\(-,i|un\(-,f)", fp) is not None
+    # a literal, a negated one, or a named const (FRICTION 240: it adapts like one)
+    return re.match(r"^(i-?\d|f-?\d|c\d|un\(-,i|un\(-,f|n:[A-Z][A-Z0-9_]*$|fld\(n:\w+\.[A-Z][A-Z0-9_]*\)$)", fp) is not None
 
 
 def main():
     gate = "--gate" in sys.argv
+    rec = "--record" in sys.argv
     progs = programs()
     cs = collections.defaultdict(set)
     es = collections.defaultdict(set)
@@ -207,7 +218,7 @@ def main():
             agree += 1
             continue
         known = cs[k] - {"?"}
-        if not known:
+        if not known or "?" in cs[k]:
             unknown.append((k, sorted(cs[k]), sorted(es[k])))
         elif is_literal(k[2]):
             literal.append((k, sorted(cs[k]), sorted(es[k])))
@@ -233,8 +244,19 @@ def main():
             for k, c1, e1 in items[:2]:
                 lines.append("          %s:%d  %s   [%s]" % (k[0], k[1], line_of(k[0], k[1])[:80], k[2][:60]))
     print("\n".join(lines))
+    if rec:
+        with open(BASELINE, "w") as f:
+            f.write("# The checker gaps scripts/type_agreement.py --gate tolerates: expressions the\n")
+            f.write("# checker typed `?` and the emitter typed. Each is a place nothing type-checks;\n")
+            f.write("# closing one removes its line (--record). A disagreement is never tolerated.\n")
+            for k, c, e in sorted(unknown):
+                f.write("%s:%d\t%s\t%s\t%s\n" % (k[0], k[1], k[2], "|".join(c), "|".join(e)))
+        print("\ntype-agreement: recorded %d checker gaps in %s" % (len(unknown), os.path.relpath(BASELINE, ROOT)))
     if gate:
-        cur = sorted("%s:%d\t%s\t%s\t%s" % (k[0], k[1], k[2], "|".join(c), "|".join(e)) for k, c, e in unknown + differ)
+        if differ:
+            print("\ntype-agreement: %d expression(s) typed differently by the checker and the emitter" % len(differ))
+            sys.exit(1)
+        cur = sorted("%s:%d\t%s\t%s\t%s" % (k[0], k[1], k[2], "|".join(c), "|".join(e)) for k, c, e in unknown)
         base = []
         if os.path.exists(BASELINE):
             with open(BASELINE) as f:

@@ -1,0 +1,14 @@
+# The emitter's types agree with the checker's (FRICTION 246, found by
+# scripts/type_agreement.py): write_file is a bool, and a literal beside an f32
+# is an f32 -- not a double the f32 widens to, which changed the result's
+# precision depending on whether a value was written as a literal.
+fn main():
+    ok := write_file("/tmp/tycho_emitter_types.txt", "x")
+    println(str(ok) + " " + str(write_file("/tmp/tycho_emitter_types.txt", "y")))
+    x: f32 = to_f32(0.1)
+    y: f32 = to_f32(3.0)
+    println(str(x * 3.0) + " " + str(x * y) + " " + str(x * 3.0 == x * y))
+    println(str(3.0 * x) + " " + str(x + 1) + " " + str(x - -0.5))
+    b := to_bytes("ab") + to_bytes("cd")
+    s := to_str(b)
+    println(s + " " + str(len(s)) + " " + str(s == "abcd"))
