@@ -232,6 +232,66 @@ fn _ilit(v: int) -> string:
     return str(v) + "LL"
 
 fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
+    c, t := _ex_raw(&cs, e)
+    if cs.trecon:
+        f := ""
+        if cs.cf >= 0 and cs.cf < len(cs.fpath):
+            f = cs.fpath[cs.cf]
+        push(cs.trec, f + "\t" + str(ast.line_of(e)) + "\t" + ast.fingerprint(e) + "\t" + _ta_canon(&cs, t))
+    return (c, t)
+
+# The type-agreement gate's spelling (compiler/types/tcheck.ty@_ta_canon):
+# [T] for an array, S:Name and E:Name for a struct and enum.
+fn _ta_canon(cs: inout C, t: string) -> string:
+    if _is_arr(t):
+        return "[" + _ta_canon(&cs, _elem(t)) + "]"
+    if strings.starts_with(t, "M~"):
+        return "map(" + _ta_canon(&cs, _mkey(&cs, t)) + "," + _ta_canon(&cs, _mval(&cs, t)) + ")"
+    if strings.starts_with(t, "V~"):
+        return "vec(" + str(_vn(&cs, t)) + "," + _ta_canon(&cs, _velem(&cs, t)) + ")"
+    if strings.starts_with(t, "T~"):
+        i := strings.parse_int_prefix(t[2:len(t)])
+        if i >= 0 and i < len(cs.tks):
+            out := "tup("
+            es := split(cs.tks[i], "|")
+            for k := 0; k < len(es); k += 1:
+                if k > 0:
+                    out = out + ","
+                out = out + _ta_canon(&cs, es[k])
+            return out + ")"
+    if strings.starts_with(t, "E~_G"):
+        i := strings.parse_int_prefix(t[4:len(t)])
+        if i >= 0 and i < len(cs.gks):
+            ps := split(cs.gks[i], "|")
+            if ps[0] == "O" and len(ps) == 2:
+                return "opt(" + _ta_canon(&cs, ps[1]) + ")"
+            if ps[0] == "R" and len(ps) == 3:
+                return "res(" + _ta_canon(&cs, ps[1]) + "," + _ta_canon(&cs, ps[2]) + ")"
+    if _is_struct(t):
+        return "S:" + t[2:len(t)]
+    if _is_enum(t):
+        return "E:" + t[2:len(t)]
+    p := find(t, "(")
+    if p > 0 and t[len(t) - 1] == 41:
+        # chan(...) and the like: the arguments in the same spelling
+        out := t[0:p + 1]
+        depth := 0
+        start := p + 1
+        for k := p + 1; k < len(t); k += 1:
+            c := t[k]
+            if c == 40:
+                depth += 1
+            elif c == 41 and depth > 0:
+                depth -= 1
+            elif (c == 44 and depth == 0) or k == len(t) - 1:
+                if start > p + 1:
+                    out = out + ","
+                out = out + _ta_canon(&cs, t[start:k])
+                start = k + 1
+        return out + ")"
+    return t
+
+fn _ex_raw(cs: inout C, e: ast.Expr) -> (string, string):
     match e:
         ast.IntLit(l, v):
             return (_ilit(v), "int")

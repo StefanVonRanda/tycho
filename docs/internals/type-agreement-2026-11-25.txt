@@ -1,0 +1,221 @@
+type agreement over 521 programs (0 did not compile)
+  expressions both sides typed: 222830 -- agree 221952, checker unknown 307, adapted literals 144, differ 427
+  typed by the emitter only (no checker record at that shape): 3140
+
+== THE CHECKER COULD NOT TYPE IT, THE EMITTER DID: 307 expressions in 36 patterns
+    56  n        checker ?                            emitter int                      in 18 file(s)
+          tests/arity_limits_max.ty:95  println(str(x0))   [n:x0]
+          tests/arity_limits_max.ty:97  println(str(x1))   [n:x1]
+    40  bin      checker ?                            emitter string                   in 13 file(s)
+          tests/match_expr.ty:67  println(str(len(words)) + " " + words[0])   [bin(+,bin(+,call(.str,_),s1),idx(,n:words,i0))]
+          tests/result_tuple.ty:33  return "err:sized:" + str(n) + ":" + why   [bin(+,bin(+,bin(+,_,_),s1),n:why)]
+    32  bin      checker ?                            emitter int                      in 10 file(s)
+          tests/const_generic_size.ty:14  return xs[N - 1]                    # N used in an index expression   [bin(-,n:N,i1)]
+          tests/const_generic_size.ty:23  return W + H   [bin(+,n:W,n:H)]
+    29  n        checker ?                            emitter string                   in 16 file(s)
+          tests/match_expr.ty:27  return name   [n:name]
+          tests/match_expr.ty:35  return s   [n:s]
+    23  call     checker ?                            emitter int                      in 6 file(s)
+          tests/lambda_capture_qual.ty:51  f4 := fn(n: int) -> int: o.bump(n)   [call(o.bump,n:n)]
+          tests/subscript.ty:71  r.at(1) = r.at(1) + r.at(0)                       # scalar read + write (20+11)   [call(r.at,i0)]
+    23  call     checker ?                            emitter bool                     in 2 file(s)
+          corelib/container/container.ty:132  if not p.less(p.items[i], p.items[parent]):   [call(p.less,idx(,fld(_.items),n:i),idx(,fld(_.items),n:paren]
+          corelib/container/container.ty:118  if right < n and p.less(p.items[right], p.items[left]):   [call(p.less,idx(,fld(_.items),n:right),idx(,fld(_.items),n:l]
+    21  call     checker ?                            emitter S:*                      in 4 file(s)
+          tests/generic_ctor_bare_arr.ty:8  a : Stack(int) = Stack([])   [call(.Stack,earr)]
+          tests/generic_ctor_bare_arr.ty:12  b : Stack(string) = Stack([])   [call(.Stack,earr)]
+    11  callv    checker ?                            emitter int                      in 6 file(s)
+          tests/map_values.ty:83  println("nestval=" + str(nv.get("a", dn).get("x", 0)))   # nestval=7   [callv(,fld(call(nv.get,_,_).get),s1,i0)]
+          tests/map_values.ty:87  println("place=" + str(nv.get("b", dn).get("z", 0)))     # place=8   [callv(,fld(call(nv.get,_,_).get),s1,i0)]
+     9  fld      checker ?                            emitter int                      in 2 file(s)
+          tests/subscript.ty:62  println("w1=" + str(g.edge(1).weight))           # read through it -> 99   [fld(call(g.edge,i1).weight)]
+          tests/subscript.ty:63  println("w0=" + str(g.edge(0).weight))           # 1 (unchanged)   [fld(call(g.edge,i0).weight)]
+     8  earr     checker ?                            emitter map(string,int)          in 6 file(s)
+          tests/bounded_elems.ty:64  d: [string: int] = []   [earr]
+          tests/fixarr_aggregate.ty:24  d: [string: int] = []   [earr]
+     7  call     checker ?                            emitter E:*                      in 5 file(s)
+          tests/arity_limits_max.ty:92  g := V0$(int, int, int, int, int, int, int, int, int, int, int, int, int, int, i   [call(.V0,i99)]
+          tests/generic_enum.ty:32  return Leaf$(int)   [call(.Leaf)]
+     7  fld      checker ?                            emitter string                   in 2 file(s)
+          tests/subscript.ty:80  println("n=" + c.member(0).name)                  # a heap member -> ann!   [fld(call(c.member,i0).name)]
+          tests/subscript.ty:83  println("p2p=" + c.member(0).name + str(c.member(0).age))   [fld(call(c.member,i0).name)]
+     4  n        checker ?                            emitter E:*                      in 2 file(s)
+          tests/arity_limits_max.ty:93  match g:   [n:g]
+          tests/select_enum_match.ty:31  match v:   [n:v]
+     4  n        checker ?                            emitter [E:*]                    in 1 file(s)
+          corelib/test/toml/main.ty:25  return len(a)   [n:a]
+          corelib/test/toml/main.ty:122  first_varieties := toml.get(fs[0], "varieties")   [n:fs]
+     3  earr     checker ?                            emitter map(int,string)          in 3 file(s)
+          tests/cow_maps.ty:33  sm: [int: string] = []   [earr]
+          tests/newtype_elem_identity.ty:29  names : [int: Name] = []   [earr]
+     3  earr     checker ?                            emitter map(int,S:*)             in 3 file(s)
+          tests/map_missing_composite.ty:6  m : [int: Person] = []   [earr]
+          tests/store_discipline.ty:22  m : [int: Person] = []   [earr]
+     3  idx      checker ?                            emitter E:*                      in 1 file(s)
+          corelib/test/toml/main.ty:122  first_varieties := toml.get(fs[0], "varieties")   [idx(,n:fs,i0)]
+          corelib/test/toml/main.ty:123  second_varieties := toml.get(fs[1], "varieties")   [idx(,n:fs,i1)]
+     2  earr     checker ?                            emitter map(int,int)             in 2 file(s)
+          tests/map_missing_composite.ty:10  s : [int: int] = []   [earr]
+          tests/newtype_elem_identity.ty:21  scores : [Id: int] = []   [earr]
+     2  call     checker ?                            emitter [int]                    in 1 file(s)
+          tests/subscript.ty:78  println("f=" + str(c.pals(0)) + str(c.pals(1)))   # [1] [0,1]   [call(c.pals,i0)]
+          tests/subscript.ty:78  println("f=" + str(c.pals(0)) + str(c.pals(1)))   # [1] [0,1]   [call(c.pals,i1)]
+     2  n        checker ?                            emitter S:*                      in 2 file(s)
+          tools/prunner/main.ty:250  push(acc, r)   [n:r]
+          tools/tycho-flow/main.ty:161  seen = seen + it.idx * 0 + 1   [n:it]
+     2  n        checker ?                            emitter [S:*]                    in 1 file(s)
+          tools/tycho-vm/main.ty:116  if t[i].name == name:   [n:t]
+          tools/tycho-vm/main.ty:123  return t[op]   [n:t]
+     2  idx      checker ?                            emitter S:*                      in 1 file(s)
+          tools/tycho-vm/main.ty:116  if t[i].name == name:   [idx(,n:t,n:i)]
+          tools/tycho-vm/main.ty:123  return t[op]   [idx(,n:t,n:op)]
+     1  earr     checker ?                            emitter map(E:*,int)             in 1 file(s)
+          tests/enum_key.ty:8  m : [Color: int] = []   [earr]
+     1  earr     checker ?                            emitter [int]                    in 1 file(s)
+          tests/generic_ctor_bare_arr.ty:8  a : Stack(int) = Stack([])   [earr]
+     1  earr     checker ?                            emitter [string]                 in 1 file(s)
+          tests/generic_ctor_bare_arr.ty:12  b : Stack(string) = Stack([])   [earr]
+     1  earr     checker ?                            emitter map(E:*,int) | map(S:*,int) | map(int,int) | map(string,int) in 1 file(s)
+          tests/generic_hashable.ty:12  m : [T: int] = []   [earr]
+     1  earr     checker ?                            emitter map(int,[int])           in 1 file(s)
+          tests/map_missing_composite.ty:24  n : [int: [int]] = []   [earr]
+     1  n        checker ?                            emitter [string]                 in 1 file(s)
+          tests/match_expr.ty:67  println(str(len(words)) + " " + words[0])   [n:words]
+     1  idx      checker ?                            emitter string                   in 1 file(s)
+          tests/match_expr.ty:67  println(str(len(words)) + " " + words[0])   [idx(,n:words,i0)]
+     1  fld      checker ?                            emitter i64                      in 1 file(s)
+          tests/packed_inout.ty:25  println(str(bucket.record(0).count))   [fld(call(bucket.record,i0).count)]
+     1  call     checker ?                            emitter float                    in 1 file(s)
+          tests/ufcs_builtins.ty:16  println(str(n.to_float().to_int()))   # chained builtin methods on a scalar   [call(n.to_float)]
+     1  earr     checker ?                            emitter map(int,int) | map(string,int) in 1 file(s)
+          corelib/container/container.ty:254  ix: [$K: int] = []   [earr]
+     1  n        checker ?                            emitter float                    in 1 file(s)
+          corelib/test/toml/main.ty:19  return to_int(f * 2)   [n:f]
+     1  bin      checker ?                            emitter float                    in 1 file(s)
+          corelib/test/toml/main.ty:19  return to_int(f * 2)   [bin(*,n:f,i2)]
+     1  callv    checker ?                            emitter bool                     in 1 file(s)
+          tools/tycho-dupe/main.ty:75  if scan.seen_files.get(key, false):   [callv(,fld(fld(_.seen_files).get),n:key,bfalse)]
+     1  call     checker ?                            emitter res(string,string)       in 1 file(s)
+          tools/tycho-flow/graph/graph.ty:67  match p.check(it.val):   [call(p.check,fld(n:it.val))]
+
+== BOTH TYPED IT, DIFFERENTLY: 427 expressions in 32 patterns
+   169  call     checker string                       emitter bytes                    in 66 file(s)
+          tests/to_bytes_escape.ty:38  println(r.head + " " + to_str(r.body) + " " + str(len(r.body)))   [call(.to_str,fld(n:r.body))]
+          tests/to_bytes_escape.ty:39  println(to_str(d) + " " + str(len(d)))   [call(.to_str,n:d)]
+   149  n        checker string                       emitter bytes                    in 17 file(s)
+          corelib/asn1/asn1.ty:240  n := _parse_node(s, &pos, 0) or_return   [n:s]
+          corelib/asn1/asn1.ty:241  if pos != len(s):   [n:s]
+    39  bin      checker bytes                        emitter string                   in 15 file(s)
+          corelib/test/compress/main.ty:68  println("gzip_concat=" + zs(compress.decompress(member1 + member2)))   [bin(+,n:member1,n:member2)]
+          corelib/test/compress/main.ty:69  println("gzip_trailing=" + zwhy(compress.decompress(member1 + to_bytes("junk")))   [bin(+,n:member1,call(.to_bytes,s4))]
+    18  n        checker bytes                        emitter string                   in 8 file(s)
+          corelib/test/compress/main.ty:85  println("def stream_bytes=" + str(len(out) > 0))   [n:out]
+          corelib/test/compress/main.ty:86  decoded := compress.decompress(out)   [n:out]
+     6  call     checker bool                         emitter int                      in 3 file(s)
+          tests/write_file.ty:8  if write_file(path, body):   [call(.write_file,n:path,n:body)]
+          tests/write_file.ty:20  if write_file(path, "hi"):                       # overwrite truncates   [call(.write_file,n:path,s2)]
+     5  n        checker S:*@Pt__string | S:*(int)__string | S:* | S:*(int__string)__int emitter S:* | S:* | S:* | S:*    in 1 file(s)
+          corelib/intern/intern.ty:12  if k in i.lookup:   [n:i]
+          corelib/intern/intern.ty:13  return Handle(i.lookup[k])   [n:i]
+     3  n        checker E:*@Id                       emitter E:*                      in 2 file(s)
+          tests/generic_enum_param.ty:40  println(str(to_int(unwrap(on, Id(0)))))          # 8   [n:on]
+          tests/generic_over_newtype.ty:22  println(str(to_int(uw(o, Id(0)))))    # 8   [n:o]
+     3  call     checker S:*@Id                       emitter S:*                      in 1 file(s)
+          tests/generic_over_newtype.ty:19  b := Box(Id(5))   [call(.Box,call(.Id,i5))]
+          tests/generic_over_newtype.ty:23  bs := Box(Box(Id(3)))                 # nested generic over newtype   [call(.Box,call(.Id,i3))]
+     3  addr     checker S:*(int)__string             emitter S:*                      in 1 file(s)
+          corelib/test/intern/main.ty:20  p := intern.intern(&j, [1, 2, 3], "triplet")   [addr(,n:j)]
+          corelib/test/intern/main.ty:21  q := intern.intern(&j, [4, 5], "pair")   [addr(,n:j)]
+     3  addr     checker S:*(int__string)__int        emitter S:*                      in 1 file(s)
+          corelib/test/intern/main.ty:36  u := intern.intern(&t, (7, "seven"), 70)   [addr(,n:t)]
+          corelib/test/intern/main.ty:37  v := intern.intern(&t, (8, "eight"), 80)   [addr(,n:t)]
+     2  n        checker i32                          emitter int                      in 1 file(s)
+          tests/const_adapt.ty:17  e := Ev(QUIT, 7, HALF)   [n:QUIT]
+          tests/const_adapt.ty:18  x: i32 = QUIT   [n:QUIT]
+     2  n        checker f32                          emitter float                    in 1 file(s)
+          tests/const_adapt.ty:17  e := Ev(QUIT, 7, HALF)   [n:HALF]
+          tests/const_adapt.ty:20  h: f32 = HALF   [n:HALF]
+     2  bin      checker f32                          emitter float                    in 2 file(s)
+          tests/const_adapt.ty:23  println(str(e.f * HALF) + " " + str(take(QUIT)) + " " + str(QUIT + 1) + " " + st   [bin(*,fld(n:e.f),n:HALF)]
+          tests/neg_literal_adapt.ty:15  println(str(2.0 * -1) + " " + str(2.5 < -1) + " " + str(x * -0.5) + " " + str(y    [bin(*,n:x,un(-,f0.5))]
+     2  call     checker E:*@Id                       emitter E:*                      in 2 file(s)
+          tests/generic_enum_param.ty:39  on := Has(Id(8))                                 # generic enum over a newtype   [call(.Has,call(.Id,i8))]
+          tests/generic_over_newtype.ty:21  o := Has(Id(8))   [call(.Has,call(.Id,i8))]
+     2  slice    checker bytes                        emitter string                   in 1 file(s)
+          corelib/test/compress/main.ty:97  i1 := compress.inflate_chunk(&inf, out[0:half])   [slice(,n:out,i0,n:half)]
+          corelib/test/compress/main.ty:98  i2 := compress.inflate_chunk(&inf, out[half:len(out)])   [slice(,n:out,n:half,call(.len,n:out))]
+     2  n        checker S:*(int)__string             emitter S:*                      in 1 file(s)
+          corelib/test/intern/main.ty:23  println("arr: get(p)=" + intern.get(j, p) + " get(q)=" + intern.get(j, q))   [n:j]
+          corelib/test/intern/main.ty:24  println("arr: canonical=" + str(p == p2) + " count=" + str(intern.count(j)))   [n:j]
+     2  n        checker S:*(int__string)__int        emitter S:*                      in 1 file(s)
+          corelib/test/intern/main.ty:39  println("tu: get(u)=" + str(intern.get(t, u)) + " get(v)=" + str(intern.get(t, v   [n:t]
+          corelib/test/intern/main.ty:40  println("tu: canonical=" + str(u == u2) + " count=" + str(intern.count(t)))   [n:t]
+     1  earr     checker ? | [[int]] | [string]       emitter [[int]] | [string] | map(string,int) in 1 file(s)
+          tests/aggregates.ty:46  g := Graph(rev: [], adj: [], nodes: [], edges: [])   [earr]
+     1  n        checker i64                          emitter int                      in 1 file(s)
+          tests/const_adapt.ty:19  n: i64 = NEG   [n:NEG]
+     1  n        checker float                        emitter int                      in 1 file(s)
+          tests/const_adapt.ty:21  w: float = QUIT   [n:QUIT]
+     1  n        checker S:*@Id                       emitter S:*                      in 1 file(s)
+          tests/generic_over_newtype.ty:20  println(str(to_int(get(b))))          # 5   [n:b]
+     1  n        checker S:*@Box$@Id | S:*@Id         emitter S:* | S:*                in 1 file(s)
+          tests/generic_over_newtype.ty:7  return b.v   [n:b]
+     1  fld      checker S:*@Id | int                 emitter S:* | int                in 1 file(s)
+          tests/generic_over_newtype.ty:7  return b.v   [fld(n:b.v)]
+     1  call     checker S:*(int__int)                emitter S:*                      in 1 file(s)
+          tests/generic_tuple.ty:10  b := GBox((10, 20))   [call(.GBox,tuple(,i10,i20))]
+     1  n        checker S:*(int__int)                emitter S:*                      in 1 file(s)
+          tests/generic_tuple.ty:11  println(str(b.v.0 + b.v.1))        # 30   [n:b]
+     1  call     checker S:*                          emitter S:*                      in 1 file(s)
+          tests/type_double_underscore.ty:15  generic := Box(1)   [call(.Box,i1)]
+     1  n        checker S:*                          emitter S:*                      in 1 file(s)
+          tests/type_double_underscore.ty:17  println(str(generic) + " / " + str(named))   [n:generic]
+     1  fld      checker u16                          emitter int                      in 1 file(s)
+          corelib/test/cbor/main.ty:78  dmax: u16 = cbor.MAX_DEPTH   [fld(n:cbor.MAX_DEPTH)]
+     1  slice    checker string                       emitter bytes                    in 1 file(s)
+          corelib/test/httpd/main.ty:93  got_bin := wire_bin[bsep + 4:len(wire_bin)]   [slice(,n:wire_bin,bin(+,n:bsep,i4),call(.len,n:wire_bin))]
+     1  call     checker S:*(int)__string             emitter S:*                      in 1 file(s)
+          corelib/test/intern/main.ty:19  j := intern.Interner([]string, [][int]: int)   [call(intern.Interner,earr,emap)]
+     1  call     checker S:*(int__string)__int        emitter S:*                      in 1 file(s)
+          corelib/test/intern/main.ty:35  t := intern.Interner([]int, [](int, string): int)   [call(intern.Interner,earr,emap)]
+     1  earr     checker ? | [int] | [string]         emitter [int] | [string] | map(string,int) in 1 file(s)
+          tools/tycho-du/main.ty:68  return Stats(0, 0, 0, 0, [], [], [], [])   [earr]
+
+== A LITERAL THE CHECKER ADAPTED, RECORDED UNADAPTED BY THE EMITTER: 144 expressions in 13 patterns
+    66  f        checker f32                          emitter float                    in 12 file(s)
+          tests/arr_lit_adapt.ty:4  c: [f32] = [1.0, 2.0]   [f1.0]
+          tests/arr_lit_adapt.ty:4  c: [f32] = [1.0, 2.0]   [f2.0]
+    22  i        checker i32                          emitter int                      in 3 file(s)
+          tests/sized_family.ty:29  e: i32 = 5   [i5]
+          corelib/gfx/gfx.ty:79  return Controls(1, 3, 4, 2, 27)   [i1]
+    14  i        checker u8                           emitter int                      in 5 file(s)
+          tests/const_adapt.ty:17  e := Ev(QUIT, 7, HALF)   [i7]
+          tests/shadow_builtin_selection.ty:12  return 99   [i99]
+    10  i        checker u32                          emitter int                      in 2 file(s)
+          tests/arr_lit_adapt.ty:2  a: [u32] = [1, 2]   [i1]
+          tests/arr_lit_adapt.ty:2  a: [u32] = [1, 2]   [i2]
+    10  i        checker float                        emitter int                      in 4 file(s)
+          tests/arr_lit_adapt.ty:3  b: [float] = [1, 2]        # int literals adapt to float, element-wise   [i1]
+          tests/arr_lit_adapt.ty:3  b: [float] = [1, 2]        # int literals adapt to float, element-wise   [i2]
+     6  un       checker f32                          emitter float                    in 4 file(s)
+          tests/neg_literal_adapt.ty:8  b: f32 = -0.5   [un(-,f0.5)]
+          tests/neg_literal_adapt.ty:11  e: vector[4]f32 = [-0.5, 0.25, 1.0, 7.0]   [un(-,f0.5)]
+     5  i        checker u64                          emitter int                      in 3 file(s)
+          tests/sized_ints.ty:17  p: u64 = 10000000000                   # 1e10 (> 2^32)   [i10000000000]
+          tests/sized_ints.ty:18  q: u64 = 5000000000   [i5000000000]
+     3  i        checker i16                          emitter int                      in 2 file(s)
+          tests/neg_literal_adapt.ty:13  y: i16 = 3   [i3]
+          corelib/test/sort/main.ty:165  hs: [i16] = [-300, 5, -2, 1000]   [i5]
+     2  un       checker i8                           emitter int                      in 1 file(s)
+          tests/neg_literal_adapt.ty:9  c: i8 = -128   [un(-,i128)]
+          tests/neg_literal_adapt.ty:10  d: [2]i8 = [-1, 2]   [un(-,i1)]
+     2  i        checker i8                           emitter int                      in 2 file(s)
+          tests/neg_literal_adapt.ty:10  d: [2]i8 = [-1, 2]   [i2]
+          tests/tuple_adapt.ty:14  q: (f32, i8) = (1.5, 7)   [i7]
+     2  un       checker i16                          emitter int                      in 1 file(s)
+          corelib/test/sort/main.ty:165  hs: [i16] = [-300, 5, -2, 1000]   [un(-,i300)]
+          corelib/test/sort/main.ty:165  hs: [i16] = [-300, 5, -2, 1000]   [un(-,i2)]
+     1  i        checker f32                          emitter int                      in 1 file(s)
+          tests/f32_widen_mixed.ty:20  println(str(keep([b, 0.5])) + " " + str(keep([b, 2])))   [i2]
+     1  un       checker float                        emitter int                      in 1 file(s)
+          tests/neg_literal_adapt.ty:7  a: float = -1   [un(-,i1)]

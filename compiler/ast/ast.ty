@@ -295,3 +295,56 @@ fn kids(e: Expr) -> [Expr]:
         Lambda(l, p, t, b): return b
         _: return []Expr
     return []Expr
+
+# An expression's shape as a short string: its kind and what distinguishes it
+# (a name, a literal, an operator), three levels deep. With the file and line,
+# the key under which the checker and the emitter each record the type they
+# give it (the type-agreement gate, scripts/type_agreement.py).
+fn fingerprint(e: Expr) -> string:
+    return _fp(e, 3)
+
+fn _fpk(ks: [Expr], d: int) -> string:
+    out := ""
+    for k in ks:
+        out = out + "," + _fp(k, d)
+    return out
+
+fn _fp(e: Expr, d: int) -> string:
+    if d <= 0:
+        return "_"
+    match e:
+        IntLit(l, v): return "i" + str(v)
+        FloatLit(l, v): return "f" + str(v)
+        StrLit(l, v): return "s" + str(len(v))
+        FStrLit(l, v, h): return "fs" + str(len(h))
+        CharLit(l, v): return "c" + str(v)
+        BoolLit(l, v): return "b" + str(v)
+        NullLit(l): return "null"
+        Name(l, n): return "n:" + n
+        Field(l, k, f): return "fld(" + _fp(k[0], d - 1) + "." + f + ")"
+        TupIdx(l, k, i): return "tup(" + _fp(k[0], d - 1) + "." + str(i) + ")"
+        Index(l, k): return "idx(" + _fpk(k, d - 1) + ")"
+        Slice(l, a, b, k): return "slice(" + _fpk(k, d - 1) + ")"
+        Call(l, q, n, ts, a): return "call(" + q + "." + n + _fpk(a, d - 1) + ")"
+        CallVal(l, k): return "callv(" + _fpk(k, d - 1) + ")"
+        Named(l, n, k): return "named(" + n + _fpk(k, d - 1) + ")"
+        Binop(l, op, k): return "bin(" + op + _fpk(k, d - 1) + ")"
+        Unop(l, op, k): return "un(" + op + _fpk(k, d - 1) + ")"
+        IsVar(l, k, q, v): return "is(" + v + _fpk(k, d - 1) + ")"
+        ArrLit(l, k): return "arr(" + str(len(k)) + _fpk(k, d - 1) + ")"
+        MapLit(l, k): return "map(" + str(len(k)) + ")"
+        EmptyArr(l, t): return "earr"
+        EmptyMap(l, t): return "emap"
+        SoaLit(l, t): return "soa"
+        Tuple(l, k): return "tuple(" + _fpk(k, d - 1) + ")"
+        SomeE(l, k): return "some(" + _fpk(k, d - 1) + ")"
+        OkE(l, k): return "ok(" + _fpk(k, d - 1) + ")"
+        ErrE(l, k): return "err(" + _fpk(k, d - 1) + ")"
+        NoneE(l): return "none"
+        SpawnE(l, k): return "spawn"
+        OrRet(l, b, k): return "orret(" + _fpk(k, d - 1) + ")"
+        Spread(l, k): return "spread"
+        Addr(l, k): return "addr(" + _fpk(k, d - 1) + ")"
+        ChanE(l, t, k): return "chan"
+        Lambda(l, p, r, b): return "lambda"
+    return "?"

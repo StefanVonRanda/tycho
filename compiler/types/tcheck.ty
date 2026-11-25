@@ -1,5 +1,6 @@
 package types
 
+import "core:io"
 import "core:sort"
 import "../ast"
 
@@ -263,6 +264,8 @@ struct C:
                                        # (src/tychoc.c@orelse_mismatch)
     exprdepth: int                     # recursion guard for left-deep binary/unary ASTs
     srclines: [string: [string]]       # split once per file; warning excerpts must not rescan the source per warning
+    trecon: bool                       # TYCHO_TYPEAGREE: record each expression's type ...
+    trec: [string]                     # ... as file, line, shape, type (scripts/type_agreement.py)
 
 fn _cexcerpt(cs: inout C, file: string, line: int) -> string:
     if line <= 0:
@@ -1226,6 +1229,43 @@ fn _ex2(cs: inout C, e: ast.Expr, want0: string) -> string:
     cs.exprdepth += 1
     t := _ex2_inner(&cs, e, want0)
     cs.exprdepth -= 1
+    if cs.trecon:
+        push(cs.trec, cs.file + "\t" + str(ast.line_of(e)) + "\t" + ast.fingerprint(e) + "\t" + _ta_canon(&cs, t))
+    return t
+
+# A type in the spelling both sides of the type-agreement gate record: a
+# newtype as what it wraps (the emitter erases it), [T] for an array, S:Name
+# and E:Name for a declared struct and enum; anything else as it stands.
+fn _ta_canon(cs: inout C, t0: string) -> string:
+    t := _base(&cs, t0)
+    h := _head(t)
+    if h == "arr":
+        return "[" + _ta_canon(&cs, _targs(t)[0]) + "]"
+    if h == "fix":
+        return "[" + _ta_canon(&cs, _targs(t)[1]) + "]"     # emit lowers every array to the dynamic one
+    ti := _tdecl(&cs, t)
+    if ti >= 0:
+        nm := cs.tds[ti].name
+        d := find(nm, "$")
+        if d >= 0:
+            # an instance: the emitter spells Item$string as Item__string
+            args := split(nm[d + 1:len(nm)], ",")
+            nm = nm[0:d]
+            for a in args:
+                nm = nm + "__" + a
+        if cs.tds[ti].kind == "struct":
+            return "S:" + nm
+        if cs.tds[ti].kind == "enum":
+            return "E:" + nm
+        return t
+    if h != t:
+        out := h + "("
+        as := _targs(t)
+        for i := 0; i < len(as); i += 1:
+            if i > 0:
+                out = out + ","
+            out = out + _ta_canon(&cs, as[i])
+        return out + ")"
     return t
 
 fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
@@ -4471,9 +4511,10 @@ fn check_on(p: Program, syms: bool) -> C:
     return check_on2(p, syms, "")
 
 fn check_on2(p: Program, syms: bool, tgt: string) -> C:
-    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: ast.Expr, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string])
+    cs := C([]string, -1, []string: bool, []string: bool, 0, []TDecl, []string: int, []FSig, []string: int, []string: string, []string: string, []string: string, []string: int, []string: ast.Expr, []string: bool, []string: string, []string: bool, []string: int, []string: string, []VBind, 0, []string, []string, []string: int, "", 0, "", "?", false, false, []ast.ImportD, []ast.ImportD, false, 0, 0, false, false, 0, []string: int, []string: bool, []string: bool, 0, 0, false, []string, []string, false, 0, false, "", []string: bool, []string: bool, []Pend, 0, "", []Tail, 0, 0, "", []string: bool, []int, 0, []int, 0, []string: bool, false, 0, []string: [string], false, []string)
     cs.symon = syms
     cs.vtgt = tgt
+    cs.trecon = len(getenv("TYCHO_TYPEAGREE")) > 0
     for f in p.files:
         cs.srclines[f.path] = split(f.src, "\n")
         for im in f.unit.imports:
@@ -4546,6 +4587,13 @@ fn check_on2(p: Program, syms: bool, tgt: string) -> C:
     for e in cs.errs:
         push(cs.perrs, e)
     cs.errs = cs.perrs
+    if cs.trecon and len(cs.trec) > 0:
+        out := ""
+        for r in cs.trec:
+            out = out + "C\t" + r + "\n"
+        if not io.append(getenv("TYCHO_TYPEAGREE"), out):
+            eprintln("tychoc: cannot append to TYCHO_TYPEAGREE")
+        cs.trec = []string
     return cs
 
 fn check_errs(cs: C) -> [string]:

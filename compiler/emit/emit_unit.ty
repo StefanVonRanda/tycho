@@ -1,5 +1,6 @@
 package emit
 
+import "core:io"
 import "../ast"
 import "../types"
 
@@ -670,6 +671,7 @@ fn bounds_report(program: types.Program) -> string:
 fn _program(program: types.Program, dbgf: string, brep: bool) -> string:
     cs := _new()
     cs.dbgfile = dbgf
+    cs.trecon = len(getenv("TYCHO_TYPEAGREE")) > 0
     cs.brep_on = brep
     # A function value carries a 24-byte descriptor (call + two inline capture
     # slots) because it MAY be a closure. A program with no lambda and no extern
@@ -1066,4 +1068,10 @@ fn _program(program: types.Program, dbgf: string, brep: bool) -> string:
     hfd = hfd + "    return 0;\n}\n"
     if brep:
         return _brep_text(&cs)
+    if cs.trecon and len(cs.trec) > 0:
+        tout := ""
+        for r in cs.trec:
+            tout = tout + "E\t" + r + "\n"
+        if not io.append(getenv("TYCHO_TYPEAGREE"), tout):
+            eprintln("tychoc: cannot append to TYCHO_TYPEAGREE")
     return head + xpro + protos + cpr + lpr + "\n" + hfd + chd + spd + cbd + lbd + fns + entry
