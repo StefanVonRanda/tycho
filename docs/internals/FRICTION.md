@@ -1272,3 +1272,15 @@ rest of the function. The C emitter resolved the call on its own, so the program
 with a signature now takes the receiver as its first argument, as the shape builtins already did.
 
 > Pinned-by: grep -q "builtin split :arr(string)" tests/tir/ufcs_builtin.tir
+
+### 244. `for x in` over bytes died in the emitter, and over a string it bound a char, not the int the spec says — **FIXED 2026-11-25**
+
+Urani's script-image fuzz test looped `for x in img` over the bytes of a compiled script. The
+checker accepted it (each element an `int`, as spec §10 says for a string) and the C emitter
+refused it with an internal message, "for-in over 'bytes' -- only arrays here, maps are Phase 8".
+Making bytes take the string path showed the second defect: that path bound each element as a
+`char`, not an `int`, so `str(c)` printed the glyph and `t * 1000 + c` wrapped to a byte -- the
+checker, the spec and the emitter disagreed, silently. Both now bind an `int`.
+
+> Pinned-by: grep -q "^65122$" tests/forin_bytes.out
+> Pinned-by: grep -q "^0,255,128,$" tests/forin_bytes.out

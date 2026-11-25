@@ -1,0 +1,24 @@
+# FRICTION 244: `for x in b` over bytes was accepted by the checker (each x an
+# int, as for a string) and refused by the emitter with an internal message.
+# A string's bytes are ints too (spec §10); the emitter had bound a char, so
+# str(c) printed the glyph and arithmetic wrapped to a byte.
+fn main():
+    b := to_bytes("Az\n")
+    total := 0
+    for x in b:
+        total = total * 1000 + x
+    println(str(total))
+    zero := to_bytes("")
+    n := 0
+    for x in zero:
+        n += 1
+    println(str(n))
+    raw := to_bytes([0, 255, 128])
+    s := ""
+    for x in raw:
+        s = s + str(x) + ","
+    println(s)
+    t := 0
+    for c in "Az":
+        t = t * 1000 + c
+    println(str(t))

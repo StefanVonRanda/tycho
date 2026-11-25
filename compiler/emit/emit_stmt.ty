@@ -792,11 +792,12 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
             if len(svo) > 0:
                 return svo
             cc, ct := _ex(&cs, c[0])
-            if ct == "string":
+            # bytes share string's C form and its byte reads (FRICTION 244)
+            if ct == "string" or ct == "bytes":
                 fs := _fresh(&cs, "_fs")
                 fj := _fresh(&cs, "_fj")
                 ms := _mark(&cs)
-                scn := _push(&cs, n, "char")
+                scn := _push(&cs, n, "int")     # spec §10: each byte as an int, as the checker types it
                 svs := cs.arena
                 ids := _fresh(&cs, "_scr")
                 push(cs.ascope, "&" + ids)

@@ -9,6 +9,9 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`for x in` over bytes works, and over a string binds each byte as an `int`** (as the
+  spec and the checker always said): it bound a `char`, so `str(c)` gave the glyph. **Breaking**
+  for code that relied on that: write `chr(c)`.
 - **`s.split(",")` and other method-style builtin calls are type-checked**: they were typed
   `?`, so `n: string = s.split(",")` compiled and the result went unchecked.
 - **An int or float `const` adapts like its literal**: `ev.kind == EV_QUIT` at an `i32`

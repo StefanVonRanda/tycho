@@ -55833,11 +55833,11 @@ char *h_emit___stmt(Arena *_parent, S_emit__C *h_cs, Arena *_ina_h_cs, E_ast__St
             TychoTup0 _ds6678 = h_emit___ex(&_scope, &((*h_cs)), _ina_h_cs, tycho_arr_K0_get(h_c, 0LL));
             char *h_cc = (_ds6678.f0);
             char *h_ct = (_ds6678.f1);
-            if (tycho_str_eq(h_ct, TYCHO_LIT("string"))) {
+            if (tycho_str_eq(h_ct, TYCHO_LIT("string")) || tycho_str_eq(h_ct, TYCHO_LIT("bytes"))) {
                 char *h_fs = h_emit___fresh(&_scope, &((*h_cs)), _ina_h_cs, TYCHO_LIT("_fs"));
                 char *h_fj = h_emit___fresh(&_scope, &((*h_cs)), _ina_h_cs, TYCHO_LIT("_fj"));
                 tycho_int h_ms = h_emit___mark(_parent, &((*h_cs)), _ina_h_cs);
-                char *h_scn = h_emit___push(&_scope, &((*h_cs)), _ina_h_cs, h_n, TYCHO_LIT("char"));
+                char *h_scn = h_emit___push(&_scope, &((*h_cs)), _ina_h_cs, h_n, TYCHO_LIT("int"));
                 char *h_svs = tycho_str_copy(&_scope, (((*h_cs)).f_arena));
                 char *h_ids = h_emit___fresh(&_scope, &((*h_cs)), _ina_h_cs, TYCHO_LIT("_scr"));
                 tycho_arr_str_push_move(_ina_h_cs, &((((*h_cs)).f_ascope)), tycho_str_concat(_ina_h_cs, TYCHO_LIT("&"), h_ids));
