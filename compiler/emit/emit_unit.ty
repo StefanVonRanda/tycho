@@ -707,7 +707,8 @@ fn _program(program: types.Program, dbgf: string, brep: bool) -> string:
                 ast.IntLit(l, v): cs.constv[program.files[i].prefix + c.name] = v
                 ast.CharLit(l, v): cs.constv[program.files[i].prefix + c.name] = v
                 _: pass
-    for file0 in program.files:
+    for fi0 := 0; fi0 < len(program.files); fi0 += 1:
+        file0 := program.files[fi0]
         for hd in file0.unit.handles:
             # A handle is an opaque `void *` whose free fn runs at every scope
             # exit; the destructor call is emitted by _finalizers, exactly as a
@@ -718,6 +719,7 @@ fn _program(program: types.Program, dbgf: string, brep: bool) -> string:
             push(cs.subn, sd.name)
             push(cs.subp, sd.params)
             push(cs.sube, sd.place)
+            push(cs.subf, fi0)
         for im in file0.unit.imports:
             b := _pkg_base(im.path)
             push(cs.ala, b)

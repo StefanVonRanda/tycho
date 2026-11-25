@@ -232,12 +232,22 @@ fn _ilit(v: int) -> string:
     return str(v) + "LL"
 
 fn _ex(cs: inout C, e: ast.Expr) -> (string, string):
+    if not cs.trecon:
+        return _ex_raw(&cs, e)
+    # recording for the type-agreement gate: each expression with its parent's shape
+    fp := ast.fingerprint(e)
+    par := ""                          # the ancestors' shapes, nearest first, " > " between
+    for i := len(cs.tpar) - 1; i >= 0; i -= 1:
+        if len(par) > 0:
+            par = par + " > "
+        par = par + cs.tpar[i]
+    push(cs.tpar, fp)
     c, t := _ex_raw(&cs, e)
-    if cs.trecon:
-        f := ""
-        if cs.cf >= 0 and cs.cf < len(cs.fpath):
-            f = cs.fpath[cs.cf]
-        push(cs.trec, f + "\t" + str(ast.line_of(e)) + "\t" + ast.fingerprint(e) + "\t" + _ta_canon(&cs, t))
+    pop(cs.tpar)
+    f := ""
+    if cs.cf >= 0 and cs.cf < len(cs.fpath):
+        f = cs.fpath[cs.cf]
+    push(cs.trec, f + "\t" + str(ast.line_of(e)) + "\t" + fp + "\t" + _ta_canon(&cs, t) + "\t" + par)
     return (c, t)
 
 # The type-agreement gate's spelling (compiler/types/tcheck.ty@_ta_canon):
@@ -881,10 +891,16 @@ fn _subinline(cs: inout C, si: int, args: [ast.Expr], lv: bool) -> (string, stri
         _: pass
     rc := ""
     rt := ""
+    # the body is the subscript's own source: its file is current while it is
+    # emitted, as for any function body (it was the caller's)
+    cf0 := cs.cf
+    if si < len(cs.subf):
+        cs.cf = cs.subf[si]
     if lv:
         rc, rt = _lvalue(&cs, inner)
     else:
         rc, rt = _ex(&cs, inner)
+    cs.cf = cf0
     for len(cs.vnames) > nsave:
         pop(cs.vnames)
         pop(cs.vtypes)

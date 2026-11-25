@@ -194,6 +194,7 @@ def main():
     progs = programs()
     cs = collections.defaultdict(set)
     es = collections.defaultdict(set)
+    eparent = collections.defaultdict(set)   # the emitter's record of each expression's parent shape
     failed = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count()) as ex:
         for prog, rc, rows in ex.map(record, progs):
@@ -201,12 +202,14 @@ def main():
                 failed.append(prog)
             for row in rows:
                 p = row.split("\t")
-                if len(p) != 5:
+                if len(p) < 5:
                     continue
-                side, f, ln, fp, t = p
+                side, f, ln, fp, t = p[:5]
                 f = os.path.relpath(os.path.join(ROOT, f)) if not os.path.isabs(f) else os.path.relpath(f, ROOT)
                 key = (f, int(ln), fp)
                 (cs if side == "C" else es)[key].add(t)
+                if side == "E" and len(p) > 5:
+                    eparent[key].add(p[5])
     both = [k for k in es if k in cs]
     agree = 0
     unknown = []      # the checker could not type it; the emitter did
@@ -224,15 +227,75 @@ def main():
             literal.append((k, sorted(cs[k]), sorted(es[k])))
         else:
             differ.append((k, sorted(cs[k]), sorted(es[k])))
+    def agrees(k):
+        return k in cs and k in es and all(any(matches(c, e) for c in cs[k]) for e in es[k])
+
+    # A literal the checker adapted is proven when the emitter converts it at a
+    # boundary -- a declaration, a return (no parent expression) -- or when the
+    # expression it is part of agrees on both sides: a literal operated on in a
+    # wider type shows in its parent's type (FRICTION 246's f32 arithmetic did).
+    def parents(k):
+        # the nearest ancestor of each recorded occurrence ("" at statement level)
+        return set(p.split(" > ")[0] for p in eparent.get(k, set()))
+
+    def nearest_checked(k):
+        # each occurrence's nearest ancestor the checker typed, or None
+        out = set()
+        for chain in eparent.get(k, set()):
+            anc = [a for a in chain.split(" > ") if a]
+            hit = None
+            for a in anc:
+                if (k[0], k[1], a) in cs:
+                    hit = a
+                    break
+            out.add(hit)
+        return out
+
+    lit_keys = set(k for k, _, _ in literal)
+    proven = set()
+    changed = True
+    while changed:                     # a literal inside a proven literal (`-0.0`) is proven too
+        changed = False
+        for k, c, e in literal:
+            if k in proven:
+                continue
+            ps = parents(k)
+            if not ps or all(p == "" or agrees((k[0], k[1], p)) or (k[0], k[1], p) in proven for p in ps):
+                proven.add(k)
+                changed = True
+    unproven = [(k, c, e) for k, c, e in literal if k not in proven]
+    # An expression only the emitter typed: one of its own temporaries, the
+    # literal inside a negation the checker typed whole, or a part of an
+    # expression both sides typed the same. Anything else is unexplained.
+    temps = negs = derived = 0
+    unexplained = []
+    for k in es:
+        if k in cs:
+            continue
+        if re.search(r"n:_[a-z]+\d+", k[2]):
+            temps += 1
+            continue
+        ps = parents(k)
+        if ps and all(p.startswith("un(-,") and (k[0], k[1], p) in cs for p in ps):
+            negs += 1
+            continue
+        nc = nearest_checked(k)
+        if nc and None not in nc and all(agrees((k[0], k[1], a)) or (k[0], k[1], a) in proven for a in nc):
+            derived += 1
+            continue
+        unexplained.append((k, [], sorted(es[k])))
     only_e = len([k for k in es if k not in cs])
     print("type agreement over %d programs (%d did not compile)" % (len(progs), len(failed)))
     print("  expressions both sides typed: %d -- agree %d, checker unknown %d, adapted literals %d, differ %d" %
           (len(both), agree, len(unknown), len(literal), len(differ)))
-    print("  typed by the emitter only (no checker record at that shape): %d" % only_e)
+    print("  adapted literals proven safe: %d of %d" % (len(literal) - len(unproven), len(literal)))
+    print("  typed by the emitter only: %d -- its temporaries %d, inner literals of a negation %d, parts of an agreeing expression %d, unexplained %d" %
+          (only_e, temps, negs, derived, len(unexplained)))
     lines = []
     for title, rows in (("THE CHECKER COULD NOT TYPE IT, THE EMITTER DID", unknown),
                         ("BOTH TYPED IT, DIFFERENTLY", differ),
-                        ("A LITERAL THE CHECKER ADAPTED, RECORDED UNADAPTED BY THE EMITTER", literal)):
+                        ("AN ADAPTED LITERAL NOT PROVEN SAFE", unproven),
+                        ("TYPED BY THE EMITTER ONLY, UNEXPLAINED", unexplained)):
         groups = collections.defaultdict(list)
         for k, c, e in rows:
             groups[(shape_head(k[2]), general(" | ".join(c)), general(" | ".join(e)))].append((k, c, e))
@@ -253,8 +316,9 @@ def main():
                 f.write("%s:%d\t%s\t%s\t%s\n" % (k[0], k[1], k[2], "|".join(c), "|".join(e)))
         print("\ntype-agreement: recorded %d checker gaps in %s" % (len(unknown), os.path.relpath(BASELINE, ROOT)))
     if gate:
-        if differ:
-            print("\ntype-agreement: %d expression(s) typed differently by the checker and the emitter" % len(differ))
+        if differ or unproven or unexplained:
+            print("\ntype-agreement: %d typed differently, %d adapted literal(s) not proven, %d emitter-only expression(s) unexplained" %
+                  (len(differ), len(unproven), len(unexplained)))
             sys.exit(1)
         cur = sorted("%s:%d\t%s\t%s\t%s" % (k[0], k[1], k[2], "|".join(c), "|".join(e)) for k, c, e in unknown)
         base = []

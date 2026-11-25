@@ -154,7 +154,9 @@ builtins and corelib signatures.
   unchecked expressions to 15, and FRICTION 248 closes the last
   (method-style builtins on a literal or chain, `Stack([])`, `o := None` grounded by a later
   assignment, a spread into a generic variadic, size-generic bodies checked per argument type):
-  the baseline is empty.
+  the baseline is empty. FRICTION 249 proves the rest: every literal the checker adapts and every
+  expression only the emitter types is accounted for, and f-string holes and inlined subscript
+  bodies now carry their own source position.
 - **The emitter's types agree with the checker's** (FRICTION 246, found by the new
   `make type-agreement` gate, now part of `make test`): `write_file` returns a bool (it
   printed `1`); an f32 beside a literal is computed in f32, not double; `to_str(bytes)` is a

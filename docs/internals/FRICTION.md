@@ -1363,3 +1363,29 @@ The type-agreement baseline is empty: every expression the C emitter types, the 
 and the same.
 
 > Pinned-by: test "$(grep -vc '^#' compiler/type_agreement.baseline)" -eq 0
+
+### 249. The type-agreement gate left two classes unproven; closing them found two line-attribution defects — **FIXED 2026-11-25**
+
+After FRICTION 248 the gate still accepted two classes on argument alone: 151 literals the
+checker adapted to their context (an f32, a u8) that the emitter records unadapted, and 3,143
+expressions only the emitter typed. Both are now proven per expression. The emitter records each
+expression's ancestors, and:
+- an adapted literal is proven when C converts it at a boundary (a declaration, a return: no
+  parent expression) or its enclosing expression has the same type on both sides -- a literal
+  operated on in a wider type shows in its parent's type, as FRICTION 246's f32 arithmetic did;
+  a literal inside a proven literal (`-0.0`) is proven with it;
+- an emitter-only expression is one of the emitter's own temporaries (`_mk59`, `_po68`), the
+  literal inside a negation the checker typed whole, or part of an expression both sides type
+  the same (its nearest ancestor the checker typed agrees). Anything else fails the gate.
+Proving them found two defects in the emitter's source positions:
+- an f-string hole was re-tokenized with lines counted from 1, so every expression in a hole
+  sat on line 1 of its file (about 1,200 expressions the gate could not pair); its tokens now
+  carry the f-string's line;
+- a subscript's body, inlined at each call, was emitted with the CALLER's file current, so its
+  expressions named the caller's file at the subscript's line numbers; the subscript's own file
+  is now current while its body is emitted, as for a function body.
+Neither changed a program's behaviour in the tree. Result: 224,119 expressions typed by both
+sides, all agreeing; 151 of 151 adapted literals proven; 2,062 emitter-only expressions all
+explained.
+
+> Pinned-by: grep -q "unexplained" scripts/type_agreement.py

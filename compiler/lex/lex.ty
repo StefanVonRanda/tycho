@@ -675,7 +675,14 @@ fn tokenize_file(src: string, keep_trivia: bool, file: string) -> ([Tok], [DNote
 # character '@'` -- no path, and the wrong line. `owner_src` and `owner_line`
 # are the enclosing file's text and the line the f-string sits on.
 fn tokenize_hole(src: string, file: string, owner_src: string, owner_line: int) -> [Tok]:
-    return tokenize_named_in(src, false, file, owner_src, owner_line).0
+    toks := tokenize_named_in(src, false, file, owner_src, owner_line).0
+    # every token sits on the f-string's line, so the hole's expressions -- and
+    # a parse error in one -- name that line, not line 1 (the type-agreement
+    # gate found the emitter's records of them all on line 1)
+    if owner_line > 0:
+        for i := 0; i < len(toks); i += 1:
+            toks[i].line = owner_line
+    return toks
 
 # The `# deprecated:` notes this file's comments carry, in source order. They are
 # a SIDE TABLE rather than tokens for the same reason src/tychoc.c keeps them in
