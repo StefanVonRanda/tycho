@@ -459,8 +459,8 @@ fn _lw_ex(cs: inout C, lw: inout Lw, e: ast.Expr, want: string) -> tir.Node:
             return n
         ast.Index(l2, k):
             recv := _lw_ex(&cs, &lw, k[0], "?")
-            if _head(_base(&cs, recv.ty)) != "arr":
-                _lw_err(&cs, &lw, l, "indexing " + _show(&cs, recv.ty) + " (only an array)")
+            if _head(_base(&cs, recv.ty)) != "arr" and recv.ty != "string":
+                _lw_err(&cs, &lw, l, "indexing " + _show(&cs, recv.ty) + " (only an array or a string)")
             n := tir.node(tir.INDEX, t, l)
             push(n.kids, recv)
             push(n.kids, _lw_ex(&cs, &lw, k[1], "int"))

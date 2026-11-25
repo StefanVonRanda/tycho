@@ -33,7 +33,7 @@ The node kinds and their fields are listed in `compiler/tir/tir.ty`.
 ## The script subset (v1)
 
 int, float, bool and string scalars; structs; arrays; functions, including
-`inout` parameters; `if`/`elif`/`else`, `for cond:`, three-clause `for`,
+`inout` parameters; `s[i]` on a string (its byte, an int); `if`/`elif`/`else`, `for cond:`, three-clause `for`,
 `for x in array`, `break`, `continue`, `return`; calls to user functions and to
 the builtins.
 

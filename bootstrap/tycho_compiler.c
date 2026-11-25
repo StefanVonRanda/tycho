@@ -19002,8 +19002,8 @@ S_tir__Node h_types___lw_ex(Arena *_parent, S_types__C *h_cs, Arena *_ina_h_cs, 
             tycho_int h_l2 = _m1353->u.V_Index.f0;
             TychoArrK0 h_k = _m1353->u.V_Index.f1;
             S_tir__Node h_recv = h_types___lw_ex(&_scope, &((*h_cs)), _ina_h_cs, &((*h_lw)), _ina_h_lw, tycho_arr_K0_get(h_k, 0LL), TYCHO_LIT("?"));
-            if (!tycho_str_eq(h_types___head(&_scope, h_types___base(&_scope, &((*h_cs)), _ina_h_cs, ((h_recv).f_ty))), TYCHO_LIT("arr"))) {
-                { Arena _t = arena_new(0); h_types___lw_err(_parent, &((*h_cs)), _ina_h_cs, &((*h_lw)), _ina_h_lw, h_l, tycho_str_concat3(&_t, TYCHO_LIT("indexing "), h_types___show(&_t, &((*h_cs)), _ina_h_cs, ((h_recv).f_ty)), TYCHO_LIT(" (only an array)"))); arena_free(&_t); }
+            if ((!tycho_str_eq(h_types___head(&_scope, h_types___base(&_scope, &((*h_cs)), _ina_h_cs, ((h_recv).f_ty))), TYCHO_LIT("arr"))) && (!tycho_str_eq(((h_recv).f_ty), TYCHO_LIT("string")))) {
+                { Arena _t = arena_new(0); h_types___lw_err(_parent, &((*h_cs)), _ina_h_cs, &((*h_lw)), _ina_h_lw, h_l, tycho_str_concat3(&_t, TYCHO_LIT("indexing "), h_types___show(&_t, &((*h_cs)), _ina_h_cs, ((h_recv).f_ty)), TYCHO_LIT(" (only an array or a string)"))); arena_free(&_t); }
             }
             S_tir__Node h_n = h_tir__node(&_scope, 11LL, h_t, h_l);
             tycho_arr_K19_push(&_scope, &(((h_n).f_kids)), tycho_copy_S_tir__Node(&_scope, h_recv));
