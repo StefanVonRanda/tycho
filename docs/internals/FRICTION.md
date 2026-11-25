@@ -1436,3 +1436,17 @@ is still refused by name. The host still verifies the record's shape when it loa
 
 > Pinned-by: grep -q "extern ent_fields(int) -> @Fields" tests/tir/extern_record.tir
 > Pinned-by: grep -q "taking Packed is not in the script subset" tests/tir/refuse_extern_record/main.ty
+
+### 253. `result.map_err` and `result.expect` refuse `Result(void, E)` — **OPEN 2026-11-25**
+
+Urani's saves wanted `result.map_err(io.write_bytes(p, b), "cannot write " + p) or_return`
+to turn an `io.IoErr` into its own `string` error, and its tests wanted
+`result.expect(entity.remove(&s, e), "remove")`. Both fail to instantiate for an ok type
+of `void`: the generic bodies bind the ok value (`v := r or_else ...`, `Ok(v): return v`)
+and a void value cannot be bound ("cannot bind a void value", "Result(void, string)
+carries no ok value -- write Ok(), not Ok(x)", "Ok carries no value here"). Every caller
+with a `Result(void, E)` writes its own match: Urani has `_io` in src/main/save.ty and
+`must` in tests/entity. Two fixes: treat `void` as a unit type when a generic is
+instantiated (`v := <void>` binds nothing, `Ok(v)` at a void ok type is `Ok()`, `return v`
+of a void value returns), which fixes every generic of this shape; or add void siblings
+to corelib/result. The first is a language decision.
