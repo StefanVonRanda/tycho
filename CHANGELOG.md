@@ -62,6 +62,9 @@ builtins and corelib signatures.
 
 ### Corelib
 
+- **`result.expect(r, msg)` / `result.expect_some(o, msg)`**: the value, or `msg: error` on
+  stderr and exit 1 -- "take it or stop" in `main`, where `or_else` cannot say it. A function
+  body ending in `exit(...)` no longer warns that not all paths return.
 - **`os.exe_path()`**: the running program's own file, absolute, so data kept beside a
   binary is found when it is started from `PATH` (where `args()[0]` has no directory).
 - **`cli.get_all(c, key)`**: every value of a repeated option, in order.

@@ -1,0 +1,17 @@
+# result.expect (FRICTION 245): the value, or `msg: error` on stderr and exit 1 --
+# "take it or stop" in main, which `or_else` cannot say (it returns from the
+# function, and main returns nothing).
+package main
+import "core:result"
+
+fn half(n: int) -> Result(int, string):
+    if n % 2 != 0:
+        return Err("odd")
+    return Ok(n / 2)
+
+fn main():
+    a := result.expect(half(8), "half of 8")
+    b := result.expect_some(Some(a + 1), "never")
+    println(str(b))
+    c := result.expect(half(7), "half of 7")
+    println(str(c))

@@ -55,6 +55,7 @@ Each row was compiled. The third column is the diagnostic you will actually see.
 | `handle Db: free: db_close` | a block: `handle Db:` then an indented `free: db_close` | `expected newline` |
 | `fn open() -> Db:` returning a handle | only an `extern fn` may return one | `a Tycho fn cannot return a handle -- only an `extern fn` opener may` |
 | `v := r or_else 0` for a default | `result.unwrap_or(r, 0)` -- `or_else` RETURNS its value from the enclosing function | `or_else returns its value from the enclosing function, which returns nothing` |
+| `v := r or_else e: exit(1)` in main | `v := result.expect(r, "loading x")` (`expect_some` for an Option): the value, or `msg: error` and exit 1 | `or_else returns its value from the enclosing function, which returns nothing` |
 | `x := a if c else b` | `x := if c:` then each branch's value on its own indented line, with `else:` | `there is no inline `a if c else b`` |
 | `fn(x: int) -> int: return x + 1` | `fn(x: int) -> int: x + 1` — one expression, no `return` | `a lambda body is a single expression and is its own result` |
 | a function named `select` | any other name — `select` is a keyword (channels) | `'select' is a reserved keyword and cannot be called` |

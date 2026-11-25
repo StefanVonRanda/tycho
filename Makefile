@@ -241,6 +241,7 @@ wine-ffi:
 
 test: tychoc
 	@sh tests/tir.sh
+	@sh tests/result_expect.sh
 	@sh tests/compress_limits.sh
 	@sh tests/accumulator_scope.sh
 	@sh tests/inout_append.sh

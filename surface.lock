@@ -1079,6 +1079,8 @@
   "regex.ok": "(re: ptr)-> bool",
   "regex.release": "(re: ptr)",
   "result.err_or": "(r: Result($T, $E), fallback: $E)-> $E",
+  "result.expect": "(r: Result($T, $E), msg: string)-> $T where has_str(E)",
+  "result.expect_some": "(o: Option($T), msg: string)-> $T",
   "result.is_err": "(r: Result($T, $E))-> bool",
   "result.is_ok": "(r: Result($T, $E))-> bool",
   "result.is_some": "(o: Option($T))-> bool",

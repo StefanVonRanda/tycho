@@ -14,6 +14,7 @@ measurements, and they assume you already know the codebase.
 - [`design-generics.md`](design-generics.md) — generics monomorphization.
 - [`design-concurrency.md`](design-concurrency.md) — concurrency runtime, channel core, and measurement.
 - [`design-ffi.md`](design-ffi.md) — FFI ownership, prototypes, and coverage.
+- [`tir.md`](tir.md) — the typed IR (`tychoc --emit-tir`) for back ends that are not C.
 - [`design-corelib.md`](design-corelib.md) — corelib handle guards, path layering, and shim conventions.
 - [`design-gfx.md`](design-gfx.md) — `core:gfx`'s values-and-handles-only boundary, ownership and thread rules.
 - [`design-subscripts.md`](design-subscripts.md) — subscript lowering and rules.

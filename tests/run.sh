@@ -44,7 +44,7 @@ fi
 # tests/ holding a .ty must be claimed by a class glob or named in ELSEWHERE as
 # some other runner's corpus. `sh tests/run.sh --count` prints it; a normal run
 # checks it silently and fails the lane.
-CORPUS_ELSEWHERE="tests/conc tests/ffi tests/rtparity tests/fixtures tests/bounds_report tests/tir"   # roots owned by another runner
+CORPUS_ELSEWHERE="tests/conc tests/ffi tests/rtparity tests/fixtures tests/bounds_report tests/tir tests/result_expect"   # roots owned by another runner
 G_positive="examples/*.ty tests/*.ty"
 G_pkg="tests/pkg/*/"
 G_reject="tests/reject/*.ty"

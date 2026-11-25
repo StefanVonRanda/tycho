@@ -58,3 +58,22 @@ fn some_or(o: Option($T), fallback: $T) -> $T:
 # `is` (§19.8), not a `match`, for the reason is_ok gives: it names no payload.
 fn is_some(o: Option($T)) -> bool:
     return o is Some
+
+# The ok value -- or, for a program that cannot go on without it, `msg: error`
+# on stderr and exit status 1. For main, tools and tests; a library function
+# returns its error instead (`or_return`).
+fn expect(r: Result($T, $E), msg: string) -> $T where has_str(E):
+    match r:
+        Ok(v): return v
+        Err(e):
+            eprintln(msg + ": " + str(e))
+            exit(1)
+
+# The value -- or `msg` on stderr and exit status 1.
+fn expect_some(o: Option($T), msg: string) -> $T:
+    match o:
+        Some(v): return v
+        None:
+            eprintln(msg)
+            exit(1)
+

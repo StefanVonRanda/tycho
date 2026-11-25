@@ -665,7 +665,10 @@ expression-bodied; pass a named function where you need a multi-line body.
 - **`result`** — the `Result` / `Option` collapses, generic over `$T` and `$E`:
   `unwrap_or(r, fallback)`, `is_ok(r)`, `is_err(r)`, `err_or(r, fallback)`,
   `map_err(r, replacement)`, `map_err_with(r, f)`, and
-  `some_or(o, fallback)` / `is_some(o)` for the `Option` half. `or_return` unwraps a
+  `some_or(o, fallback)` / `is_some(o)` for the `Option` half. `expect(r, msg)` /
+  `expect_some(o, msg)` take the value or stop the program: `msg: error` on stderr,
+  exit status 1 -- for `main`, tools and tests, where there is no default to fall back
+  on and `or_else` cannot help (it returns from the function). `or_return` unwraps a
   `Result` only inside a function that itself returns a compatible `Result`, so a
   `main()`, or a handler that returns a `Response`, needs another way:
   `err_or` plus `==` asks *which* failure happened **without writing a `match` at

@@ -274,6 +274,11 @@ fn _ends_ret(body: [ast.Stmt]) -> bool:
         return false
     match body[len(body) - 1]:
         ast.ReturnS(l, k): return true
+        ast.ExprStmt(l, k):
+            # exit() does not come back (FRICTION 245)
+            match k[0]:
+                ast.Call(l2, q, n, ts, args): return len(q) == 0 and n == "exit"
+                _: return false
         ast.MatchS(l, c, arms):
             for a in arms:
                 if not _ends_ret(a.body):

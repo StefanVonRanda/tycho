@@ -1284,3 +1284,16 @@ checker, the spec and the emitter disagreed, silently. Both now bind an `int`.
 
 > Pinned-by: grep -q "^65122$" tests/forin_bytes.out
 > Pinned-by: grep -q "^0,255,128,$" tests/forin_bytes.out
+
+### 245. "The value, or stop" had no spelling in a function that returns nothing — **FIXED 2026-11-25**
+
+Building Urani, the line `x := f() or_else e: fail(e)` was written about eight times in `main`
+and in test programs, and refused each time: `or_else` returns its value from the enclosing
+function, and `main` returns nothing. `unwrap_or` needs a default, and a loaded VM or a parsed
+config has none, so each became a five-line `match` with a dead `return` after `exit`. The
+checker also did not know `exit()` ends a path, so a function ending in it warned "not all paths
+return". `result.expect(r, msg)` / `result.expect_some(o, msg)` give the value or print
+`msg: error` and exit 1; a body ending in `exit(...)` counts as returning.
+
+> Pinned-by: test -f tests/result_expect/main.ty
+> Pinned-by: grep -q "^half of 7: odd$" tests/result_expect/expected.err
