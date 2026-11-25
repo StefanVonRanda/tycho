@@ -735,9 +735,20 @@ fn _generic_call2(cs: inout C, l: int, si: int, spelt: string, ts: [ast.Ty], arg
     cs.line = l
     if _any_named(args):
         return "?"
-    for a in args:
-        if a is ast.Spread:
-            return "?"                 # a spread feeds a variadic elementwise
+    # A spread feeds a variadic elementwise: as the LAST argument, filling the
+    # variadic, it stands for one argument of its array's element type, so $T
+    # binds as for `count(1, 2)` (it was `?`).
+    for i := 0; i < len(args); i += 1:
+        match args[i]:
+            ast.Spread(ls, ks):
+                if i != len(args) - 1 or len(cs.sg[si].pflags) == 0 or
+                        cs.sg[si].pflags[len(cs.sg[si].pflags) - 1] != "var" or i != len(cs.sg[si].pty) - 1:
+                    return "?"
+                spt := _base(&cs, _ex(&cs, ks[0]))
+                if _head(spt) != "arr":
+                    return "?"
+                ats[i] = _targs(spt)[0]
+            _: pass
     cs.typarams = []string: bool
     for n in cs.sg[si].tps:
         cs.typarams[n] = true
@@ -896,6 +907,17 @@ fn _inst_body(cs: inout C, s: FSig, b: [string: string], l: int, spelt: string, 
             key = key + "|" + b[tp]
         else:
             return                     # not fully bound: nothing to check yet
+    # A `[$N]T` parameter is ground only by its argument: a size-generic body
+    # is checked per argument type, and not at all from an argument the caller
+    # could not type (a first pass at `?` memoised the body at `?`, and the
+    # real instance was never checked)
+    if len(s.szs) > 0:
+        for i := 0; i < len(s.ptypes); i += 1:
+            if not known(s.ptypes[i]):
+                if i < len(ats) and known(ats[i]):
+                    key = key + "|" + ats[i]
+                else:
+                    return
     if key in cs.instd:
         return
     # src/tychoc.c:10173, reached by NESTING: a repeat at the SAME binding is

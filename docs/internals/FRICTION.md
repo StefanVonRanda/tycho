@@ -1342,3 +1342,24 @@ size-generic body) are the gate's baseline, compiler/type_agreement.baseline.
 
 > Pinned-by: test -f tests/reject/value_match_mixed_types.ty
 > Pinned-by: test "$(grep -vc '^#' compiler/type_agreement.baseline)" -le 15
+> Superseded-by: 248 (the baseline is empty)
+
+### 248. The last five constructs the checker answered `?`, and a size-generic body checked only at `?` — **FIXED 2026-11-25**
+
+The rest of FRICTION 247's list, closed:
+- a builtin called method-style on a literal or a chain (`"hello".len()`,
+  `n.to_float().to_int()`) -- typed as the builtin, in both call paths;
+- a generic struct built from a bare `[]` (`a: Stack(int) = Stack([])`) -- the expected instance
+  types its fields when every value fits it (otherwise the old "declared type Stack(int) but
+  value is Stack(string)" stands);
+- `o := None` then `o = Some(n)` -- the assignment grounds the declaration's open type, as a first
+  push grounds a bare `[]`, so `match o: Some(v)` types `v`;
+- a spread filling a generic variadic (`count(xs...)`) -- one argument of the array's element type;
+- a size-generic function's body (`fn op_named(t: [$N]Meta, ...)`) was memoised by its name
+  alone: the first instance, checked from a caller that could not type its argument, stood for
+  all of them, so the body was only ever checked with `t` as `?`. It is now checked per argument
+  type, and not from an argument that is `?`.
+The type-agreement baseline is empty: every expression the C emitter types, the checker types,
+and the same.
+
+> Pinned-by: test "$(grep -vc '^#' compiler/type_agreement.baseline)" -eq 0

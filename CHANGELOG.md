@@ -151,7 +151,10 @@ builtins and corelib signatures.
   expression, `[]` for a map, `select` bindings, `$N` size names, value `match` and explicit
   generic variants. Code after them is now type-checked; a value `match` whose arms disagree
   is refused instead of reaching the C compiler. The type-agreement baseline is down from 309
-  unchecked expressions to 15.
+  unchecked expressions to 15, and FRICTION 248 closes the last
+  (method-style builtins on a literal or chain, `Stack([])`, `o := None` grounded by a later
+  assignment, a spread into a generic variadic, size-generic bodies checked per argument type):
+  the baseline is empty.
 - **The emitter's types agree with the checker's** (FRICTION 246, found by the new
   `make type-agreement` gate, now part of `make test`): `write_file` returns a bool (it
   printed `1`); an f32 beside a literal is computed in f32, not double; `to_str(bytes)` is a

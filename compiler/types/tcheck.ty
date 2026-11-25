@@ -1596,6 +1596,13 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                                                 []ast.Ty, ua, [rt])
                                         _check_args(&cs, fnm, si, ua, l)
                                         return cs.sg[si].ret
+                                    if _method_builtin(&cs, fnm):
+                                        # `"hello".len()`, `n.to_float().to_int()`
+                                        ub := []ast.Expr
+                                        push(ub, fk[0])
+                                        for ai := 1; ai < len(k); ai += 1:
+                                            push(ub, k[ai])
+                                        return _call_builtin(&cs, l, fnm, ub, "")
                     _: pass
             cs.callee = true
             cvt := _base(&cs, _ex(&cs, k[0]))
@@ -2722,6 +2729,14 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
                     return _generic_call(&cs, l, si, n, []ast.Ty, args2)
                 _check_args(&cs, n, si, args2, l)
                 return cs.sg[si].ret
+            # `n.to_float()`, `s.len()`: a builtin method-style, when no field
+            # of that name is a function (FRICTION 247)
+            if _method_builtin(&cs, n) and _head(_base(&cs, _field_ty(&cs, recv, n))) != "fun":
+                args4 := []ast.Expr
+                push(args4, ast.Name(l, q))
+                for a in args:
+                    push(args4, a)
+                return _call_builtin(&cs, l, n, args4, want)
             # A subscript projects a place: its value has the type it yields.
             if n in cs.subs and n in cs.subrt:
                 _walk_args(&cs, args)
@@ -2824,6 +2839,24 @@ fn _call_named(cs: inout C, l: int, m: string, spelt: string, args: [ast.Expr], 
     if m in cs.tindex:
         d := cs.tds[cs.tindex[m]]
         if d.kind == "struct" and d.generic:
+            # `a: Stack(int) = Stack([])`: the expected instance types each field,
+            # so a bare `[]` has its element type (it was `?`)
+            wti := _tdecl(&cs, _base(&cs, want))
+            if wti >= 0 and len(args) == len(cs.tds[wti].ftypes) and not _any_named(args) and
+                    len(cs.tds[wti].name) > len(d.name) and cs.tds[wti].name[0:len(d.name) + 1] == d.name + "$":
+                fits := true
+                e0 := len(cs.errs)
+                for i := 0; i < len(args); i += 1:
+                    ft := cs.tds[wti].ftypes[i]
+                    at := _ex2(&cs, args[i], ft)
+                    if known(at) and known(ft) and not compat(at, ft):
+                        fits = false
+                if fits and len(cs.errs) == e0:
+                    return want
+                # it does not fit: infer the instance from the values as before,
+                # so the mismatch reads "declared type Stack(int) but value is
+                # Stack(string)" at the declaration
+                cs.errs = cs.errs[0:e0]
             return _inst_ctor(&cs, l, cs.tindex[m], args, 0, len(cs.tds[cs.tindex[m]].fnames), "")
         if d.kind == "struct":
             return _check_fields(&cs, cs.tindex[m], args, l)
@@ -4001,6 +4034,14 @@ fn _place_ty(cs: inout C, e: ast.Expr) -> string:
         _: return _ex(&cs, e)
     return "?"
 
+# A builtin a receiver can call method-style: a shape builtin, a pure one, or
+# one with a signature -- unless a user function of that name takes over UFCS.
+fn _method_builtin(cs: inout C, n: string) -> bool:
+    if _shape_builtin(n) or _pure_builtin(n):
+        return true
+    si := _sigidx(&cs, n)
+    return si >= 0 and cs.sg[si].builtin
+
 # src/tychoc.c@is_pure_builtin, copied name for name.
 fn _pure_builtin(n: string) -> bool:
     return n == "str" or n == "substr" or n == "chr" or n == "split" or n == "keys" or
@@ -4135,6 +4176,13 @@ fn _tstmt(cs: inout C, s: ast.Stmt):
             t := _ex2(&cs, rhs[0], want)
             cs.line = l
             _assign_check(&cs, name, t)
+            # `o := None` then `o = Some(n)`: the assignment grounds what the
+            # declaration left open (opt(?) becomes opt(int)), as a first push
+            # grounds a bare `[]` -- else `match o: Some(v)` bound `v` as `?`
+            vi := _vfind(&cs, name)
+            if vi >= 0 and known(t) and find(t, "?") < 0 and find(cs.vars[vi].ty, "?") >= 0 and
+                    _head(cs.vars[vi].ty) == _head(t) and compat(cs.vars[vi].ty, t):
+                cs.vars[vi].ty = t
         ast.PlaceSet(l, k):
             match k[0]:
                 ast.Index(lx, kx):
