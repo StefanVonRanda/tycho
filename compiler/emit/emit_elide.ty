@@ -704,7 +704,7 @@ fn _ro_borrow(cs: inout C, n: string, rhs: ast.Expr, line: int) -> bool:
     rest, found := _rb_after(cs.pbody, n, line)
     if not found:
         return false
-    return _rb_ok_b(rest, n) and _rb_ok_b(rest, r)
+    return _rb_ok_b(&cs, rest, n) and _rb_ok_b(&cs, rest, r)
 
 # The variable a place reads from: the Name at the base of a Field/Index/TupIdx
 # chain, or "".
@@ -839,7 +839,7 @@ fn _rb_binds(s: ast.Stmt) -> [string]:
         _: return []string
     return []string
 
-fn _rb_ok_b(b: [ast.Stmt], n: string) -> bool:
+fn _rb_ok_b(cs: inout C, b: [ast.Stmt], n: string) -> bool:
     for s in b:
         for x in _rb_binds(s):
             if x == n:
@@ -860,26 +860,43 @@ fn _rb_ok_b(b: [ast.Stmt], n: string) -> bool:
                     return false
             _: pass
         for e in _rb_exprs(s):
-            if not _rb_ok_e(e, n):
+            if not _rb_ok_e(&cs, e, n):
                 return false
         for sub in _rb_blocks(s):
-            if not _rb_ok_b(sub, n):
+            if not _rb_ok_b(&cs, sub, n):
                 return false
     return true
 
-# Does every mention of n in e read through a field or index chain?
-fn _rb_ok_e(e: ast.Expr, n: string) -> bool:
+# Is argument i of a call to nm (qualified by q) a plain by-value parameter --
+# not inout, sink or variadic? Arguments are passed without a copy and a callee
+# that keeps one copies it then (emit_call.ty), so a bare borrowed binding there
+# is the same as passing the place it borrows (FRICTION 255). `len` reads.
+fn _rb_byval_arg(cs: inout C, q: string, nm: string, i: int) -> bool:
+    if len(q) == 0 and nm == "len":
+        return true
+    fq := nm
+    if len(q) > 0:
+        fq = _qpfx(&cs, q) + nm
+    fi := _fidx(&cs, fq)
+    if fi < 0 or i >= len(cs.fds[fi].ptypes):
+        return false
+    fd := cs.fds[fi]
+    return not fd.pinout[i] and not fd.psink[i] and not (fd.pvar and i == len(fd.ptypes) - 1)
+
+# Does every mention of n in e read through a field or index chain, or pass it
+# whole to a by-value parameter?
+fn _rb_ok_e(cs: inout C, e: ast.Expr, n: string) -> bool:
     match e:
         ast.Name(l, m): return m != n         # bare: could be moved, returned, consumed
         ast.Field(l, k, f):
             if _rb_root(e) == n:
-                return _rb_chain_ok(e, n)
+                return _rb_chain_ok(&cs, e, n)
         ast.Index(l, k):
             if _rb_root(e) == n:
-                return _rb_chain_ok(e, n)
+                return _rb_chain_ok(&cs, e, n)
         ast.TupIdx(l, k, i):
             if _rb_root(e) == n:
-                return _rb_chain_ok(e, n)
+                return _rb_chain_ok(&cs, e, n)
         ast.Addr(l, k):
             if _rb_root(k[0]) == n:
                 return false                  # &n...: an inout argument writes it
@@ -891,6 +908,18 @@ fn _rb_ok_e(e: ast.Expr, n: string) -> bool:
                 for a in args:
                     if _rb_root(a) == n:
                         return false          # a mutating builtin on a chain rooted at n
+            for i := 0; i < len(args); i += 1:
+                bare := false
+                match args[i]:
+                    ast.Name(l2, m):
+                        bare = m == n
+                    _: pass
+                if bare:
+                    if not _rb_byval_arg(&cs, q, nm, i):
+                        return false
+                elif not _rb_ok_e(&cs, args[i], n):
+                    return false
+            return true
         ast.CallVal(l, k):
             match k[0]:
                 ast.Field(l2, fk, fnm):
@@ -901,17 +930,17 @@ fn _rb_ok_e(e: ast.Expr, n: string) -> bool:
             return not _rb_mentions(body, n)
         _: pass
     for k in _rb_kids(e):
-        if not _rb_ok_e(k, n):
+        if not _rb_ok_e(&cs, k, n):
             return false
     return true
 
 # A read chain rooted at n: only its index expressions need checking.
-fn _rb_chain_ok(e: ast.Expr, n: string) -> bool:
+fn _rb_chain_ok(cs: inout C, e: ast.Expr, n: string) -> bool:
     match e:
         ast.Name(l, m): return true
-        ast.Field(l, k, f): return _rb_chain_ok(k[0], n)
-        ast.TupIdx(l, k, i): return _rb_chain_ok(k[0], n)
-        ast.Index(l, k): return _rb_chain_ok(k[0], n) and _rb_ok_e(k[1], n)
+        ast.Field(l, k, f): return _rb_chain_ok(&cs, k[0], n)
+        ast.TupIdx(l, k, i): return _rb_chain_ok(&cs, k[0], n)
+        ast.Index(l, k): return _rb_chain_ok(&cs, k[0], n) and _rb_ok_e(&cs, k[1], n)
         _: return false
     return false
 

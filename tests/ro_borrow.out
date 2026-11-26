@@ -8,3 +8,6 @@ moved: 3 2
 returned: 2 3
 loop: 4
 root reassigned: 1 77
+passed by value: 5
+sink: 3 2
+handed back: 3 2

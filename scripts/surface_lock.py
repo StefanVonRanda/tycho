@@ -114,8 +114,11 @@ def builtins(src="bootstrap/surface_tables.txt"):
 def corelib(root="corelib"):
     """pkg.fn -> its signature, so a CHANGED one is visible and not just a count."""
     out = {}
+    # Untracked packages too (FRICTION 256): tracked-only let a new package
+    # pass here and fail only once staged.
     files = subprocess.run(
-        ["git", "ls-files", "corelib/*/*.ty"], capture_output=True, text=True
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "corelib/*/*.ty"],
+        capture_output=True, text=True,
     ).stdout.split()
     for f in files:
         if "/test/" in f:

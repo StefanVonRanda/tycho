@@ -9,6 +9,11 @@ builtins and corelib signatures.
 
 ### Language
 
+- **A read-only binding passed to a by-value parameter is no longer copied**: `d := f.data;
+  rd(d, 0)` shared `f.data` only when every use was a field or index read; a call argument
+  forced a deep copy on every call (FRICTION 255).
+- **`.field` on a variable that hides an outer one says so**, naming both declarations and
+  their types (FRICTION 257).
 - **`has_str(T)` admits everything `str` formats** -- enums, structs, chars, bytes and
   containers, not just int/bool/float/string -- so `result.expect` takes corelib's enum errors.
 - **`for x in` over bytes works, and over a string binds each byte as an `int`** (as the

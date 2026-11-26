@@ -1,0 +1,2 @@
+tests/diag/field_on_shadow.ty:12: error: '.on' on a non-struct value -- 'sc' here is the [float] declared at line 11, which hides the Script declared at line 9
+    12 |         if sc.on:

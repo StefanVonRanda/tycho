@@ -1787,13 +1787,29 @@ fn _sp_in_params(s: FSig, sp: string) -> bool:
 # downstream refuses; the diagnostic has to be raised here.
 # src/tychoc.c:7254 -- `.f` on something that is not a struct AT ALL. `_no_field`
 # below answers only for a struct that is missing the field.
-fn _non_struct_field(cs: inout C, rt: string, f: string):
+fn _non_struct_field(cs: inout C, rt: string, f: string, base: ast.Expr):
     if f in cs.subs or not known(rt):
         return
     i := _tdecl(&cs, _base(&cs, rt))
     if i >= 0 and cs.tds[i].kind == "struct":
         return
-    _cerr(&cs, "'." + f + "' on a non-struct value")
+    _cerr(&cs, "'." + f + "' on a non-struct value" + _shadow_note(&cs, base))
+
+# When the value is a variable that hides an outer one of another type, say so:
+# the outer one is usually the one meant.
+fn _shadow_note(cs: inout C, e: ast.Expr) -> string:
+    match e:
+        ast.Name(l, n):
+            v := _vfind(&cs, n)
+            if v < 0:
+                return ""
+            for j := v - 1; j >= 0; j -= 1:
+                if cs.vars[j].name == n and cs.vars[j].ty != cs.vars[v].ty:
+                    return " -- '" + n + "' here is the " + _show(&cs, cs.vars[v].ty) + " declared at line " +
+                        str(cs.vars[v].line) + ", which hides the " + _show(&cs, cs.vars[j].ty) +
+                        " declared at line " + str(cs.vars[j].line)
+        _: pass
+    return ""
 
 fn _no_field(cs: inout C, rt: string, f: string):
     if f in cs.subs:

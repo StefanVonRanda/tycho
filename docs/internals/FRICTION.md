@@ -49,32 +49,6 @@ needs a fixture that reaches it, and some of them (`overlapping mutable access`,
 the `sink`-in-a-loop refusals) need a program that trips a rule nothing else in
 the corpus exercises.
 
-### 255. A read-only local copy of a `bytes` field is deep-copied once it is passed to a function — **OPEN 2026-11-26**
-
-Found porting Pandora's TrueType reader (`core:font`). The read-only borrow
-(FRICTION 251, emit_elide.ty@_ro_borrow) refuses a binding that appears bare,
-and a call argument is a bare use, so `d := f.data; rd(d, 0)` copies the whole
-font on every call (~27 ms a 1000 calls of a 1 MB field) while `rd(f.data, 0)`
-costs nothing. `glyph()` paid 9 us a lookup; the full check went 1 ms -> 63 ms.
-`core:font` passes `f.data` directly. Fix: treat a by-value argument to a callee
-that cannot keep it as a read.
-
-```
-struct F:
-    data: bytes
-fn rd(d: bytes, off: int) -> int:
-    return d[off]
-fn via_local(f: F) -> int:
-    d := f.data
-    return rd(d, 0)     # deep copy
-```
-
-### 256. The surface-lock and catalogue gates list packages with `git ls-files` — **OPEN 2026-11-26**
-
-A new, untracked corelib package passes both locally (`surface lock: ok`) and
-fails only once staged, so the lock and `docs/reference/corelib.md` entries are
-easy to miss until commit time. Found adding `core:font`.
-
 ## Closed
 
 ### 1. ~~The one-shot digest is what the language makes natural~~ — **DOWNGRADED 2026-08-18: `core:sha256` streams now**
@@ -1505,3 +1479,32 @@ the same computation printed differently on two machines. The runtime formatted 
 NaN carries no meaning a program can rely on, and printing it made output platform-dependent.
 
 > Pinned-by: test "$(cat tests/nan_str.out)" = "$(printf 'nan\nnan\nnan\nnan nan')"
+
+### 255. A read-only local copy of a `bytes` field was deep-copied once it was passed to a function — **FIXED 2026-11-26**
+
+Found porting Pandora's TrueType reader: `d := f.data; rd(d, 0)` copied 1 MB a call
+(24 ms a 1000 calls, now 0). The read-only borrow (FRICTION 251) now lets the binding
+appear bare as an argument of `len` or of a function's plain by-value parameter
+(emit_elide.ty@_rb_byval_arg): arguments pass without a copy and a callee that keeps
+one copies it, so that is the same as passing the place it borrows. `inout`, `sink`
+and variadic parameters still refuse it.
+
+> Pinned-by: grep -q "^passed by value: 5$" tests/ro_borrow.out
+> Pinned-by: grep -q "^sink: 3 2$" tests/ro_borrow.out
+
+### 256. The surface-lock gate listed only tracked packages — **FIXED 2026-11-26**
+
+A new, untracked corelib package passed `make surface-check` and failed once staged.
+surface_lock.py now lists untracked, unignored files too; the catalogue check reads the
+lock, so it follows.
+
+> Pinned-by: grep -q '"--others", "--exclude-standard", "corelib/\*/\*.ty"' scripts/surface_lock.py
+
+### 257. `.field` on a variable that hides an outer one named only the symptom — **FIXED 2026-11-26**
+
+Urani's main loop: a later `sc := sun.color` hid the outer `sc` (the script), and
+`sc.ui_cursor` failed with `'.ui_cursor' on a non-struct value`, far from the cause. The
+error now names both declarations: `'sc' here is the [float] declared at line 11, which
+hides the Script declared at line 9`.
+
+> Pinned-by: test -f tests/diag/field_on_shadow.err

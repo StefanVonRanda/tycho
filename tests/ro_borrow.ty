@@ -22,6 +22,24 @@ fn read_only(fs: [F], i: int) -> int:
     f := fs[i]                          # borrowed: only reads follow
     return len(f.ks) + len(f.name) + f.ks[0]
 
+fn sum_ks(ks: [int]) -> int:
+    t := 0
+    for k in ks:
+        t += k
+    return t
+
+fn eat(ks: sink [int]) -> int:
+    push(ks, 1000)                      # the callee owns it and changes it
+    return len(ks)
+
+fn keep(ks: [int]) -> [int]:
+    return ks
+
+# FRICTION 255: f passed whole to a by-value parameter is still a read.
+fn passes(p: P) -> int:
+    ks := p.fs[0].ks                    # borrowed: passed to sum_ks and len only
+    return sum_ks(ks) + len(ks)
+
 fn mk() -> P:
     return P([F("a", [1, 2]), F("bb", [3])])
 
@@ -78,3 +96,16 @@ fn main():
     s = mk()                            # the source's root reassigned
     s.fs[0].ks[0] = 77
     println("root reassigned: " + str(f7.ks[0]) + " " + str(s.fs[0].ks[0]))
+
+    println("passed by value: " + str(passes(mk())))
+
+    t := mk()
+    k1 := t.fs[0].ks
+    n1 := eat(k1)                       # a sink parameter: copied
+    println("sink: " + str(n1) + " " + str(len(t.fs[0].ks)))
+
+    u := mk()
+    k2 := u.fs[0].ks
+    kept := keep(k2)                    # the callee hands it back: kept is its own
+    push(kept, 5)
+    println("handed back: " + str(len(kept)) + " " + str(len(u.fs[0].ks)))

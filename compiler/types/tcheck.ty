@@ -142,6 +142,7 @@ struct VBind:
     ty: string
     mutable: bool
     param: bool                        # a parameter: a borrow (src/tychoc.c@close_param_check)
+    line: int                          # where it was declared
 
 # src/tychoc.c@g_pend -- one entry per bare `xs := []` / `x := None` decl, kept
 # in DECLARATION order with a per-block mark so the audit at the end of a block
@@ -946,7 +947,7 @@ fn _vrestore(cs: inout C, m: int):
     cs.nvars = m
 
 fn _vpush(cs: inout C, name: string, ty: string, mutable: bool):
-    b := VBind(name, ty, mutable, false)
+    b := VBind(name, ty, mutable, false, cs.line)
     if cs.nvars < len(cs.vars):
         cs.vars[cs.nvars] = b
     else:
@@ -1447,7 +1448,7 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
             ft := _field_ty(&cs, rt, f)
             cs.line = l
             if not callee_ok:
-                _non_struct_field(&cs, rt, f)
+                _non_struct_field(&cs, rt, f, k[0])
             _no_field(&cs, rt, f)
             _tnote(&cs, "f:" + ft)
             return ft
