@@ -1605,6 +1605,19 @@ fn _ex2_inner(cs: inout C, e: ast.Expr, want0: string) -> string:
                                         for ai := 1; ai < len(k); ai += 1:
                                             push(ub, k[ai])
                                         return _call_builtin(&cs, l, fnm, ub, "")
+                                    # nothing answers it on a builtin type (FRICTION 258)
+                                    rh := _head(rt)
+                                    if known(rt) and not _shape_builtin(fnm) and fnm != "push" and fnm != "reserve" and
+                                            (rh == "arr" or rh == "map" or rh == "string" or rh == "bytes" or
+                                            rh == "int" or rh == "float" or rh == "bool"):
+                                        ua2 := []ast.Expr
+                                        for ai := 1; ai < len(k); ai += 1:
+                                            push(ua2, k[ai])
+                                        _walk_args(&cs, ua2)
+                                        cs.line = l
+                                        _cerr(&cs, "no method '" + fnm + "' on " + _show(&cs, rt) + " -- no builtin and no function " +
+                                            fnm + "(" + _show(&cs, rt) + ", ...) is in scope")
+                                        return "?"
                     _: pass
             cs.callee = true
             cvt := _base(&cs, _ex(&cs, k[0]))
@@ -2783,6 +2796,15 @@ fn _call(cs: inout C, l: int, q: string, n: string, ts: [ast.Ty], args: [ast.Exp
             if _head(ft) == "fun":
                 return _call_fnval(&cs, l, q + "." + n, ft, args)
             _walk_args(&cs, args)
+            # Nothing answers `.n` on a builtin type: no builtin and no function
+            # taking it first. This was `?`, and the C emitter refused the call
+            # later with no line ("unsupported call") (FRICTION 258).
+            rh := _head(_base(&cs, recv))
+            if known(recv) and (rh == "arr" or rh == "map" or rh == "string" or rh == "bytes" or
+                    rh == "int" or rh == "float" or rh == "bool"):
+                cs.line = l
+                _cerr(&cs, "no method '" + n + "' on " + _show(&cs, recv) + " -- no builtin and no function " +
+                    n + "(" + _show(&cs, recv) + ", ...) is in scope")
             return "?"
         m := _prefix_of(&cs, q) + n
         # A C symbol is global and therefore registered UNMANGLED, but the

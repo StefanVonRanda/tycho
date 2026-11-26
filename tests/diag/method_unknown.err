@@ -1,0 +1,2 @@
+tests/diag/method_unknown.ty:4: error: no method 'nope' on [int] -- no builtin and no function nope([int], ...) is in scope
+     4 |     xs.nope()

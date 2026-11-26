@@ -1508,3 +1508,16 @@ error now names both declarations: `'sc' here is the [float] declared at line 11
 hides the Script declared at line 9`.
 
 > Pinned-by: test -f tests/diag/field_on_shadow.err
+
+### 258. An unknown method on a builtin type passed the checker and failed in the C emitter — **FIXED 2026-11-26**
+
+Urani's UI wrote `c.scrolls.remove_key(k)` (a map's form is `delete m[k]`). The checker
+typed the call `?` and moved on, and the emitter refused it with no line: `tychoc:
+unsupported call 'remove_key' with 2 argument(s)`. `xs.nope()`, `s.zap()` and the field
+form all did the same. Now a method that no builtin and no function answers on an array,
+map, string, bytes, int, float or bool is an error at its line: `no method 'remove_key'
+on [int: float] -- no builtin and no function remove_key([int: float], ...) is in scope`.
+
+> Pinned-by: test -f tests/diag/method_unknown_on_field.err
+> Pinned-by: test -f tests/diag/method_unknown.err
+

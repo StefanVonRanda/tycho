@@ -1,0 +1,2 @@
+tests/diag/method_unknown_on_field.ty:9: error: no method 'remove_key' on [int: float] -- no builtin and no function remove_key([int: float], ...) is in scope
+     9 |     c.m.remove_key(1)

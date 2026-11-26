@@ -12,6 +12,9 @@ builtins and corelib signatures.
 - **A read-only binding passed to a by-value parameter is no longer copied**: `d := f.data;
   rd(d, 0)` shared `f.data` only when every use was a field or index read; a call argument
   forced a deep copy on every call (FRICTION 255).
+- **An unknown method on a builtin type is an error at its line** (`m.remove_key(k)`,
+  `xs.nope()`): it passed the checker and the C emitter refused it with no line
+  (FRICTION 258).
 - **`.field` on a variable that hides an outer one says so**, naming both declarations and
   their types (FRICTION 257).
 - **`has_str(T)` admits everything `str` formats** -- enums, structs, chars, bytes and

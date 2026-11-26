@@ -1,0 +1,5 @@
+# The receiver a plain variable: the same refusal.
+fn main():
+    xs := [1, 2]
+    xs.nope()
+    println(str(len(xs)))
