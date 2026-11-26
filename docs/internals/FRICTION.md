@@ -49,6 +49,32 @@ needs a fixture that reaches it, and some of them (`overlapping mutable access`,
 the `sink`-in-a-loop refusals) need a program that trips a rule nothing else in
 the corpus exercises.
 
+### 255. A read-only local copy of a `bytes` field is deep-copied once it is passed to a function — **OPEN 2026-11-26**
+
+Found porting Pandora's TrueType reader (`core:font`). The read-only borrow
+(FRICTION 251, emit_elide.ty@_ro_borrow) refuses a binding that appears bare,
+and a call argument is a bare use, so `d := f.data; rd(d, 0)` copies the whole
+font on every call (~27 ms a 1000 calls of a 1 MB field) while `rd(f.data, 0)`
+costs nothing. `glyph()` paid 9 us a lookup; the full check went 1 ms -> 63 ms.
+`core:font` passes `f.data` directly. Fix: treat a by-value argument to a callee
+that cannot keep it as a read.
+
+```
+struct F:
+    data: bytes
+fn rd(d: bytes, off: int) -> int:
+    return d[off]
+fn via_local(f: F) -> int:
+    d := f.data
+    return rd(d, 0)     # deep copy
+```
+
+### 256. The surface-lock and catalogue gates list packages with `git ls-files` — **OPEN 2026-11-26**
+
+A new, untracked corelib package passes both locally (`surface lock: ok`) and
+fails only once staged, so the lock and `docs/reference/corelib.md` entries are
+easy to miss until commit time. Found adding `core:font`.
+
 ## Closed
 
 ### 1. ~~The one-shot digest is what the language makes natural~~ — **DOWNGRADED 2026-08-18: `core:sha256` streams now**

@@ -1,0 +1,34 @@
+metrics: upem 1000 ascender 1069 descender -293 line_gap 0 glyphs 3784
+glyph 'A' 36 advance 705; ' ' 3 advance 260
+glyph U+00E9 171; unmapped U+1F600 0; -1 0; 0x110000 0
+outline of code point 65: 49 points, 2 contours
+outline of code point 233: 44 points, 3 contours
+outline of code point 32: 0 points, 0 contours
+'A' at 32 px: 17x17 at (0, -17) advance 16.56387665198238 coverage 20155
+  |       +#.       |
+  |      .###       |
+  |      +###.      |
+  |      #+##+      |
+  |     .#.+##      |
+  |     +#..##.     |
+  |    .#+  ##+     |
+  |    .#.  +##.    |
+  |    +#   .##.    |
+  |   .#+    ##+    |
+  |   +#########.   |
+  |   ##++++++##+   |
+  |  .#+      ###   |
+  |  +#.      .##.  |
+  | .##       .##+  |
+  |.+##.     ..###. |
+  |######    ######+|
+U+00E9 at 32 px: 11x19 at (1, -18) coverage 17268
+' ' at 32 px: 0x0 advance 6.108663729809104
+95 ASCII glyphs at 32 px: coverage 1512885
+empty: too short for a font
+short: too short for a font
+ttcf: font collections ('ttcf') are not supported
+OTTO: OpenType CFF outlines ('OTTO') are not supported
+truncated: table 'GDEF' runs past the end of the file
+over 8 MiB: font larger than 8 MiB
+fuzz: 3000 corrupted fonts, 1027 opened, 1973 refused, 0 malformed results

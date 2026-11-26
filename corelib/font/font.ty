@@ -1,0 +1,789 @@
+# corelib: pure-Tycho TrueType reader and rasterizer. Import with `import "core:font"`.
+#
+# Ported from Pandora's validated parser (pandora-engine src/media/ttf.odin). Font
+# bytes are untrusted, so every read is bounds-checked and the file is validated
+# before any glyph is drawn; nothing here hands font data to C.
+#
+#   font.open(data) -> Result(Font, string)      validate a .ttf; Err is the reason
+#   font.check(f) -> Result(void, string)        read every glyph (open already runs it)
+#   font.glyph(f, cp) -> int                     code point -> glyph index (0: missing)
+#   font.advance(f, g) -> int                    advance width, font units
+#   font.outline(f, g) -> Result(Outline, string) contours in font units, y up
+#   font.line_scale(f, px) -> float              pixels per font unit for a line height px
+#   font.render(o, scale, max_side) -> Bitmap    rasterize an outline
+#   font.render_glyph(f, g, px) -> Bitmap        outline + render at line height px
+#
+# Font metrics are fields: units_per_em, ascender, descender (negative), line_gap
+# (hhea, font units), num_glyphs.
+#
+# What open checks: the size (<= MAX_BYTES), the table directory (every table
+# inside the file, no table twice), the tables used (head, hhea, maxp, hmtx, cmap,
+# loca, glyf) and their sizes, every loca entry (non-decreasing, inside glyf), and
+# the chosen cmap subtable (format 12, all of Unicode, before format 4, the BMP:
+# segments ordered, inside the table). Collections ('ttcf') and CFF outlines
+# ('OTTO') are refused. Then check reads every glyph, so a malformed outline
+# refuses the font with the reason rather than drawing a hole later; its total work
+# is bounded by the file's size (a file whose loca entries all point at one large
+# glyph would otherwise take seconds).
+#
+# outline bounds-checks every read against that glyph's bytes: contour ends
+# increasing, flag repeats inside the point count, at most MAX_POINTS points and
+# MAX_CONTOURS contours (composites expanded), composites nested at most MAX_DEPTH
+# deep with at most MAX_COMPONENTS parts. A part placed by point matching is moved
+# so its point lands on the parent's (both indices checked). Hinting instructions
+# are skipped, never run.
+#
+# render is a signed-area accumulation scanline rasterizer (the font-rs method):
+# the bitmap's size comes from the points actually read (never the header's
+# bounding box), capped at max_side a side and clipped beyond.
+#
+# Not here: CFF outlines, kerning, shaping, variable fonts (gvar).
+package font
+
+import "core:arrays"
+
+const MAX_BYTES = 8388608      # 8 MiB
+const MAX_POINTS = 4096
+const MAX_CONTOURS = 512
+const MAX_DEPTH = 4
+const MAX_COMPONENTS = 64
+const MAX_PX = 160             # largest line height render_glyph draws (a side at most 1.5 times that)
+
+# outline's work, in units of about 3 ns: a point placed, a composite's part, a
+# glyph looked up. check bounds the sum by the file's size.
+const WORK_POINT = 1
+const WORK_PART = 20
+const WORK_GLYPH = 4
+const CHECK_GLYPHS = 65536
+const CHECK_WORK_PER_BYTE = 12
+const CHECK_WORK_BASE = 65536
+
+# An opened, validated font. The *_off / *_len pairs are byte ranges of data.
+struct Font:
+    data: bytes
+    units_per_em: int
+    ascender: int          # font units above the baseline (hhea)
+    descender: int         # below it (negative)
+    line_gap: int
+    num_glyphs: int
+    num_hmetrics: int
+    loca_long: bool
+    hmtx_off: int
+    hmtx_len: int
+    loca_off: int
+    loca_len: int
+    glyf_off: int
+    glyf_len: int
+    cmap_format: int       # 4 or 12
+    cmap_off: int          # the chosen subtable
+    cmap_len: int
+
+struct Point:
+    x: float
+    y: float
+    on: bool               # on the curve (else a quadratic control point)
+
+# A glyph's contours: ends[i] is one past contour i's last point.
+struct Outline:
+    points: [Point]
+    ends: [int]
+    work: int              # what reading it cost (WORK_*)
+
+# A rendered glyph: 8-bit alpha coverage, w*h bytes, rows top to bottom. (x0, y0)
+# is its top-left pixel relative to the pen on the baseline, y down (x0 is the
+# left bearing, -y0 the distance above the baseline). advance is in pixels.
+struct Bitmap:
+    w: int
+    h: int
+    x0: int
+    y0: int
+    advance: float
+    pixels: bytes
+
+# ---- bounds-checked big-endian reads -----------------------------------------
+# Each reads d at base + off, inside [base, base + n); a read outside sets bad and
+# gives 0. The bytes are passed, never put in a struct: building a struct from a
+# `bytes` binding copies it.
+
+fn _r8(d: bytes, base: int, n: int, off: int, bad: inout bool) -> int:
+    if off < 0 or off >= n:
+        bad = true
+        return 0
+    return d[base + off]
+
+fn _r16(d: bytes, base: int, n: int, off: int, bad: inout bool) -> int:
+    if off < 0 or off > n - 2:
+        bad = true
+        return 0
+    return (d[base + off] << 8) | d[base + off + 1]
+
+fn _ri16(d: bytes, base: int, n: int, off: int, bad: inout bool) -> int:
+    v := _r16(d, base, n, off, &bad)
+    if v >= 32768:
+        return v - 65536
+    return v
+
+fn _r32(d: bytes, base: int, n: int, off: int, bad: inout bool) -> int:
+    if off < 0 or off > n - 4:
+        bad = true
+        return 0
+    return (d[base + off] << 24) | (d[base + off + 1] << 16) | (d[base + off + 2] << 8) | d[base + off + 3]
+
+fn _tag(s: string) -> int:
+    return (s[0] << 24) | (s[1] << 16) | (s[2] << 8) | s[3]
+
+fn _printable(t: int) -> string:
+    s := ""
+    for sh in [24, 16, 8, 0]:
+        c := (t >> sh) & 255
+        if c >= 32 and c < 127:
+            s += chr(c)
+        else:
+            s += "?"
+    return s
+
+# ---- open --------------------------------------------------------------------
+
+const T_HEAD = 0
+const T_HHEA = 1
+const T_MAXP = 2
+const T_HMTX = 3
+const T_CMAP = 4
+const T_LOCA = 5
+const T_GLYF = 6
+
+# Validate a TrueType file (see the header for what is checked) and read every
+# glyph (check). Err is the reason it was refused.
+fn open(data: bytes) -> Result(Font, string):
+    f := _open_dir(data) or_return
+    check(f) or_return
+    return Ok(f)
+
+fn _open_dir(data: bytes) -> Result(Font, string):
+    if len(data) > MAX_BYTES:
+        return Err("font larger than 8 MiB")
+    if len(data) < 12:
+        return Err("too short for a font")
+    nd := len(data)
+    bad := false
+    ver := _r32(data, 0, nd, 0, &bad)
+    if ver == 0x4f54544f:
+        return Err("OpenType CFF outlines ('OTTO') are not supported")
+    if ver == 0x74746366:
+        return Err("font collections ('ttcf') are not supported")
+    if ver != 0x00010000 and ver != 0x74727565:
+        return Err("not a TrueType font")
+    n := _r16(data, 0, nd, 4, &bad)
+    if n < 1 or n > 64 or 12 + 16 * n > nd:
+        return Err("bad table count")
+    names := ["head", "hhea", "maxp", "hmtx", "cmap", "loca", "glyf"]
+    tags := []int
+    for nm in names:
+        push(tags, _tag(nm))
+    offs := arrays.fill(len(names), 0)
+    lens := arrays.fill(len(names), 0)
+    have := arrays.fill(len(names), false)
+    for i in 0..<n:
+        rec := 12 + 16 * i
+        tag := _r32(data, 0, nd, rec, &bad)
+        off := _r32(data, 0, nd, rec + 8, &bad)
+        ln := _r32(data, 0, nd, rec + 12, &bad)
+        if off > nd or ln > nd - off:
+            return Err(f"table '{_printable(tag)}' runs past the end of the file")
+        for k in 0..<len(tags):
+            if tags[k] == tag:
+                if have[k]:
+                    return Err(f"table '{names[k]}' twice")
+                have[k] = true
+                offs[k] = off
+                lens[k] = ln
+    for k in 0..<len(names):
+        if not have[k]:
+            return Err(f"no '{names[k]}' table")
+    if lens[T_HEAD] < 54 or lens[T_HHEA] < 36 or lens[T_MAXP] < 6:
+        return Err("head, hhea or maxp too short")
+    hb := offs[T_HEAD]
+    hn := lens[T_HEAD]
+    if _r32(data, hb, hn, 12, &bad) != 0x5f0f3cf5:
+        return Err("bad head magic")
+    upem := _r16(data, hb, hn, 18, &bad)
+    if upem < 16 or upem > 16384:
+        return Err(f"units per em {upem} out of range (16..16384)")
+    lf := _ri16(data, hb, hn, 50, &bad)
+    if lf != 0 and lf != 1:
+        return Err("bad loca format")
+    ab := offs[T_HHEA]
+    an := lens[T_HHEA]
+    asc := _ri16(data, ab, an, 4, &bad)
+    desc := _ri16(data, ab, an, 6, &bad)
+    gap := _ri16(data, ab, an, 8, &bad)
+    if asc <= desc or asc - desc > 16 * upem:
+        return Err("bad ascender/descender")
+    nhm := _r16(data, ab, an, 34, &bad)
+    ng := _r16(data, offs[T_MAXP], lens[T_MAXP], 4, &bad)
+    if ng < 1 or nhm < 1 or nhm > ng:
+        return Err("bad glyph or metrics count")
+    if lens[T_HMTX] < 4 * nhm + 2 * (ng - nhm):
+        return Err("hmtx too short")
+    f := Font(data, upem, asc, desc, gap, ng, nhm, lf == 1, offs[T_HMTX], lens[T_HMTX], offs[T_LOCA], lens[T_LOCA], offs[T_GLYF], lens[T_GLYF], 0, 0, 0)
+    esz := if f.loca_long:
+        4
+    else:
+        2
+    if f.loca_len < (ng + 1) * esz:
+        return Err("loca too short")
+    prev := 0
+    for g in 0..<(ng + 1):
+        o := _loca_at(f, g)
+        if o < prev or o > f.glyf_len:
+            return Err(f"glyph {g}'s offset out of order or past glyf")
+        prev = o
+    e := _pick_cmap(&f, offs[T_CMAP], lens[T_CMAP])
+    if e != "":
+        return Err(e)
+    return Ok(f)
+
+fn _loca_at(f: Font, g: int) -> int:
+    bad := false
+    if f.loca_long:
+        return _r32(f.data, f.loca_off, f.loca_len, 4 * g, &bad)
+    return 2 * _r16(f.data, f.loca_off, f.loca_len, 2 * g, &bad)
+
+# Choose a Unicode subtable (format 12 before 4) and validate it. "" when good.
+fn _pick_cmap(f: inout Font, cb: int, cn: int) -> string:
+    bad := false
+    n := _r16(f.data, cb, cn, 2, &bad)
+    if bad or n > 256 or 4 + 8 * n > cn:
+        return "bad cmap header"
+    best := -1
+    best_rank := 0
+    for i in 0..<n:
+        plat := _r16(f.data, cb, cn, 4 + 8 * i, &bad)
+        enc := _r16(f.data, cb, cn, 6 + 8 * i, &bad)
+        off := _r32(f.data, cb, cn, 8 + 8 * i, &bad)
+        if off > cn - 4:
+            return "cmap subtable past the table"
+        format := _r16(f.data, cb, cn, off, &bad)
+        rank := 0
+        uni := plat == 0 or (plat == 3 and (enc == 1 or enc == 10))
+        if uni and format == 12:
+            rank = 2
+        elif uni and format == 4:
+            rank = 1
+        if rank > best_rank:
+            best = off
+            best_rank = rank
+    if best < 0:
+        return "no Unicode cmap (format 4 or 12)"
+    f.cmap_format = _r16(f.data, cb, cn, best, &bad)
+    if f.cmap_format == 4:
+        ln := _r16(f.data, cb, cn, best + 2, &bad)
+        segx2 := _r16(f.data, cb, cn, best + 6, &bad)
+        if ln < 16 or ln > cn - best or segx2 == 0 or segx2 % 2 != 0 or 16 + 4 * segx2 > ln:
+            return "bad cmap format 4 header"
+        f.cmap_off = cb + best
+        f.cmap_len = ln
+        prev := -1
+        for i in 0..<(segx2 / 2):
+            end := _r16(f.data, f.cmap_off, ln, 14 + 2 * i, &bad)
+            start := _r16(f.data, f.cmap_off, ln, 16 + segx2 + 2 * i, &bad)
+            if end <= prev or start > end:
+                return "cmap format 4 segments out of order"
+            prev = end
+    else:
+        ln := _r32(f.data, cb, cn, best + 4, &bad)
+        groups := _r32(f.data, cb, cn, best + 12, &bad)
+        if ln < 16 or ln > cn - best or groups > 65536 or 16 + 12 * groups > ln:
+            return "bad cmap format 12 header"
+        f.cmap_off = cb + best
+        f.cmap_len = ln
+        prev := -1
+        for i in 0..<groups:
+            start := _r32(f.data, f.cmap_off, ln, 16 + 12 * i, &bad)
+            end := _r32(f.data, f.cmap_off, ln, 20 + 12 * i, &bad)
+            if start <= prev or end < start or end > 0x10ffff:
+                return "cmap format 12 groups out of order"
+            prev = end
+    return ""
+
+# ---- lookup ------------------------------------------------------------------
+
+# Map a code point to a glyph index (0, the missing glyph, if none): a binary
+# search of the cmap's segments (ordered, checked by open).
+fn glyph(f: Font, cp: int) -> int:
+    if cp < 0 or cp > 0x10ffff:
+        return 0
+    b := f.cmap_off
+    n := f.cmap_len
+    bad := false
+    g := 0
+    if f.cmap_format == 4:
+        if cp > 0xffff:
+            return 0
+        segx2 := _r16(f.data, b, n, 6, &bad)
+        lo := 0
+        hi := segx2 / 2
+        for lo < hi:
+            mid := (lo + hi) / 2
+            if _r16(f.data, b, n, 14 + 2 * mid, &bad) < cp:
+                lo = mid + 1
+            else:
+                hi = mid
+        i := lo
+        if i < segx2 / 2:
+            start := _r16(f.data, b, n, 16 + segx2 + 2 * i, &bad)
+            if start <= cp:
+                delta := _r16(f.data, b, n, 16 + 2 * segx2 + 2 * i, &bad)
+                ro_at := 16 + 3 * segx2 + 2 * i
+                ro := _r16(f.data, b, n, ro_at, &bad)
+                if ro == 0:
+                    g = (cp + delta) & 0xffff
+                else:
+                    g = _r16(f.data, b, n, ro_at + ro + 2 * (cp - start), &bad)
+                    if g != 0:
+                        g = (g + delta) & 0xffff
+    else:
+        groups := _r32(f.data, b, n, 12, &bad)
+        lo := 0
+        hi := groups
+        for lo < hi:
+            mid := (lo + hi) / 2
+            if _r32(f.data, b, n, 20 + 12 * mid, &bad) < cp:
+                lo = mid + 1
+            else:
+                hi = mid
+        i := lo
+        if i < groups:
+            start := _r32(f.data, b, n, 16 + 12 * i, &bad)
+            if start <= cp:
+                g = _r32(f.data, b, n, 24 + 12 * i, &bad) + (cp - start)
+    if bad or g < 0 or g >= f.num_glyphs:
+        return 0
+    return g
+
+# A glyph's advance width in font units (glyphs past the last hmtx metric share it).
+fn advance(f: Font, g: int) -> int:
+    bad := false
+    i := g
+    if i < 0:
+        i = 0
+    if i > f.num_hmetrics - 1:
+        i = f.num_hmetrics - 1
+    return _r16(f.data, f.hmtx_off, f.hmtx_len, 4 * i, &bad)
+
+# ---- outlines ----------------------------------------------------------------
+
+# Glyph g's contours, composites expanded, in font units, y up.
+fn outline(f: Font, g: int) -> Result(Outline, string):
+    o := Outline([]Point, []int, 0)
+    e := _outline_into(f, g, &o)
+    if e != "":
+        return Err(e)
+    return Ok(o)
+
+fn _outline_into(f: Font, g: int, out: inout Outline) -> string:
+    parts := 0
+    base := len(out.points)
+    e := _glyph_into(f, g, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0, &parts, &out)
+    out.work += WORK_GLYPH + (len(out.points) - base) * WORK_POINT + parts * WORK_PART
+    return e
+
+fn _f2dot14(d: bytes, b: int, n: int, off: int, bad: inout bool) -> float:
+    return to_float(_ri16(d, b, n, off, &bad)) / 16384.0
+
+# Read glyph g into out under the transform x' = ma x + mc y + me, y' = mb x + md y + mf.
+fn _glyph_into(f: Font, g: int, ma: float, mb: float, mc: float, md: float, me: float, mf: float, depth: int, parts: inout int, out: inout Outline) -> string:
+    if g < 0 or g >= f.num_glyphs:
+        return "glyph index out of range"
+    o0 := _loca_at(f, g)
+    o1 := _loca_at(f, g + 1)
+    if o1 == o0:
+        return ""                 # empty (a space)
+    b := f.glyf_off + o0
+    n := o1 - o0
+    bad := false
+    nc := _ri16(f.data, b, n, 0, &bad)
+    if bad or n < 10:
+        return f"glyph {g}: truncated header"
+    if nc >= 0:
+        if nc + len(out.ends) > MAX_CONTOURS:
+            return f"glyph {g}: more than {MAX_CONTOURS} contours"
+        if nc == 0:
+            return ""
+        base := len(out.points)
+        prev := -1
+        for i in 0..<nc:
+            e := _r16(f.data, b, n, 10 + 2 * i, &bad)
+            if e <= prev:
+                return f"glyph {g}: contour ends out of order"
+            prev = e
+        npts := prev + 1
+        if bad or base + npts > MAX_POINTS:
+            return f"glyph {g}: truncated or more than {MAX_POINTS} points"
+        p := 12 + 2 * nc + _r16(f.data, b, n, 10 + 2 * nc, &bad)    # past the instructions (never run)
+        flags := arrays.fill(npts, 0)
+        i := 0
+        for i < npts:
+            fl := _r8(f.data, b, n, p, &bad)
+            p += 1
+            flags[i] = fl
+            i += 1
+            if fl & 8 != 0:
+                rep := _r8(f.data, b, n, p, &bad)
+                p += 1
+                if i + rep > npts:
+                    return f"glyph {g}: flag repeat past the points"
+                for _k in 0..<rep:
+                    flags[i] = fl
+                    i += 1
+            if bad:
+                return f"glyph {g}: truncated flags"
+        xs := arrays.fill(npts, 0)
+        ys := arrays.fill(npts, 0)
+        for axis in 0..<2:
+            short := 2
+            same := 16
+            if axis == 1:
+                short = 4
+                same = 32
+            v := 0
+            for k in 0..<npts:
+                fl := flags[k]
+                if fl & short != 0:
+                    dv := _r8(f.data, b, n, p, &bad)
+                    p += 1
+                    if fl & same != 0:
+                        v += dv
+                    else:
+                        v -= dv
+                elif fl & same == 0:
+                    v += _ri16(f.data, b, n, p, &bad)
+                    p += 2
+                if axis == 0:
+                    xs[k] = v
+                else:
+                    ys[k] = v
+        if bad:
+            return f"glyph {g}: truncated coordinates"
+        for k in 0..<npts:
+            x := to_float(xs[k])
+            y := to_float(ys[k])
+            push(out.points, Point(ma * x + mc * y + me, mb * x + md * y + mf, flags[k] & 1 != 0))
+        for k in 0..<nc:
+            push(out.ends, base + _r16(f.data, b, n, 10 + 2 * k, &bad) + 1)
+        return ""
+    # composite
+    if depth >= MAX_DEPTH:
+        return f"glyph {g}: composites nested more than {MAX_DEPTH} deep"
+    base := len(out.points)          # this composite's points are numbered from here
+    p := 10
+    for true:
+        parts += 1
+        if parts > MAX_COMPONENTS:
+            return f"glyph {g}: more than {MAX_COMPONENTS} components"
+        fl := _r16(f.data, b, n, p, &bad)
+        child := _r16(f.data, b, n, p + 2, &bad)
+        p += 4
+        xy := fl & 2 != 0            # ARGS_ARE_XY_VALUES; else two point numbers
+        a1 := 0
+        a2 := 0
+        if fl & 1 != 0:
+            if xy:
+                a1 = _ri16(f.data, b, n, p, &bad)
+                a2 = _ri16(f.data, b, n, p + 2, &bad)
+            else:
+                a1 = _r16(f.data, b, n, p, &bad)
+                a2 = _r16(f.data, b, n, p + 2, &bad)
+            p += 4
+        else:
+            a1 = _r8(f.data, b, n, p, &bad)
+            a2 = _r8(f.data, b, n, p + 1, &bad)
+            if xy:
+                if a1 >= 128:
+                    a1 -= 256
+                if a2 >= 128:
+                    a2 -= 256
+            p += 2
+        la := 1.0
+        lb := 0.0
+        lc := 0.0
+        ld := 1.0
+        le := 0.0
+        lf := 0.0
+        if xy:
+            le = to_float(a1)
+            lf = to_float(a2)
+        if fl & 8 != 0:
+            la = _f2dot14(f.data, b, n, p, &bad)
+            ld = la
+            p += 2
+        elif fl & 0x40 != 0:
+            la = _f2dot14(f.data, b, n, p, &bad)
+            ld = _f2dot14(f.data, b, n, p + 2, &bad)
+            p += 4
+        elif fl & 0x80 != 0:
+            la = _f2dot14(f.data, b, n, p, &bad)
+            lb = _f2dot14(f.data, b, n, p + 2, &bad)
+            lc = _f2dot14(f.data, b, n, p + 4, &bad)
+            ld = _f2dot14(f.data, b, n, p + 6, &bad)
+            p += 8
+        if bad:
+            return f"glyph {g}: truncated component"
+        # m after l
+        cbase := len(out.points)
+        e := _glyph_into(f, child, ma * la + mc * lb, mb * la + md * lb, ma * lc + mc * ld, mb * lc + md * ld, ma * le + mc * lf + me, mb * le + md * lf + mf, depth + 1, &parts, &out)
+        if e != "":
+            return e
+        if not xy:
+            # point matching: the child's point a2 goes onto the parent's point a1
+            # (both already in output space, so the shift is too)
+            if a1 >= cbase - base or a2 >= len(out.points) - cbase:
+                return f"glyph {g}: matched point {a1} or {a2} out of range"
+            dx := out.points[base + a1].x - out.points[cbase + a2].x
+            dy := out.points[base + a1].y - out.points[cbase + a2].y
+            for k in cbase..<len(out.points):
+                out.points[k].x += dx
+                out.points[k].y += dy
+        if fl & 0x20 == 0:
+            return ""
+    return ""
+
+# ---- rasterizer --------------------------------------------------------------
+
+fn _ceil(x: float) -> float:
+    return -floor(-x)
+
+fn _clampi(v: int, lo: int, hi: int) -> int:
+    if v < lo:
+        return lo
+    if v > hi:
+        return hi
+    return v
+
+fn _clampf(v: float, lo: float, hi: float) -> float:
+    if v < lo:
+        return lo
+    if v > hi:
+        return hi
+    return v
+
+fn _finite(v: float) -> bool:
+    return fabs(v) < 1000000.0      # false for NaN too
+
+# Rasterize an outline at `scale` pixels per font unit, at most max_side pixels a
+# side (clipped beyond). An empty outline, a bad scale (<= 0, > 64, NaN) or
+# coordinates past 1e6 give a 0x0 bitmap. advance is left 0 (render_glyph sets it).
+fn render(o: Outline, scale: float, max_side: int) -> Bitmap:
+    empty := Bitmap(0, 0, 0, 0, 0.0, to_bytes([]int))
+    if len(o.points) == 0 or not (scale > 0.0) or scale > 64.0 or max_side < 1:
+        return empty
+    lox := o.points[0].x
+    loy := o.points[0].y
+    hix := lox
+    hiy := loy
+    for p in o.points:
+        if p.x < lox:
+            lox = p.x
+        if p.y < loy:
+            loy = p.y
+        if p.x > hix:
+            hix = p.x
+        if p.y > hiy:
+            hiy = p.y
+    if not (_finite(lox) and _finite(loy) and _finite(hix) and _finite(hiy)):
+        return empty
+    x0 := to_int(floor(lox * scale))
+    y0 := to_int(floor(-hiy * scale))
+    w := _clampi(to_int(_ceil(hix * scale)) - x0, 1, max_side)
+    h := _clampi(to_int(_ceil(-loy * scale)) - y0, 1, max_side)
+    acc := arrays.fill((w + 2) * h, 0.0)
+    fx0 := to_float(x0)
+    fy0 := to_float(y0)
+    start := 0
+    for end in o.ends:
+        np := end - start
+        s0 := start
+        start = end
+        if np < 2:
+            continue
+        # the first point on the curve (or the midpoint of two control points)
+        first := 0
+        for first < np and not o.points[s0 + first].on:
+            first += 1
+        cx := 0.0
+        cy := 0.0
+        if first == np:
+            cx = (o.points[s0].x * scale - fx0 + o.points[s0 + 1].x * scale - fx0) / 2.0
+            cy = (-o.points[s0].y * scale - fy0 - o.points[s0 + 1].y * scale - fy0) / 2.0
+            first = 0
+        else:
+            cx = o.points[s0 + first].x * scale - fx0
+            cy = -o.points[s0 + first].y * scale - fy0
+        sx := cx
+        sy := cy
+        kx := 0.0                  # the pending control point
+        ky := 0.0
+        nctrl := 0
+        for k in 1..<(np + 1):
+            p := o.points[s0 + (first + k) % np]
+            qx := p.x * scale - fx0
+            qy := -p.y * scale - fy0
+            if p.on:
+                if nctrl == 1:
+                    _quad(&acc, w, h, cx, cy, kx, ky, qx, qy)
+                else:
+                    _line(&acc, w, h, cx, cy, qx, qy)
+                cx = qx
+                cy = qy
+                nctrl = 0
+            else:
+                if nctrl == 1:
+                    mx := (kx + qx) / 2.0
+                    my := (ky + qy) / 2.0
+                    _quad(&acc, w, h, cx, cy, kx, ky, mx, my)
+                    cx = mx
+                    cy = my
+                kx = qx
+                ky = qy
+                nctrl = 1
+        if nctrl == 1:
+            _quad(&acc, w, h, cx, cy, kx, ky, sx, sy)
+        elif cx != sx or cy != sy:
+            _line(&acc, w, h, cx, cy, sx, sy)
+    px := arrays.fill(w * h, 0)
+    for y in 0..<h:
+        a := 0.0
+        row := y * (w + 2)
+        for x in 0..<w:
+            a += acc[row + x]
+            c := fabs(a)
+            if c > 1.0:
+                c = 1.0
+            px[y * w + x] = to_int(c * 255.0 + 0.5)
+    return Bitmap(w, h, x0, y0, 0.0, to_bytes(px))
+
+fn _quad(acc: inout [float], w: int, h: int, p0x: float, p0y: float, p1x: float, p1y: float, p2x: float, p2y: float):
+    ddx := p0x - 2.0 * p1x + p2x
+    ddy := p0y - 2.0 * p1y + p2y
+    dd := sqrt(ddx * ddx + ddy * ddy)
+    n := _clampi(to_int(sqrt(dd) * 1.5) + 1, 1, 24)
+    px := p0x
+    py := p0y
+    for i in 1..<(n + 1):
+        t := to_float(i) / to_float(n)
+        u := 1.0 - t
+        qx := u * u * p0x + 2.0 * u * t * p1x + t * t * p2x
+        qy := u * u * p0y + 2.0 * u * t * p1y + t * t * p2y
+        _line(&acc, w, h, px, py, qx, qy)
+        px = qx
+        py = qy
+
+# Add a signed edge's area and cover to the accumulation buffer (the running sum
+# along each row is the coverage). x is clamped to the bitmap (coverage left of it
+# carries in; right of it never shows); rows outside are cut.
+fn _line(acc: inout [float], w: int, h: int, ax: float, ay: float, bx: float, by: float):
+    if not (fabs(ay - by) > 0.000001) or not (_finite(ax) and _finite(bx) and _finite(ay) and _finite(by)):
+        return
+    dir := 1.0
+    p0x := ax
+    p0y := ay
+    p1x := bx
+    p1y := by
+    if ay > by:
+        dir = -1.0
+        p0x = bx
+        p0y = by
+        p1x = ax
+        p1y = ay
+    stride := w + 2
+    fw := to_float(w)
+    dxdy := (p1x - p0x) / (p1y - p0y)
+    x := p0x
+    y0 := to_int(floor(p0y))
+    if p0y < 0.0:
+        x -= p0y * dxdy
+        y0 = 0
+    y1 := to_int(_ceil(p1y))
+    if y1 > h:
+        y1 = h
+    for y in y0..<y1:
+        fy := to_float(y)
+        top := p1y
+        if fy + 1.0 < top:
+            top = fy + 1.0
+        bot := p0y
+        if fy > bot:
+            bot = fy
+        dy := top - bot
+        xnext := x + dxdy * dy
+        dd := dy * dir
+        xa := x
+        xb := xnext
+        if xa > xb:
+            xa = xnext
+            xb = x
+        x0 := _clampf(xa, 0.0, fw)
+        x1 := _clampf(xb, 0.0, fw)
+        row := y * stride
+        x0f := floor(x0)
+        x0i := to_int(x0f)
+        x1i := to_int(_ceil(x1))
+        if x1i <= x0i + 1:
+            xmf := 0.5 * (x0 + x1) - x0f
+            acc[row + x0i] += dd - dd * xmf
+            acc[row + x0i + 1] += dd * xmf
+        else:
+            s := 1.0 / (x1 - x0)
+            fx0 := x0 - x0f
+            a0 := 0.5 * s * (1.0 - fx0) * (1.0 - fx0)
+            fx1 := x1 - _ceil(x1) + 1.0
+            am := 0.5 * s * fx1 * fx1
+            acc[row + x0i] += dd * a0
+            if x1i == x0i + 2:
+                acc[row + x0i + 1] += dd * (1.0 - a0 - am)
+            else:
+                a1 := s * (1.5 - fx0)
+                acc[row + x0i + 1] += dd * (a1 - a0)
+                for xi in (x0i + 2)..<(x1i - 1):
+                    acc[row + xi] += dd * s
+                a2 := a1 + to_float(x1i - x0i - 3) * s
+                acc[row + x1i - 1] += dd * (1.0 - a2 - am)
+            acc[row + x1i] += dd * am
+        x = xnext
+
+# Pixels per font unit for a line height (ascender - descender) of px.
+fn line_scale(f: Font, px: float) -> float:
+    return px / to_float(f.ascender - f.descender)
+
+# Render glyph g at line height px (clamped to 4..MAX_PX), at most 1.5 px a side.
+# A 0x0 bitmap (with its advance) for an empty glyph or one that fails to read.
+fn render_glyph(f: Font, g: int, px: int) -> Bitmap:
+    p := _clampi(px, 4, MAX_PX)
+    s := line_scale(f, to_float(p))
+    adv := to_float(advance(f, g)) * s
+    bm := Bitmap(0, 0, 0, 0, adv, to_bytes([]int))
+    o := Outline([]Point, []int, 0)
+    if _outline_into(f, g, &o) == "":
+        bm = render(o, s, p + p / 2)
+        bm.advance = adv
+    return bm
+
+# Read every glyph once (at most CHECK_GLYPHS), so a font whose outlines are
+# malformed is refused at load rather than drawing holes. Err is the first
+# reason. The work of all of them is bounded by the file's size
+# (CHECK_WORK_PER_BYTE a byte; Pandora's 112 measured fonts take up to 3).
+fn check(f: Font) -> Result(void, string):
+    work := 0
+    ng := f.num_glyphs
+    if ng > CHECK_GLYPHS:
+        ng = CHECK_GLYPHS
+    limit := CHECK_WORK_BASE + CHECK_WORK_PER_BYTE * len(f.data)
+    for g in 0..<ng:
+        o := Outline([]Point, []int, work)
+        e := _outline_into(f, g, &o)
+        if e != "":
+            return Err(e)
+        work = o.work
+        if work > limit:
+            return Err(f"glyph {g}: the outlines take more work to read than a file of {len(f.data)} bytes can hold (shared or repeated glyphs)")
+    return Ok()

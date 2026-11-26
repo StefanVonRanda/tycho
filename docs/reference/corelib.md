@@ -1068,6 +1068,20 @@ expression-bodied; pass a named function where you need a multi-line body.
   malformed / truncated / wrong-format input (check `width > 0`). `too_big(w, h)` is
   the decode guard in front of every codec here: it answers whether a declared width
   and height would allocate past the ceiling.
+- **`font`** — pure-Tycho **TrueType** reader and scanline rasterizer for untrusted
+  font bytes (ported from Pandora's `media/ttf.odin`). `open(data) -> Result(Font, string)`
+  validates the table directory (tables inside the file, none twice, the required ones
+  present), every `loca` entry and the cmap subtable (format 12 or 4, ordered), refuses
+  collections, CFF (`OTTO`) and files over 8 MiB, then runs `check(f) -> Result(void,
+  string)`, which reads every glyph under a work budget bounded by the file's size; `Err`
+  is the reason. `Font` carries `units_per_em`, `ascender`, `descender`, `line_gap` and
+  `num_glyphs`. `glyph(f, cp)` maps a code point (0 when unmapped), `advance(f, g)` is
+  in font units, `outline(f, g) -> Result(Outline, string)` expands composites with
+  every read bounds-checked (caps: 4096 points, 512 contours, depth 4, 64 parts; hinting
+  never runs). `render(o, scale, max_side)` and `render_glyph(f, g, px)` (px is the
+  line height, `line_scale(f, px)` its pixels per unit) give a `Bitmap`: 8-bit alpha
+  `pixels`, `w`, `h`, the offset `x0`/`y0` from the pen on the baseline (y down) and the
+  `advance` in pixels. No CFF, kerning, shaping or variations.
 - **`terminal`** — ANSI output and terminal state. Pure escape builders:
   `reset`, `bold`, `dim`, `italic`, `underline`, `reverse`, `fg`/`bg` (256
   colours), `fg_rgb`/`bg_rgb`, `clear_screen`, `clear_line`, `move(row, col)`,

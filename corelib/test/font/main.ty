@@ -1,0 +1,153 @@
+package main
+
+import "core:font"
+import "core:io"
+import "core:rand"
+
+# NotoSerif.ttf is OFL (OFL.txt beside it).
+const FONT_PATH = "corelib/test/font/NotoSerif.ttf"
+
+fn load(path: string) -> bytes:
+    match io.read_bytes(path):
+        Ok(b):
+            return b
+        Err(_):
+            return to_bytes([]int)
+
+fn sum(b: bytes) -> int:
+    s := 0
+    for i in 0..<len(b):
+        s += b[i]
+    return s
+
+fn refuse(name: string, data: bytes):
+    match font.open(data):
+        Ok(_f):
+            println(f"{name}: opened (want refused)")
+        Err(e):
+            println(f"{name}: {e}")
+
+fn art(bm: font.Bitmap):
+    for y in 0..<bm.h:
+        row := ""
+        for x in 0..<bm.w:
+            v := bm.pixels[y * bm.w + x]
+            if v > 170:
+                row += "#"
+            elif v > 85:
+                row += "+"
+            elif v > 0:
+                row += "."
+            else:
+                row += " "
+        println("  |" + row + "|")
+
+# A bitmap is well-formed: its pixel count matches its size, no side past the cap.
+fn sane(bm: font.Bitmap, px: int) -> bool:
+    if len(bm.pixels) != bm.w * bm.h:
+        return false
+    return bm.w <= px + px / 2 and bm.h <= px + px / 2
+
+fn main():
+    data := load(FONT_PATH)
+    if len(data) == 0:
+        println("cannot read " + FONT_PATH)
+        exit(1)
+    f := font.Font(data, 0, 0, 0, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    match font.open(data):
+        Ok(v):
+            f = v
+        Err(e):
+            println("open: " + e)
+            exit(1)
+    println(f"metrics: upem {f.units_per_em} ascender {f.ascender} descender {f.descender} line_gap {f.line_gap} glyphs {f.num_glyphs}")
+
+    # lookup
+    ga := font.glyph(f, 65)
+    println(f"glyph 'A' {ga} advance {font.advance(f, ga)}; ' ' {font.glyph(f, 32)} advance {font.advance(f, font.glyph(f, 32))}")
+    println(f"glyph U+00E9 {font.glyph(f, 0xe9)}; unmapped U+1F600 {font.glyph(f, 0x1f600)}; -1 {font.glyph(f, -1)}; 0x110000 {font.glyph(f, 0x110000)}")
+
+    # outlines: a simple glyph, a composite (e-acute), an empty one (space)
+    for cp in [65, 0xe9, 32]:
+        match font.outline(f, font.glyph(f, cp)):
+            Ok(o):
+                println(f"outline of code point {cp}: {len(o.points)} points, {len(o.ends)} contours")
+            Err(e):
+                println(f"outline of code point {cp}: {e}")
+
+    # 'A' at a 32 px line height, pinned (identical to Pandora's ttf_render_glyph)
+    bm := font.render_glyph(f, ga, 32)
+    println(f"'A' at 32 px: {bm.w}x{bm.h} at ({bm.x0}, {bm.y0}) advance {bm.advance} coverage {sum(bm.pixels)}")
+    art(bm)
+    be := font.render_glyph(f, font.glyph(f, 0xe9), 32)
+    println(f"U+00E9 at 32 px: {be.w}x{be.h} at ({be.x0}, {be.y0}) coverage {sum(be.pixels)}")
+    sp := font.render_glyph(f, font.glyph(f, 32), 32)
+    println(f"' ' at 32 px: {sp.w}x{sp.h} advance {sp.advance}")
+    total := 0
+    for c in 32..<127:
+        total += sum(font.render_glyph(f, font.glyph(f, c), 32).pixels)
+    println(f"95 ASCII glyphs at 32 px: coverage {total}")
+
+    # refusals
+    xs := []int
+    for i in 0..<len(data):
+        push(xs, data[i])
+    refuse("empty", to_bytes([]int))
+    refuse("short", to_bytes(xs[0:11]))
+    refuse("ttcf", to_bytes([0x74, 0x74, 0x63, 0x66, 0, 0, 0, 0, 0, 0, 0, 0]))
+    refuse("OTTO", to_bytes([0x4f, 0x54, 0x54, 0x4f, 0, 1, 0, 0, 0, 0, 0, 0]))
+    refuse("truncated", to_bytes(xs[0:len(xs) / 2]))
+    big := xs
+    for _i in 0..<(font.MAX_BYTES - len(xs) + 1):
+        push(big, 0)
+    refuse("over 8 MiB", to_bytes(big))
+
+    # corrupted-font fuzz (as Pandora's test_ui_font_fuzz): random bytes anywhere,
+    # in the header and directory, a table record's offset or length made hostile,
+    # truncations. Every result is a refusal or a font whose lookups, outlines and
+    # renders stay well-formed.
+    st := rand.seed(777)
+    opened := 0
+    refused := 0
+    bad := 0
+    ntab := data[5]
+    for iter in 0..<3000:
+        buf := xs
+        k := iter % 4
+        if k == 0:
+            for _j in 0..<(1 + rand.below(&st, 8)):
+                buf[rand.below(&st, len(buf))] = rand.below(&st, 256)
+        elif k == 1:
+            for _j in 0..<(1 + rand.below(&st, 4)):
+                buf[rand.below(&st, 300)] = rand.below(&st, 256)
+        elif k == 2:
+            rec := 12 + 16 * rand.below(&st, ntab) + 8 + 4 * rand.below(&st, 2)
+            v := rand.next(&st)
+            if rand.below(&st, 2) == 0:
+                v = rand.below(&st, len(buf) + 64)
+            buf[rec] = (v >> 24) & 255
+            buf[rec + 1] = (v >> 16) & 255
+            buf[rec + 2] = (v >> 8) & 255
+            buf[rec + 3] = v & 255
+        else:
+            buf = buf[0:rand.below(&st, len(buf))]
+            if len(buf) > 0 and rand.below(&st, 2) == 0:
+                at := rand.below(&st, len(buf))
+                buf[at] = buf[at] ^ 255
+        match font.open(to_bytes(buf)):
+            Err(_e):
+                refused += 1
+            Ok(g):
+                opened += 1
+                for cp in [65, 66, 63, 0xe9, 120, 0x10ffff]:
+                    gi := font.glyph(g, cp)
+                    if gi < 0 or gi >= g.num_glyphs or font.advance(g, gi) < 0:
+                        bad += 1
+                px := 4 + rand.below(&st, 60)
+                for gi in [0, 1, 2, 3, 4, 5, 6, 7, font.glyph(g, 65), font.glyph(g, 0xe9)]:
+                    if gi < g.num_glyphs and not sane(font.render_glyph(g, gi, px), px):
+                        bad += 1
+    println(f"fuzz: 3000 corrupted fonts, {opened} opened, {refused} refused, {bad} malformed results")
+    if opened < 300 or refused < 300 or bad != 0:
+        println("fuzz: FAIL")
+        exit(1)
