@@ -1521,3 +1521,46 @@ on [int: float] -- no builtin and no function remove_key([int: float], ...) is i
 > Pinned-by: test -f tests/diag/method_unknown_on_field.err
 > Pinned-by: test -f tests/diag/method_unknown.err
 
+
+### 259. "Did you mean" offers a function the call cannot reach, over the hint that would help — **OPEN**
+
+Urani, four times in one day. A package `other` defines `fn fmax(a: float, b: float)`;
+`main` imports it and calls `imax(1, 2)`:
+
+    main.ty:5: error: unknown procedure 'imax'; did you mean 'fmax'?
+
+`fmax` is `other`'s, not callable unqualified from `main`. The same call in a file with no
+near-miss gets the useful answer: `core:math has max -- add import "core:math" and call
+math.max(...)`. The fuzzy suggestion wins and hides it, so each package grew its own
+`fmax`/`imax`/`fmin` (Urani's `mesh`, `lod`, its tests) duplicating `math.max`/`math.min`.
+Fix: suggest only names callable at the call site; the `core:math` hint first.
+
+### 260. The "a map's type is not a value" hint misses a nested value type — **OPEN**
+
+`m := [string: int]` gets `[string: int] is the TYPE, not a value -- for an empty map write
+[]string: int`. `m := [string: [int]]` or `[string: [[f32]]]` gets only `expected an
+expression -- 'string' is a reserved keyword`. Fix: recognise `[K: V]` in value position
+whatever V is.
+
+### 261. Long positional struct constructors: every new field edits every call — **OPEN**
+
+Urani's `GpuScene` has 25 fields, the page streamer's `Stream` 22, the entity `Store` 16.
+Each field added meant editing every `T(...)` by position, and nothing guards two
+same-typed neighbours swapped (`[]int, []int` reads either way). Construction by field
+name, or field defaults (`no_x()` helpers stand in for them now), would end both.
+
+### 262. A trap names no file or line without `-g` — **OPEN, by design today**
+
+`tycho: index 49 out of bounds (len 45)` from a fuzzed cooked file: the fix needed a `-g`
+rebuild to find `skin.ty:190`. docs/debugging.md says normal builds print no location so
+the non-trapping path pays nothing. Worth measuring whether a per-trap-site constant
+(file:line passed only on the cold path) costs anything.
+
+### 263. Nothing warns that an early return can leave a spawned task waiting forever — **OPEN**
+
+A task is joined when its scope ends. Urani's page loader waits on `recv(jobs)` until
+`jobs` is closed; the 400-line frame loop beside it has dozens of `or_return`s, and any of
+them leaving the scope before `close(jobs)` would hang the join. Urani wraps the loop in a
+function and closes, drains and joins after it whatever it returns. The compiler could
+flag a return that can leave a scope holding a spawned task and an unclosed channel the
+task receives from.
