@@ -351,6 +351,39 @@ void netx_udp_read_status(tycho_int fd, tycho_int max, tycho_int *status,
     *status = TY_RD_DATA;                   /* n == 0 is a real datagram */
 }
 
+/* Receive one datagram and who sent it: the netx_udp_read_status contract,
+ * plus the sender's IPv4 address (host byte order) and port in *addr and
+ * *port (both 0 unless the status is data). What a server needs to tell its
+ * clients apart. */
+void netx_udp_recv_from(tycho_int fd, tycho_int max, tycho_int *status, tycho_int *addr, tycho_int *port,
+                        unsigned char **out, tycho_int *outlen) {
+    *out = NULL;
+    *outlen = 0;
+    *status = TY_RD_ERR;
+    *addr = 0;
+    *port = 0;
+    if (!netx_fd_ok(fd) || max <= 0) return;
+    unsigned char *buf = (unsigned char *)malloc((size_t)max);
+    if (!buf) return;
+    struct sockaddr_in from;
+    socklen_t fl = sizeof from;
+    memset(&from, 0, sizeof from);
+    errno = 0;
+    tycho_int n = (tycho_int)recvfrom((int)fd, (char *)buf, (size_t)max, 0, (struct sockaddr *)&from, &fl);
+    if (n < 0) {
+        free(buf);
+        *status = ty_recv_timed_out() ? TY_RD_TMO : TY_RD_ERR;
+        return;
+    }
+    if (from.sin_family == AF_INET) {
+        *addr = (tycho_int)ntohl(from.sin_addr.s_addr);
+        *port = (tycho_int)ntohs(from.sin_port);
+    }
+    *out = buf;
+    *outlen = n;
+    *status = TY_RD_DATA;
+}
+
 /* The sentinel form kept for compatibility: an empty result still means
  * "nothing to hand back", which cannot tell the three outcomes apart. */
 void netx_udp_read(tycho_int fd, tycho_int max, unsigned char **out, tycho_int *outlen) {

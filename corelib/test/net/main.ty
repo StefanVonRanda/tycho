@@ -245,6 +245,21 @@ fn main():
     println("udp_checked_err=" + dwhy(net.udp_read_checked(0 - 1, 64)))
     println("udp_checked_nul_bind=" + nerr(net.udp_bind_checked(nh, 0)))
     println("udp_checked_nul_send=" + nerr(net.udp_send_checked(uc, nh, ucp, to_bytes("x"))))
+    # recv_from: the datagram and its sender, so a server can answer it
+    ua := fd_of(net.udp_bind_checked("127.0.0.1", 0))
+    ub := fd_of(net.udp_bind_checked("127.0.0.1", 0))
+    uap := fd_of(net.port_of(ua))
+    ubp := fd_of(net.port_of(ub))
+    net.udp_send(ua, "127.0.0.1", ubp, to_bytes("from-a"))
+    match net.udp_recv_from(ub, 64):
+        Ok(d): println("udp_from=[" + to_str(d.data) + "] host=" + d.host + " port_is_a=" + str(d.port == uap))
+        Err(_): println("udp_from=failed")
+    net.set_read_timeout_ms(ub, 50)
+    match net.udp_recv_from(ub, 64):
+        Ok(_): println("udp_from_timeout=data?")
+        Err(e): println("udp_from_timeout=" + str(e == net.Timeout))
+    net.close_fd(ua)
+    net.close_fd(ub)
     net.close_fd(uc)
 
     net.close_fd(u)

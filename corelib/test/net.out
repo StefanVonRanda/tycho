@@ -42,6 +42,8 @@ udp_checked_timeout_cleared=true
 udp_checked_err=Failed
 udp_checked_nul_bind=BadAddr
 udp_checked_nul_send=BadAddr
+udp_from=[from-a] host=127.0.0.1 port_is_a=true
+udp_from_timeout=true
 resolve4 count=1 found=true
 resolve_bad=Failed
 resolve_nul=BadAddr

@@ -1564,3 +1564,12 @@ them leaving the scope before `close(jobs)` would hang the join. Urani wraps the
 function and closes, drains and joins after it whatever it returns. The compiler could
 flag a return that can leave a scope holding a spawned task and an unclosed channel the
 task receives from.
+
+### 264. A UDP read threw away the sender, so no UDP server could be written — **FIXED 2026-11-27**
+
+Urani's netcode: the server answers each client at the address its packets come from,
+and `udp_read` / `udp_read_checked` passed `NULL` to `recvfrom` ("the sender address is
+discarded in v1"). `udp_recv_from(fd, max)` returns `Datagram(data, host, port)` with the
+checked read's outcomes (a timeout is `Err(Timeout)`).
+
+> Pinned-by: grep -q "udp_from=\[from-a\] host=127.0.0.1 port_is_a=true" corelib/test/net.out

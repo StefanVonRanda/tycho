@@ -54,6 +54,8 @@ extern fn netx_udp_read(fd: int, max: int) -> bytes
 # Same status/out-param contract as netx_read (see net_shim.c): 1 DATA -- which
 # includes a legal zero-length datagram -- 2 timeout, 3 error.
 extern fn netx_udp_read_status(fd: int, max: int, status: inout int) -> bytes
+# The same, with the sender: its IPv4 address (host order) and port.
+extern fn netx_udp_recv_from(fd: int, max: int, status: inout int, addr: inout int, port: inout int) -> bytes
 
 # The shim's read-status codes, named once so net.read reads as prose.
 const RD_EOF  = 0
@@ -155,6 +157,26 @@ fn udp_send(fd: int, host: string, port: int, data: bytes) -> int:
 
 fn udp_read(fd: int, max: int) -> bytes:
     return netx_udp_read(fd, max)
+
+# A datagram and who sent it (IPv4, as the UDP calls here are).
+struct Datagram:
+    data: bytes
+    host: string              # dotted quad
+    port: int
+
+# One datagram with its sender, the way udp_read_checked reports outcomes: a
+# server answers the address a packet came from.
+fn udp_recv_from(fd: int, max: int) -> Result(Datagram, NetErr):
+    st := 0
+    a := 0
+    p := 0
+    b := netx_udp_recv_from(fd, max, &st, &a, &p)
+    if st == RD_TMO:
+        return Err(Timeout)
+    if st != RD_DATA:
+        return Err(Failed)
+    host := str((a >> 24) & 255) + "." + str((a >> 16) & 255) + "." + str((a >> 8) & 255) + "." + str(a & 255)
+    return Ok(Datagram(b, host, p))
 
 # The checked siblings. udp_read's empty bytes cannot distinguish a timeout,
 # an error and a legal zero-length datagram; these preserve the distinction.

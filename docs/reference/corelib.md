@@ -935,7 +935,9 @@ expression-bodied; pass a named function where you need a multi-line body.
   `udp_bind_checked` / `udp_send_checked` / `udp_read_checked`. The checked read
   is the one that matters: a zero-length datagram is `Ok([])`, distinct from
   `Err(Timeout)` and `Err(Failed)`, while the sentinel `udp_read` still returns
-  empty bytes for all three.
+  empty bytes for all three. `udp_recv_from(fd, max) -> Result(Datagram, NetErr)`
+  reads the same way and also says who sent it: `Datagram(data, host, port)`, the
+  sender's dotted IPv4 address and port, which a server answers.
   `resolve(host) -> Result([string], NetErr)` returns the numeric IPv4/IPv6
   addresses from `getaddrinfo`; an interior NUL is `BadAddr`, a lookup failure is
   `Failed`. Socket options are plain booleans: `set_reuse_addr`, `set_nodelay`,
