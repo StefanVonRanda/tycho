@@ -9,6 +9,8 @@ builtins and corelib signatures.
 
 ### Language
 
+- **A bare `wait(t)` (or any statement expression whose value is dropped) no longer makes
+  the C compiler warn** "expression result unused": it is cast to void.
 - **Struct fields take defaults**: `width: int = 640`; a named construction may leave such
   a field out, and `P()` takes every default when all fields have one. A default is a
   literal, a negated literal, an empty container, or an array or tuple of those

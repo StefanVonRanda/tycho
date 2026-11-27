@@ -159,6 +159,14 @@ fn _cunwrap(s: string) -> string:
         i += 1
     return s
 
+# A statement's value thrown away: a statement expression -- `wait(t)` is
+# `({ ...join...; _w; })` -- ends on a value C warns is unused
+# (-Wunused-value; scripts/emit_warn.sh), so it is cast to void.
+fn _discard(c: string, t: string) -> string:
+    if t != "void" and len(c) > 2 and c[0:2] == "({":
+        return "(void)" + c
+    return c
+
 fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
     match s:
         ast.PassS(l):
@@ -175,13 +183,14 @@ fn _stmt(cs: inout C, s: ast.Stmt, ind: string) -> string:
                 c2, t2 := _ex(&cs, es[0])
                 cs.arena = sav
                 cs.want = sw
+                c2 = _discard(c2, t2)
                 # no transient landed in it -- do not pay arena_new/arena_free
                 if not _uses_t(c2):
                     return ind + c2 + ";\n"
                 return ind + "{ Arena _t = arena_new(0); " + c2 + "; arena_free(&_t); }\n"
             c, t := _ex(&cs, es[0])
             cs.want = sw
-            return ind + c + ";\n"
+            return ind + _discard(c, t) + ";\n"
         ast.Decl(l, n, ann, rhs, vv):
             if len(vv) > 0:
                 # `x := if c: a else: b` -- declare the variable, then run the
