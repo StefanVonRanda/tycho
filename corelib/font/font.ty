@@ -43,7 +43,7 @@ package font
 import "core:arrays"
 
 const MAX_BYTES = 8388608      # 8 MiB
-const MAX_POINTS = 4096
+const MAX_POINTS = 65535          # a glyph's own limit (u16 contour ends); icon fonts pass 4096 (FRICTION 265)
 const MAX_CONTOURS = 512
 const MAX_DEPTH = 4
 const MAX_COMPONENTS = 64

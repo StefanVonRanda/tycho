@@ -1608,3 +1608,15 @@ discarded in v1"). `udp_recv_from(fd, max)` returns `Datagram(data, host, port)`
 checked read's outcomes (a timeout is `Err(Timeout)`).
 
 > Pinned-by: grep -q "udp_from=\[from-a\] host=127.0.0.1 port_is_a=true" corelib/test/net.out
+
+### 265. A font with one glyph past 4096 points did not open at all — **FIXED 2026-11-27**
+
+Urani loaded the Nerd Fonts symbol font (10,413 icons, TrueType outlines) as its UI's
+icon fallback, and `font.open` refused it: `glyph 992: truncated or more than 4096
+points`. One icon has 4,668 points; `open` validates every glyph, so one heavy glyph
+lost the whole font. The cap was core:font's own, not the format's: TrueType counts a
+glyph's points in u16 contour ends. MAX_POINTS is 65535 now -- every read is still
+bounds-checked against the glyph's bytes, and the rasterizer's work stays bounded by
+the bitmap side.
+
+> Pinned-by: grep -q '^const MAX_POINTS = 65535' corelib/font/font.ty

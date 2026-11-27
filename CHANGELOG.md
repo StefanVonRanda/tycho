@@ -88,6 +88,9 @@ builtins and corelib signatures.
 
 ### Corelib
 
+- **`core:font` opens icon fonts**: a glyph may have up to 65,535 points (the format's limit),
+  not 4,096 -- a Nerd Font's symbols failed whole over one 4,668-point icon (FRICTION 265).
+
 - **`result.expect(r, msg)` / `result.expect_some(o, msg)`**: the value, or `msg: error` on
   stderr and exit 1 -- "take it or stop" in `main`, where `or_else` cannot say it. A function
   body ending in `exit(...)` no longer warns that not all paths return.
