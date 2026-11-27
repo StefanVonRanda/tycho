@@ -1,0 +1,7 @@
+# FRICTION 261: a field default in a generic struct would type differently
+# per instantiation; not supported.
+struct B($T):
+    x: $T = 0
+
+fn main():
+    println("")

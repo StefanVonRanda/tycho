@@ -293,6 +293,7 @@ fn load_into(entry: string, argv0: string, outp: inout Program):
         # `import` in one is a hard error rather than a silently unloaded package.
         if len(outp.files[0].unit.imports) > 0:
             die(entry + ":" + str(outp.files[0].unit.imports[0].line) + ": error: to `import` a package, this file must declare its own package first -- add `package main` (or another name) as the first line")
+        fill_defaults(&outp)
         return
     upkg := outp.files[0].unit.pkg
     ld := Loader([]File, []int, []string: bool, []string, root, under_corelib(root, dir))
@@ -300,3 +301,4 @@ fn load_into(entry: string, argv0: string, outp: inout Program):
     outp = Program([]File, dir, upkg, entry, root)
     for ix in ld.order:
         push(outp.files, ld.files[ix])
+    fill_defaults(&outp)

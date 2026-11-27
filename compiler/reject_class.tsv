@@ -575,7 +575,7 @@ tests/reject/struct_mix_named_positional.ty	SEMANTIC	7659	P: cannot mix named an
 tests/reject/struct_mutual_by_value.ty	TYPE	15401	infinite type: A contains itself by value — use an array ([A]) or Option([A]) for indirection
 tests/reject/struct_named_dup_field.ty	SEMANTIC	7674	P: field 'x' given more than once
 tests/reject/struct_named_ok.ty	NAME	4946	'Ok' is already defined
-tests/reject/struct_named_partial.ty	SEMANTIC	7667	P: named construction must give all 2 field(s), got 1
+tests/reject/struct_named_partial.ty	SEMANTIC	7667	P: named construction must give all 2 field(s), got 1 -- 'y' has no default; give it, or give the field one (`y: T = value`)
 tests/reject/struct_named_unknown_field.ty	SEMANTIC	7664	P has no field 'z'
 tests/reject/struct_typaram_max.ty	SYNTAX	5438	too many struct type parameters (max 16)
 tests/reject/struct_typaram_not_dollar.ty	SYNTAX	5437	a struct type parameter must be written `$Name`

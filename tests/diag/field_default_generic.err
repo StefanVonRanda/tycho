@@ -1,0 +1,2 @@
+tests/diag/field_default_generic.ty:4: error: a field default is not allowed in a generic struct
+     4 |     x: $T = 0

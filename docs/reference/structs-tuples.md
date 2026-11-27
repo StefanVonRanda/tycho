@@ -22,7 +22,7 @@ fn area(r: Rect) -> int:
 
 fn main():
     a := Point(1, 2)            # positional construction, fields in declaration order
-    b := Point(y: 2, x: 1)      # named construction, any order; all fields exactly once
+    b := Point(y: 2, x: 1)      # named construction, any order; every field once (or its default)
     r := Rect(a, Point(4, 6))
     r.lo.x = 100               # nested field write, in place
     println(str(b.x) + " " + str(b.y))
@@ -41,6 +41,24 @@ struct Graph:
 g := Graph(rev: [], adj: [], nodes: [], edges: [])
 println(str(len(g.nodes)) + "," + str(len(g.edges)))
 ```
+
+A field may have a default, which a named construction may then leave out --
+adding such a field changes no existing construction:
+
+```tycho
+struct Window:
+    title: string
+    width: int = 1280
+    height: int = 720
+    tags: [string] = []
+
+w := Window(title: "main", height: 600)
+println(w.title + " " + str(w.width) + "x" + str(w.height) + " " + str(len(w.tags)))
+```
+
+A default is a literal, a negated literal, an empty container, or an array or
+tuple of those (it is copied to every construction); a positional construction
+still gives every field.
 
 A field name follows the same rule as any other name: it may not be a
 [reserved word](basics.md#declarations-and-assignment), which includes the type names —

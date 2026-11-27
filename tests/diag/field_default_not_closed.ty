@@ -1,0 +1,9 @@
+# FRICTION 261: a default is copied to each construction, so a name in it
+# would mean what it means there -- refused at the field.
+const W = 4
+
+struct P:
+    x: int = W
+
+fn main():
+    println(str(P().x))

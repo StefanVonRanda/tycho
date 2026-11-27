@@ -80,7 +80,7 @@ constraints are allowed.
 
 ```ebnf
 Struct     ::= ( "packed" | "align" "(" INT ")" )? "struct" IDENT TypeParams? ":" NEWLINE INDENT FieldDecl+ DEDENT
-FieldDecl  ::= IDENT ":" Type NEWLINE
+FieldDecl  ::= IDENT ":" Type ( "=" Expr )? NEWLINE        /* a default: a closed value, §5.3.4 */
 Enum       ::= "enum" IDENT TypeParams? ":" NEWLINE INDENT VariantDecl+ DEDENT
 VariantDecl::= IDENT ( "(" Type ( "," Type )* ")" )? NEWLINE
 Handle     ::= "handle" IDENT ":" NEWLINE INDENT "free" ":" IDENT NEWLINE DEDENT

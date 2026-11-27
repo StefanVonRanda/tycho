@@ -1548,18 +1548,26 @@ TYPE, not a value -- for an empty map write `[]string: [[f32]]` ``.
 
 > Pinned-by: test -f tests/diag/map_type_as_value_nested.err
 
-### 261. Long positional struct constructors: every new field edits every call — **OPEN**
+### 261. Long positional struct constructors: every new field edits every call — **FIXED 2026-11-27**
 
 Urani's `GpuScene` has 25 fields, the page streamer's `Stream` 22, the entity `Store` 16.
 Each field added meant editing every `T(...)` by position, and nothing guards two
 same-typed neighbours swapped (`[]int, []int` reads either way).
 
-Construction by field name already exists -- `Stream(vbase: v, ibase: i, ...)`, checked
-field by field, in any order -- and ends the swapped-neighbour risk; Urani simply never
-used it. What remains open is the other half: named construction must still give every
-field (`P: named construction must give all 2 field(s), got 1`), so adding a field still
-edits every call. Field defaults (`x: int = 0`, today a parse error) would end that; it is
-a language change, not yet decided.
+Construction by field name already existed -- `Stream(vbase: v, ibase: i, ...)`, checked
+field by field, in any order -- and ends the swapped-neighbour risk. The other half was
+that it had to give every field. Fields take defaults now: `width: int = 640`, and
+`Cfg(name: "x")` gets the rest; `P()` takes every default when every field has one;
+positional construction still gives every field. A default is closed -- a literal, a
+negated literal, an empty container, or an array or tuple of those -- because it is
+filled into each construction before checking (types/defaults.ty), where a name would
+resolve in the wrong scope; it is typed at its field. A missing field without a default
+is named: `P: named construction must give all 2 field(s), got 1 -- 'y' has no
+default`.
+
+> Pinned-by: test -f tests/struct_defaults.out
+> Pinned-by: test -f tests/pkg/struct_defaults.out
+> Pinned-by: test -f tests/diag/field_default_not_closed.err
 
 ### 262. A trap names no file or line without `-g` — **FIXED 2026-11-27**
 

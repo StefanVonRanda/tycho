@@ -2598,8 +2598,25 @@ fn _check_named(cs: inout C, ti: int, args: [ast.Expr], line: int):
         if not _has_name6(fns, an):
             _cerr(&cs, nm + " has no field '" + an + "'")
     if len(args) != len(fns):
+        # every field with a default is already here (types/defaults.ty), so
+        # what is missing is a field without one
+        miss := ""
+        first := ""
+        for f in fns:
+            got := false
+            for a in args:
+                got = got or _arg_name(a) == f
+            if not got:
+                if len(miss) > 0:
+                    miss += ", "
+                miss += "'" + f + "'"
+                if len(first) == 0:
+                    first = f
+        why := ""
+        if len(miss) > 0:
+            why = " -- " + miss + " has no default; give it, or give the field one (`" + first + ": T = value`)"
         _cerr(&cs, nm + ": named construction must give all " + str(len(fns)) +
-            " field(s), got " + str(len(args)))
+            " field(s), got " + str(len(args)) + why)
     for f in fns:
         c9 := 0
         for a in args:
@@ -4471,6 +4488,13 @@ fn _fill_decls(cs: inout C, p: Program):
                     if _has_sizeparam(fl.ty):
                         cs.line = sd.line
                         _cperr(&cs, "a struct field cannot be a `[$N]T` size-parameterized array -- use a fixed `[N]T` or a dynamic `[T]`")
+                    if len(fl.dflt) > 0:
+                        # a default is a closed value (types/defaults.ty), so it
+                        # types here, at its field, not at each construction
+                        dt := _ex2(&cs, fl.dflt[0], fty)
+                        cs.line = fl.line
+                        if not compat(dt, fty):
+                            _cperr(&cs, "the default of field '" + fl.name + "' is " + _show(&cs, dt) + ", but the field is " + _show(&cs, fty))
                 i := cs.tindex[f.prefix + sd.name]
                 cs.tds[i].fnames = fn_
                 cs.tds[i].ftypes = ft

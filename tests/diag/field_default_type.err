@@ -1,0 +1,4 @@
+tests/diag/field_default_type.ty:3: error: the default of field 'x' is string, but the field is int
+     3 |     x: int = "s"
+tests/diag/field_default_type.ty:6: error: field type mismatch: field 'x' of P is int, got string
+     6 |     println(str(P().x))

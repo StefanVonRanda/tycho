@@ -1,6 +1,6 @@
-# src/tychoc.c:7617 -- named construction has no defaulting: every field is
-# given, or the value would be part-initialised.
-# expect: P: named construction must give all 2 field(s), got 1
+# src/tychoc.c:7617 -- a field with no default is given, or the value would be
+# part-initialised; the message names it (FRICTION 261: field defaults).
+# expect: P: named construction must give all 2 field(s), got 1 -- 'y' has no default
 struct P:
     x: int
     y: int

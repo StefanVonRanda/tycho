@@ -1,0 +1,10 @@
+package main
+# FRICTION 261: a default declared in another package, constructed here --
+# qualified and through an alias.
+import "geo"
+import g2 "geo"
+
+fn main():
+    p := geo.Pt(x: 2.0)
+    q := g2.Pt(x: 1.0, w: 5)
+    println(str(p.x) + " " + str(p.y) + " " + str(p.w) + " " + str(q.w) + " " + geo.label(geo.Pt(x: 0.5)))

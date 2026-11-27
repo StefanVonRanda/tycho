@@ -1,0 +1,1 @@
+tests/diag/field_default_not_closed.ty:6: error: the default of field 'x' must be a literal, a negated literal, an empty container, or an array or tuple of those -- it is copied to every construction, where a name would mean what it means there

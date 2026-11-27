@@ -1,0 +1,147 @@
+package types
+
+import "../ast"
+
+# Field defaults (`struct P: x: int = 0`, FRICTION 261). A named
+# construction that leaves out a field with a default gets it here, before
+# anything else reads the program: `P(y: 1)` becomes `P(y: 1, x: 0)`, and the
+# checker, the emitter and every pass after them see a whole construction --
+# none of them knows defaults exist. `P()` takes every default when every
+# field has one. Positional construction still gives every field.
+#
+# A default is a closed value: a literal, a negated literal, an empty
+# container, or an array or tuple of those. It is copied to each construction
+# site, where a name in it would mean whatever that name means THERE.
+
+fn _closed(e: ast.Expr) -> bool:
+    match e:
+        ast.IntLit(l, v): return true
+        ast.FloatLit(l, v): return true
+        ast.StrLit(l, v): return true
+        ast.CharLit(l, v): return true
+        ast.BoolLit(l, v): return true
+        ast.EmptyArr(l, t): return true
+        ast.EmptyMap(l, t): return true
+        ast.NoneE(l): return true
+        ast.Unop(l, o, k): return o == "-" and _closed(k[0])
+        ast.ArrLit(l, k):
+            for x in k:
+                if not _closed(x):
+                    return false
+            return true
+        ast.Tuple(l, k):
+            for x in k:
+                if not _closed(x):
+                    return false
+            return true
+        _: return false
+    return false
+
+struct Dfl:
+    tab: [string: int]            # a struct with a default, by its mangled name ...
+    fields: [[ast.FieldD]]        # ... and its fields
+    prefix: string                # the file being rewritten: its package prefix
+    imports: [ast.ImportD]        # ... and its imports
+
+fn _dkey(d: Dfl, q: string, n: string) -> string:
+    if len(q) == 0:
+        return d.prefix + n
+    for im in d.imports:
+        if len(im.alias) > 0 and im.alias == q:
+            return pkg_basename(im.path) + "__" + n
+    return q + "__" + n
+
+fn _dexpr(d: Dfl, e: ast.Expr) -> ast.Expr:
+    ks := []ast.Expr
+    for k in ast.kids(e):
+        push(ks, _dexpr(d, k))
+    e2 := ast.with_kids(e, ks)
+    match e2:
+        ast.Call(l, q, n, ts, args):
+            key := _dkey(d, q, n)
+            if not (key in d.tab):
+                return e2
+            fs := d.fields[d.tab[key]]
+            given := []string: bool
+            for a in args:
+                match a:
+                    ast.Named(l2, nm, k2): given[nm] = true
+                    _: return e2                    # positional: every field, as before
+            if len(args) == 0:
+                for f in fs:
+                    if len(f.dflt) == 0:
+                        return e2                   # `P()` only when every field has a default
+            out := args
+            for f in fs:
+                if len(f.dflt) > 0 and not (f.name in given):
+                    push(out, ast.Named(l, f.name, [f.dflt[0]]))
+            return ast.Call(l, q, n, ts, out)
+        _: return e2
+    return e2
+
+fn _dexprs(d: Dfl, es: [ast.Expr]) -> [ast.Expr]:
+    out := []ast.Expr
+    for e in es:
+        push(out, _dexpr(d, e))
+    return out
+
+fn _dstmts(d: Dfl, body: [ast.Stmt]) -> [ast.Stmt]:
+    out := []ast.Stmt
+    for s in body:
+        match s:
+            ast.ExprStmt(l, k): push(out, ast.ExprStmt(l, _dexprs(d, k)))
+            ast.Decl(l, n, t, r, v): push(out, ast.Decl(l, n, t, _dexprs(d, r), _dstmts(d, v)))
+            ast.MDecl(l, b, ns, r): push(out, ast.MDecl(l, b, ns, _dexprs(d, r)))
+            ast.Assign(l, n, r): push(out, ast.Assign(l, n, _dexprs(d, r)))
+            ast.PlaceSet(l, k): push(out, ast.PlaceSet(l, _dexprs(d, k)))
+            ast.ConstS(l, n, k): push(out, ast.ConstS(l, n, _dexprs(d, k)))
+            ast.ReturnS(l, k): push(out, ast.ReturnS(l, _dexprs(d, k)))
+            ast.IfS(l, arms, e):
+                na := []ast.IfArm
+                for a in arms:
+                    push(na, ast.IfArm(_dexprs(d, a.cond), _dstmts(d, a.body), a.line))
+                push(out, ast.IfS(l, na, _dstmts(d, e)))
+            ast.WhileS(l, c, b): push(out, ast.WhileS(l, _dexprs(d, c), _dstmts(d, b)))
+            ast.For3(l, ip, c, b): push(out, ast.For3(l, _dstmts(d, ip), _dexprs(d, c), _dstmts(d, b)))
+            ast.ForIn(l, n, c, b, par): push(out, ast.ForIn(l, n, _dexprs(d, c), _dstmts(d, b), par))
+            ast.ForRange(l, n, k, b): push(out, ast.ForRange(l, n, _dexprs(d, k), _dstmts(d, b)))
+            ast.ParallelS(l, w, b): push(out, ast.ParallelS(l, _dexprs(d, w), _dstmts(d, b)))
+            ast.MatchS(l, c, arms): push(out, ast.MatchS(l, _dexprs(d, c), _darms(d, arms)))
+            ast.SelectS(l, arms): push(out, ast.SelectS(l, _darms(d, arms)))
+            ast.DeleteS(l, k): push(out, ast.DeleteS(l, _dexprs(d, k)))
+            _: push(out, s)
+    return out
+
+fn _darms(d: Dfl, arms: [ast.Arm]) -> [ast.Arm]:
+    out := []ast.Arm
+    for a in arms:
+        b := a
+        b.ch = _dexprs(d, a.ch)
+        b.body = _dstmts(d, a.body)
+        push(out, b)
+    return out
+
+fn fill_defaults(p: inout Program):
+    d := Dfl([]string: int, [][ast.FieldD], "", []ast.ImportD)
+    for f in p.files:
+        for sd in f.unit.structs:
+            has := false
+            for fd in sd.fields:
+                if len(fd.dflt) > 0:
+                    has = true
+                    if not _closed(fd.dflt[0]):
+                        die(f.path + ":" + str(fd.line) + ": error: the default of field '" + fd.name + "' must be a literal, " +
+                            "a negated literal, an empty container, or an array or tuple of those -- it is copied to every " +
+                            "construction, where a name would mean what it means there")
+            if has:
+                d.tab[f.prefix + sd.name] = len(d.fields)
+                push(d.fields, sd.fields)
+    if len(d.fields) == 0:
+        return
+    for i := 0; i < len(p.files); i += 1:
+        d.prefix = p.files[i].prefix
+        d.imports = p.files[i].unit.imports
+        for k := 0; k < len(p.files[i].unit.fns); k += 1:
+            p.files[i].unit.fns[k].body = _dstmts(d, p.files[i].unit.fns[k].body)
+        for k := 0; k < len(p.files[i].unit.consts); k += 1:
+            p.files[i].unit.consts[k].value = _dexpr(d, p.files[i].unit.consts[k].value)

@@ -273,6 +273,16 @@ rejected with the same infinite-type diagnostic.
 Type declarations are **order-independent within a file**, as functions are: a
 field may name a `struct`, `enum`, `type` or `handle` declared further down.
 
+A field may declare a **default**, `name: T = value`. A *named* construction
+that leaves the field out gets the value; `S()` gives every field its default
+when every field has one; a *positional* construction still gives every field.
+The value must be **closed** — a literal, a negated literal, an empty
+container, or an array or tuple of those — because it is copied to each
+construction site, where a name would mean what it means there. It is typed
+against the field at its declaration. A generic struct's fields take no
+default. A container default is a fresh value at every construction, never
+shared.
+
 ### 5.3.5 Maps `[K: V]`
 
 A map `[K: V]` associates keys of type `K` with values of type `V`. The **value

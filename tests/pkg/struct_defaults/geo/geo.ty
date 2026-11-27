@@ -1,0 +1,10 @@
+package geo
+
+struct Pt:
+    x: float
+    y: float = 0.0
+    w: int = 1
+
+fn label(p: Pt) -> string:
+    q := Pt(x: p.x, w: 3)
+    return str(q.w) + "/" + str(p.w)

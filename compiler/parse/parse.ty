@@ -2434,8 +2434,17 @@ fn structd(toks: [lex.Tok], i0: int) -> (ast.StructD, int):
         # same sentence.
         if pk and not _packed_prim_ok(ft):
             _die(toks, _at(toks, i), "field '" + fn0 + "' of a packed struct must be a fixed-width value type")
+        # `name: T = value`: the value a named construction that leaves the
+        # field out gets (types/defaults.ty)
+        dv := []ast.Expr
+        if _isop(toks, m, lex.OP_EQ):
+            if len(tps) > 0:
+                _die(toks, _at(toks, m), "a field default is not allowed in a generic struct")
+            de := ast.NullLit(fln)
+            m = _expr_into(toks, m + 1, &de)
+            push(dv, de)
         i = _expect(toks, m, lex.K_NEWLINE, "")
-        push(fs, ast.FieldD(fn0, ft, fln))
+        push(fs, ast.FieldD(fn0, ft, fln, dv))
     i = _expect(toks, i, lex.K_DEDENT, "")
     if len(fs) == 0:
         _die(toks, _at(toks, i0), "a struct needs at least one field")

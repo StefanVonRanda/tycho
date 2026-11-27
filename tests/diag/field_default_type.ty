@@ -1,0 +1,6 @@
+# FRICTION 261: a default types at its field, not at each construction.
+struct P:
+    x: int = "s"
+
+fn main():
+    println(str(P().x))

@@ -9,6 +9,10 @@ builtins and corelib signatures.
 
 ### Language
 
+- **Struct fields take defaults**: `width: int = 640`; a named construction may leave such
+  a field out, and `P()` takes every default when all fields have one. A default is a
+  literal, a negated literal, an empty container, or an array or tuple of those
+  (FRICTION 261).
 - **A runtime trap names its source line in every build**, not only under `-g`: `tycho:
   index 5 out of bounds (len 3)` is followed by `at parse.ty:42`, at no cost to the path that
   does not trap (FRICTION 262).

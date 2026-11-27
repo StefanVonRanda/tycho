@@ -208,6 +208,7 @@ struct FieldD:
     name: string
     ty: Ty
     line: int
+    dflt: [Expr]                       # `name: T = value`: its default, else empty
 
 struct StructD:
     name: string
@@ -295,6 +296,35 @@ fn kids(e: Expr) -> [Expr]:
         Lambda(l, p, t, b): return b
         _: return []Expr
     return []Expr
+
+# The same node with new children, in kids' order: what a rewriting walker
+# puts back together.
+fn with_kids(e: Expr, ks: [Expr]) -> Expr:
+    match e:
+        Field(l, k, f): return Field(l, ks, f)
+        TupIdx(l, k, i): return TupIdx(l, ks, i)
+        Index(l, k): return Index(l, ks)
+        Slice(l, a, b, k): return Slice(l, a, b, ks)
+        Call(l, q, n, t, a): return Call(l, q, n, t, ks)
+        CallVal(l, k): return CallVal(l, ks)
+        Named(l, n, k): return Named(l, n, ks)
+        Binop(l, o, k): return Binop(l, o, ks)
+        Unop(l, o, k): return Unop(l, o, ks)
+        IsVar(l, k, q, v): return IsVar(l, ks, q, v)
+        ArrLit(l, k): return ArrLit(l, ks)
+        MapLit(l, k): return MapLit(l, ks)
+        Tuple(l, k): return Tuple(l, ks)
+        SomeE(l, k): return SomeE(l, ks)
+        OkE(l, k): return OkE(l, ks)
+        ErrE(l, k): return ErrE(l, ks)
+        SpawnE(l, k): return SpawnE(l, ks)
+        OrRet(l, b, k): return OrRet(l, b, ks)
+        Spread(l, k): return Spread(l, ks)
+        Addr(l, k): return Addr(l, ks)
+        ChanE(l, t, k): return ChanE(l, t, ks)
+        Lambda(l, p, t, b): return Lambda(l, p, t, ks)
+        _: return e
+    return e
 
 # An expression's shape as a short string: its kind and what distinguishes it
 # (a name, a literal, an operator), three levels deep. With the file and line,
