@@ -1,0 +1,2 @@
+tests/diag/map_type_as_value_nested.ty:5: error: `[string: [[f32]]]` is the TYPE, not a value -- for an empty map write `[]string: [[f32]]`, or annotate the declaration: `m : [string: [[f32]]] = []`
+     5 |     m := [string: [[f32]]]

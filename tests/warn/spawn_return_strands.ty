@@ -1,0 +1,62 @@
+# FRICTION 263: a task is joined when its handle's scope exits, so a return
+# between `t := spawn worker(jobs)` (a worker blocked on recv) and the later
+# `close(jobs)` waits forever. Both returns in run() warn; run_ok (closes
+# before it returns) and run_send (the worker only sends) do not.
+fn worker(jobs: Channel(int)) -> int:
+    n := 0
+    for true:
+        match recv(jobs):
+            Some(j): n += j
+            None: break
+    return n
+
+fn step(i: int) -> Result(int, string):
+    if i == 3:
+        return Err("stop")
+    return Ok(i)
+
+fn run() -> Result(int, string):
+    jobs := channel(int, 4)
+    t := spawn worker(jobs)
+    for i := 0; i < 5; i += 1:
+        v := step(i) or_return
+        send(jobs, v)
+        if v > 100:
+            return Ok(0)
+    close(jobs)
+    return Ok(wait(t))
+
+fn feed(jobs: Channel(int)) -> Result(int, string):
+    for i := 0; i < 5; i += 1:
+        send(jobs, i)
+    return Ok(0)
+
+fn run_ok() -> int:
+    jobs := channel(int, 4)
+    t := spawn worker(jobs)
+    r := feed(jobs)
+    close(jobs)
+    if r is Err:
+        return -1
+    return wait(t)
+
+fn sender(out: Channel(int)) -> int:
+    send(out, 1)
+    return 0
+
+fn run_send() -> int:
+    out := channel(int, 4)
+    t := spawn sender(out)
+    if len("x") == 2:
+        return 0
+    if recv(out) is None:
+        return -2
+    close(out)
+    return wait(t)
+
+fn main():
+    match run():
+        Ok(n): println(str(n))
+        Err(e): println(e)
+    println(str(run_ok()))
+    println(str(run_send()))

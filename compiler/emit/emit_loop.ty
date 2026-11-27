@@ -6,6 +6,17 @@ import "core:strings"
 # Return projection, counted-loop bounds and presizing, split views and block
 # emission. Moved verbatim out of emit.ty.
 
+
+# A corelib path from the corelib root: what follows its last `corelib/`.
+fn _after_corelib(p: string) -> string:
+    k := -1
+    for i := 0; i + 8 <= len(p); i += 1:
+        if p[i:i + 8] == "corelib/":
+            k = i + 8
+    if k < 0:
+        return p
+    return p[k:]
+
 fn _projection_ctor(cs: inout C, e: ast.Expr) -> bool:
     match e:
         ast.Call(l, q, n, ts, k): return _rebuild_ctor(&cs, q, n)
@@ -872,15 +883,28 @@ fn _block_projection(cs: inout C, body: [ast.Stmt], ind: string, inherit: bool, 
                                                 cs.ret_loop_bound = bound
                             _: pass
                 _: pass
-        # -g: src/tychoc.c:16054 puts a `#line` before every statement so a
-        # debugger steps the .ty source rather than the generated C. The path
+        # A `#line` before every statement, in every build: a runtime trap's
+        # helper is called through a macro that passes __FILE__/__LINE__
+        # (runtime/tycho_rt.c@TYCHO_EXIT), so a trap names its .ty line with no
+        # cost to the path that does not trap (FRICTION 262); and under -g a
+        # debugger steps the .ty source. -g also records every statement as it
+        # runs (tycho_trap_at), for the traps that are not a helper's. The path
         # is C string syntax: escape backslashes and quotes like tychoc does.
+        lf := cs.dbgfile
+        if cs.cf >= 0 and cs.cf < len(cs.fpath):
+            lf = cs.fpath[cs.cf]
+            # Outside -g a corelib file is named from the corelib root, not
+            # where this machine keeps it: the C (and the binary's strings)
+            # come out the same wherever TYCHO_CORELIB points, and no home
+            # directory is baked into a program.
+            if len(cs.dbgfile) == 0 and cs.cf < len(cs.fcore) and cs.fcore[cs.cf]:
+                lf = "core:" + _after_corelib(lf)
+        # The record first: the `#line` must sit right above the statement,
+        # or its helpers' __LINE__ is one too many.
         if len(cs.dbgfile) > 0:
-            dbgf := cs.dbgfile
-            if cs.cf >= 0 and cs.cf < len(cs.fpath):
-                dbgf = cs.fpath[cs.cf]
-            out = out + "#line " + str(ast.sline_of(s)) + " \"" + _c_escape_path(dbgf) + "\"\n"
-            out = out + ind + "tycho_trap_at(\"" + _c_escape_path(dbgf) + "\", " + str(ast.sline_of(s)) + ");\n"
+            out = out + ind + "tycho_trap_at(\"" + _c_escape_path(lf) + "\", " + str(ast.sline_of(s)) + ");\n"
+        if len(lf) > 0:
+            out = out + "#line " + str(ast.sline_of(s)) + " \"" + _c_escape_path(lf) + "\"\n"
         cs.ret_store = i == cs.ret_update
         # A canonical `i := 0; while ...` builder/reader gets the same
         # presizing and monotone-index proof as a three-clause for loop. The

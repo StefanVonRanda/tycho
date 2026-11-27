@@ -244,6 +244,21 @@ fn _starts_type(toks: [lex.Tok], i: int) -> bool:
         return _is_prim(_x(toks, i))
     return false
 
+# Tokens [a, b) as source-ish text: a type spelled back for a diagnostic.
+fn _spell_toks(toks: [lex.Tok], a: int, b: int) -> string:
+    out := ""
+    for k := a; k < b; k += 1:
+        t := toks[k].text
+        if toks[k].k == lex.K_OP and len(t) == 0:
+            for p in [(lex.OP_LBRACK, "["), (lex.OP_RBRACK, "]"), (lex.OP_LPAREN, "("), (lex.OP_RPAREN, ")"),
+                      (lex.OP_COLON, ": "), (lex.OP_COMMA, ", "), (lex.OP_ARROW, " -> ")]:
+                if toks[k].ival == p.0:
+                    t = p.1
+        elif _iskw(toks, k, lex.KW_FN):
+            t = "fn"
+        out += t
+    return out
+
 fn _starts_type_lit(toks: [lex.Tok], i: int) -> bool:
     if _iskw(toks, i, lex.KW_FN):
         return true
@@ -672,11 +687,15 @@ fn _primary_into(toks: [lex.Tok], i0: int, out: inout ast.Expr) -> int:
             if _isop(toks, i + 1, lex.OP_RBRACK):
                 _die(toks, _at(toks, i0), "`[" + k0.text + "]` is the TYPE, not a value -- for an empty array write " +
                     "`[]" + k0.text + "`, or annotate the declaration: `xs : [" + k0.text + "] = []`")
-            k2 := _at(toks, i + 2)
-            if _isop(toks, i + 1, lex.OP_COLON) and k2.k == lex.K_KW and _is_prim(k2.text) and _isop(toks, i + 3, lex.OP_RBRACK):
-                _die(toks, _at(toks, i0), "`[" + k0.text + ": " + k2.text + "]` is the TYPE, not a value -- for an empty map write " +
-                    "`[]" + k0.text + ": " + k2.text + "`, or annotate the declaration: `m : [" +
-                    k0.text + ": " + k2.text + "] = []`")
+            # `[string: V]` for any value type V -- `[string: [int]]` too, which
+            # got only "'string' is a reserved keyword" (FRICTION 260)
+            if _isop(toks, i + 1, lex.OP_COLON) and _starts_type_lit(toks, i + 2):
+                _v, j := ty(toks, i + 2)
+                if _isop(toks, j, lex.OP_RBRACK):
+                    vt := _spell_toks(toks, i + 2, j)
+                    _die(toks, _at(toks, i0), "`[" + k0.text + ": " + vt + "]` is the TYPE, not a value -- for an empty map write " +
+                        "`[]" + k0.text + ": " + vt + "`, or annotate the declaration: `m : [" +
+                        k0.text + ": " + vt + "] = []`")
         if _isop(toks, i, lex.OP_RBRACK):
             i += 1
             if not _starts_type_lit(toks, i):

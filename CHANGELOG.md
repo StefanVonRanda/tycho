@@ -9,6 +9,16 @@ builtins and corelib signatures.
 
 ### Language
 
+- **A runtime trap names its source line in every build**, not only under `-g`: `tycho:
+  index 5 out of bounds (len 3)` is followed by `at parse.ty:42`, at no cost to the path that
+  does not trap (FRICTION 262).
+- **An early return that strands a task warns**: a `return`/`or_return` between `t := spawn
+  worker(ch)` (a worker blocked on `recv(ch)`) and a later `close(ch)` waits forever at the
+  task's join (FRICTION 263).
+- **"Did you mean" suggests only functions the call can reach**: another package's `fmax`
+  no longer hides `core:math`'s `max` hint for `imax` (FRICTION 259).
+- **`[K: V]` in value position names the TYPE for any value type V**, `[string: [[f32]]]`
+  included (FRICTION 260).
 - **A read-only binding passed to a by-value parameter is no longer copied**: `d := f.data;
   rd(d, 0)` shared `f.data` only when every use was a field or index read; a call argument
   forced a deep copy on every call (FRICTION 255).

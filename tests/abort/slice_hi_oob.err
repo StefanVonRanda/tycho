@@ -1,0 +1,2 @@
+tycho: slice [0:5] out of bounds (len 3)
+  at tests/abort/slice_hi_oob.ty:8

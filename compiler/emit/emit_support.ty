@@ -9,6 +9,14 @@ import "core:strings"
 
 # --- the generated support code ---------------------------------------------
 
+
+# A generated helper that can trap takes its call site, as the runtime's do
+# (runtime/tycho_rt.c@TYCHO_EXIT): `name` is a macro passing __FILE__ and
+# __LINE__ -- the .ty line, through the `#line` before every statement -- to
+# `name_at` (FRICTION 262).
+fn _site_macro(name: string) -> string:
+    return "#define " + name + "(...) " + name + "_at(__VA_ARGS__, __FILE__, __LINE__)\n"
+
 fn _soa_defs(cs: inout C) -> (string, string):
     sb := ""
     fb := ""
@@ -142,27 +150,27 @@ fn _arr_defs(cs: inout C) -> (string, string, string, string):
                 "    for (tycho_int i = 0; i < xs->len; i++) nd[i] = xs->data[i];\n" +
                 "    xs->data = nd; xs->cap = n;\n}\n"
         if _need(&cs, p + "_pop"):
-            pr = pr + "static " + et + " " + p + "_pop(Arena *, " + ct + " *);\n"
-            fb = fb + "static " + et + " " + p + "_pop(Arena *a, " + ct + " *xs) {\n" +
+            pr = pr + "static " + et + " " + p + "_pop_at(Arena *, " + ct + " *, const char *tycho_sf, int tycho_sl);\n" + _site_macro(p + "_pop")
+            fb = fb + "static " + et + " " + p + "_pop_at(Arena *a, " + ct + " *xs, const char *tycho_sf, int tycho_sl) {\n" +
                 "    if (xs->len == 0) { fprintf(stderr, \"tycho: pop from an empty array\\n\"); TYCHO_EXIT(); }\n" +
                 "    xs->len--;\n    return xs->data[xs->len];\n}\n"
         if _need(&cs, p + "_get"):
-            pr = pr + "static " + et + " " + p + "_get(" + ct + ", tycho_int);\n"
-            fb = fb + "static " + et + " " + p + "_get(" + ct + " xs, tycho_int i) {\n" +
+            pr = pr + "static " + et + " " + p + "_get_at(" + ct + ", tycho_int, const char *tycho_sf, int tycho_sl);\n" + _site_macro(p + "_get")
+            fb = fb + "static " + et + " " + p + "_get_at(" + ct + " xs, tycho_int i, const char *tycho_sf, int tycho_sl) {\n" +
                 "    if (i < 0 || i >= xs.len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs.len); TYCHO_EXIT(); }\n" +
                 "    return xs.data[i];\n}\n"
         if _need(&cs, p + "_ptr"):
-            pr = pr + "static " + et + " *" + p + "_ptr(" + ct + " *, tycho_int);\n"
-            fb = fb + "static " + et + " *" + p + "_ptr(" + ct + " *xs, tycho_int i) {\n" +
+            pr = pr + "static " + et + " *" + p + "_ptr_at(" + ct + " *, tycho_int, const char *tycho_sf, int tycho_sl);\n" + _site_macro(p + "_ptr")
+            fb = fb + "static " + et + " *" + p + "_ptr_at(" + ct + " *xs, tycho_int i, const char *tycho_sf, int tycho_sl) {\n" +
                 "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs->len); TYCHO_EXIT(); }\n" +
                 "    return &xs->data[i];\n}\n"
         if _need(&cs, p + "_set"):
-            pr = pr + "static void " + p + "_set(Arena *, " + ct + " *, tycho_int, " + et + ");\n"
+            pr = pr + "static void " + p + "_set_at(Arena *, " + ct + " *, tycho_int, " + et + ", const char *tycho_sf, int tycho_sl);\n" + _site_macro(p + "_set")
             rc := _recycle_call(&cs, "a", "_old", e)
             recy := ""
             if len(rc) > 0:
                 recy = "    " + rc + "\n"
-            fb = fb + "static void " + p + "_set(Arena *a, " + ct + " *xs, tycho_int i, " + et + " v) {\n" +
+            fb = fb + "static void " + p + "_set_at(Arena *a, " + ct + " *xs, tycho_int i, " + et + " v, const char *tycho_sf, int tycho_sl) {\n" +
                 "    if (i < 0 || i >= xs->len) { fprintf(stderr, \"tycho: index %\" TY_PRId \" out of bounds (len %\" TY_PRId \")\\n\", i, xs->len); TYCHO_EXIT(); }\n" +
                 "    " + et + " _new = " + _copy(&cs, "v", e, "a") + ";\n" +
                 "    " + et + " _old = xs->data[i]; xs->data[i] = _new;\n" + recy + "}\n"

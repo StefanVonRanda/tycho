@@ -108,17 +108,23 @@ spawn/pipe/signal shim (`debug_shim.c`), gated by `make debug-check`.
 
 ## Runtime traps
 
-A `-g` build records the current statement before it runs, so a bounds, division,
-empty-pop or similar runtime trap prints the owning source line:
+A bounds, division, shift, empty-pop or slice trap names its source line in
+every build:
 
 ```text
 tycho: index 5 out of bounds (len 3)
   at examples/parse.ty:42
 ```
 
+The emitted C has a `#line` before every statement, and a runtime helper that
+can trap is called through a macro passing `__FILE__`/`__LINE__` to it
+(`runtime/tycho_rt.c@TYCHO_EXIT`). The place is an argument read only on the
+trapping path, so the path that does not trap pays nothing. A `-g` build also
+records each statement as it runs, which covers the traps no helper owns (an
+allocation failure, a channel misuse inside the runtime).
+
 Set `TYCHO_BACKTRACE=1` to add the C frames. They are addresses and symbols;
-resolve them against the binary with `addr2line -e ./program <address>`. Normal
-builds print neither, and pay nothing on the non-trapping path.
+resolve them against the binary with `addr2line -e ./program <address>`.
 
 ## Which bounds checks survive: `--bounds-report`
 

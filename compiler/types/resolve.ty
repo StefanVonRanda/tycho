@@ -220,11 +220,20 @@ fn _vcands(rs: inout R) -> [string]:
         push(out, rs.vars[i].name)
     return out
 
-fn _scands(rs: inout R, kind: string) -> [string]:
+# The functions a bare call here can reach: this package's own (the entry
+# package's have no prefix). Another package's `fmax` is no suggestion for
+# `imax` in a package that cannot call it unqualified (FRICTION 259).
+fn _bare_fn_cands(rs: inout R) -> [string]:
     out := []string
     for sy in rs.syms:
-        if sy.kind == kind:
-            push(out, _short(sy.name))
+        if sy.kind != "fn":
+            continue
+        sh := _short(sy.name)
+        if len(rs.prefix) == 0:
+            if sh == sy.name:
+                push(out, sh)
+        elif strings.starts_with(sy.name, rs.prefix) and sy.name[len(rs.prefix):] == sh:
+            push(out, sh)
     return out
 
 # The package did-you-mean is NOT the plain edit-distance one. `suggest_pkg_symbol`
@@ -930,7 +939,7 @@ fn _call_bare(rs: inout R, bi: [string: bool], ctors: [string: bool], n: string)
     if len(cl) > 0 and strong:
         _err(&rs, "unknown procedure '" + n + "' -- " + cl)
         return
-    dy := _dym(n, _scands(&rs, "fn"))
+    dy := _dym(n, _bare_fn_cands(&rs))
     if len(dy) > 0:
         _err(&rs, "unknown procedure '" + n + "'" + dy)
         return

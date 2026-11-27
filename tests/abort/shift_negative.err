@@ -1,1 +1,2 @@
 tycho: negative shift count
+  at tests/abort/shift_negative.ty:2

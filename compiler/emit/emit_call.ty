@@ -1153,7 +1153,7 @@ fn _builtin(cs: inout C, n: string, args: [ast.Expr]) -> (string, string):
             # the capacity trap: a bounded array refuses the push that would
             # exceed its declared N (src/tychoc.c's per-capacity push helper)
             pc9 = "({ if ((" + rc + ").len >= " + str(cap9) + "LL) { " +
-                "fprintf(stderr, \"tycho: push to a full bounded[" + str(cap9) + "]\\n\"); TYCHO_EXIT(); } " +
+                "fprintf(stderr, \"tycho: push to a full bounded[" + str(cap9) + "]\\n\"); TYCHO_EXIT_HERE(); } " +
                 pc9 + "; })"
         return (_with_pre(hp, pc9), "void")
     if n == "pop" and len(args) == 1:

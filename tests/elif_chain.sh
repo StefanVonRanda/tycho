@@ -30,9 +30,10 @@ check() {
     cc=${cc:-cc}
     "$compiler" "$src" --emit-c -o "$exe"
     cbytes=$(wc -c < "$exe.c" | tr -d ' ')
-    # Runtime/preamble dominates the file; quadratic nested indentation would
-    # already be hundreds of MB at this arm count.
-    [ "$cbytes" -lt 1000000 ] || { echo "$compiler: elif$n emitted $cbytes bytes (expected linear output)"; exit 1; }
+    # Runtime/preamble and a `#line` a statement (FRICTION 262: about 60 bytes
+    # each with this temp path) make it about 1.3 MB; quadratic nested
+    # indentation would already be hundreds of MB at this arm count.
+    [ "$cbytes" -lt 2000000 ] || { echo "$compiler: elif$n emitted $cbytes bytes (expected linear output)"; exit 1; }
     "$cc" -O2 -fwrapv -ffp-contract=off -pthread -Icorelib -o "$exe" "$exe.c" -lm
     got=$("$exe")
     [ "$got" = "$n" ] || { echo "$compiler: elif$n printed '$got', expected $n"; exit 1; }

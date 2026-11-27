@@ -1351,7 +1351,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
         if hasdef:
             out = out + ind + "    else {\n" + deflt + ind + "    }\n"
         else:
-            out = out + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT(); }\n"
+            out = out + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT_HERE(); }\n"
         return out + ind + "}\n"
     # scalar subject
     out2 := ind + "{\n" + ind + "    " + _ctyz(&cs, st) + "" + v + " = " + sc + ";\n"
@@ -1399,7 +1399,7 @@ fn _match(cs: inout C, subj: ast.Expr, arms: [ast.Arm], ind: string) -> string:
     else:
         # src/tychoc.c:16914 -- unreachable, and emitted anyway so the generated
         # C provably returns on every path.
-        out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT(); }\n"
+        out2 = out2 + ind + "    else { fprintf(stderr, \"tycho: non-exhaustive match\\n\"); TYCHO_EXIT_HERE(); }\n"
     return out2 + ind + "}\n"
 
 # `xs = xs[0:n]` (or `xs[:n]`) on an array: a length change where xs stands,
@@ -1433,7 +1433,7 @@ fn _self_truncate(cs: inout C, n: string, rhs: ast.Expr, ind: string) -> string:
             x := _vcname(&cs, n)
             return ind + "{ tycho_int " + th + " = (tycho_int)(" + hc + "); if (" + th + " < 0 || " + th + " > (" + x +
                 ").len) { fprintf(stderr, \"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
-                "(tycho_int)0, " + th + ", (" + x + ").len); TYCHO_EXIT(); } (" + x + ").len = " + th + "; }\n"
+                "(tycho_int)0, " + th + ", (" + x + ").len); TYCHO_EXIT_HERE(); } (" + x + ").len = " + th + "; }\n"
         _: return ""
     return ""
 

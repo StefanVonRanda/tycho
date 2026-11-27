@@ -1,0 +1,9 @@
+package main
+# FRICTION 259: `other`'s fmax is not callable bare here, so it is no
+# suggestion for `imax`; core:math's max is.
+# expect: core:math
+import "other"
+
+fn main():
+    println(str(other.fmax(1.0, 2.0)))
+    println(str(imax(1, 2)))

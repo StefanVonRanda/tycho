@@ -1,0 +1,4 @@
+tests/warn/spawn_return_strands.ty:22: warning: this return leaves while task 't' waits on channel 'jobs', closed only at line 26 -- the task is joined as its scope exits, so the return waits forever; close(jobs) before returning, or move the work into a function and close after it
+    22 |         v := step(i) or_return
+tests/warn/spawn_return_strands.ty:25: warning: this return leaves while task 't' waits on channel 'jobs', closed only at line 26 -- the task is joined as its scope exits, so the return waits forever; close(jobs) before returning, or move the work into a function and close after it
+    25 |             return Ok(0)

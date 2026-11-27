@@ -1522,7 +1522,7 @@ on [int: float] -- no builtin and no function remove_key([int: float], ...) is i
 > Pinned-by: test -f tests/diag/method_unknown.err
 
 
-### 259. "Did you mean" offers a function the call cannot reach, over the hint that would help — **OPEN**
+### 259. "Did you mean" offers a function the call cannot reach, over the hint that would help — **FIXED 2026-11-27**
 
 Urani, four times in one day. A package `other` defines `fn fmax(a: float, b: float)`;
 `main` imports it and calls `imax(1, 2)`:
@@ -1531,39 +1531,66 @@ Urani, four times in one day. A package `other` defines `fn fmax(a: float, b: fl
 
 `fmax` is `other`'s, not callable unqualified from `main`. The same call in a file with no
 near-miss gets the useful answer: `core:math has max -- add import "core:math" and call
-math.max(...)`. The fuzzy suggestion wins and hides it, so each package grew its own
-`fmax`/`imax`/`fmin` (Urani's `mesh`, `lod`, its tests) duplicating `math.max`/`math.min`.
-Fix: suggest only names callable at the call site; the `core:math` hint first.
+math.max(...)`. The fuzzy suggestion won and hid it, so each package grew its own
+`fmax`/`imax`/`fmin` duplicating `math.max`/`math.min`. The suggestion now draws only on
+the functions a bare call can reach -- the calling package's own -- so the `core:math`
+hint shows (resolve.ty@_bare_fn_cands).
 
-### 260. The "a map's type is not a value" hint misses a nested value type — **OPEN**
+> Pinned-by: test -f tests/reject/pkg/dym_unreachable/main.ty
 
-`m := [string: int]` gets `[string: int] is the TYPE, not a value -- for an empty map write
-[]string: int`. `m := [string: [int]]` or `[string: [[f32]]]` gets only `expected an
-expression -- 'string' is a reserved keyword`. Fix: recognise `[K: V]` in value position
-whatever V is.
+### 260. The "a map's type is not a value" hint misses a nested value type — **FIXED 2026-11-27**
+
+`m := [string: int]` got `[string: int] is the TYPE, not a value -- for an empty map write
+[]string: int`; `m := [string: [int]]` or `[string: [[f32]]]` got only `expected an
+expression -- 'string' is a reserved keyword`. `[K: V]` with a primitive K now gets the
+hint for any value type V, spelled back from its tokens: `` `[string: [[f32]]]` is the
+TYPE, not a value -- for an empty map write `[]string: [[f32]]` ``.
+
+> Pinned-by: test -f tests/diag/map_type_as_value_nested.err
 
 ### 261. Long positional struct constructors: every new field edits every call — **OPEN**
 
 Urani's `GpuScene` has 25 fields, the page streamer's `Stream` 22, the entity `Store` 16.
 Each field added meant editing every `T(...)` by position, and nothing guards two
-same-typed neighbours swapped (`[]int, []int` reads either way). Construction by field
-name, or field defaults (`no_x()` helpers stand in for them now), would end both.
+same-typed neighbours swapped (`[]int, []int` reads either way).
 
-### 262. A trap names no file or line without `-g` — **OPEN, by design today**
+Construction by field name already exists -- `Stream(vbase: v, ibase: i, ...)`, checked
+field by field, in any order -- and ends the swapped-neighbour risk; Urani simply never
+used it. What remains open is the other half: named construction must still give every
+field (`P: named construction must give all 2 field(s), got 1`), so adding a field still
+edits every call. Field defaults (`x: int = 0`, today a parse error) would end that; it is
+a language change, not yet decided.
+
+### 262. A trap names no file or line without `-g` — **FIXED 2026-11-27**
 
 `tycho: index 49 out of bounds (len 45)` from a fuzzed cooked file: the fix needed a `-g`
-rebuild to find `skin.ty:190`. docs/debugging.md says normal builds print no location so
-the non-trapping path pays nothing. Worth measuring whether a per-trap-site constant
-(file:line passed only on the cold path) costs anything.
+rebuild to find `skin.ty:190`. A normal build now prints `at skin.ty:190` too. The emitted
+C has a `#line` before every statement in every build, and each runtime helper that can
+trap (indexing, division, shifts, `f2i`, pop, string reads, `chr`, channel close) is
+called through a macro that passes `__FILE__`/`__LINE__` as two trailing arguments, read
+only on the trapping path; the compiler's own inline checks (slices, non-exhaustive
+match, a full bounded array) use their `__FILE__`/`__LINE__` directly. Measured on a loop
+of checked int/float/string reads, divisions and modulos (1M x 40) and on
+bench/dijkstra: the same time as before. Outside `-g` a corelib file is named
+`core:strings/strings.ty`, so the C is the same wherever TYCHO_CORELIB points and no
+home directory lands in a binary. `die()` is a deliberate exit and names no line.
 
-### 263. Nothing warns that an early return can leave a spawned task waiting forever — **OPEN**
+> Pinned-by: test -f tests/abort/shift_negative.err
+> Pinned-by: test -f tests/abort/slice_hi_oob.err
+
+### 263. Nothing warns that an early return can leave a spawned task waiting forever — **FIXED 2026-11-27**
 
 A task is joined when its scope ends. Urani's page loader waits on `recv(jobs)` until
 `jobs` is closed; the 400-line frame loop beside it has dozens of `or_return`s, and any of
 them leaving the scope before `close(jobs)` would hang the join. Urani wraps the loop in a
-function and closes, drains and joins after it whatever it returns. The compiler could
-flag a return that can leave a scope holding a spawned task and an unclosed channel the
-task receives from.
+function and closes, drains and joins after it whatever it returns. Now each `return` or
+`or_return` between `t := spawn worker(jobs)` -- a worker that blocks receiving on `jobs`
+-- and a later `close(jobs)` in the same block warns: `this return leaves while task 't'
+waits on channel 'jobs', closed only at line 22 -- the task is joined as its scope exits,
+so the return waits forever`. Narrow like the channel lint: only when the close is there,
+at the spawn's own level, and the worker is one the scan can follow (zzchan.ty@_sblock).
+
+> Pinned-by: test -f tests/warn/spawn_return_strands.err
 
 ### 264. A UDP read threw away the sender, so no UDP server could be written — **FIXED 2026-11-27**
 

@@ -446,7 +446,7 @@ fn _ex_raw(cs: inout C, e: ast.Expr) -> (string, string):
                     sl + " = " + lo + ", " + sh + " = " + hi + "; if (" + sl + " < 0 || " +
                     sh + " > " + ss + ".len || " + sl + " > " + sh + ") { fprintf(stderr, " +
                     "\"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
-                    sl + ", " + sh + ", " + ss + ".len); TYCHO_EXIT(); } (" + _cty(&cs, rt) + "){ " +
+                    sl + ", " + sh + ", " + ss + ".len); TYCHO_EXIT_HERE(); } (" + _cty(&cs, rt) + "){ " +
                     offs + sh + " - " + sl + ", 0 }; }))", rt)
             if not _is_arr(rt):
                 _bad("slicing '" + rt + "'")
@@ -459,7 +459,7 @@ fn _ex_raw(cs: inout C, e: ast.Expr) -> (string, string):
             sl := "({ " + act + " " + sv + " = " + rc + "; tycho_int " + alo + " = " + lo +
                 ", " + ahi + " = " + hi + "; if (" + alo + " < 0 || " + ahi + " > " + sv +
                 ".len || " + alo + " > " + ahi + ") { fprintf(stderr, \"tycho: slice [%\" TY_PRId \":%\" TY_PRId \"] out of bounds (len %\" TY_PRId \")\\n\", " +
-                alo + ", " + ahi + ", " + sv + ".len); TYCHO_EXIT(); } (" + act + "){ " + sv +
+                alo + ", " + ahi + ", " + sv + ".len); TYCHO_EXIT_HERE(); } (" + act + "){ " + sv +
                 ".data + " + alo + ", " + ahi + " - " + alo + ", 0 }; })"
             return (_copy(&cs, sl, rt, cs.arena), rt)
         ast.Unop(l, op, k):

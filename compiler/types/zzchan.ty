@@ -162,6 +162,144 @@ fn _cbody(fns: [ast.Fn], body: [ast.Stmt], nm: string, u: inout CU, seen: inout 
             ast.DeleteS(l, k): _cexprs(fns, k, nm, &u, &seen)
             _: pass
 
+# --- a return that strands a task (FRICTION 263) ------------------------------
+# A task is joined when its handle's scope exits, `return` and `or_return`
+# included. `t := spawn worker(jobs)` with a worker that blocks receiving on
+# `jobs`, and `close(jobs)` further down the same block: a return between the
+# two leaves the scope with the channel open, and the join waits for a worker
+# that waits for a close that never comes. Each such return is reported.
+# Narrow on purpose, like the lint above: only when the close is there (the
+# code means to close, just later), only a close at the spawn's own level, and
+# only a worker the scan can follow that does block on the channel.
+
+# The lines of every return and or_return inside these statements.
+fn _sret_e(e: ast.Expr, out: inout [int]):
+    match e:
+        ast.OrRet(l, b, k):
+            if len(k) == 1:
+                push(out, l)
+        ast.Lambda(l, ps, rt, b): return             # a lambda's return is its own
+        _: pass
+    for c in ast.kids(e):
+        _sret_e(c, &out)
+
+fn _sret_es(es: [ast.Expr], out: inout [int]):
+    for e in es:
+        _sret_e(e, &out)
+
+fn _srets(body: [ast.Stmt], out: inout [int]):
+    for s in body:
+        match s:
+            ast.ReturnS(l, k):
+                push(out, l)
+                _sret_es(k, &out)
+            ast.ExprStmt(l, k): _sret_es(k, &out)
+            ast.Decl(l, n, t, r, v):
+                _sret_es(r, &out)
+                _srets(v, &out)
+            ast.MDecl(l, d, ns, r): _sret_es(r, &out)
+            ast.Assign(l, n, r): _sret_es(r, &out)
+            ast.PlaceSet(l, k): _sret_es(k, &out)
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    _sret_es(arm.cond, &out)
+                    _srets(arm.body, &out)
+                _srets(e, &out)
+            ast.WhileS(l, c, b):
+                _sret_es(c, &out)
+                _srets(b, &out)
+            ast.For3(l, ip, c, b):
+                _srets(ip, &out)
+                _srets(b, &out)
+            ast.ForIn(l, n, coll, b, zpf):
+                _sret_es(coll, &out)
+                _srets(b, &out)
+            ast.ForRange(l, n, k, b): _srets(b, &out)
+            ast.ParallelS(l, w, b): _srets(b, &out)
+            ast.MatchS(l, c, arms):
+                _sret_es(c, &out)
+                for a in arms:
+                    _srets(a.body, &out)
+            ast.SelectS(l, arms):
+                for a in arms:
+                    _srets(a.body, &out)
+            _: pass
+
+# Is this statement `close(ch)` / `ch.close()`?
+fn _sclose(s: ast.Stmt, ch: string) -> bool:
+    match s:
+        ast.ExprStmt(l, k):
+            if len(k) == 1:
+                match k[0]:
+                    ast.Call(l2, q, n, ts, args):
+                        return n == "close" and (q == ch or (len(q) == 0 and len(args) == 1 and _cis(args[0], ch)))
+                    _: return false
+        _: return false
+    return false
+
+# `t := spawn f(...ch...)` with f blocking on ch: the task's name, else "".
+fn _sspawn(fns: [ast.Fn], s: ast.Stmt, ch: string) -> string:
+    match s:
+        ast.Decl(l, n, t, r, v):
+            if len(r) == 1:
+                match r[0]:
+                    ast.SpawnE(l2, k):
+                        if len(k) == 1:
+                            match k[0]:
+                                ast.Call(l3, q, fnm, ts, args):
+                                    u := CU(false, false, false, false, 0, false)
+                                    seen := []string: bool
+                                    _ccall(fns, l3, q, fnm, args, ch, &u, &seen)
+                                    if u.recv_block and not u.opaque:
+                                        return n
+                                _: return ""
+                    _: return ""
+        _: return ""
+    return ""
+
+fn _sblock(rs: inout R, fns: [ast.Fn], body: [ast.Stmt], ch: string, file: string):
+    for i := 0; i < len(body); i += 1:
+        t := _sspawn(fns, body[i], ch)
+        if len(t) == 0:
+            continue
+        j := i + 1
+        for j < len(body) and not _sclose(body[j], ch):
+            j += 1
+        if j >= len(body):
+            continue
+        lines := []int
+        _srets(body[i + 1:j], &lines)
+        cl := ast.sline_of(body[j])
+        sf := rs.file
+        sl := rs.line
+        rs.file = file
+        for ln in lines:
+            rs.line = ln
+            _warn(&rs, "this return leaves while task '" + t + "' waits on channel '" + ch + "', closed only at line " +
+                str(cl) + " -- the task is joined as its scope exits, so the return waits forever; close(" + ch +
+                ") before returning, or move the work into a function and close after it")
+        rs.file = sf
+        rs.line = sl
+    for s in body:
+        match s:
+            ast.Decl(l, n, t, r, v): _sblock(&rs, fns, v, ch, file)
+            ast.IfS(l, arms, e):
+                for arm in arms:
+                    _sblock(&rs, fns, arm.body, ch, file)
+                _sblock(&rs, fns, e, ch, file)
+            ast.WhileS(l, c, b): _sblock(&rs, fns, b, ch, file)
+            ast.For3(l, ip, c, b): _sblock(&rs, fns, b, ch, file)
+            ast.ForIn(l, n, coll, b, zpf): _sblock(&rs, fns, b, ch, file)
+            ast.ForRange(l, n, k, b): _sblock(&rs, fns, b, ch, file)
+            ast.ParallelS(l, w, b): _sblock(&rs, fns, b, ch, file)
+            ast.MatchS(l, c, arms):
+                for a in arms:
+                    _sblock(&rs, fns, a.body, ch, file)
+            ast.SelectS(l, arms):
+                for a in arms:
+                    _sblock(&rs, fns, a.body, ch, file)
+            _: pass
+
 fn _cdecls(rs: inout R, fns: [ast.Fn], owner: int, body: [ast.Stmt], file: string):
     for s in body:
         match s:
@@ -187,6 +325,7 @@ fn _cdecls(rs: inout R, fns: [ast.Fn], owner: int, body: [ast.Stmt], file: strin
                                 "(a `parallel for` over a channel ends only when it is closed)")
                         rs.file = sf
                         rs.line = sl
+                    _sblock(&rs, fns, fns[owner].body, n, file)
                 _cdecls(&rs, fns, owner, v, file)
             ast.IfS(l, arms, e):
                 for arm in arms:

@@ -1,0 +1,6 @@
+# FRICTION 260: `[K: V]` in value position names the TYPE for any value
+# type V, not only a primitive -- this got only "'string' is a reserved
+# keyword".
+fn main():
+    m := [string: [[f32]]]
+    println(str(len(m)))

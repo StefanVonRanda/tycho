@@ -328,7 +328,22 @@ static TYCHO_NOINLINE void tycho_trap_note(void) {
 #endif
 }
 
-#define TYCHO_EXIT() do { tycho_trap_note(); exit(1); } while (0)
+/* A trap's place: a helper called from program code takes its call site
+ * (file, line: `#line` makes them the .ty source's) as tycho_sf/tycho_sl,
+ * which shadow these; anywhere else they are null and the -g statement
+ * record (tycho_trap_at) is all there is. Passed as arguments and read only
+ * on the trapping path, the site costs the non-trapping path nothing. */
+#if defined(__GNUC__) || defined(__clang__)
+#define TYCHO_UNUSED __attribute__((unused))
+#else
+#define TYCHO_UNUSED
+#endif
+static TYCHO_UNUSED const char *const tycho_sf = 0;
+static TYCHO_UNUSED const int tycho_sl = 0;
+#define TYCHO_EXIT() do { if (tycho_sf) tycho_trap_at(tycho_sf, tycho_sl); tycho_trap_note(); exit(1); } while (0)
+/* A check the compiler writes inline in program code: a `#line` comes before
+ * every statement, so its own __FILE__/__LINE__ are the .ty source's. */
+#define TYCHO_EXIT_HERE() do { tycho_trap_at(__FILE__, __LINE__); tycho_trap_note(); exit(1); } while (0)
 
 static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); TYCHO_EXIT(); }
 
@@ -339,26 +354,30 @@ static void tycho_oom(void) { fprintf(stderr, "tycho: out of memory\n"); TYCHO_E
  * overflows the quotient (also a trap). Abort cleanly with a tycho: message, like
  * the bounds checks. INT64_MIN % -1 is mathematically 0, so modulo returns it
  * directly instead of trapping. Int `/`/`%` route through these (codegen). */
-static tycho_int tycho_idiv(tycho_int a, tycho_int b) {
+static tycho_int tycho_idiv_at(tycho_int a, tycho_int b, const char *tycho_sf, int tycho_sl) {
     if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); TYCHO_EXIT(); }
     if (a == INT64_MIN && b == -1) { fprintf(stderr, "tycho: division overflow\n"); TYCHO_EXIT(); }
     return a / b;
 }
-static tycho_int tycho_imod(tycho_int a, tycho_int b) {
+static TYCHO_UNUSED tycho_int tycho_idiv(tycho_int a, tycho_int b) { return tycho_idiv_at(a, b, 0, 0); }
+static tycho_int tycho_imod_at(tycho_int a, tycho_int b, const char *tycho_sf, int tycho_sl) {
     if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); TYCHO_EXIT(); }
     if (a == INT64_MIN && b == -1) return 0;
     return a % b;
 }
+static TYCHO_UNUSED tycho_int tycho_imod(tycho_int a, tycho_int b) { return tycho_imod_at(a, b, 0, 0); }
 /* Unsigned div/mod for u32/u64: same clean-abort guard as the signed path. No
  * overflow case (unsigned division never traps except on zero). */
-static unsigned long long tycho_udiv(unsigned long long a, unsigned long long b) {
+static unsigned long long tycho_udiv_at(unsigned long long a, unsigned long long b, const char *tycho_sf, int tycho_sl) {
     if (b == 0) { fprintf(stderr, "tycho: division by zero\n"); TYCHO_EXIT(); }
     return a / b;
 }
-static unsigned long long tycho_umod(unsigned long long a, unsigned long long b) {
+static TYCHO_UNUSED unsigned long long tycho_udiv(unsigned long long a, unsigned long long b) { return tycho_udiv_at(a, b, 0, 0); }
+static unsigned long long tycho_umod_at(unsigned long long a, unsigned long long b, const char *tycho_sf, int tycho_sl) {
     if (b == 0) { fprintf(stderr, "tycho: modulo by zero\n"); TYCHO_EXIT(); }
     return a % b;
 }
+static TYCHO_UNUSED unsigned long long tycho_umod(unsigned long long a, unsigned long long b) { return tycho_umod_at(a, b, 0, 0); }
 /* Shift guard. Shifting by >= the operand's bit width, or by a negative count, is
  * C undefined behavior -- the determinism contract requires a defined result.
  * A count >= width shifts every bit out, so the result is 0 (as Go, Odin, and
@@ -368,71 +387,81 @@ static unsigned long long tycho_umod(unsigned long long a, unsigned long long b)
  * stays arithmetic (sign-extending) for in-range counts. */
 /* Preserve unsigned counts wider than INT64_MAX: treating them as signed first
  * makes e.g. a u64 count of 2^63 look negative instead of out-of-width. */
-static long long tycho_shift_count(uint64_t n, int is_unsigned) {
+static long long tycho_shift_count_at(uint64_t n, int is_unsigned, const char *tycho_sf, int tycho_sl) {
     if (!is_unsigned && n > INT64_MAX) {
         fprintf(stderr, "tycho: negative shift count\n");
         TYCHO_EXIT();
     }
     return n > INT64_MAX ? INT64_MAX : (long long)n;
 }
-static tycho_int tycho_shl_i(tycho_int x, long long n) {
+static TYCHO_UNUSED long long tycho_shift_count(uint64_t n, int is_unsigned) { return tycho_shift_count_at(n, is_unsigned, 0, 0); }
+static tycho_int tycho_shl_i_at(tycho_int x, long long n, const char *tycho_sf, int tycho_sl) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 64) return 0;
     return (tycho_int)((uint64_t)x << n);
 }
-static tycho_int tycho_shr_i(tycho_int x, long long n) {
+static TYCHO_UNUSED tycho_int tycho_shl_i(tycho_int x, long long n) { return tycho_shl_i_at(x, n, 0, 0); }
+static tycho_int tycho_shr_i_at(tycho_int x, long long n, const char *tycho_sf, int tycho_sl) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 64) return 0;
     return x >> n;
 }
-static unsigned int tycho_shl_u32(unsigned int x, long long n) {
+static TYCHO_UNUSED tycho_int tycho_shr_i(tycho_int x, long long n) { return tycho_shr_i_at(x, n, 0, 0); }
+static unsigned int tycho_shl_u32_at(unsigned int x, long long n, const char *tycho_sf, int tycho_sl) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 32) return 0;
     return x << n;
 }
-static unsigned int tycho_shr_u32(unsigned int x, long long n) {
+static TYCHO_UNUSED unsigned int tycho_shl_u32(unsigned int x, long long n) { return tycho_shl_u32_at(x, n, 0, 0); }
+static unsigned int tycho_shr_u32_at(unsigned int x, long long n, const char *tycho_sf, int tycho_sl) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 32) return 0;
     return x >> n;
 }
-static unsigned long long tycho_shl_u64(unsigned long long x, long long n) {
+static TYCHO_UNUSED unsigned int tycho_shr_u32(unsigned int x, long long n) { return tycho_shr_u32_at(x, n, 0, 0); }
+static unsigned long long tycho_shl_u64_at(unsigned long long x, long long n, const char *tycho_sf, int tycho_sl) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 64) return 0;
     return x << n;
 }
-static unsigned long long tycho_shr_u64(unsigned long long x, long long n) {
+static TYCHO_UNUSED unsigned long long tycho_shl_u64(unsigned long long x, long long n) { return tycho_shl_u64_at(x, n, 0, 0); }
+static unsigned long long tycho_shr_u64_at(unsigned long long x, long long n, const char *tycho_sf, int tycho_sl) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= 64) return 0;
     return x >> n;
 }
+static TYCHO_UNUSED unsigned long long tycho_shr_u64(unsigned long long x, long long n) { return tycho_shr_u64_at(x, n, 0, 0); }
 /* Generic width-parameterized shift for the narrow sized ints (u8/u16/i8/i16) and
  * i32/i64: `w` is the type's bit width; the caller truncates the returned value to
  * the exact C type. Same guard as above (count >= width -> 0, negative -> abort).
  * shrn's `sgn` selects arithmetic (signed) vs logical (unsigned) fill; the caller
  * passes x already widened with the correct sign. */
-static long long tycho_shln(long long x, long long n, int w) {
+static long long tycho_shln_at(long long x, long long n, int w, const char *tycho_sf, int tycho_sl) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= w) return 0;
     return (long long)((unsigned long long)x << n);
 }
-static long long tycho_shrn(long long x, long long n, int w, int sgn) {
+static TYCHO_UNUSED long long tycho_shln(long long x, long long n, int w) { return tycho_shln_at(x, n, w, 0, 0); }
+static long long tycho_shrn_at(long long x, long long n, int w, int sgn, const char *tycho_sf, int tycho_sl) {
     if (n < 0) { fprintf(stderr, "tycho: negative shift count\n"); TYCHO_EXIT(); }
     if (n >= w) return 0;
     if (sgn) return x >> n;
     return (long long)((unsigned long long)x >> n);
 }
+static TYCHO_UNUSED long long tycho_shrn(long long x, long long n, int w, int sgn) { return tycho_shrn_at(x, n, w, sgn, 0, 0); }
 /* Float-to-int guard. Casting a NaN or an out-of-range float to an integer is C
  * undefined behavior; the determinism contract requires a defined result, so
  * abort cleanly instead (Swift traps here too). In-range values still truncate
  * toward zero. The valid interval is [-2^63, 2^63); 2^63 is not a representable
  * tycho_int. The negated `>=/<` form also catches NaN (both comparisons are false). */
-static tycho_int tycho_f2i(double x) {
+static tycho_int tycho_f2i_at(double x, const char *tycho_sf, int tycho_sl) {
     if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) {
         fprintf(stderr, "tycho: float-to-int conversion out of range\n");
         TYCHO_EXIT();
     }
     return (tycho_int)x;
 }
+static TYCHO_UNUSED tycho_int tycho_f2i(double x) { return tycho_f2i_at(x, 0, 0); }
 /* Float to a FIXED-WIDTH int (to_u8..to_i64). The spec calls these conversions
  * total, so unlike to_int they may not trap -- but a bare C cast of a NaN, an
  * infinity or an out-of-range value is undefined (C11 6.3.1.4p1). Defined answer:
@@ -1403,7 +1432,7 @@ static void tycho_select_pause(int *spins) {
     nanosleep(&ts, NULL);
 }
 
-static void tycho_chan_close(HChan *ch) {
+static void tycho_chan_close_at(HChan *ch, const char *tycho_sf, int tycho_sl) {
     pthread_mutex_lock(&ch->mu);
     if (atomic_load_explicit(&ch->closed, memory_order_relaxed)) {
         fprintf(stderr, "tycho: channel already closed\n"); TYCHO_EXIT();
@@ -1412,6 +1441,7 @@ static void tycho_chan_close(HChan *ch) {
     pthread_cond_broadcast(&ch->cv);            /* receivers drain then see None; senders die loudly */
     pthread_mutex_unlock(&ch->mu);
 }
+static TYCHO_UNUSED void tycho_chan_close(HChan *ch) { tycho_chan_close_at(ch, 0, 0); }
 
 static void tycho_chan_free(HChan *ch) {
     for (tycho_int i = 0; i < ch->cap; i++) arena_free(&ch->cells[i].arena);
@@ -1865,10 +1895,11 @@ int tycho_str_cmp(const char *a, const char *b) {
     return la < lb ? -1 : (la > lb ? 1 : 0);
 }
 
-static __attribute__((noinline)) void tycho_str_oob(tycho_int i, tycho_int n) {
+static __attribute__((noinline)) void tycho_str_oob_at(tycho_int i, tycho_int n, const char *tycho_sf, int tycho_sl) {
     fprintf(stderr, "tycho: string index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, n);
     TYCHO_EXIT();
 }
+static TYCHO_UNUSED void tycho_str_oob(tycho_int i, tycho_int n) { tycho_str_oob_at(i, n, 0, 0); }
 
 /* The hot string byte read. It used to be an out-of-line call whose body held
  * the fprintf/exit slow path, so gcc declined to inline it and every `s[i]` in
@@ -1876,24 +1907,28 @@ static __attribute__((noinline)) void tycho_str_oob(tycho_int i, tycho_int n) {
  * generated C reaches this through the macro below: json_tree parse+fold drops
  * 290.7e6 -> 194.0e6 cycles and 1.286e9 -> 895e6 Ir at the large size. The
  * exported symbols stay real for separately compiled shims. */
-static inline __attribute__((always_inline)) tycho_int tycho_str_get_i(const char *s, tycho_int i) {
+static inline __attribute__((always_inline)) tycho_int tycho_str_get_i_at(const char *s, tycho_int i, const char *tycho_sf, int tycho_sl) {
     tycho_int n = tycho_str_len(s);
-    if (__builtin_expect(i < 0 || i >= n, 0)) tycho_str_oob(i, n);
+    if (__builtin_expect(i < 0 || i >= n, 0)) tycho_str_oob_at(i, n, tycho_sf, tycho_sl);
     return (tycho_int)(unsigned char)tycho_str_data(s)[i];   /* unsigned: 0..255, never negative */
 }
+static TYCHO_UNUSED inline tycho_int tycho_str_get_i(const char *s, tycho_int i) { return tycho_str_get_i_at(s, i, 0, 0); }
 
-tycho_int tycho_str_get(const char *s, tycho_int i) { return tycho_str_get_i(s, i); }
+tycho_int tycho_str_get_at(const char *s, tycho_int i, const char *tycho_sf, int tycho_sl) { return tycho_str_get_i_at(s, i, tycho_sf, tycho_sl); }
+tycho_int tycho_str_get(const char *s, tycho_int i) { return tycho_str_get_at(s, i, 0, 0); }
 #define tycho_str_get(s, i) tycho_str_get_i((s), (i))
 
 /* Same bounds-checked byte read, but the caller passes the length — used when the
  * codegen has hoisted strlen(s) into a sidecar for an indexed, never-reassigned
  * string (its length is loop-invariant). Turns an O(n)-per-access bounds check
  * into O(1), so indexing a string in a loop is O(n) not O(n^2). */
-static inline __attribute__((always_inline)) tycho_int tycho_str_get_n_i(const char *s, tycho_int i, tycho_int n) {
-    if (__builtin_expect(i < 0 || i >= n, 0)) tycho_str_oob(i, n);
+static inline __attribute__((always_inline)) tycho_int tycho_str_get_n_i_at(const char *s, tycho_int i, tycho_int n, const char *tycho_sf, int tycho_sl) {
+    if (__builtin_expect(i < 0 || i >= n, 0)) tycho_str_oob_at(i, n, tycho_sf, tycho_sl);
     return (tycho_int)(unsigned char)tycho_str_data(s)[i];
 }
-tycho_int tycho_str_get_n(const char *s, tycho_int i, tycho_int n) { return tycho_str_get_n_i(s, i, n); }
+static TYCHO_UNUSED inline tycho_int tycho_str_get_n_i(const char *s, tycho_int i, tycho_int n) { return tycho_str_get_n_i_at(s, i, n, 0, 0); }
+tycho_int tycho_str_get_n_at(const char *s, tycho_int i, tycho_int n, const char *tycho_sf, int tycho_sl) { return tycho_str_get_n_i_at(s, i, n, tycho_sf, tycho_sl); }
+tycho_int tycho_str_get_n(const char *s, tycho_int i, tycho_int n) { return tycho_str_get_n_at(s, i, n, 0, 0); }
 #define tycho_str_get_n(s, i, n) tycho_str_get_n_i((s), (i), (n))
 
 /* substring [start, end); out-of-range bounds are clamped, not an error */
@@ -2026,12 +2061,13 @@ static char **tycho_argv = NULL;
  * `s[i] -> int` byte read. A value outside 0..255 is a program error and aborts
  * cleanly (like a bad index), rather than silently masking to a byte. n==0 is a
  * real NUL byte, one byte tycho_int: strings are byte-safe. */
-char *tycho_chr(Arena *a, tycho_int n) {
+char *tycho_chr_at(Arena *a, tycho_int n, const char *tycho_sf, int tycho_sl) {
     if (n < 0 || n > 255) { fprintf(stderr, "tycho: chr(%" TY_PRId ") out of byte range 0..255\n", n); TYCHO_EXIT(); }
     char *r = tycho_str_alloc(a, 1);
     r[0] = (char)n;
     return r;
 }
+char *tycho_chr(Arena *a, tycho_int n) { return tycho_chr_at(a, n, 0, 0); }
 
 /* die(msg): the error path for a Tycho-written compiler (and any tool) — print
  * to stderr and exit non-zero. Never returns; declared T_VOID, so a non-void
@@ -2400,27 +2436,30 @@ static inline void tycho_arr_int_push(Arena *a, TychoArrInt *xs, tycho_int v) {
 
 /* pop: shrink + return the last element. int/float pass through (no heap); the
  * arena is unused. Dies on an empty array (a value must always be returned). */
-tycho_int tycho_arr_int_pop(Arena *a, TychoArrInt *xs) {
+tycho_int tycho_arr_int_pop_at(Arena *a, TychoArrInt *xs, const char *tycho_sf, int tycho_sl) {
     (void)a;
     if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); TYCHO_EXIT(); }
     return xs->data[--xs->len];
 }
+tycho_int tycho_arr_int_pop(Arena *a, TychoArrInt *xs) { return tycho_arr_int_pop_at(a, xs, 0, 0); }
 
-tycho_int tycho_arr_int_get(TychoArrInt xs, tycho_int i) {
+tycho_int tycho_arr_int_get_at(TychoArrInt xs, tycho_int i, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs.len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs.len);
         TYCHO_EXIT();
     }
     return xs.data[i];
 }
+tycho_int tycho_arr_int_get(TychoArrInt xs, tycho_int i) { return tycho_arr_int_get_at(xs, i, 0, 0); }
 
-void tycho_arr_int_set(TychoArrInt *xs, tycho_int i, tycho_int v) {
+void tycho_arr_int_set_at(TychoArrInt *xs, tycho_int i, tycho_int v, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs->len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len);
         TYCHO_EXIT();
     }
     xs->data[i] = v;
 }
+void tycho_arr_int_set(TychoArrInt *xs, tycho_int i, tycho_int v) { tycho_arr_int_set_at(xs, i, v, 0, 0); }
 
 /* Grow hook for push-loop fusion: when a loop pushes to a local array, codegen
  * caches data/cap/len in C locals (registers) and writes elements directly --
@@ -2506,27 +2545,30 @@ void tycho_arr_float_grow(Arena *a, double **data, tycho_int *cap, tycho_int len
     *data = nd; *cap = nc;
 }
 
-double tycho_arr_float_pop(Arena *a, TychoArrFloat *xs) {
+double tycho_arr_float_pop_at(Arena *a, TychoArrFloat *xs, const char *tycho_sf, int tycho_sl) {
     (void)a;
     if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); TYCHO_EXIT(); }
     return xs->data[--xs->len];
 }
+double tycho_arr_float_pop(Arena *a, TychoArrFloat *xs) { return tycho_arr_float_pop_at(a, xs, 0, 0); }
 
-double tycho_arr_float_get(TychoArrFloat xs, tycho_int i) {
+double tycho_arr_float_get_at(TychoArrFloat xs, tycho_int i, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs.len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs.len);
         TYCHO_EXIT();
     }
     return xs.data[i];
 }
+double tycho_arr_float_get(TychoArrFloat xs, tycho_int i) { return tycho_arr_float_get_at(xs, i, 0, 0); }
 
-void tycho_arr_float_set(TychoArrFloat *xs, tycho_int i, double v) {
+void tycho_arr_float_set_at(TychoArrFloat *xs, tycho_int i, double v, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs->len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len);
         TYCHO_EXIT();
     }
     xs->data[i] = v;
 }
+void tycho_arr_float_set(TychoArrFloat *xs, tycho_int i, double v) { tycho_arr_float_set_at(xs, i, v, 0, 0); }
 
 TychoArrFloat tycho_arr_float_copy(Arena *a, TychoArrFloat src) {
     TychoArrFloat r = tycho_arr_float_with_cap(a, src.len);
@@ -2608,7 +2650,7 @@ void tycho_arr_str_grow(Arena *a, char ***data, tycho_int *cap, tycho_int len) {
 }
 
 void tycho_str_recycle(Arena *a, const char *s);
-char *tycho_arr_str_pop(Arena *a, TychoArrStr *xs) {
+char *tycho_arr_str_pop_at(Arena *a, TychoArrStr *xs, const char *tycho_sf, int tycho_sl) {
     if (xs->len == 0) { fprintf(stderr, "tycho: pop from an empty array\n"); TYCHO_EXIT(); }
     xs->len--;
     char *old = xs->data[xs->len];
@@ -2616,32 +2658,37 @@ char *tycho_arr_str_pop(Arena *a, TychoArrStr *xs) {
     tycho_str_recycle(a, old);
     return out;
 }
+char *tycho_arr_str_pop(Arena *a, TychoArrStr *xs) { return tycho_arr_str_pop_at(a, xs, 0, 0); }
 
-char *tycho_arr_str_get(TychoArrStr xs, tycho_int i) {
+char *tycho_arr_str_get_at(TychoArrStr xs, tycho_int i, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs.len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs.len);
         TYCHO_EXIT();
     }
     return xs.data[i];
 }
+char *tycho_arr_str_get(TychoArrStr xs, tycho_int i) { return tycho_arr_str_get_at(xs, i, 0, 0); }
 
 /* Bounds-checked element-pointer projection for the SCALAR array families, so an
  * `inout` on a scalar element (`inc(&a[i])`) has a mutable lvalue -- the composite
  * arrays already emit a per-type tycho_arr_C<id>_ptr for this, but the built-in
  * int/float/str arrays had none, so gen_lvalue emitted a bogus tycho_arr_C<garbage>
  * _ptr and the C failed to compile. Mirrors the composite _ptr contract. */
-tycho_int *tycho_arr_int_ptr(TychoArrInt *xs, tycho_int i) {
+tycho_int *tycho_arr_int_ptr_at(TychoArrInt *xs, tycho_int i, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); TYCHO_EXIT(); }
     return &xs->data[i];
 }
-double *tycho_arr_float_ptr(TychoArrFloat *xs, tycho_int i) {
+tycho_int *tycho_arr_int_ptr(TychoArrInt *xs, tycho_int i) { return tycho_arr_int_ptr_at(xs, i, 0, 0); }
+double *tycho_arr_float_ptr_at(TychoArrFloat *xs, tycho_int i, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); TYCHO_EXIT(); }
     return &xs->data[i];
 }
-char **tycho_arr_str_ptr(TychoArrStr *xs, tycho_int i) {
+double *tycho_arr_float_ptr(TychoArrFloat *xs, tycho_int i) { return tycho_arr_float_ptr_at(xs, i, 0, 0); }
+char **tycho_arr_str_ptr_at(TychoArrStr *xs, tycho_int i, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs->len) { fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len); TYCHO_EXIT(); }
     return &xs->data[i];
 }
+char **tycho_arr_str_ptr(TychoArrStr *xs, tycho_int i) { return tycho_arr_str_ptr_at(xs, i, 0, 0); }
 
 void tycho_str_recycle(Arena *a, const char *s) {
     if (s && !tycho_str_is_view(s) && ((const tycho_int *)s)[-1] >= 0 && arena_owns(a, s - 8))
@@ -2660,7 +2707,7 @@ void tycho_str_slot_set(Arena *a, char **slot, const char *v) {
     *slot = nw;
 }
 
-void tycho_arr_str_set(Arena *a, TychoArrStr *xs, tycho_int i, const char *v) {
+void tycho_arr_str_set_at(Arena *a, TychoArrStr *xs, tycho_int i, const char *v, const char *tycho_sf, int tycho_sl) {
     if (i < 0 || i >= xs->len) {
         fprintf(stderr, "tycho: index %" TY_PRId " out of bounds (len %" TY_PRId ")\n", i, xs->len);
         TYCHO_EXIT();
@@ -2669,6 +2716,7 @@ void tycho_arr_str_set(Arena *a, TychoArrStr *xs, tycho_int i, const char *v) {
      * string-slot helper copies before recycling, including self-assignment. */
     tycho_str_slot_set(a, &xs->data[i], v);
 }
+void tycho_arr_str_set(Arena *a, TychoArrStr *xs, tycho_int i, const char *v) { tycho_arr_str_set_at(a, xs, i, v, 0, 0); }
 
 /* value-semantic copy: independent buffer AND independent element bytes in a */
 TychoArrStr tycho_arr_str_copy(Arena *a, TychoArrStr src) {
@@ -2701,7 +2749,7 @@ void tycho_arr_str_recycle(Arena *a, TychoArrStr xs) {
  * n separators -> n+1 fields (leading/trailing/adjacent seps yield empty
  * fields); an empty s yields one empty field. An empty separator has no
  * well-defined splitting, so fail closed rather than guess. */
-TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
+TychoArrStr tycho_str_split_at(Arena *a, const char *s, const char *sep, const char *tycho_sf, int tycho_sl) {
     const char *sd = tycho_str_data(s), *pd = tycho_str_data(sep);
     tycho_int sl = tycho_str_len(s), pl = tycho_str_len(sep);   /* byte-safe: header lengths, not strlen/strstr */
     if (pl == 0) {
@@ -2726,11 +2774,12 @@ TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) {
     tycho_arr_str_push(a, &r, tail);
     return r;
 }
+TychoArrStr tycho_str_split(Arena *a, const char *s, const char *sep) { return tycho_str_split_at(a, s, sep, 0, 0); }
 
 /* 4.3: `for part in split(s, sep)` with read-only parts. Each call yields the
  * next field tycho_str_split would return, as a view of s: no array, no copy.
  * *pos is the next field's start, -1 once the tail field has been yielded. */
-int tycho_str_split_next(const char *s, const char *sep, tycho_int *pos, TychoStrView *v) {
+int tycho_str_split_next_at(const char *s, const char *sep, tycho_int *pos, TychoStrView *v, const char *tycho_sf, int tycho_sl) {
     tycho_int start = *pos;
     if (start < 0) return 0;
     const char *sd = tycho_str_data(s), *pd = tycho_str_data(sep);
@@ -2748,6 +2797,7 @@ int tycho_str_split_next(const char *s, const char *sep, tycho_int *pos, TychoSt
     v->data = sd + start; v->len = sl - start; *pos = -1;
     return 1;
 }
+int tycho_str_split_next(const char *s, const char *sep, tycho_int *pos, TychoStrView *v) { return tycho_str_split_next_at(s, sep, pos, v, 0, 0); }
 
 /* Single-pass construction of fresh names plus their index in an arena tail.
  * Names grow upward, temporary pointers downward. No arena allocation may occur
@@ -3814,11 +3864,12 @@ char *tycho_map_if_str(Arena *a, TychoMapIF m) {
  * the top of this file are the model; see the note left in their place).
  * A fixed [N]T mismatch never reaches here: N is static, so the compiler
  * refuses it outright. */
-static void tycho_ew_len(tycho_int a, tycho_int b) {
+static void tycho_ew_len_at(tycho_int a, tycho_int b, const char *tycho_sf, int tycho_sl) {
     fprintf(stderr, "tycho: element-wise arithmetic on arrays of different lengths "
                     "(%" TY_PRId " and %" TY_PRId ")\n", a, b);
     TYCHO_EXIT();
 }
+static TYCHO_UNUSED void tycho_ew_len(tycho_int a, tycho_int b) { tycho_ew_len_at(a, b, 0, 0); }
 
 /* SHA-256 used by the CLI tree hasher. The pure-Tycho implementation remains
  * available for streaming users; this C path is a per-file fast path. */
@@ -4095,3 +4146,41 @@ char *tycho_sha256_hex_bytes(const unsigned char *data, tycho_int len) {
     out[64]=0;
     return out;
 }
+
+/* Program code calls the trapping helpers through these, so the call site
+ * rides along to TYCHO_EXIT (tycho_str_get / _get_n reach them through
+ * their own macros). */
+#define tycho_arr_float_get(...) tycho_arr_float_get_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_float_pop(...) tycho_arr_float_pop_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_float_ptr(...) tycho_arr_float_ptr_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_float_set(...) tycho_arr_float_set_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_int_get(...) tycho_arr_int_get_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_int_pop(...) tycho_arr_int_pop_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_int_ptr(...) tycho_arr_int_ptr_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_int_set(...) tycho_arr_int_set_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_str_get(...) tycho_arr_str_get_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_str_pop(...) tycho_arr_str_pop_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_str_ptr(...) tycho_arr_str_ptr_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_arr_str_set(...) tycho_arr_str_set_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_chan_close(...) tycho_chan_close_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_chr(...) tycho_chr_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_ew_len(...) tycho_ew_len_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_f2i(...) tycho_f2i_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_idiv(...) tycho_idiv_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_imod(...) tycho_imod_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shift_count(...) tycho_shift_count_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shl_i(...) tycho_shl_i_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shl_u32(...) tycho_shl_u32_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shl_u64(...) tycho_shl_u64_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shln(...) tycho_shln_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shr_i(...) tycho_shr_i_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shr_u32(...) tycho_shr_u32_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shr_u64(...) tycho_shr_u64_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_shrn(...) tycho_shrn_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_str_get_i(...) tycho_str_get_i_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_str_get_n_i(...) tycho_str_get_n_i_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_str_oob(...) tycho_str_oob_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_str_split(...) tycho_str_split_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_str_split_next(...) tycho_str_split_next_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_udiv(...) tycho_udiv_at(__VA_ARGS__, __FILE__, __LINE__)
+#define tycho_umod(...) tycho_umod_at(__VA_ARGS__, __FILE__, __LINE__)
