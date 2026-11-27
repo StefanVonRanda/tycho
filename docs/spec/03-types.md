@@ -275,7 +275,9 @@ field may name a `struct`, `enum`, `type` or `handle` declared further down.
 
 A field may declare a **default**, `name: T = value`. A *named* construction
 that leaves the field out gets the value; `S()` gives every field its default
-when every field has one; a *positional* construction still gives every field.
+when every field has one; a *positional* construction may leave out the fields
+at the end that have defaults (`S(a)` for `S(a, <b's default>)`), and gives
+every other field.
 The value must be **closed** — a literal, a negated literal, an empty
 container, or an array or tuple of those — because it is copied to each
 construction site, where a name would mean what it means there. It is typed

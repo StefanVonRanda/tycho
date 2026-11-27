@@ -54,7 +54,7 @@ StrLit ::= StrPiece StrPiece*
 StrPiece ::= QuotedPiece | RawPiece
 QuotedPiece ::= '"' StrElem* '"'
 StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
-StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' )
+StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' | "u{" HexDigit HexDigit? HexDigit? HexDigit? HexDigit? HexDigit? "}" )
 RawPiece ::= "`" RawElem* "`"
 RawElem ::= (any byte except "`" and raw control bytes below 0x20 other than tab and newline)
 ```

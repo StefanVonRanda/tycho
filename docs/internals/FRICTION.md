@@ -1621,7 +1621,7 @@ the bitmap side.
 
 > Pinned-by: grep -q '^const MAX_POINTS = 65535' corelib/font/font.ty
 
-### 266. A defaulted field still edits every positional construction — **OPEN**
+### 266. A defaulted field still edits every positional construction — **FIXED 2026-11-27**
 
 Urani, the day field defaults landed (FRICTION 261). Its `Script` has over 50 fields and
 one positional construction (`no_script()`); four fields added with defaults (`f_save`,
@@ -1631,6 +1631,13 @@ every field. Defaults end the edit only for named construction. Letting a positi
 construction leave out trailing defaulted fields would end it for both; the cost is that a
 forgotten trailing argument reads as the default.
 
+Fixed: a positional construction may leave out the fields at the end that have defaults;
+the defaults pass (types/defaults.ty) appends them, so `Script(..., last_given)` keeps
+compiling as defaulted fields are added after it. A field left out that has no default is
+refused as before.
+
+> Pinned-by: grep -q "^pos 640 1 pos2 800 1.5 0$" tests/struct_defaults.out
+
 ### 267. A struct value cannot be a field default — **OPEN**
 
 `rw: netcode.Rewind = netcode.Rewind()` is refused: a default must be closed (a literal, a
@@ -1639,7 +1646,7 @@ each construction site. `Rewind()` here is itself every-field-defaulted, so it i
 as `[]`. A constructor call whose omitted fields all have closed defaults (and whose given
 ones are closed) could count as closed too.
 
-### 268. An incompatible pointer in a shim was a warning lost in the build log — **OPEN**
+### 268. An incompatible pointer in a shim was a warning lost in the build log — **FIXED 2026-11-27**
 
 Urani's `gpu_shim.c` passed `const int64_t *draws` to a function taking `const double *`.
 clang said `-Wincompatible-pointer-types`, a warning, among ~70 lines of other build output;
@@ -1647,6 +1654,13 @@ the shadow maps then read every draw as 0 indices and cluster 0, and the bug was
 the picture, not the log. tychoc compiles a package's shims: making the warnings that are
 always bugs in C (`incompatible-pointer-types`, `int-conversion`,
 `implicit-function-declaration`) errors there would have stopped it at the build.
+
+Fixed: tychoc passes `-Werror=incompatible-pointer-types -Werror=int-conversion
+-Werror=implicit-function-declaration` to every build, shims included (gcc 14 already
+refuses all three); tests/shim_werror.sh builds a package whose shim passes an `int64_t*`
+for a `double*` and expects the build refused, then the right shim built and run.
+
+> Pinned-by: test -f tests/shim_werror.sh
 
 ### 269. Unused-function warnings from another repo's sources drown a build — **OPEN**
 
@@ -1656,10 +1670,17 @@ called" and a dozen more about the compiler's functions -- nothing Urani can act
 noise FRICTION 268's warning hid in. Unused-function warnings could be limited to the
 packages under the entry's own root, or to packages that are not imported read-only.
 
-### 270. No Unicode escape in a string literal — **OPEN**
+### 270. No Unicode escape in a string literal — **FIXED 2026-11-27**
 
 A Nerd Font icon is a private-use code point (U+F0150, nf-md-clock_outline). A string
 literal takes `\n \t \r \\ \"` only, so Urani writes `utf8.encode(0xF0150)` through an
 `icon(cp)` helper; the alternative, the raw UTF-8 bytes in the source, is an invisible
 character an editor may not show. A `\u{F0150}` escape (any scalar value, encoded as UTF-8)
 would say what it is.
+
+Fixed: `\u{H}` to `\u{HHHHHH}` in a string literal (and an f-string's text) is that
+Unicode scalar value in UTF-8. The lexer writes the bytes into the token, so nothing after
+it meets the escape; 0, a surrogate or past 10FFFF is refused.
+
+> Pinned-by: test -f tests/str_u_escape.out
+> Pinned-by: test -f tests/diag/str_u_escape_bad.err

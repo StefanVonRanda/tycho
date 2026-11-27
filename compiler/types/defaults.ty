@@ -7,7 +7,8 @@ import "../ast"
 # anything else reads the program: `P(y: 1)` becomes `P(y: 1, x: 0)`, and the
 # checker, the emitter and every pass after them see a whole construction --
 # none of them knows defaults exist. `P()` takes every default when every
-# field has one. Positional construction still gives every field.
+# field has one. A positional construction may leave out the fields at the
+# end that have defaults (FRICTION 266): `P(1)` is `P(1, <y's default>)`.
 #
 # A default is a closed value: a literal, a negated literal, an empty
 # container, or an array or tuple of those. It is copied to each construction
@@ -63,10 +64,28 @@ fn _dexpr(d: Dfl, e: ast.Expr) -> ast.Expr:
                 return e2
             fs := d.fields[d.tab[key]]
             given := []string: bool
+            named := 0
             for a in args:
                 match a:
-                    ast.Named(l2, nm, k2): given[nm] = true
-                    _: return e2                    # positional: every field, as before
+                    ast.Named(l2, nm, k2):
+                        given[nm] = true
+                        named += 1
+                    _: pass
+            if named == 0 and len(args) > 0:
+                # positional: the fields left out at the end, if all have
+                # defaults, get them (FRICTION 266); otherwise as written, for
+                # the checker to count
+                if len(args) >= len(fs):
+                    return e2
+                for i := len(args); i < len(fs); i += 1:
+                    if len(fs[i].dflt) == 0:
+                        return e2
+                out0 := args
+                for i := len(args); i < len(fs); i += 1:
+                    push(out0, fs[i].dflt[0])
+                return ast.Call(l, q, n, ts, out0)
+            if named != len(args):
+                return e2                           # mixed: the checker says so
             if len(args) == 0:
                 for f in fs:
                     if len(f.dflt) == 0:

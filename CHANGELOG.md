@@ -9,6 +9,11 @@ builtins and corelib signatures.
 
 ### Language
 
+- **`\u{H...}` in string literals**: a Unicode scalar value, written as its UTF-8 bytes
+  (`"\u{F0150}"`, a Nerd Font icon); 0 and surrogates are refused (FRICTION 270).
+- **A positional construction may leave out the defaulted fields at the end** (FRICTION 266).
+- **The C warnings that are always a bug are errors in every build, shims included**:
+  incompatible pointer types, int-conversion, implicit function declarations (FRICTION 268).
 - **A bare `wait(t)` (or any statement expression whose value is dropped) no longer makes
   the C compiler warn** "expression result unused": it is cast to void.
 - **Struct fields take defaults**: `width: int = 640`; a named construction may leave such

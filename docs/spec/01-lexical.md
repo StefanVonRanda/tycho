@@ -363,15 +363,18 @@ StrLit ::= StrPiece StrPiece*
 StrPiece ::= QuotedPiece | RawPiece
 QuotedPiece ::= '"' StrElem* '"'
 StrElem ::= StrEscape | (any byte except '"', "\", newline, and raw control bytes below 0x20 other than tab)
-StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' )
+StrEscape ::= "\" ( "n" | "t" | "r" | "\" | '"' | "u{" HexDigit HexDigit? HexDigit? HexDigit? HexDigit? HexDigit? "}" )
 RawPiece ::= "`" RawElem* "`"
 RawElem ::= (any byte except "`" and raw control bytes below 0x20 other than tab and newline)
 ```
 
 A string literal is delimited by double quotes and denotes a `string` value. One
 piece is single-line: an embedded newline is an error (`unterminated string
-literal`). The supported escapes are exactly `\n`, `\t`, `\r`, `\\`, and `\"` — a
-smaller set than C; any other `\`-escape is rejected. A raw control byte below
+literal`). The supported escapes are exactly `\n`, `\t`, `\r`, `\\`, `\"`, and
+`\u{H}` to `\u{HHHHHH}` — a smaller set than C; any other `\`-escape is rejected.
+`\u{...}` is a Unicode scalar value in hex (not `0`, not a surrogate
+`D800`–`DFFF`, at most `10FFFF`), written into the string as its UTF-8 bytes:
+`"\u{e9}"` is two bytes, `"\u{F0150}"` four. A raw control byte below
 `0x20` (except tab) is rejected and MUST be written with an escape.
 Consequently a string *literal* cannot contain a `NUL` byte; a
 byte-safe `string`/`bytes` *value* containing interior `NUL`s is produced at run

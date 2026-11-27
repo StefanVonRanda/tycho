@@ -58,7 +58,7 @@ println(w.title + " " + str(w.width) + "x" + str(w.height) + " " + str(len(w.tag
 
 A default is a literal, a negated literal, an empty container, or an array or
 tuple of those (it is copied to every construction); a positional construction
-still gives every field.
+may leave out the defaulted fields at the end: `Window("main")`.
 
 A field name follows the same rule as any other name: it may not be a
 [reserved word](basics.md#declarations-and-assignment), which includes the type names —

@@ -1,6 +1,7 @@
 # FRICTION 261: field defaults. A named construction that leaves a field
 # out gets its default; P() takes every default when every field has one;
-# positional construction still gives every field.
+# a positional construction may leave out the fields at the end that have
+# defaults (FRICTION 266).
 struct Cfg:
     name: string
     width: int = 640
@@ -35,3 +36,8 @@ fn main():
     cs := [Cfg(name: "q"), make(9)]
     push(cs[0].tags, "added")
     println(str(cs[1].width) + " " + str(len(cs[0].tags)) + " " + str(len(Cfg(name: "fresh").tags)))
+    # positional, the defaulted fields at the end left out
+    p1 := Cfg("pos")
+    p2 := Cfg("pos2", 800)
+    push(p1.tags, "only p1")
+    println(p1.name + " " + str(p1.width) + " " + str(len(p1.tags)) + " " + p2.name + " " + str(p2.width) + " " + str(p2.scale) + " " + str(len(p2.tags)))

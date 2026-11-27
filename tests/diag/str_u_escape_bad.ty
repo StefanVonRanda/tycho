@@ -1,0 +1,3 @@
+# FRICTION 270: a surrogate is no Unicode scalar value.
+fn main():
+    println("\u{D800}")

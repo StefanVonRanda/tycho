@@ -1,0 +1,9 @@
+# FRICTION 270: \u{H...} in a string literal is that code point in UTF-8;
+# an escaped backslash before it is a backslash; in an f-string, outside the
+# holes.
+fn main():
+    s := "a\u{e9}b \u{F0150} \u{1F600} x\\u{41}"
+    println(s)
+    println(str(len(s)))
+    n := 3
+    println(f"{n} \u{2713} {{\u{41}}}")

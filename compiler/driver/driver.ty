@@ -336,6 +336,13 @@ fn build(src_path: string, runtime_path: string, base: string, argv0: string,
     if dbg:
         opt = "-O0"
     argv := [cc9, opt, "-fwrapv", "-ffp-contract=off", "-pthread"]
+    # The C warnings that are always a bug -- a pointer to the wrong type, an
+    # int used as a pointer, a function called with no declaration -- are
+    # errors, in a shim as in the emitted C: Urani's shim passed int64_t* where
+    # double* was taken, and the warning drowned in its build log (FRICTION 268).
+    # gcc 14 already refuses all three; clang and older gcc only warned.
+    for w in ["incompatible-pointer-types", "int-conversion", "implicit-function-declaration"]:
+        push(argv, "-Werror=" + w)
     if use_lto:
         # A small generated unit gets no wall-clock benefit from all-core
         # LTRANS (measured: hello.ty 520ms at -flto=2, 517ms at -flto=auto).

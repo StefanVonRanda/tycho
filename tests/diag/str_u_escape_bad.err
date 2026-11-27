@@ -1,0 +1,2 @@
+tests/diag/str_u_escape_bad.ty:3: error: a \u escape is \u{H} to \u{HHHHHH}: a Unicode scalar value in hex, not 0 and not a surrogate (D800-DFFF)
+     3 |     println("\u{D800}")
