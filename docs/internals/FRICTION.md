@@ -1620,3 +1620,46 @@ bounds-checked against the glyph's bytes, and the rasterizer's work stays bounde
 the bitmap side.
 
 > Pinned-by: grep -q '^const MAX_POINTS = 65535' corelib/font/font.ty
+
+### 266. A defaulted field still edits every positional construction — **OPEN**
+
+Urani, the day field defaults landed (FRICTION 261). Its `Script` has over 50 fields and
+one positional construction (`no_script()`); four fields added with defaults (`f_save`,
+`me`, `rw`, `no_input`...) each still meant editing that call, once in the wrong order
+(`field 'no_input' of Script is bool, got float`), because positional construction gives
+every field. Defaults end the edit only for named construction. Letting a positional
+construction leave out trailing defaulted fields would end it for both; the cost is that a
+forgotten trailing argument reads as the default.
+
+### 267. A struct value cannot be a field default — **OPEN**
+
+`rw: netcode.Rewind = netcode.Rewind()` is refused: a default must be closed (a literal, a
+negated literal, an empty container, or an array or tuple of those), since it is copied to
+each construction site. `Rewind()` here is itself every-field-defaulted, so it is as closed
+as `[]`. A constructor call whose omitted fields all have closed defaults (and whose given
+ones are closed) could count as closed too.
+
+### 268. An incompatible pointer in a shim was a warning lost in the build log — **OPEN**
+
+Urani's `gpu_shim.c` passed `const int64_t *draws` to a function taking `const double *`.
+clang said `-Wincompatible-pointer-types`, a warning, among ~70 lines of other build output;
+the shadow maps then read every draw as 0 indices and cluster 0, and the bug was found from
+the picture, not the log. tychoc compiles a package's shims: making the warnings that are
+always bugs in C (`incompatible-pointer-types`, `int-conversion`,
+`implicit-function-declaration`) errors there would have stopped it at the build.
+
+### 269. Unused-function warnings from another repo's sources drown a build — **OPEN**
+
+Urani's script VM imports Tycho's compiler (`../../../tycho/compiler/...`), so every Urani
+build prints "'dump' is never called", "'census' is never called", "'check_syms' is never
+called" and a dozen more about the compiler's functions -- nothing Urani can act on, and the
+noise FRICTION 268's warning hid in. Unused-function warnings could be limited to the
+packages under the entry's own root, or to packages that are not imported read-only.
+
+### 270. No Unicode escape in a string literal — **OPEN**
+
+A Nerd Font icon is a private-use code point (U+F0150, nf-md-clock_outline). A string
+literal takes `\n \t \r \\ \"` only, so Urani writes `utf8.encode(0xF0150)` through an
+`icon(cp)` helper; the alternative, the raw UTF-8 bytes in the source, is an invisible
+character an editor may not show. A `\u{F0150}` escape (any scalar value, encoded as UTF-8)
+would say what it is.
